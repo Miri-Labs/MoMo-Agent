@@ -156,30 +156,56 @@ private struct RemoteAvatar: View {
     let requestWatchStatus: (() -> Void)?
     let openLibrary: () -> Void
     @State private var showingStatus = false
+    @Environment(EarphoneCaptureRuntime.self) private var earphone: EarphoneCaptureRuntime?
     var body: some View {
         PersonalAgentSlot(size: size, active: true, expression: active ? .working : .present)
             .watchStatusRefresh(requestWatchStatus)
             .frame(height: size * (72.0 / 84.0), alignment: .top)
             .overlay(alignment: .bottomTrailing) {
-                TimelineView(.periodic(from: .now, by: 5)) { clock in
-                    let status = WatchStatusPresentation(observation: watchStatus, now: clock.date)
-                    Button { showingStatus.toggle() } label: {
-                        HStack(spacing: 2) {
-                            Image(systemName: "applewatch").font(.system(size: 11, weight: .medium))
-                            Circle().fill(status.indicatorColor).frame(width: 5, height: 5)
-                        }.foregroundStyle(MoMoPalette.ink).padding(4)
-                            .background(MoMoPalette.paper, in: Capsule())
-                            .overlay { Capsule().strokeBorder(MoMoPalette.line, lineWidth: 1) }
-                            .frame(width: 44, height: 44).contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                        .accessibilityLabel(status.title).accessibilityValue(status.indicator.title)
-                        .accessibilityHint("查看录音与同步状态").accessibilityIdentifier("assistant.watchStatus")
-                        .popover(isPresented: $showingStatus, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
-                            WatchStatusPopover(observation: watchStatus) { showingStatus = false; openLibrary() }
-                                .presentationCompactAdaptation(.popover)
-                        }
-                }.offset(x: 8, y: 8)
+                if let earphone, earphone.settings.device == .earphone { earphoneBadge(earphone) }
+                else { watchBadge }
             }
+    }
+
+    private func earphoneBadge(_ earphone: EarphoneCaptureRuntime) -> some View {
+        let status = EarphoneStatusPresentation(earphone)
+        return Button { showingStatus.toggle() } label: {
+            HStack(spacing: 2) {
+                Image(systemName: CaptureDevice.earphone.symbol).font(.system(size: 11, weight: .medium))
+                Circle().fill(status.indicatorColor).frame(width: 5, height: 5)
+            }.foregroundStyle(MoMoPalette.ink).padding(4)
+                .background(MoMoPalette.paper, in: Capsule())
+                .overlay { Capsule().strokeBorder(MoMoPalette.line, lineWidth: 1) }
+                .frame(width: 44, height: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain)
+            .accessibilityLabel(status.title).accessibilityValue(status.indicator.title)
+            .accessibilityHint("查看耳机录音状态").accessibilityIdentifier("assistant.earphoneStatus")
+            .popover(isPresented: $showingStatus, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                EarphoneStatusPopover(runtime: earphone) { showingStatus = false; openLibrary() }
+                    .presentationCompactAdaptation(.popover)
+            }
+            .offset(x: 8, y: 8)
+    }
+
+    private var watchBadge: some View {
+        TimelineView(.periodic(from: .now, by: 5)) { clock in
+            let status = WatchStatusPresentation(observation: watchStatus, now: clock.date)
+            Button { showingStatus.toggle() } label: {
+                HStack(spacing: 2) {
+                    Image(systemName: "applewatch").font(.system(size: 11, weight: .medium))
+                    Circle().fill(status.indicatorColor).frame(width: 5, height: 5)
+                }.foregroundStyle(MoMoPalette.ink).padding(4)
+                    .background(MoMoPalette.paper, in: Capsule())
+                    .overlay { Capsule().strokeBorder(MoMoPalette.line, lineWidth: 1) }
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+                .accessibilityLabel(status.title).accessibilityValue(status.indicator.title)
+                .accessibilityHint("查看录音与同步状态").accessibilityIdentifier("assistant.watchStatus")
+                .popover(isPresented: $showingStatus, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                    WatchStatusPopover(observation: watchStatus) { showingStatus = false; openLibrary() }
+                        .presentationCompactAdaptation(.popover)
+                }
+        }.offset(x: 8, y: 8)
     }
 }
 

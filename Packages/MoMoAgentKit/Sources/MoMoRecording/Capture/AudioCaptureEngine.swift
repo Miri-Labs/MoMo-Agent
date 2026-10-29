@@ -27,6 +27,8 @@ public struct AudioCaptureInput: Sendable {
 
     /// Nonempty tap arrivals, independent of encoder consumption; remains readable after stop.
     public var healthSnapshot: CaptureDiagnosticTapSnapshot { tapHealth.snapshot() }
+    /// A route or configuration change stops AVAudioEngine without finishing the block stream.
+    public var isRunning: Bool { installed && engine.isRunning }
 
     public init() {}
 

@@ -33,6 +33,10 @@ final class ChatVoiceInput {
     var failure: String?
     private(set) var permissionDenied = false
     var isActive: Bool { phase != .idle }
+    /// Earphone capture shares the audio session; it steps aside for dictation and resumes once the
+    /// recorder has released the session. Both hooks may run more than once per dictation.
+    @ObservationIgnored var sessionWillActivate: () async -> Void = {}
+    @ObservationIgnored var sessionDidDeactivate: () -> Void = {}
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var cleanup: Task<Void, Never>?
@@ -67,9 +71,14 @@ final class ChatVoiceInput {
                 guard let self, self.generation == id, !Task.isCancelled else { return }
                 await previousCleanup?.value
                 await stopPlayback()
+                await self.sessionWillActivate()
                 try Task.checkCancellation()
                 try await capture.start()
-                guard self.generation == id, !Task.isCancelled else { await capture.cancel(); return }
+                guard self.generation == id, !Task.isCancelled else {
+                    await capture.cancel()
+                    self.sessionDidDeactivate()
+                    return
+                }
                 self.phase = .recording
                 while !Task.isCancelled, self.generation == id, self.phase == .recording {
                     let meter = await capture.meter()
@@ -83,6 +92,7 @@ final class ChatVoiceInput {
             } catch {
                 guard let self, self.generation == id else { return }
                 await capture.cancel()
+                self.sessionDidDeactivate()
                 guard self.generation == id else { return }
                 if !(error is CancellationError) {
                     self.permissionDenied = (error as? ChatVoiceFailure) == .denied
@@ -110,6 +120,7 @@ final class ChatVoiceInput {
         work = Task { [weak self] in
             do {
                 let samples = try await capture.finish()
+                self?.sessionDidDeactivate()
                 try Task.checkCancellation()
                 let text = try await recognize(samples, attempt)
                 guard let self, self.generation == id, !Task.isCancelled else { return }
@@ -119,6 +130,7 @@ final class ChatVoiceInput {
                 completion?(text)
             } catch {
                 await capture.cancel()
+                self?.sessionDidDeactivate()
                 guard let self, self.generation == id else { return }
                 if !(error is CancellationError), (error as? SpeechError) != .cancelled {
                     self.failure = error.localizedDescription
@@ -132,7 +144,13 @@ final class ChatVoiceInput {
         generation = UUID()
         work?.cancel()
         attempt?.cancel()
-        if let recording { cleanup = Task { await recording.cancel() } }
+        if let recording {
+            let released = sessionDidDeactivate
+            cleanup = Task {
+                await recording.cancel()
+                released()
+            }
+        }
         reset()
     }
 

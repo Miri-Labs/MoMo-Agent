@@ -1,6 +1,6 @@
 import Foundation
 
-public enum SourceKind: String, Codable, Sendable { case watch, fixture, macTest = "mac_test" }
+public enum SourceKind: String, Codable, Sendable { case watch, phone, fixture, macTest = "mac_test" }
 public enum RepresentationKind: String, Codable, Sendable { case full, priority, preview }
 public enum AudioCodec: String, Codable, Sendable { case aac, pcmInt16, pcmFloat32 }
 

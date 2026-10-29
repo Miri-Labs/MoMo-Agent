@@ -64,11 +64,13 @@ struct PhoneRootView: View {
         }
         .tint(MoMoPalette.ink)
         .phonePageSurface()
+        // Status surfaces switch between the watch and the earphone without threading it through every view.
+        .environment(runtime.earphone)
         .sheet(isPresented: $showingSettings) {
             NavigationStack {
                 SettingsView(archive: runtime.archive, remoteAgent: runtime.remoteAgent,
                     modelDirectory: runtime.modelDirectory, modelStatus: runtime.modelStatus,
-                    speechSettings: runtime.speechSettings)
+                    speechSettings: runtime.speechSettings, earphone: runtime.earphone)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showingSettings = false } } }
             }
         }

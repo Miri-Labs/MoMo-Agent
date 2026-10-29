@@ -3,6 +3,7 @@ import os
 import MoMoArchive
 import MoMoContracts
 import MoMoLink
+import MoMoRecording
 import MoMoSpeech
 
 @MainActor
@@ -104,11 +105,17 @@ enum PhoneComposition {
                 speechFailure = String(localized: "本地转写模型未就绪，请安装包含完整模型的构建。")
             }
         }
+        // The phone is both source and receiver of earphone audio; its ledger lives beside the archive.
+        let earphoneDirectory = support.appendingPathComponent("EarphoneCapture", isDirectory: true)
+        let earphone = EarphoneCaptureRuntime(
+            store: try RecordingStore(rootURL: earphoneDirectory.appendingPathComponent("Ledger", isDirectory: true)),
+            archive: archive, deviceID: deviceID, sourceBuild: phoneBuild, directory: earphoneDirectory,
+            settings: CaptureDeviceSettings())
         let runtime = try PhoneRuntime(archive: archive, remoteAgent: remoteAgent, playback: playback, receiver: receiver,
                                       transport: transport, speech: speech, speechFailure: speechFailure,
                                       backgroundTasks: background,
                                       modelDirectory: Bundle.main.url(forResource: "Speech", withExtension: nil),
-                                      speechPerformance: speechPerformance)
+                                      speechPerformance: speechPerformance, earphone: earphone)
 #if DEBUG
         runtime.uiTestConfiguration = testConfiguration
 #endif
