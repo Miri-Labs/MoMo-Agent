@@ -1,0 +1,20 @@
+{
+  "ChineseIMEVerified": false,
+  "agentDirectoryEntries": [
+    "Persona"
+  ],
+  "draft": "A\nB",
+  "durableDatabaseCount": 0,
+  "noPiSessionStore": true,
+  "personaOnly": true,
+  "presentationSHA256": "c59d7ccbc05b8f37de2befc44c0e5d74348c6867ddbc3376a964bcb80e5ba2c4",
+  "runID": "5295195F-64F7-4D8F-A80B-235BDF78925C",
+  "schemaVersion": 1,
+  "scope": "original_swiftui_two_line_direct_DeviceHub_keyboard_observation",
+  "sessionCount": 0,
+  "sessionMetadataCount": 0,
+  "sevenLineCapVerified": false,
+  "source": "main SwiftUI TextField after ios-build-14",
+  "userRequests": 0,
+  "wholeMachineNetworkTrafficChecked": false
+}

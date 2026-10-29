@@ -1,0 +1,19 @@
+{
+  "empty": {
+    "textareaHeight": 24,
+    "send": [
+      {
+        "label": "发送消息",
+        "disabled": false
+      }
+    ],
+    "formHeight": 48
+  },
+  "long": {
+    "textareaHeight": 192,
+    "scrollHeight": 256,
+    "formHeight": 251,
+    "measurement": "after two requestAnimationFrame layout frames"
+  },
+  "stop": "not verified: follow-up send did not enter generation"
+}

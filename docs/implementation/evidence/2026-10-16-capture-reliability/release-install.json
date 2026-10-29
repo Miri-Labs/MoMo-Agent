@@ -1,0 +1,14 @@
+{
+  "deviceID": "53EAE745-D38F-41A4-A226-39E0C0923C6F",
+  "firstUseReadyObserved": true,
+  "homeAfterStartObserved": true,
+  "installedExecutableMatchesAuditedRelease": true,
+  "launchArguments": [],
+  "launchEnvironmentOverrides": false,
+  "modelRequestSubmitted": false,
+  "phoneExecutableSHA256": "14225880250f0ab897ad8d8ff56a31e6965166d9dd06817d32aea20c97605fb8",
+  "physicalDevicesVerified": false,
+  "schemaVersion": 1,
+  "scope": "Release_iOS_simulator_install_and_normal_launch_smoke",
+  "watchAppLaunched": false
+}

@@ -1,0 +1,405 @@
+import Foundation
+import Observation
+import MoMoArchive
+
+@MainActor @Observable
+final class LibraryModel {
+    private(set) var watchStatus: WatchStatusObservation?
+    private(set) var recordings: [RecordingSummary] = []
+    private(set) var fileIssues: [UUID: RecordingFileIssue] = [:]
+    private(set) var snapshotRevision: UInt64 = 0
+    private(set) var searchRevision: UInt64 = 0
+    let configurationFingerprint: String?
+    let timeline: TimelineModel
+    private(set) var isLoading = false
+    private(set) var isLoadingMore = false
+    var hasMoreRecordings: Bool { nextRecordingsCursor != nil }
+    var failure: String?
+    @ObservationIgnored let archive: ArchiveStore
+    @ObservationIgnored private var refreshRequested = false
+    @ObservationIgnored private var generation: UInt64 = 0
+    private var nextRecordingsCursor: String?
+    private(set) var previews: [UUID: String] = [:]
+    private(set) var searchResults: [LibrarySearchResult] = []
+    private(set) var isSearching = false
+    private(set) var searchFailure: String?
+    private(set) var searchQuery = ""
+    var hasMoreSearchResults: Bool { nextSearchCursor != nil }
+    private var nextSearchCursor: String?
+    private var searchGeneration: UInt64 = 0
+    private var searchedRecordings: [UUID: RecordingSummary] = [:]
+    @ObservationIgnored private var readingPositions: [UUID: RecordingReadingPosition] = [:]
+
+    @ObservationIgnored private var transcriptCache: [RecordingReadIdentity: RecordingTranscriptSnapshot] = [:]
+    @ObservationIgnored private var transcriptRecency: [RecordingReadIdentity] = []
+    @ObservationIgnored private var transcriptLoads: [RecordingReadIdentity: (UUID, Task<RecordingTranscriptSnapshot, Error>)] = [:]
+    @ObservationIgnored private var prefetchTask: Task<Void, Never>?
+
+    func cachedTranscript(_ id: UUID) -> RecordingTranscriptSnapshot? {
+        guard let summary = recording(id), fileIssues[id] == nil else { return nil }
+        return transcriptCache[RecordingReadIdentity(summary)]
+    }
+
+    /// Concurrent navigation and bounded prefetch share the same immutable archive snapshot.
+    /// A foreground read still consults the archive, including its deletion/conflict checks.
+    func loadTranscript(_ id: UUID) async throws -> RecordingTranscriptSnapshot {
+        guard let summary = recording(id), fileIssues[id] == nil else { throw ArchiveError.missingRecording(id) }
+        let key = RecordingReadIdentity(summary)
+        let request: (UUID, Task<RecordingTranscriptSnapshot, Error>)
+        if let existing = transcriptLoads[key] { request = existing }
+        else {
+            let archive = archive
+            request = (UUID(), Task {
+                let value = try await archive.transcriptSnapshot(sessionID: id)
+                try Task.checkCancellation()
+                return RecordingTranscriptSnapshot(document: value.document, locations: value.locations)
+            })
+            transcriptLoads[key] = request
+        }
+        defer { if transcriptLoads[key]?.0 == request.0 { transcriptLoads.removeValue(forKey: key) } }
+        let value = try await request.1.value
+        try Task.checkCancellation()
+        guard let current = recording(id), RecordingReadIdentity(current) == key, fileIssues[id] == nil,
+              value.document.version == key.version, value.document.generation == key.generation else { throw CancellationError() }
+        // Bound retained text; location maps share the document's span count.
+        let cost = value.document.spans.reduce(0) { $0 + $1.text.utf8.count + 256 }
+        if cost <= 4 * 1024 * 1024 {
+            transcriptCache[key] = value
+            transcriptRecency.removeAll { $0 == key }; transcriptRecency.append(key)
+            while transcriptRecency.count > 3 { transcriptCache.removeValue(forKey: transcriptRecency.removeFirst()) }
+        }
+        return value
+    }
+
+    private func updateTranscriptCache() {
+        let valid = Set((recordings + Array(searchedRecordings.values)).filter { fileIssues[$0.id] == nil }.map(RecordingReadIdentity.init))
+        transcriptCache = transcriptCache.filter { valid.contains($0.key) }
+        transcriptRecency.removeAll { !valid.contains($0) }
+        for (key, request) in transcriptLoads where !valid.contains(key) {
+            request.1.cancel(); transcriptLoads.removeValue(forKey: key)
+        }
+        prefetchTask?.cancel()
+        // Only the first two visible recordings; never predecode raw audio speculatively.
+        let candidates = recordings.filter { $0.transcriptVersion > 0 && fileIssues[$0.id] == nil }.prefix(2).map(\.id)
+        prefetchTask = Task(priority: .utility) { [weak self] in
+            for id in candidates {
+                guard !Task.isCancelled, let self else { return }
+                if cachedTranscript(id) == nil {
+                    do { _ = try await loadTranscript(id) }
+                    catch is CancellationError { return }
+                    catch { /* Prefetch is optional; opening the recording presents read errors. */ }
+                }
+                await Task.yield()
+            }
+        }
+    }
+
+    /// Navigation owns the library model; individual detail views may be destroyed and recreated.
+    /// A transcript append keeps its generation and span identities, so it keeps this anchor.
+    func readingAnchor(in document: TranscriptDocument) -> UUID? {
+        guard let current = recording(document.sessionID), current.generation == document.generation,
+              current.transcriptVersion == document.version else { return nil }
+        guard let saved = readingPositions[document.sessionID] else { return nil }
+        guard saved.generation == document.generation, document.spans.contains(where: { $0.id == saved.spanID }) else {
+            readingPositions.removeValue(forKey: document.sessionID)
+            return nil
+        }
+        return saved.spanID
+    }
+
+    func rememberReadingPosition(_ spanID: UUID, in document: TranscriptDocument) {
+        guard let current = recording(document.sessionID), current.generation == document.generation,
+              current.transcriptVersion == document.version, document.spans.contains(where: { $0.id == spanID }) else { return }
+        readingPositions[document.sessionID] = RecordingReadingPosition(generation: document.generation, spanID: spanID)
+    }
+
+    func recording(_ id: UUID) -> RecordingSummary? {
+        recordings.first { $0.id == id } ?? searchedRecordings[id]
+    }
+
+    /// Sources can reference an older recording outside the currently loaded list pages.
+    func ensureRecording(_ id: UUID) async throws {
+        let summary = try await archive.recordingSummary(sessionID: id)
+        let issues = try await archive.recordingFileIssues(sessionID: id)
+        if let index = recordings.firstIndex(where: { $0.id == id }) { recordings[index] = summary }
+        else { searchedRecordings[id] = summary }
+        if let issue = issues.first(where: { $0.sessionID == id }) { fileIssues[id] = issue }
+        else { fileIssues.removeValue(forKey: id) }
+        updateTranscriptCache()
+    }
+
+    func search(_ query: String, loadMore: Bool = false) async {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if loadMore { guard !isSearching, query == searchQuery, nextSearchCursor != nil else { return } }
+        searchGeneration &+= 1
+        let selection = searchGeneration
+        let cursor = loadMore ? nextSearchCursor : nil
+        if query != searchQuery { searchedRecordings = [:] }
+        searchQuery = query
+        if !loadMore { searchResults = []; nextSearchCursor = nil }
+        searchFailure = nil
+        guard !query.isEmpty else { isSearching = false; return }
+        guard query.utf8.count <= 256 else {
+            isSearching = false
+            searchFailure = String(localized: "搜索词太长，请缩短后重试。")
+            return
+        }
+        isSearching = true
+        defer { if selection == searchGeneration { isSearching = false } }
+        do {
+            let page = try await archive.searchTranscriptsPage(query: query, limit: 20, cursor: cursor)
+            var results: [LibrarySearchResult] = []
+            var summaries: [UUID: RecordingSummary] = [:]
+            for hit in page.items {
+                try Task.checkCancellation()
+                let summary = try await archive.recordingSummary(sessionID: hit.source.sessionID)
+                // Revisions and deletions between search and navigation must not expose old text.
+                try await archive.validateSources([hit.source])
+                summaries[summary.id] = summary
+                results.append(LibrarySearchResult(hit: hit, recording: summary))
+            }
+            try Task.checkCancellation()
+            guard selection == searchGeneration else { return }
+            searchedRecordings.merge(summaries) { _, new in new }
+            if loadMore {
+                let visible = Set(searchResults.map(\.id))
+                searchResults.append(contentsOf: results.filter { !visible.contains($0.id) })
+            } else { searchResults = results }
+            nextSearchCursor = page.nextCursor
+        } catch is CancellationError {
+            // A new query or leaving the page owns the next result.
+        } catch {
+            guard selection == searchGeneration else { return }
+            searchFailure = String(localized: "搜索结果暂时无法读取，请重试。")
+        }
+    }
+
+    private func transcriptPreviews(for recordings: [RecordingSummary], issues: Set<UUID>) async -> [UUID: String] {
+        var result: [UUID: String] = [:]
+        for recording in recordings where recording.transcriptVersion > 0 && !issues.contains(recording.id) {
+            if let previous = self.recordings.first(where: { $0.id == recording.id }),
+               previous.transcriptVersion == recording.transcriptVersion, previous.generation == recording.generation,
+               let preview = previews[recording.id] {
+                result[recording.id] = preview
+                continue
+            }
+            result[recording.id] = try? await archive.transcriptPreview(sessionID: recording.id,
+                expectedVersion: recording.transcriptVersion, expectedGeneration: recording.generation)
+        }
+        return result
+    }
+
+    init(archive: ArchiveStore, configurationFingerprint: String? = nil,
+         summarize: (@Sendable ([TimelineWindow]) async throws -> [String: String])? = nil) {
+        self.archive = archive
+        self.configurationFingerprint = configurationFingerprint
+        timeline = TimelineModel(archive: archive, configurationFingerprint: configurationFingerprint, summarize: summarize)
+    }
+
+    func updateCurrentWatchStatus(_ observation: WatchStatusObservation?) {
+        watchStatus = observation
+    }
+
+    func removeCachedRecording(_ sessionID: UUID) {
+        timeline.invalidate(sessionID: sessionID)
+        generation &+= 1
+        searchRevision &+= 1
+        recordings.removeAll { $0.sessionID == sessionID }
+        previews.removeValue(forKey: sessionID)
+        searchedRecordings.removeValue(forKey: sessionID)
+        searchResults.removeAll { $0.recording.id == sessionID }
+        searchGeneration &+= 1
+        isSearching = false
+        fileIssues.removeValue(forKey: sessionID)
+        readingPositions.removeValue(forKey: sessionID)
+        updateTranscriptCache()
+        if isLoading || isLoadingMore { refreshRequested = true }
+    }
+
+    func refresh() async {
+        refreshRequested = true
+        guard !isLoading, !isLoadingMore else { return }
+        isLoading = true
+        defer { isLoading = false }
+        while refreshRequested {
+            refreshRequested = false
+            let selection = generation
+            do {
+                let visibleCount = max(50, self.recordings.count)
+                var recordings: [RecordingSummary] = []
+                var cursor: String?
+                repeat {
+                    let page = try await archive.recordingsPage(limit: 50, cursor: cursor)
+                    recordings.append(contentsOf: page.items)
+                    cursor = page.nextCursor
+                } while cursor != nil && recordings.count < visibleCount && generation == selection
+                let issues = try await archive.recordingFileIssues()
+                let previews = await transcriptPreviews(for: recordings, issues: Set(issues.map(\.sessionID)))
+                var searched: [UUID: RecordingSummary] = [:]
+                for id in searchedRecordings.keys {
+                    if let current = try? await archive.recordingSummary(sessionID: id) { searched[id] = current }
+                }
+                guard generation == selection else { continue }
+                let issuesByID = Dictionary(uniqueKeysWithValues: issues.map { ($0.sessionID, $0) })
+                let changed = self.recordings.map(RecordingSearchIdentity.init) != recordings.map(RecordingSearchIdentity.init)
+                    || self.fileIssues.mapValues(\.fingerprint) != issuesByID.mapValues(\.fingerprint)
+                    || searchedRecordings.mapValues(RecordingSearchIdentity.init) != searched.mapValues(RecordingSearchIdentity.init)
+                if changed {
+                    timeline.discardPendingReads()
+                    for old in self.recordings {
+                        let current = recordings.first { $0.id == old.id }
+                        if current == nil || current?.generation != old.generation || issuesByID[old.id] != nil {
+                            timeline.invalidate(sessionID: old.id)
+                        }
+                    }
+                    searchGeneration &+= 1
+                    searchRevision &+= 1
+                    isSearching = false
+                    searchResults.removeAll { result in
+                        let current = recordings.first { $0.id == result.recording.id } ?? searched[result.recording.id]
+                        return current?.transcriptVersion != result.hit.source.transcriptVersion
+                            || current?.generation != result.hit.source.generation
+                            || issuesByID[result.recording.id] != nil
+                    }
+                }
+                self.recordings = recordings
+                self.previews = previews
+                searchedRecordings = searched
+                nextRecordingsCursor = cursor
+                fileIssues = issuesByID
+                snapshotRevision &+= 1
+                updateTranscriptCache()
+                failure = nil
+            } catch {
+                if generation == selection { failure = String(localized: "读取本机资料失败：\(error.localizedDescription)") }
+            }
+        }
+        await timeline.refresh()
+    }
+
+    func loadMoreRecordings() async {
+        guard !isLoading, !isLoadingMore, let cursor = nextRecordingsCursor else { return }
+        isLoadingMore = true
+        let selection = generation
+        do {
+            let page = try await archive.recordingsPage(limit: 50, cursor: cursor)
+            let previews = await transcriptPreviews(for: page.items, issues: Set(fileIssues.keys))
+            if generation == selection {
+                self.previews.merge(previews) { _, new in new }
+                let visible = Set(recordings.map(\.id))
+                recordings.append(contentsOf: page.items.filter { !visible.contains($0.id) })
+                nextRecordingsCursor = page.nextCursor
+                failure = nil
+            }
+        } catch {
+            if generation == selection { failure = String(localized: "读取更多录音失败：\(error.localizedDescription)") }
+        }
+        isLoadingMore = false
+        if refreshRequested { await refresh() }
+    }
+}
+
+private struct RecordingReadingPosition {
+    let generation: Int64
+    let spanID: UUID
+}
+
+/// Archive state describes durable work, while the runtime snapshot describes what is executing.
+/// A cached `processing` row alone must not claim that native recognition is still running.
+struct RecordingTranscriptionPresentation {
+    enum Activity: Equatable { case preparing, transcribing, queued, deferred, failed, finished }
+    let activity: Activity
+
+    init(sessionID: UUID, state: RecordingTranscriptionState, snapshot: TranscriptionSnapshot?) {
+        if snapshot?.phase == .failed, snapshot?.failedSessionID == sessionID {
+            activity = .failed
+        } else if let snapshot, snapshot.activeSessionID == sessionID, snapshot.nativeInFlight,
+                  snapshot.phase == .preparing || snapshot.phase == .transcribing {
+            activity = snapshot.phase == .preparing ? .preparing : .transcribing
+        } else {
+            switch state {
+            case .failed: activity = .failed
+            case .transcribed, .noSpeech, .completedWithoutText: activity = .finished
+            case .pending, .processing:
+                activity = snapshot?.phase == .paused || snapshot?.phase == .systemSuspended ? .deferred : .queued
+            }
+        }
+    }
+
+    var isActive: Bool { activity == .preparing || activity == .transcribing }
+
+    var status: String? {
+        switch activity {
+        case .preparing: String(localized: "正在分析语音")
+        case .transcribing: String(localized: "正在本机转写，已有内容可以先看")
+        case .queued: String(localized: "等待本机整理")
+        case .deferred: String(localized: "稍后继续整理，回到 App 后会自动继续")
+        case .failed: String(localized: "转写暂未完成，音频已保留")
+        case .finished: nil
+        }
+    }
+}
+
+extension RecordingTranscriptionState {
+    var title: String {
+        switch self {
+        case .pending: String(localized: "等待转写")
+        case .processing: String(localized: "正在处理")
+        case .noSpeech: String(localized: "未检测到语音")
+        case .completedWithoutText: String(localized: "已处理，无正文")
+        case .transcribed: String(localized: "已有转录")
+        case .failed: String(localized: "处理未完成")
+        }
+    }
+}
+
+extension RecordingAudioState {
+    var title: String {
+        switch self {
+        case .available: String(localized: "原音保存在本机")
+        case .partiallyExpired: String(localized: "部分原音已按保留设置清理")
+        case .expired: String(localized: "原音已按保留设置清理")
+        case .expiryPending: String(localized: "正在清理到期原音")
+        case .missingUnexpected: String(localized: "部分原音文件意外缺失")
+        case .unavailable: String(localized: "尚未收到原音")
+        }
+    }
+}
+
+struct LibrarySearchResult: Identifiable {
+    var id: UUID { hit.source.spanID }
+    let hit: TranscriptSearchHit
+    let recording: RecordingSummary
+}
+
+private struct RecordingSearchIdentity: Equatable {
+    let id: UUID
+    let version: Int64
+    let generation: Int64
+    let chunkCount: Int
+    let audioState: String
+    init(_ recording: RecordingSummary) {
+        id = recording.id
+        version = recording.transcriptVersion
+        generation = recording.generation
+        chunkCount = recording.chunkCount
+        audioState = recording.audioState.rawValue
+    }
+}
+
+nonisolated struct RecordingTranscriptSnapshot: Sendable {
+    let document: TranscriptDocument
+    let locations: [UUID: TranscriptSpanLocation]
+}
+
+private nonisolated struct RecordingReadIdentity: Hashable, Sendable {
+    let id: UUID
+    let version: Int64
+    let generation: Int64
+    let chunkCount: Int
+    let audioState: String
+    init(_ recording: RecordingSummary) {
+        id = recording.id; version = recording.transcriptVersion; generation = recording.generation
+        chunkCount = recording.chunkCount; audioState = recording.audioState.rawValue
+    }
+}

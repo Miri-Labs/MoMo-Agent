@@ -1,0 +1,15 @@
+@import "tailwindcss";
+@source "../../../../Vendor/HermesAgent/apps/desktop/src/app/starmap";
+@source "./";
+@theme { --color-foreground: var(--ink); --color-muted-foreground: var(--muted); }
+:root { --background: #f9f9f7; --ink: #20201e; --muted: #666662; --theme-primary: #6e775d; --theme-secondary: #81708f; color-scheme: light; }
+:root.dark { --background: #171716; --ink: #f3f3ee; --muted: #a5a59c; --theme-primary: #bdc4a0; --theme-secondary: #b6a2c1; color-scheme: dark; }
+html, body, #root { height: 100%; margin: 0; overflow: hidden; background: var(--background); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+#root { display: flex; flex-direction: column; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+::selection { background: #cbc8b5; color: #20201e; }
+.empty { margin: auto; color: var(--muted); }
+@media (max-width: 560px) { .starmap-help { display: none; } }
+@keyframes starmap-twinkle { 0%,100% {opacity:calc(var(--o)*.65)} 50% {opacity:var(--o)} }
+@media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation: none !important; } }

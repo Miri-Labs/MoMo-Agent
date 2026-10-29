@@ -1,0 +1,59 @@
+Attributes: Application, 0x1107657c0, pid: 85995, label: 'MoMoAgent'
+Element subtree:
+ →Application, 0x1107657c0, pid: 85995, label: 'MoMoAgent'
+    Window (Main), 0x110765900, {{0.0, 0.0}, {375.0, 667.0}}
+      Other, 0x110765680, {{0.0, 0.0}, {375.0, 667.0}}
+        Other, 0x110765540, {{0.0, 0.0}, {375.0, 667.0}}
+          Other, 0x1107652c0, {{0.0, 0.0}, {375.0, 667.0}}
+            Other, 0x110765400, {{0.0, 0.0}, {375.0, 667.0}}
+              Other, 0x110765040, {{0.0, 0.0}, {375.0, 667.0}}
+                NavigationBar, 0x110765180, {{0.0, 20.0}, {375.0, 54.0}}, identifier: '转录详情'
+                  Button, 0x110764f00, {{16.0, 20.0}, {44.0, 44.0}}, identifier: 'BackButton', label: '转录'
+                  StaticText, 0x110764dc0, {{153.5, 31.5}, {67.5, 21.0}}, label: '转录详情'
+                  Other, 0x110764c80, {{319.0, 24.0}, {36.0, 36.0}}
+                    Other, 0x110764b40, {{319.0, 24.0}, {36.0, 36.0}}
+                      Button, 0x110764a00, {{324.0, 24.0}, {26.5, 36.0}}, identifier: 'timeline.detail.more', label: '原始录音管理'
+                        Button, 0x1107648c0, {{324.0, 24.0}, {26.5, 36.0}}
+                          Image, 0x110764780, {{328.0, 40.0}, {18.5, 4.0}}, identifier: 'ellipsis', label: 'More'
+                Other, 0x1107643c0, {{0.0, 0.0}, {375.0, 667.0}}
+                  Other, 0x110764640, {{0.0, 0.0}, {375.0, 667.0}}
+                    Other, 0x110764500, {{0.0, 0.0}, {375.0, 667.0}}
+                      Other, 0x110764280, {{0.0, 0.0}, {375.0, 667.0}}
+                        ScrollView, 0x110764140, {{0.0, 0.0}, {375.0, 667.0}}, identifier: 'timeline.detail.scroll'
+                          Other, 0x110764000, {{0.0, 0.0}, {375.0, 667.0}}
+                            Other, 0x110767980, {{0.0, 0.0}, {375.0, 114.0}}
+                          Other, 0x1107675c0, {{0.0, 0.0}, {375.0, 667.0}}
+                          Other, 0x110767340, {{0.0, 74.0}, {375.0, 538.0}}
+                            Other, 0x110766940, {{8.0, 94.0}, {352.5, 493.5}}
+                              StaticText, 0x110766a80, {{24.0, 94.0}, {95.0, 16.0}}, label: '今天 · 10月16日'
+                              StaticText, 0x110766bc0, {{24.0, 120.0}, {146.0, 29.0}}, label: '03:30–03:35'
+                              StaticText, 0x110766580, {{24.0, 159.0}, {71.0, 16.0}}, label: '说话约 11 秒'
+                              StaticText, 0x110766440, {{24.0, 203.0}, {327.0, 88.0}}
+                                Button, 0x1107661c0, {{36.0, 217.0}, {52.0, 44.0}}, identifier: 'transcript.recording.play', label: '继续回听'
+                                Other, 0x110766d00, {{104.0, 213.0}, {235.0, 52.0}}, identifier: 'transcript.recording.play.seek', label: '整段原音播放进度', value: 00:07，共 00:11
+                                Other, 0x110766080, {{36.0, 268.0}, {52.0, 1.0}}
+                                Other, 0x110765b80, {{104.0, 261.0}, {235.0, 14.5}}, label: '00:07，共 00:11'
+                                  StaticText, 0x110765cc0, {{104.0, 261.0}, {34.0, 14.5}}, label: '00:07'
+                                  StaticText, 0x110765e00, {{305.0, 261.0}, {34.0, 14.5}}, label: '00:11'
+                              Button, 0x110765f40, {{307.0, 319.0}, {44.0, 44.0}}, identifier: 'transcript.play.90971C23-8AE7-4BA9-9A98-9EB95B10C19B', label: '回听这段文字'
+                              StaticText, 0x110767ac0, {{24.0, 333.8}, {52.5, 14.5}}, label: '03:30:30'
+                              StaticText, 0x110767480, {{8.0, 353.0}, {352.5, 78.0}}, identifier: 'transcript.text.90971C23-8AE7-4BA9-9A98-9EB95B10C19B', label: '第一段记录讨论了时间线的设计，应该按时间归组，保留原始录音。'
+                              Button, 0x110766e40, {{307.0, 437.0}, {44.0, 44.0}}, identifier: 'transcript.play.7C4D93CB-CB31-41F1-942F-29D254362BC0', label: '回听这段文字'
+                              StaticText, 0x1107670c0, {{24.0, 451.8}, {52.5, 14.5}}, label: '03:35:00'
+                              StaticText, 0x110767200, {{8.0, 471.0}, {352.5, 78.0}}, identifier: 'transcript.text.7C4D93CB-CB31-41F1-942F-29D254362BC0', label: '第二段记录接着讨论播放器，点进同一时段就能读文字和回听原音。'
+                              StaticText, 0x110767700, {{24.0, 555.0}, {322.0, 32.5}}, label: '按说话片段连接回听，跳过长静默和未录音的间隔；完整原音可在更多菜单查看。'
+                          Other, 0x110767840, {{342.0, 74.0}, {30.0, 509.0}}, label: 'Vertical scroll bar, 2 pages', value: 0%
+                            Other, 0x110767d40, {{369.0, 77.0}, {3.0, 482.0}}
+                          Other, 0x110767e80, {{342.0, 74.0}, {30.0, 509.0}}, label: 'Vertical scroll bar, 2 pages', value: 0%
+                            Other, 0x110766300, {{369.0, 77.0}, {3.0, 482.0}}
+                        Other, 0x110767c00, {{0.0, 74.0}, {375.0, 509.0}}, identifier: 'timeline.detail.scroll'
+                        Button, 0x1107666c0, {{0.0, 591.0}, {375.0, 76.0}}, identifier: 'transcript.discuss', label: '围绕这段时间提问'
+                Toolbar, 0x110766800, {{0.0, 0.0}, {375.0, 667.0}}, identifier: 'Toolbar', label: 'Toolbar'
+                  Other, 0x107cd0b40, {{0.0, 0.0}, {375.0, 667.0}}
+Path to element:
+ →Application, 0x1107657c0, pid: 85995, label: 'MoMoAgent'
+Query chain:
+ →Find: Target Application 'com.momoagent.ios'
+  Output: {
+    Application, 0x107cd0500, pid: 85995, label: 'MoMoAgent'
+  }

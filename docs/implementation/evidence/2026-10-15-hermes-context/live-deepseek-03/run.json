@@ -1,0 +1,24 @@
+{
+  "runID": "5E1C2685-3B3F-4D51-964E-989FF998F57A",
+  "suite": "context",
+  "repetition": 1,
+  "selectedCases": [
+    "personal-assistant-memory",
+    "recent-recording",
+    "untrusted-transcript"
+  ],
+  "model": "deepseek/deepseek-v4.1-flash",
+  "provider": "https://openrouter.ai/api/v1",
+  "networkRoute": "system",
+  "simulator": "18713DF1-4D1F-4E95-A751-4117A9B1944F",
+  "accepted": false,
+  "semanticReviewStatus": "pending",
+  "automatedChecksPassed": true,
+  "credentialFileRemoved": true,
+  "keychainCleanupPassed": true,
+  "hostStopped": true,
+  "testProcessDeadlineSeconds": 900,
+  "cleanupProcessDeadlineSeconds": 180,
+  "exitCode": 0,
+  "scenarioCount": 3
+}

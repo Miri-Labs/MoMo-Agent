@@ -1,0 +1,2 @@
+# Network adapter only; no model-provider SDK or Agent implementation.
+aiortc==1.15.0

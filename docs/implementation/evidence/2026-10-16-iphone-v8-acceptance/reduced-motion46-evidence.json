@@ -1,0 +1,287 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "actual-system-reduce-motion-player-ui",
+  "round": "build46/player-reduced-motion46",
+  "sourceCommitAtPackaging": "11d3fb838917227620a75846fe99db2114e55e7d",
+  "sourceManifest": {
+    "path": "tmp_agent_output/iphone-v8-acceptance-20261015/build46-source-before.json",
+    "bytes": 86117,
+    "sha256": "3a2b9b2b3553657c68c3bedc5255c8397e4e4ef073c4c1aa4eabd1a4dc396f28"
+  },
+  "sourceVerification": {
+    "inputCount": 610,
+    "changedInputs": [],
+    "verification": "All frozen build46 source inputs matched current files at packaging; no build or test was run during packaging.",
+    "selectedFiles": [
+      {
+        "path": "Tests/AppUITests/PhonePlayerReducedMotionTests.swift",
+        "bytes": 13712,
+        "sha256": "86ddbc9f2ba31fbf10661a6127073fd8fcf5fdd90d062810917ee79765150aab"
+      },
+      {
+        "path": "Apps/iPhoneApp/Bootstrap/PhoneUITestConfiguration.swift",
+        "bytes": 14275,
+        "sha256": "f91b2145ea6655cf3b56389df83346f252b6d7594eca7883eef25ff55385d5e3"
+      },
+      {
+        "path": "Apps/iPhoneApp/SharedUI/AudioPlayerView.swift",
+        "bytes": 16435,
+        "sha256": "1b1e4272abd1d995e2edd2a45eddda5c7e4e049992dcbedc5c2b8e84efb602b3"
+      },
+      {
+        "path": "Apps/iPhoneApp/Features/RecordingDetail/TimelineDetailView.swift",
+        "bytes": 21264,
+        "sha256": "8a9b221bc19f5e5e330220280f92cd90b282aabe64609162edfc4e62ff156621"
+      },
+      {
+        "path": "Apps/iPhoneApp/Platform/AudioPlayback/AudioPlaybackController.swift",
+        "bytes": 18860,
+        "sha256": "a6e0eeda3463b756cf9158b5ef21c99c52babae32e1f10188e25f1ecd6598992"
+      }
+    ]
+  },
+  "test": {
+    "selector": "PhonePlayerReducedMotionTests/testSystemReduceMotionKeepsTimelinePlaybackSeekAndMiniPlayerUsable()",
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "testSeconds": 58.595,
+    "observerElapsedSeconds": 66.841,
+    "deviceID": "AEBF8E53-B90D-4B5B-941B-663E2AD99254",
+    "deviceName": "MoMo v8 375pt acceptance 20261016",
+    "viewportPoints": {
+      "width": 375,
+      "height": 667
+    },
+    "fixtureRunID": "BEF17EA3-AD4A-4FF0-A42A-7887C59A5472",
+    "originalLog": {
+      "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46.log",
+      "bytes": 19113,
+      "sha256": "09a3ce528775448e16f2e3a22fabc1347502bd7b6e76ac51cb80612acede69dc"
+    },
+    "originalXCResult": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46.xcresult",
+    "attachmentManifest": {
+      "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46-attachments/manifest.json",
+      "bytes": 11013,
+      "sha256": "6546853d5009631a062ae3a83b9421a020c6962a435ba69b79f73f079e969cd5"
+    },
+    "fixtureDeclaration": {
+      "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46-attachments/97905D36-0FD4-4A31-88BB-933968DB3636.txt",
+      "bytes": 256,
+      "sha256": "9fb27826872e5dc415ffd02352640158b312b5842103acfe4ffa80ea47f0eab8"
+    }
+  },
+  "systemSetting": {
+    "appBundleID": "com.apple.Preferences",
+    "path": [
+      "无障碍",
+      "动态效果",
+      "减弱动态效果"
+    ],
+    "initialValue": "0",
+    "enabledValue": "1",
+    "restoredValue": "0",
+    "operation": "Locate labelled composite Switch, require its unique direct child Switch, tap that native control once per needed transition.",
+    "verification": "Both parent and child values and public UIAccessibility.isReduceMotionEnabled are asserted by the passing test."
+  },
+  "verifiedBehavior": [
+    "Real system setting enabled through Settings UI, not a launch argument or SwiftUI environment override.",
+    "Formal isolated Archive timeline fixture; actual native audio play, pause, waveform seek, and resumed clock advancement.",
+    "Paused total duration unchanged; mini player opens the same source text and retains the exact paused position.",
+    "Real system setting remains enabled after player actions and is restored to the original 0 value."
+  ],
+  "observations": {
+    "pausedAfterSeekAndResume": "00:07，共 00:11",
+    "sameSourceAfterMini": "00:07，共 00:11",
+    "screenshotsIndependentlyViewed": true,
+    "screenshotInterpretation": "Screenshots show system toggle states and final player/mini/source states; behavior claims depend on passing test assertions, not screenshots alone."
+  },
+  "scopeLimits": [
+    "This is functional playback verification under actual system Reduce Motion, not a visual audit of every animation in the App.",
+    "Synthetic transcript fixture with bundled public audio; not live microphone capture, WatchConnectivity, local ASR, paid provider traffic, or physical-device evidence.",
+    "Earlier failed rounds remain preserved and are not replaced by this successful round.",
+    "No source changes, native commands, simulator operations, build, or tests were performed during this evidence packaging task."
+  ],
+  "artifacts": [
+    {
+      "stage": "system-enabled",
+      "caption": "真实系统设置已启用，父子开关值均为1",
+      "kind": "screenshot",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46-attachments/147D59DA-B99A-43D3-8F26-A98AA1E96DC5.png",
+        "bytes": 152012,
+        "sha256": "d25758e7bbbd6a5ae3fcb522147da85100ac97a5a0df2ffc818762e718881a71"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/reduced-motion46-system-enabled.png",
+        "bytes": 152012,
+        "sha256": "d25758e7bbbd6a5ae3fcb522147da85100ac97a5a0df2ffc818762e718881a71"
+      },
+      "attachmentName": "reduce-motion-system-enabled_0_5CE5A364-50DB-44D0-87EF-5509F8463994.png",
+      "timestamp": 1792094723.889,
+      "associatedWithFailure": false
+    },
+    {
+      "stage": "system-enabled",
+      "caption": "真实系统设置已启用，父子开关值均为1",
+      "kind": "accessibility-hierarchy",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46-attachments/ADDC2F04-6EFA-4543-87A7-DC271B229369.txt",
+        "bytes": 9157,
+        "sha256": "fae8110f8062a5cb1753f4e728894db23b30af7cc7a569eba19924863af82e3c"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/reduced-motion46-system-enabled.txt",
+        "bytes": 9157,
+        "sha256": "fae8110f8062a5cb1753f4e728894db23b30af7cc7a569eba19924863af82e3c"
+      },
+      "attachmentName": "reduce-motion-system-enabled-hierarchy_0_C8359924-287B-4C1F-AF3A-2B9F040AC9B5.txt",
+      "timestamp": 1792094724.005,
+      "associatedWithFailure": false
+    },
+    {
+      "stage": "player-seek-and-resume",
+      "caption": "真实拖动、续播后暂停，进度00:07/00:11",
+      "kind": "screenshot",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46-attachments/2FD2AE75-A0B9-429B-94E2-41880F7AF960.png",
+        "bytes": 118217,
+        "sha256": "96148bcb82ca3170664535216179bcbe44df69e3d1c052b33a4b70d1117af889"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/reduced-motion46-player-seek-and-resume.png",
+        "bytes": 118217,
+        "sha256": "96148bcb82ca3170664535216179bcbe44df69e3d1c052b33a4b70d1117af889"
+      },
+      "attachmentName": "reduce-motion-player-seek-and-resume_0_9F8E4819-E50F-4B23-8F20-2E5E1C0996F3.png",
+      "timestamp": 1792094747.658,
+      "associatedWithFailure": false
+    },
+    {
+      "stage": "player-seek-and-resume",
+      "caption": "真实拖动、续播后暂停，进度00:07/00:11",
+      "kind": "accessibility-hierarchy",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46-attachments/9E441821-BEAD-4DD0-A991-E08595FC5BAA.txt",
+        "bytes": 5558,
+        "sha256": "17ce3889d4aff6bbaf799303bef501d8a5f27382da5cebdbd6dc7efd7faa55be"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/reduced-motion46-player-seek-and-resume.txt",
+        "bytes": 5558,
+        "sha256": "17ce3889d4aff6bbaf799303bef501d8a5f27382da5cebdbd6dc7efd7faa55be"
+      },
+      "attachmentName": "reduce-motion-player-seek-and-resume-hierarchy_0_D0D872DD-F85F-43AD-BD17-07A00F344AA8.txt",
+      "timestamp": 1792094747.739,
+      "associatedWithFailure": false
+    },
+    {
+      "stage": "mini-same-paused-target",
+      "caption": "迷你播放器保留暂停目标与00:07/00:11进度",
+      "kind": "screenshot",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46-attachments/968256C3-757D-4507-B573-D946B3ED9438.png",
+        "bytes": 311596,
+        "sha256": "3f1e53d9cb4902a5635714ab68892b16a31acc93f5b722e662ee5be4a9e49d50"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/reduced-motion46-mini-same-paused-target.png",
+        "bytes": 311596,
+        "sha256": "3f1e53d9cb4902a5635714ab68892b16a31acc93f5b722e662ee5be4a9e49d50"
+      },
+      "attachmentName": "reduce-motion-mini-same-paused-target_0_50A92BE2-5046-4A5B-AAB0-4863E3C09680.png",
+      "timestamp": 1792094749.593,
+      "associatedWithFailure": false
+    },
+    {
+      "stage": "mini-same-paused-target",
+      "caption": "迷你播放器保留暂停目标与00:07/00:11进度",
+      "kind": "accessibility-hierarchy",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46-attachments/46371640-A277-4B25-BF11-8BFE7168E0C3.txt",
+        "bytes": 7218,
+        "sha256": "fbd3fe91f537d514a78b9527c0c59c3858a854a059c69849df6b70d7f8dba622"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/reduced-motion46-mini-same-paused-target.txt",
+        "bytes": 7218,
+        "sha256": "fbd3fe91f537d514a78b9527c0c59c3858a854a059c69849df6b70d7f8dba622"
+      },
+      "attachmentName": "reduce-motion-mini-same-paused-target-hierarchy_0_0A836624-5CBB-4C55-8D05-8FAE14867CDC.txt",
+      "timestamp": 1792094749.691,
+      "associatedWithFailure": false
+    },
+    {
+      "stage": "player-source-preserved",
+      "caption": "迷你播放器返回相同来源，文字与暂停进度保持",
+      "kind": "screenshot",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46-attachments/4901B4B4-5943-42F5-A23A-FC8E624492DC.png",
+        "bytes": 187703,
+        "sha256": "7022c66e962541267e6fdeeae2a23875dc00c6ef2d87963d6c94c5af230b6baa"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/reduced-motion46-player-source-preserved.png",
+        "bytes": 187703,
+        "sha256": "7022c66e962541267e6fdeeae2a23875dc00c6ef2d87963d6c94c5af230b6baa"
+      },
+      "attachmentName": "reduce-motion-player-source-preserved_0_50AB373D-C0FF-464B-A0BA-47D22DB5B236.png",
+      "timestamp": 1792094751.536,
+      "associatedWithFailure": false
+    },
+    {
+      "stage": "player-source-preserved",
+      "caption": "迷你播放器返回相同来源，文字与暂停进度保持",
+      "kind": "accessibility-hierarchy",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46-attachments/B04F360F-8B7C-4FEF-98FB-4EFB3882E0BC.txt",
+        "bytes": 5638,
+        "sha256": "cc7a03367359a5fb3876ab736953799c4b5bb0c3eb98db1a81a3674328995ce3"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/reduced-motion46-player-source-preserved.txt",
+        "bytes": 5638,
+        "sha256": "cc7a03367359a5fb3876ab736953799c4b5bb0c3eb98db1a81a3674328995ce3"
+      },
+      "attachmentName": "reduce-motion-player-source-preserved-hierarchy_0_E34AB24C-ADA6-4F51-A3F5-64FA8043D65F.txt",
+      "timestamp": 1792094751.637,
+      "associatedWithFailure": false
+    },
+    {
+      "stage": "system-restored-0",
+      "caption": "原始系统值0已恢复，父子开关值均为0",
+      "kind": "screenshot",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46-attachments/34902C67-654E-471C-A8C1-1C0F8BAD3968.png",
+        "bytes": 116542,
+        "sha256": "e4d8849dc00fe65287fe09a2038904092f99f8e3da286c8f09e5c3377ac4ce00"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/reduced-motion46-system-restored-0.png",
+        "bytes": 116542,
+        "sha256": "e4d8849dc00fe65287fe09a2038904092f99f8e3da286c8f09e5c3377ac4ce00"
+      },
+      "attachmentName": "reduce-motion-system-restored-0_0_6243FD37-4554-426B-AC4B-9A693A889C97.png",
+      "timestamp": 1792094758.706,
+      "associatedWithFailure": false
+    },
+    {
+      "stage": "system-restored-0",
+      "caption": "原始系统值0已恢复，父子开关值均为0",
+      "kind": "accessibility-hierarchy",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46-attachments/DB371E33-5634-48AF-855C-E82CA8A9F8C3.txt",
+        "bytes": 7828,
+        "sha256": "ebfc4daf5abfee85d69566d34cf5f38288edb0baaf693657d6428c740a2f7fac"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/reduced-motion46-system-restored-0.txt",
+        "bytes": 7828,
+        "sha256": "ebfc4daf5abfee85d69566d34cf5f38288edb0baaf693657d6428c740a2f7fac"
+      },
+      "attachmentName": "reduce-motion-system-restored-0-hierarchy_0_732896DC-D00B-40E3-8481-C37ECBE26513.txt",
+      "timestamp": 1792094758.81,
+      "associatedWithFailure": false
+    }
+  ]
+}

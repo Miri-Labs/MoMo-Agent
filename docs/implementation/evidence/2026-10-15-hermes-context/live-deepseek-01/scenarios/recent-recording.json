@@ -1,0 +1,119 @@
+{
+  "fixtureKind" : "synthetic transcript fixture over real PCM files",
+  "fixtures" : [
+    {
+      "generation" : 0,
+      "sessionID" : "4AC1351E-0982-4A55-A019-77E4AFA64379",
+      "spans" : [
+        {
+          "chunkID" : "44D7F265-5CD7-43AE-905C-F719CB101FC5",
+          "frames" : {
+            "count" : 160,
+            "start" : 0
+          },
+          "id" : "8ECA3E54-2099-4928-BC66-F93D72E23C34",
+          "sourceRanges" : [
+            {
+              "chunkID" : "44D7F265-5CD7-43AE-905C-F719CB101FC5",
+              "frames" : {
+                "count" : 160,
+                "start" : 0
+              }
+            }
+          ],
+          "text" : "【合成测试资料 fixture；非真实生活录音】\n刚才敲定澄海工作坊的安排：2026年10月21日下午三点在白鹭厅开会，材料预算上限1800元。\n会前要整理参会名单并打印需求卡。具体负责人还没有确定，不能替任何人承诺。"
+        }
+      ],
+      "updatedAt" : "2026-10-15T10:49:02Z",
+      "version" : 1
+    }
+  ],
+  "modelFailures" : [
+
+  ],
+  "modelID" : "deepseek/deepseek-v4.1-flash",
+  "networkRoute" : "system",
+  "provider" : "https://openrouter.ai/api/v1",
+  "runID" : "491EFA37-5B72-4364-80ED-FF19BBAEF912",
+  "scenario" : "recent-recording",
+  "tools" : [
+
+  ],
+  "totalTokens" : 3086,
+  "turns" : [
+    {
+      "assistantMessages" : [
+        "澄海工作坊定在 10 月 21 日下午三点，地点是白鹭厅；材料预算上限 1800 元 [1](momoagent://source/4AC1351E-0982-4A55-A019-77E4AFA64379/8ECA3E54-2099-4928-BC66-F93D72E23C34?version=1&generation=0)。\n\n会前要做两件事：整理参会名单、打印需求卡。具体负责人还没定下来，这块暂时谁也不能替着承诺 [1](momoagent://source/4AC1351E-0982-4A55-A019-77E4AFA64379/8ECA3E54-2099-4928-BC66-F93D72E23C34?version=1&generation=0)。\n\n需要的话，我可以帮你先把名单和需求卡的清单搭个框架。"
+      ],
+      "contextBeforeSend" : {
+        "generatedAt" : "2026-10-15T10:49:02Z",
+        "omittedRecentPassages" : false,
+        "passages" : [
+          {
+            "characterOffset" : 0,
+            "citationURL" : "momoagent://source/4AC1351E-0982-4A55-A019-77E4AFA64379/8ECA3E54-2099-4928-BC66-F93D72E23C34?version=1&generation=0",
+            "contextRole" : "automatic_recent",
+            "frameCount" : 160,
+            "recordedAt" : "2026-10-15T10:49:02Z",
+            "source" : {
+              "generation" : 0,
+              "sessionID" : "4AC1351E-0982-4A55-A019-77E4AFA64379",
+              "spanID" : "8ECA3E54-2099-4928-BC66-F93D72E23C34",
+              "transcriptVersion" : 1
+            },
+            "startFrame" : 0,
+            "text" : "【合成测试资料 fixture；非真实生活录音】\n刚才敲定澄海工作坊的安排：2026年10月21日下午三点在白鹭厅开会，材料预算上限1800元。\n会前要整理参会名单并打印需求卡。具体负责人还没有确定，不能替任何人承诺。",
+            "truncated" : false
+          }
+        ],
+        "recordings" : [
+          {
+            "audioState" : "available",
+            "chunkCount" : 1,
+            "generation" : 0,
+            "keepAudio" : false,
+            "recordedAt" : "2026-10-15T10:49:02Z",
+            "sessionID" : "4AC1351E-0982-4A55-A019-77E4AFA64379",
+            "sourceKind" : "fixture",
+            "transcriptVersion" : 1,
+            "transcriptionState" : "transcribed"
+          }
+        ],
+        "status" : {
+          "latestTranscriptAt" : "2026-10-15T10:49:02Z",
+          "pendingAnalysisCount" : 0,
+          "recordingCount" : 1
+        },
+        "timeScope" : {
+          "archiveDateFilters" : "recording_session_start_not_passage_time",
+          "automaticFrom" : "2026-10-15T08:49:02Z",
+          "before" : "2026-10-15T10:49:02Z",
+          "localDate" : "2026-10-15",
+          "originalRequestTimeKnown" : true,
+          "policyVersion" : 1,
+          "todayFrom" : "2026-10-14T16:00:00Z",
+          "tomorrowFrom" : "2026-10-15T16:00:00Z"
+        },
+        "timezone" : "Asia/Shanghai"
+      },
+      "elapsedSeconds" : 2.955001950263977,
+      "failed" : false,
+      "plans" : [
+
+      ],
+      "projectedPlanHashes" : {
+
+      },
+      "prompt" : "工作坊在哪开、预算多少、还要准备什么？",
+      "sessionID" : "1C0D15E5-786D-4CEB-829F-0159074DF77A",
+      "sources" : [
+        {
+          "generation" : 0,
+          "sessionID" : "4AC1351E-0982-4A55-A019-77E4AFA64379",
+          "spanID" : "8ECA3E54-2099-4928-BC66-F93D72E23C34",
+          "transcriptVersion" : 1
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "source": "https://chatgpt.com/",
+  "observedRoute": "unauth-mweb",
+  "observedAt": "2026-10-14T14:58:08.882Z",
+  "viewport": {
+    "width": 393,
+    "height": 852,
+    "dpr": 1
+  },
+  "scope": "Public unauthenticated mobile web reference; metadata only. No raw bundles, credentials, cookies, conversation payloads, or sent messages.",
+  "fileCount": 10,
+  "cssCount": 2,
+  "javascriptCount": 8,
+  "rawFilesIncluded": false,
+  "files": [
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/stylex-initial-modern-FSzWop7N.css",
+      "status": 200,
+      "bytes": 129568,
+      "sha256": "152cd6a29ecdda7ab63f11cdc279754128a74ca2e4d9539d7c4189d4ec81892c"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/stylex-remaining-modern-5-7VWt_1.css",
+      "status": 200,
+      "bytes": 373767,
+      "sha256": "e7eed55adff5a975076ec5f45b125efb9c95e3741d93ffab25cced0bc63e6750"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/scripts/declarative-partial-updates-cc0dc41806f1.js",
+      "status": 200,
+      "bytes": 113915,
+      "sha256": "cc0dc41806f19eb94d96445dc217b5fbf7a5c1235c358d49158afd2c13200f94"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/scripts/app-install-beacon-handoff-7b417b3b81ca.js",
+      "status": 200,
+      "bytes": 13606,
+      "sha256": "7b417b3b81cae80f70944da200c148a34a5ecc564513e3a719b6a653e3e25d44"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/scripts/legacy-hash-router-c9167e14712f.js",
+      "status": 200,
+      "bytes": 1945,
+      "sha256": "c9167e14712fc7a127c8b20ac983ac8b074f2f66ea61fc26a62460b6e0a08a1a"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-initial-composer-sentinel-runtime-Dz3J6xE0.js",
+      "status": 200,
+      "bytes": 22649,
+      "sha256": "9c8fcf351ee6d8cfea3448acc716d8d96d4bbb690937c9d25b9ffb4932ca5ac8"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/octane-home-client-Bn9AswVB.js",
+      "status": 200,
+      "bytes": 33233,
+      "sha256": "67369d6691cf78b549ba02ebf16433883c5ec54323ca8e18a7ef27c0a0ae31b8"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/octane-shell-shared-B_WLqGnc.js",
+      "status": 200,
+      "bytes": 198475,
+      "sha256": "4541b48fcbb8e02723b23ed7e3162697a8316eee36cdeeccbc73456e2fa78263"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/application-presentation-runtime-Cv62YM4w.js",
+      "status": 200,
+      "bytes": 51810,
+      "sha256": "fa936236bde3b7339050b46d1f2f83634ca3c5692e2d4cb11586904017faf772"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-conversation-route-stylesheet-CjA2RyPq.js",
+      "status": 200,
+      "bytes": 1378,
+      "sha256": "b92e3631a97345b45b71c6c1dc210be56cd280139be4241c0f55b7b6e85b45eb"
+    }
+  ]
+}

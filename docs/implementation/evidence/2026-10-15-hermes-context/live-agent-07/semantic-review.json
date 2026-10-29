@@ -1,0 +1,15 @@
+{
+  "status": "accepted_for_selected_cases",
+  "accepted": true,
+  "findings": [],
+  "checks": [
+    "Independent new memory lifecycle: correct persisted facts, recall, deletion and post-write confirmation order."
+  ],
+  "reviewer": "Codex primary assistant, direct reading of fixture text, model replies and tool trace",
+  "model": "anthropic/claude-sonnet-4.6",
+  "automatedChecksPassed": true,
+  "scope": [
+    "personal-assistant-memory"
+  ],
+  "limitation": "Selected synthetic fixtures only; not a guarantee for arbitrary dialogue or full product acceptance."
+}

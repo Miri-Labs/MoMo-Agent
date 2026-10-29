@@ -1,0 +1,71 @@
+import Foundation
+import Testing
+import MoMoContracts
+@testable import MoMoSpeech
+
+@Test func nanoCatalogPinsUpstreamFilesWithoutRequantization() throws {
+    let catalog = try DownloadableSpeechModel.funASRNano()
+    #expect(catalog.files.count == 6)
+    #expect(catalog.files.contains { $0.path == "encoder_adaptor.int8.onnx" && $0.byteCount == 237_792_748 })
+    #expect(catalog.files.contains { $0.path == "llm.int8.onnx" && $0.byteCount == 600_356_593 })
+    #expect(catalog.baseURL.absoluteString.contains("6f16bd378457e13f36ccf3910df9017f96c346fb"))
+    #expect(catalog.files.allSatisfy { !$0.path.contains(".mlmodel") })
+}
+
+@Test func downloadedModelReceiptDetectsSameSizeContentReplacement() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let payload = Data("verified model".utf8)
+    let file = DownloadableSpeechModel.File(path: "encoder.onnx", asset: "encoder.onnx",
+        byteCount: Int64(payload.count), sha256: ContentHash.sha256(payload))
+    let model = DownloadableSpeechModel(identifier: "test-model", baseURL: URL(string: "https://example.com/model/")!, files: [file])
+    let url = root.appendingPathComponent(file.path)
+    try payload.write(to: url)
+    try model.validateFiles(at: root, attempt: SpeechAttempt())
+    #expect(ModelValidationReceipt.read(at: root) != nil)
+    try Data(repeating: 0, count: payload.count).write(to: url)
+    #expect(throws: SpeechModelInstallationError.fileMismatch(file.path)) {
+        try model.validateFiles(at: root, attempt: SpeechAttempt())
+    }
+}
+
+@Test func modelCatalogRejectsEscapingDownloadPaths() throws {
+    for path in ["../model.onnx", "/model.onnx", "Qwen//vocab.json", "Qwen/../vocab.json"] {
+        let file = DownloadableSpeechModel.File(path: "model.onnx", asset: path, byteCount: 1,
+            sha256: String(repeating: "a", count: 64))
+        let model = DownloadableSpeechModel(identifier: "test", baseURL: URL(string: "https://example.com/")!, files: [file])
+        #expect(throws: SpeechModelInstallationError.invalidCatalog) { try model.validate() }
+    }
+}
+
+@Test func providerCacheReusesConfigurationAndSeparatesModelRevisions() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let first = try SherpaRuntime.provider(backend: .sherpaCoreML, revision: String(repeating: "a", count: 64), cacheRoot: root)
+    let same = try SherpaRuntime.provider(backend: .sherpaCoreML, revision: String(repeating: "a", count: 64), cacheRoot: root)
+    let other = try SherpaRuntime.provider(backend: .sherpaCoreML, revision: String(repeating: "b", count: 64), cacheRoot: root)
+    #expect(first == same)
+    #expect(first != other)
+    let file = URL(fileURLWithPath: String(first.dropFirst("coreml:".count)))
+    let content = try String(contentsOf: file, encoding: .utf8)
+    #expect(content.contains("ModelCacheDirectory="))
+    #expect(content.contains("ModelFormat=MLProgram"))
+    #expect(content.contains("session.intra_op.allow_spinning=0"))
+}
+
+@Test func funASRNanoForcesORTCPUProviderToPreventCoreMLGraphFragmentation() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let rev = String(repeating: "c", count: 64)
+    let nanoProvider = try SherpaRuntime.provider(backend: .sherpaCoreML, revision: rev, model: .funASRNano, cacheRoot: root)
+    #expect(nanoProvider.hasPrefix("cpu:"))
+    let nanoConfig = try String(contentsOf: URL(fileURLWithPath: String(nanoProvider.dropFirst("cpu:".count))), encoding: .utf8)
+    #expect(!nanoConfig.contains("ModelFormat=MLProgram"))
+    #expect(nanoConfig.contains("session.intra_op.allow_spinning=0"))
+
+    let senseProvider = try SherpaRuntime.provider(backend: .sherpaCoreML, revision: rev, model: .senseVoice, cacheRoot: root)
+    #expect(senseProvider.hasPrefix("coreml:"))
+    let senseConfig = try String(contentsOf: URL(fileURLWithPath: String(senseProvider.dropFirst("coreml:".count))), encoding: .utf8)
+    #expect(senseConfig.contains("RequireStaticInputShapes=1"))
+}

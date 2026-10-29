@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "files": {
+    "wespeaker-3s-coreml-fp16.onnx": "32fc906500b8e828c4602fd4e5caf8e38ed20e7ee7ab1b5e3719a6a4d6d4ec88",
+    "segmentation.int8.onnx": "d582f4b4c6b48205de7e0643c57df0df5615a3c176189be3fc461e9d18827b5d"
+  },
+  "embeddingSource": {
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx",
+    "sha256": "e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012",
+    "license": "CC-BY-4.0",
+    "changes": "Fixed [1,300,80] input, ORT 1.28.2 BASIC constant folding, two Flatten replaced by static Reshape, internal FP16 with FP32 IO and corrected Cast attributes. No training."
+  },
+  "segmentationSource": {
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2",
+    "sha256": "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488",
+    "member": "sherpa-onnx-pyannote-segmentation-3-0/model.int8.onnx",
+    "license": "MIT"
+  }
+}
