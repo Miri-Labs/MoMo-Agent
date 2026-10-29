@@ -13,6 +13,7 @@ final class PhoneRuntime {
     let playback: AudioPlaybackController
     let speechSettings: PhoneSpeechSettings
     let library: LibraryModel
+    let earphone: EarphoneCaptureRuntime?
     private(set) var failure: String?
     private(set) var statusFailure: String?
     private(set) var syncFailure: String?
@@ -75,8 +76,10 @@ final class PhoneRuntime {
     init(archive: ArchiveStore, remoteAgent: PhoneRemoteAgent, playback: AudioPlaybackController,
          receiver: PhoneReceiveCoordinator, transport: WatchConnectivityTransport?,
          speech: SpeechEngine?, speechFailure: String?, backgroundTasks: PhoneBackgroundTasks? = nil,
-         modelDirectory: URL? = nil, speechPerformance: PhoneSpeechPerformance? = nil) throws {
+         modelDirectory: URL? = nil, speechPerformance: PhoneSpeechPerformance? = nil,
+         earphone: EarphoneCaptureRuntime? = nil) throws {
         self.archive = archive
+        self.earphone = earphone
         self.remoteAgent = remoteAgent
         self.playback = playback
         self.receiver = receiver
@@ -143,20 +146,19 @@ final class PhoneRuntime {
             })
         }
         if let transcription { receivedAudioTranscription = ReceivedAudioTranscription(coordinator: transcription) }
-        receiver.onChanged = { [weak self] in
-            guard let self else { return }
-            await self.transcription?.requestWork()
-            await self.backgroundTasks?.scheduleAutomatic()
-            if !self.libraryPresentationDeferred { await self.refresh(reconcileFiles: false) }
-        }
+        receiver.onChanged = { [weak self] in await self?.archiveChanged() }
         receiver.onFailure = { [weak self] message in self?.failure = message }
         receiver.onSyncFailure = { [weak self] message in self?.syncFailure = message }
-        receiver.onAudioReceived = { [weak self] chunkID in
+        receiver.onAudioReceived = { [weak self] chunkID in self?.audioReceived(chunkID) }
+        if let earphone {
+            playback.sessionWillActivate = { [weak earphone] in await earphone?.yieldAudioSession() }
+            playback.sessionDidDeactivate = { [weak earphone] in earphone?.reclaimAudioSession() }
+        }
+        // Earphone audio is archived in-process and then follows the same path as watch audio.
+        earphone?.onDelivered = { [weak self] chunkIDs in
             guard let self else { return }
-            if !self.isForeground, !self.hasTranscriptionContinuation, PhoneBackgroundTasks.resourcesAllowProcessing {
-                self.receivedAudioTranscription?.request()
-            }
-            self.playback.requestWaveformPreparation(chunkID: chunkID, run: self.isForeground)
+            for chunkID in chunkIDs { self.audioReceived(chunkID) }
+            await self.archiveChanged()
         }
         receiver.onStatusFailure = { [weak self] message in self?.statusFailure = message }
         receiver.onStatusChanged = { [weak self] in
@@ -220,6 +222,19 @@ final class PhoneRuntime {
         guard !transportActivated, let transport else { return }
         transportActivated = true
         transport.activate()
+    }
+
+    private func archiveChanged() async {
+        await transcription?.requestWork()
+        await backgroundTasks?.scheduleAutomatic()
+        if !libraryPresentationDeferred { await refresh(reconcileFiles: false) }
+    }
+
+    private func audioReceived(_ chunkID: UUID) {
+        if !isForeground, !hasTranscriptionContinuation, PhoneBackgroundTasks.resourcesAllowProcessing {
+            receivedAudioTranscription?.request()
+        }
+        playback.requestWaveformPreparation(chunkID: chunkID, run: isForeground)
     }
 
     func start(backgroundOnly: Bool = false) async {
@@ -314,6 +329,8 @@ final class PhoneRuntime {
         if requestedTranscriptionBatchID != nil {
             _ = await backgroundTasks?.reconcilePendingContinuedBatch()
         }
+        // iOS only lets capture start in the foreground.
+        await earphone?.foreground()
         await transcription?.resumeAfterSystemSuspension()
         receivedAudioTranscription?.expire(reason: .interrupted)
         transcriptionContinuation?.finish()
@@ -680,6 +697,8 @@ final class PhoneRuntime {
         try await invalidatePendingContexts()
         await library.refresh()
         await receiver.reconcile()
+        // An earphone session's original lives in this phone's ledger, not on a watch.
+        earphone?.requestDelivery()
     }
 
     func resolveFiles(_ issue: RecordingFileIssue, choosing action: RecordingFileRecoveryAction) async throws {

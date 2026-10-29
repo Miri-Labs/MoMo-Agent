@@ -9,6 +9,7 @@ struct SettingsView: View {
     let modelDirectory: URL?
     let modelStatus: LocalSpeechModelStatus
     let speechSettings: PhoneSpeechSettings
+    var earphone: EarphoneCaptureRuntime? = nil
     var onSpeakersChanged: (() async -> Void)? = nil
     @State private var versionTapCount = 0
     @State private var previewingWelcome = false
@@ -60,6 +61,12 @@ struct SettingsView: View {
                 }
                 PhoneSettingsSection(title: "转录与储存") {
                     PhoneSettingsSurface {
+                        if let earphone {
+                            NavigationLink { CaptureDeviceSettingsView(runtime: earphone) } label: {
+                                PhoneSettingsLinkRow(title: "录音设备", value: earphone.settings.device.title)
+                            }.accessibilityIdentifier("settings.captureDevice")
+                            rowDivider
+                        }
                         NavigationLink { SpeechModelSettingsView(settings: speechSettings.models) } label: {
                             PhoneSettingsLinkRow(title: "转录模型", value: speechSettings.models.choice.title)
                         }.accessibilityIdentifier("settings.speech.model")

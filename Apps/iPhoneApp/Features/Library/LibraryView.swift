@@ -39,6 +39,7 @@ struct LibraryView: View {
     @State private var navigationFailure: String?
     @State private var readingStates = TimelineDayReadingStates()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(EarphoneCaptureRuntime.self) private var earphone: EarphoneCaptureRuntime?
 
     private var timeline: TimelineModel { model.timeline }
     private var dateRange: TimelineDateRange {
@@ -47,8 +48,11 @@ struct LibraryView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            WatchStatusView(observation: model.watchStatus)
-                .padding(.horizontal, 24).padding(.top, 12)
+            Group {
+                if let earphone, earphone.settings.device == .earphone { EarphoneStatusView(runtime: earphone) }
+                else { WatchStatusView(observation: model.watchStatus) }
+            }
+            .padding(.horizontal, 24).padding(.top, 12)
             dateBar
             if !searching, let progress = timeline.processingProgress[timeline.selectedDay], progress.received > 0,
                progress.processed == nil || (progress.remaining ?? 0) >= 0.01 || progress.awaitingSync > 0 {

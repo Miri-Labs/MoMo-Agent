@@ -187,7 +187,7 @@ targets:
           NSExceptionDomains:
             "100.64.0.0/10":
               NSExceptionAllowsInsecureHTTPLoads: true
-        NSMicrophoneUsageDescription: "点击语音输入时录制声音，在手机上识别为可编辑文字。"
+        NSMicrophoneUsageDescription: "选择蓝牙耳机作为录音设备后，持续录制耳机麦克风的声音，在手机上转写；点击语音输入时录制声音并识别为可编辑文字。"
         NSCalendarsFullAccessUsageDescription: "开启后，只读日历事项并同步到你的 Mac，由你选用的 AI 服务回答相关问题；不会修改日历。"
         NSRemindersFullAccessUsageDescription: "开启后，只读未完成的提醒事项并同步到你的 Mac，由你选用的 AI 服务回答相关问题；不会修改提醒事项。"
         NSAlarmKitUsageDescription: "按你的指令设置和管理 MoMo Agent 闹钟。"
@@ -200,7 +200,7 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
-        UIBackgroundModes: [processing]
+        UIBackgroundModes: [audio, processing]
         BGTaskSchedulerPermittedIdentifiers:
           - $(PRODUCT_BUNDLE_IDENTIFIER).transcription.processing
           - $(PRODUCT_BUNDLE_IDENTIFIER).transcription.continued.*
@@ -217,6 +217,8 @@ targets:
         product: MoMoLink
       - package: MoMoAgentKit
         product: MoMoArchive
+      - package: MoMoAgentKit
+        product: MoMoRecording
       - package: MoMoAgentKit
         product: MoMoSpeech
       - package: MoMoAgentAgentClient

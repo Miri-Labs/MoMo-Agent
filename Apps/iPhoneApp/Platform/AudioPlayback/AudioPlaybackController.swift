@@ -21,6 +21,9 @@ final class AudioPlaybackController {
         guard playbackState == .playing, case .recording(let id, _) = activeTarget else { return nil }
         return id
     }
+    /// Another owner of the shared AVAudioSession, such as earphone capture, steps aside while playback runs.
+    @ObservationIgnored var sessionWillActivate: () async -> Void = {}
+    @ObservationIgnored var sessionDidDeactivate: () -> Void = {}
     @ObservationIgnored private let archive: ArchiveStore
     @ObservationIgnored private let audioSession: PlaybackAudioSession
     @ObservationIgnored private let waveformCache: PlaybackWaveformCache
@@ -380,6 +383,8 @@ final class AudioPlaybackController {
         activePart = part
         activeIndex = index
         sessionAttempt = attempt
+        await sessionWillActivate()
+        try require(attempt)
         try await audioSession.activate(for: attempt)
         try require(attempt)
         try await audioSession.prepare(part, offset: position - segment.start, for: attempt)
@@ -549,6 +554,7 @@ final class AudioPlaybackController {
             if let attempt {
                 do { try await audioSession.deactivate(for: attempt) }
                 catch { logger.error("Playback audio session cleanup failed") }
+                sessionDidDeactivate()
             }
             if let part { await release(part) }
         }

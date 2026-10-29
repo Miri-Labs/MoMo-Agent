@@ -55,6 +55,7 @@ struct ClientComposer: View {
     #if !os(macOS)
     @Environment(\.scenePhase) private var scenePhase
     @State private var voice = ChatVoiceInput()
+    @Environment(EarphoneCaptureRuntime.self) private var earphone: EarphoneCaptureRuntime?
     @State private var showingPhotos = false
     @State private var showingCamera = false
     @State private var cameraFailure: ChatCameraFailure?
@@ -127,6 +128,12 @@ struct ClientComposer: View {
             .onChange(of: voiceInputEnabled) { if !voiceInputEnabled { voice.cancel() } }
             .onChange(of: scenePhase) { if scenePhase == .background { voice.cancel() } }
             .onDisappear { cameraRequest?.cancel(); voice.cancel() }
+            .onAppear {
+                // The capture runtime lives as long as the app, so the hooks hold it directly.
+                let earphone = earphone
+                voice.sessionWillActivate = { await earphone?.yieldAudioSession() }
+                voice.sessionDidDeactivate = { earphone?.reclaimAudioSession() }
+            }
             #endif
     }
 
