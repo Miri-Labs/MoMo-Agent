@@ -1,0 +1,16 @@
+{
+  "demo": {
+    "nonInteractiveAncestors": [
+      {
+        "tag": "DIV",
+        "inert": true,
+        "pointer": "auto"
+      }
+    ]
+  },
+  "faq": {
+    "text": "Do Bots share one computer?",
+    "expanded": "true",
+    "buttonHeight": 64
+  }
+}

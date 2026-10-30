@@ -1,0 +1,337 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "final-iphone-v8-ui-release-delivery",
+  "sourceCommit": "00ceb2582da91fea3211117bf64c1386a55195f1",
+  "previousSourceCommit": "11d3fb838917227620a75846fe99db2114e55e7d",
+  "completion": {
+    "uiImplementationAndCoreSoftwareRegression": "completed",
+    "integrationWorkflow": "ready_for_root_commit_and_merge_to_main",
+    "all220Cases": false,
+    "fullV01": false
+  },
+  "sourceInputs": {
+    "countPerManifest": 610,
+    "build46EqualsRelease04": true,
+    "build47EqualsRelease05": true,
+    "build46ToBuild47": {
+      "added": [],
+      "removed": [],
+      "changed": [
+        "Apps/iPhoneApp/SharedUI/AudioPlayerView.swift"
+      ]
+    },
+    "captionChange": {
+      "from": "正在读取原音波形",
+      "to": "暂无可用波形"
+    },
+    "currentVerification": {
+      "checkedManifests": [
+        "build47",
+        "release05"
+      ],
+      "mismatches": [],
+      "currentFilesMatchFinal610": true
+    },
+    "historicalVerification": {
+      "build46": "610 inputs verified unchanged at completion, before the caption change; current source intentionally differs in AudioPlayerView.swift.",
+      "release04": "Fresh DerivedDataReleaseV8-02 build; pre-build manifest equals build46. Build executor verified 610 stable inputs before caption change.",
+      "release05": "Incremental build in the same DerivedDataReleaseV8-02; pre-build manifest equals build47, and all 610 inputs match current files."
+    }
+  },
+  "releaseBuilds": {
+    "release04": {
+      "status": "succeeded",
+      "freshDerivedData": true,
+      "sourceCommit": "11d3fb838917227620a75846fe99db2114e55e7d"
+    },
+    "release05": {
+      "status": "succeeded",
+      "freshDerivedData": false,
+      "sourceCommit": "00ceb2582da91fea3211117bf64c1386a55195f1",
+      "changeFromRelease04": "One unavailable-waveform caption; incremental rebuild."
+    }
+  },
+  "release05Checks": {
+    "bundlePassed": 19,
+    "bundleTotal": 19,
+    "bundleFailed": 0,
+    "fixedModelResources": 4,
+    "checkerSelftestsPassed": 17,
+    "checkerSelftestsTotal": 17,
+    "webSourceAndBundleFilesMatched": 40,
+    "webMismatches": [],
+    "signature": {
+      "validOnDisk": true,
+      "satisfiesDesignatedRequirement": true,
+      "evidence": "release05-signature.log"
+    },
+    "installedFileHashesMatched": 4,
+    "installedFileHashesTotal": 4,
+    "phoneInstalledAndLaunched": true,
+    "launchArguments": [],
+    "observedPID": 88949,
+    "observedCommandContainsOnlyReleaseExecutable": true,
+    "embeddedWatchInstalledFilesChecked": true,
+    "watchRuntimeLaunchVerified": false
+  },
+  "finalVisualReview": {
+    "reviewer": "independent recording_detail agent, in addition to root installation review",
+    "screenshot": "release05-normal-launch.png",
+    "actualScreenshotViewed": true,
+    "observed": [
+      "Original brand icon in the top bar",
+      "Gray Watch icon and waiting status",
+      "No App-name navigation title",
+      "Non-circular central Avatar",
+      "Raised optical layout with greeting and composer"
+    ],
+    "scope": "Normal iPhone simulator Release launch, not a fixture screenshot or Watch runtime."
+  },
+  "separateRuntimeRounds": [
+    {
+      "round": "reading-full45-repeat",
+      "uniqueTests": 23,
+      "repetitions": 3,
+      "passed": 69,
+      "failed": 0,
+      "scope": "Chat 10, Library 10, Timeline 3 per repetition; not rerun after the single caption edit."
+    },
+    {
+      "round": "controlled-ui45",
+      "passed": 3,
+      "failed": 0,
+      "checkerPassedByScenario": {
+        "A": 35,
+        "B": 31,
+        "C": 27
+      },
+      "scope": "Formal App/Pi/Archive with controlled HTTP replies; not paid or public model quality."
+    },
+    {
+      "round": "player-reduced-motion46",
+      "passed": 1,
+      "failed": 0,
+      "testSeconds": 58.595,
+      "observerTotalSeconds": 66.841,
+      "systemSetting": "Real Settings toggle enabled and restored to its initial off state",
+      "scope": "Timeline playback, paused seek, resume, same-target mini player; not all animation auditing."
+    },
+    {
+      "round": "expired-source-ui47",
+      "passed": 1,
+      "failed": 0,
+      "testSeconds": 85.415,
+      "checkerPassed": 31,
+      "checkerTotal": 31,
+      "scope": "B journey after the caption edit; expired source remains readable, playback unavailable, caption accurate. A/C not rerun in 47."
+    }
+  ],
+  "preservedReports": [
+    {
+      "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build41-43-progress.json",
+      "bytes": 19053,
+      "sha256": "a7d4901ee81f6a67adbc3f70d70993da9c46db553911df66c9af29421860ed20"
+    },
+    {
+      "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build44-45-progress.json",
+      "bytes": 21386,
+      "sha256": "f8a276d3efd7e2f68c2ff24c89568409a5304063da8549d67b2568519fd52ca2"
+    },
+    {
+      "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui45-progress.json",
+      "bytes": 9171,
+      "sha256": "d5654b1a2fed456635e824b28c502f45685ac176486293e65e5e71fe26e5e52b"
+    },
+    {
+      "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/reduced-motion46-evidence.json",
+      "bytes": 13801,
+      "sha256": "475ffd772380dd12086444bbf55c1d5ad24c6470ac6f5af9874baa65b80d6655"
+    },
+    {
+      "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/expired-source47-evidence.json",
+      "bytes": 4027,
+      "sha256": "a602659f68762410305467b174a310acf33130b063752d482c934dee3754c271"
+    }
+  ],
+  "remainingBoundaries": [
+    "This delivery does not claim all 220 cases, complete v0.1, clean-clone reproduction, or all visual/accessibility matrices.",
+    "The 375pt dark Settings contrast audit still failed in rounds 43/44/45. Static screenshot measurements were about 13:1 for solid text and 6.26:1 for the chevron; neither an App contrast defect nor a tool false positive is established.",
+    "Physical-device transcription backlog remains undiagnosed. foregroundOnly policy is unchanged.",
+    "No new physical iPhone/Watch, WatchConnectivity end-to-end, 18-hour recording, Watch Release runtime, App Store archive, or paid/public model quality claim.",
+    "Fresh Release04 and incremental Release05 are recorded separately; embedded Watch artifact checks are not a Watch launch."
+  ],
+  "originalLogs": [
+    {
+      "path": "tmp_agent_output/iphone-v8-acceptance-20261015/ios-release-build-04.log",
+      "bytes": 1525955,
+      "sha256": "4d3b8d8cdda3e0ff02ee25fd3fbc87414bdac5c9ed273fda6cf43d03d19b764f"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-acceptance-20261015/ios-release-build-05.log",
+      "bytes": 201049,
+      "sha256": "3d849d7b777cf589b1546c7d4c3f9229e805034b9d3380e06635c216326fddaa"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-acceptance-20261015/ios-build46.log",
+      "bytes": 96839,
+      "sha256": "4763f6a2e50c082ac9eeb4e9f32d07a717b892c3ae70b3a0d4dab99c1f066795"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-acceptance-20261015/ios-build47.log",
+      "bytes": 154232,
+      "sha256": "8a3a98356b59fcfbe8144c13a17942092660fa8e9641802ef38ebaa4ecf162f4"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-acceptance-20261015/expired-source-ui47.log",
+      "bytes": 23116,
+      "sha256": "13ffa336de0d2bff662525b34362f8b773c8829fd791bc440430385c2e1ac48e"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-acceptance-20261015/player-reduced-motion46.log",
+      "bytes": 19113,
+      "sha256": "09a3ce528775448e16f2e3a22fabc1347502bd7b6e76ac51cb80612acede69dc"
+    }
+  ],
+  "artifacts": [
+    {
+      "kind": "source-manifest",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/build46-source-before.json",
+        "bytes": 86117,
+        "sha256": "3a2b9b2b3553657c68c3bedc5255c8397e4e4ef073c4c1aa4eabd1a4dc396f28"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build46-source-inputs.json",
+        "bytes": 86117,
+        "sha256": "3a2b9b2b3553657c68c3bedc5255c8397e4e4ef073c4c1aa4eabd1a4dc396f28"
+      },
+      "copiedWithoutModification": true
+    },
+    {
+      "kind": "source-manifest",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/build47-source-before.json",
+        "bytes": 86117,
+        "sha256": "e4b52a11d6ca88b710f546405a97193977efc32dedc40455ed17d76207a09f20"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build47-source-inputs.json",
+        "bytes": 86117,
+        "sha256": "e4b52a11d6ca88b710f546405a97193977efc32dedc40455ed17d76207a09f20"
+      },
+      "copiedWithoutModification": true
+    },
+    {
+      "kind": "source-manifest",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/release04-source-before.json",
+        "bytes": 86117,
+        "sha256": "3a2b9b2b3553657c68c3bedc5255c8397e4e4ef073c4c1aa4eabd1a4dc396f28"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/release04-source-inputs.json",
+        "bytes": 86117,
+        "sha256": "3a2b9b2b3553657c68c3bedc5255c8397e4e4ef073c4c1aa4eabd1a4dc396f28"
+      },
+      "copiedWithoutModification": true
+    },
+    {
+      "kind": "source-manifest",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/release05-source-before.json",
+        "bytes": 86117,
+        "sha256": "e4b52a11d6ca88b710f546405a97193977efc32dedc40455ed17d76207a09f20"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/release05-source-inputs.json",
+        "bytes": 86117,
+        "sha256": "e4b52a11d6ca88b710f546405a97193977efc32dedc40455ed17d76207a09f20"
+      },
+      "copiedWithoutModification": true
+    },
+    {
+      "kind": "bundle-checks",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/ios-release-bundle-05.json",
+        "bytes": 12125,
+        "sha256": "796a6b2f77cb83c2a31f1e7c98d34da0cd685b1809572f9747dc8ab22ebf2a82"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/release05-bundle-checks.json",
+        "bytes": 12125,
+        "sha256": "796a6b2f77cb83c2a31f1e7c98d34da0cd685b1809572f9747dc8ab22ebf2a82"
+      },
+      "copiedWithoutModification": true
+    },
+    {
+      "kind": "web-manifest",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/release05-web-sources.json",
+        "bytes": 4158,
+        "sha256": "84fa05a82e7f0500a3607b83a781753ca266f975fe2bdede59ceb949ce3ec97e"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/release05-web-sources.json",
+        "bytes": 4158,
+        "sha256": "84fa05a82e7f0500a3607b83a781753ca266f975fe2bdede59ceb949ce3ec97e"
+      },
+      "copiedWithoutModification": true
+    },
+    {
+      "kind": "signature-log",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/release05-signature.log",
+        "bytes": 211,
+        "sha256": "b71b0c8a5e1dd1402032962630bbb7a2f6a60a51e7f1e5a2c638f685daed0130"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/release05-signature.log",
+        "bytes": 211,
+        "sha256": "b71b0c8a5e1dd1402032962630bbb7a2f6a60a51e7f1e5a2c638f685daed0130"
+      },
+      "copiedWithoutModification": true
+    },
+    {
+      "kind": "installation-report",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/release05-installed-and-launched.json",
+        "bytes": 1726,
+        "sha256": "55751e666424fbf386d9cf50a9296faea7ce343c2ef0a017288c3d88a68a2618"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/release05-installed-and-launched.json",
+        "bytes": 1726,
+        "sha256": "55751e666424fbf386d9cf50a9296faea7ce343c2ef0a017288c3d88a68a2618"
+      },
+      "copiedWithoutModification": true
+    },
+    {
+      "kind": "screenshot",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/release05-normal-launch.png",
+        "bytes": 133996,
+        "sha256": "4eba6a6c413f713e7ee957eabea6c6a1a830952de758e9f245f5c26334771366"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/release05-normal-launch.png",
+        "bytes": 133996,
+        "sha256": "4eba6a6c413f713e7ee957eabea6c6a1a830952de758e9f245f5c26334771366"
+      },
+      "copiedWithoutModification": true
+    },
+    {
+      "kind": "checker-selftest-log",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/release-checker-selftest-05.log",
+        "bytes": 175,
+        "sha256": "0f439d367a915c2de7c455e78bdc6eea625a9f10edfa89404d3acacca72ca5db"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/release05-checker-selftests17.log",
+        "bytes": 175,
+        "sha256": "0f439d367a915c2de7c455e78bdc6eea625a9f10edfa89404d3acacca72ca5db"
+      },
+      "copiedWithoutModification": true
+    }
+  ]
+}

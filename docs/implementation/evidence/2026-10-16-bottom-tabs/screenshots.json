@@ -1,0 +1,46 @@
+[
+  {
+    "file": "transcript-to-chat.png",
+    "sha256": "87290af8a26b81573c866ab8ed78101b7a4a3b549e91968ee59f3bf8e20f750f",
+    "test": "PhoneNavigationTests/testBottomTabsPreserveDraftDateAndTranscriptDetail()",
+    "attachment": "295D8DDF-5383-4BBE-9E9F-3DC6DE544EED.png"
+  },
+  {
+    "file": "transcripts-light.png",
+    "sha256": "a577a909825e13392d592eb89faefd121ce890bc33f7a81181152d9225abe809",
+    "test": "PhoneNavigationTests/testBottomTabsPreserveDraftDateAndTranscriptDetail()",
+    "attachment": "12F1B76D-45E3-49E9-81BA-9D4289BC47D1.png"
+  },
+  {
+    "file": "chat-history.png",
+    "sha256": "c4533803c0ce7cbbd0e95ad68ea36e94ca9e5a5d2005911360535eeed89c5a17",
+    "test": "PhoneNavigationTests/testBottomTabsPreserveDraftDateAndTranscriptDetail()",
+    "attachment": "E5ECD5CD-DF78-4C67-BFDC-25930F89FF6A.png"
+  },
+  {
+    "file": "chat-light.png",
+    "sha256": "2ade1a2847ca68fa8b51478e0eb50deb4297c9db03f57862f970b47108fdbf3e",
+    "test": "PhoneNavigationTests/testBottomTabsPreserveDraftDateAndTranscriptDetail()",
+    "attachment": "A5385F07-B05E-4513-AE68-8D295C58809D.png"
+  },
+  {
+    "file": "status-banner.png",
+    "sha256": "d17ea7831b18d7cd4e594d6c203c2c2b4ad82b824308461f2e1c194aa7c07847",
+    "test": "PhoneWatchStatusTests/testFailureBannerCanBeDismissedWithoutBlockingNavigation()",
+    "attachment": "B4EC7BE7-6255-4257-98B1-EF7C9D52CA51.png"
+  },
+  {
+    "file": "transcripts-dark.png",
+    "sha256": "35bf76685bcd595d503a2e57d5950d457e0d491b8b00fbdc63d579de4bd8e277",
+    "test": "PhoneNavigationTests/testBottomTabsPreserveDraftDateAndTranscriptDetail()",
+    "attachment": "78713606-2B61-4AAC-81E9-E39735C560DB.png",
+    "systemAppearance": "dark"
+  },
+  {
+    "file": "chat-dark.png",
+    "sha256": "d7dee7e17fb678ff0188703d67a43ae608192ccd9e49c3760d549858eb9154be",
+    "test": "PhoneNavigationTests/testBottomTabsPreserveDraftDateAndTranscriptDetail()",
+    "attachment": "292ECF81-9D3F-491E-9377-001BFA151C00.png",
+    "systemAppearance": "dark"
+  }
+]

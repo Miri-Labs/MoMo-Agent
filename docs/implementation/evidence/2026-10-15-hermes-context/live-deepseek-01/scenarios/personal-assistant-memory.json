@@ -1,0 +1,247 @@
+{
+  "fixtureKind" : "synthetic transcript fixture over real PCM files",
+  "fixtures" : [
+
+  ],
+  "modelFailures" : [
+
+  ],
+  "modelID" : "deepseek/deepseek-v4.1-flash",
+  "networkRoute" : "system",
+  "provider" : "https://openrouter.ai/api/v1",
+  "runID" : "491EFA37-5B72-4364-80ED-FF19BBAEF912",
+  "scenario" : "personal-assistant-memory",
+  "tools" : [
+    {
+      "arguments" : {
+        "action" : "read",
+        "target" : "user"
+      },
+      "callID" : "call_01a13f2dd39170aa92cc5fdb",
+      "isError" : false,
+      "name" : "memory",
+      "result" : "{\"bytes\":0,\"entries\":[],\"maximumBytes\":4096,\"revision\":\"f30316e7e90a46ddd9b7539d4e159a4a75aa879c1c95d5189c8f79907a8a3bfb\",\"target\":\"user\"}",
+      "turn" : 2
+    },
+    {
+      "arguments" : {
+        "operations" : [
+          {
+            "action" : "add",
+            "content" : "称呼：小岚。回答偏好：尽量简短，先说结论。"
+          }
+        ],
+        "revision" : "f30316e7e90a46ddd9b7539d4e159a4a75aa879c1c95d5189c8f79907a8a3bfb",
+        "target" : "user"
+      },
+      "callID" : "call_01a13f2ddc8e7789b0b4dd58",
+      "isError" : false,
+      "name" : "memory",
+      "result" : "{\"bytes\":63,\"done\":true,\"entryCount\":1,\"removedEntries\":[],\"revision\":\"5231f59623b39838b746dc7e73cef76d450393d41f740c02006895712d1bef22\",\"success\":true,\"target\":\"user\"}",
+      "turn" : 2
+    },
+    {
+      "arguments" : {
+        "action" : "read",
+        "target" : "user"
+      },
+      "callID" : "call_01a13f2df09876939a59e834",
+      "isError" : false,
+      "name" : "memory",
+      "result" : "{\"bytes\":63,\"entries\":[\"称呼：小岚。回答偏好：尽量简短，先说结论。\"],\"maximumBytes\":4096,\"revision\":\"5231f59623b39838b746dc7e73cef76d450393d41f740c02006895712d1bef22\",\"target\":\"user\"}",
+      "turn" : 4
+    },
+    {
+      "arguments" : {
+        "action" : "remove",
+        "old_text" : "称呼：小岚。回答偏好：尽量简短，先说结论。",
+        "revision" : "5231f59623b39838b746dc7e73cef76d450393d41f740c02006895712d1bef22",
+        "target" : "user"
+      },
+      "callID" : "call_01a13f2df7b776f7b98f999e",
+      "isError" : false,
+      "name" : "memory",
+      "result" : "{\"bytes\":0,\"done\":true,\"entryCount\":0,\"removedEntries\":[\"称呼：小岚。回答偏好：尽量简短，先说结论。\"],\"revision\":\"9e877e3730a04f6582b39f1a71f623d3cf74419d46aab5b242e548cdd76a186f\",\"success\":true,\"target\":\"user\"}",
+      "turn" : 4
+    }
+  ],
+  "totalTokens" : 24575,
+  "turns" : [
+    {
+      "assistantMessages" : [
+        "累就累着吧，不用非撑着。是身体上的困，还是心里那根弦绷了一天？\n\n要是想说话就说说，不想说也没关系，歇会儿也行。"
+      ],
+      "contextBeforeSend" : {
+        "generatedAt" : "2026-10-15T10:48:44Z",
+        "omittedRecentPassages" : false,
+        "passages" : [
+
+        ],
+        "recordings" : [
+
+        ],
+        "status" : {
+          "pendingAnalysisCount" : 0,
+          "recordingCount" : 0
+        },
+        "timeScope" : {
+          "archiveDateFilters" : "recording_session_start_not_passage_time",
+          "automaticFrom" : "2026-10-15T08:48:44Z",
+          "before" : "2026-10-15T10:48:44Z",
+          "localDate" : "2026-10-15",
+          "originalRequestTimeKnown" : true,
+          "policyVersion" : 1,
+          "todayFrom" : "2026-10-14T16:00:00Z",
+          "tomorrowFrom" : "2026-10-15T16:00:00Z"
+        },
+        "timezone" : "Asia/Shanghai"
+      },
+      "elapsedSeconds" : 2.804719924926758,
+      "failed" : false,
+      "plans" : [
+
+      ],
+      "projectedPlanHashes" : {
+
+      },
+      "prompt" : "嗨，今天有点累。",
+      "sessionID" : "5939FDB7-2ABF-4807-81B9-CC440AF01AA5",
+      "sources" : [
+
+      ]
+    },
+    {
+      "assistantMessages" : [
+        "",
+        "",
+        "好，小岚。记住了：简短，先说结论。"
+      ],
+      "contextBeforeSend" : {
+        "generatedAt" : "2026-10-15T10:48:47Z",
+        "omittedRecentPassages" : false,
+        "passages" : [
+
+        ],
+        "recordings" : [
+
+        ],
+        "status" : {
+          "pendingAnalysisCount" : 0,
+          "recordingCount" : 0
+        },
+        "timeScope" : {
+          "archiveDateFilters" : "recording_session_start_not_passage_time",
+          "automaticFrom" : "2026-10-15T08:48:47Z",
+          "before" : "2026-10-15T10:48:47Z",
+          "localDate" : "2026-10-15",
+          "originalRequestTimeKnown" : true,
+          "policyVersion" : 1,
+          "todayFrom" : "2026-10-14T16:00:00Z",
+          "tomorrowFrom" : "2026-10-15T16:00:00Z"
+        },
+        "timezone" : "Asia/Shanghai"
+      },
+      "elapsedSeconds" : 7.610401034355164,
+      "failed" : false,
+      "plans" : [
+
+      ],
+      "projectedPlanHashes" : {
+
+      },
+      "prompt" : "记住：以后叫我小岚，回答尽量简短，先说结论。",
+      "sessionID" : "5939FDB7-2ABF-4807-81B9-CC440AF01AA5",
+      "sources" : [
+
+      ]
+    },
+    {
+      "assistantMessages" : [
+        "记得。称呼你小岚，回复尽量简短，先说结论。"
+      ],
+      "contextBeforeSend" : {
+        "generatedAt" : "2026-10-15T10:48:55Z",
+        "omittedRecentPassages" : false,
+        "passages" : [
+
+        ],
+        "recordings" : [
+
+        ],
+        "status" : {
+          "pendingAnalysisCount" : 0,
+          "recordingCount" : 0
+        },
+        "timeScope" : {
+          "archiveDateFilters" : "recording_session_start_not_passage_time",
+          "automaticFrom" : "2026-10-15T08:48:55Z",
+          "before" : "2026-10-15T10:48:55Z",
+          "localDate" : "2026-10-15",
+          "originalRequestTimeKnown" : true,
+          "policyVersion" : 1,
+          "todayFrom" : "2026-10-14T16:00:00Z",
+          "tomorrowFrom" : "2026-10-15T16:00:00Z"
+        },
+        "timezone" : "Asia/Shanghai"
+      },
+      "elapsedSeconds" : 1.5838689804077148,
+      "failed" : false,
+      "plans" : [
+
+      ],
+      "projectedPlanHashes" : {
+
+      },
+      "prompt" : "你记得我希望你怎么称呼我、怎么回复吗？",
+      "sessionID" : "5939FDB7-2ABF-4807-81B9-CC440AF01AA5",
+      "sources" : [
+
+      ]
+    },
+    {
+      "assistantMessages" : [
+        "",
+        "",
+        "已删除，称呼和回答偏好都不在长期资料里了。"
+      ],
+      "contextBeforeSend" : {
+        "generatedAt" : "2026-10-15T10:48:56Z",
+        "omittedRecentPassages" : false,
+        "passages" : [
+
+        ],
+        "recordings" : [
+
+        ],
+        "status" : {
+          "pendingAnalysisCount" : 0,
+          "recordingCount" : 0
+        },
+        "timeScope" : {
+          "archiveDateFilters" : "recording_session_start_not_passage_time",
+          "automaticFrom" : "2026-10-15T08:48:56Z",
+          "before" : "2026-10-15T10:48:56Z",
+          "localDate" : "2026-10-15",
+          "originalRequestTimeKnown" : true,
+          "policyVersion" : 1,
+          "todayFrom" : "2026-10-14T16:00:00Z",
+          "tomorrowFrom" : "2026-10-15T16:00:00Z"
+        },
+        "timezone" : "Asia/Shanghai"
+      },
+      "elapsedSeconds" : 4.82490599155426,
+      "failed" : false,
+      "plans" : [
+
+      ],
+      "projectedPlanHashes" : {
+
+      },
+      "prompt" : "把刚才让你记住的称呼和回答偏好从长期资料里全部删掉。",
+      "sessionID" : "5939FDB7-2ABF-4807-81B9-CC440AF01AA5",
+      "sources" : [
+
+      ]
+    }
+  ]
+}

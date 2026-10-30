@@ -1,0 +1,1 @@
+runID=57242D65-5838-4F97-BB30-99A30B76D482; initiallyVoiceOverEnabled=false; official timeline fixture; no ASR, provider configuration or network flags; real VoiceOver service and one-finger gestures

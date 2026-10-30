@@ -1,0 +1,91 @@
+{
+  "scope": "iPhone chat presentation port",
+  "rawEvidenceRoot": "/Users/syh/Workspace/MoMoAgent-worktrees/initial-implementation/tmp_agent_output/chat-port-20261015",
+  "results": {
+    "agent": {
+      "passed": 35,
+      "skipped": 1,
+      "skipReason": "paid Bailian live API not enabled"
+    },
+    "rendererCore": {
+      "passed": 9
+    },
+    "iosBuild06": {
+      "passed": 24,
+      "scope": "20 hosted tests and 4 navigation UI tests; before adjacent text block coalescing change"
+    },
+    "latestRendererBuild08": {
+      "passed": 3,
+      "scope": "current production renderer plus screenshot capture correction"
+    },
+    "releaseBuild": "succeeded",
+    "releaseStaticChecks": 19,
+    "rendererResourceFiles": 37,
+    "watchRendererAbsent": true,
+    "paidModelVoiceRetest": "not run"
+  },
+  "files": {
+    "agent-tests-final.log": {
+      "bytes": 8639,
+      "sha256": "aeaa8a6000a7faf855421bf2d7e2d4818a5af2ca1f0b4bf04cad4033c1161184"
+    },
+    "js-tests-final.log": {
+      "bytes": 626,
+      "sha256": "533ead93e80d7c55a372b935f7071006e082c1ef8cce3efe4d0e763ef4699545"
+    },
+    "vendor-check-final.log": {
+      "bytes": 38,
+      "sha256": "b475716d19751b21d2aa07ef26d3757338c02dd242c73f8f074f852f7ddfd251"
+    },
+    "build-06.log": {
+      "bytes": 150925,
+      "sha256": "551bc3656c290924e5cf89c962754eeb29b78187d7375d5475eeb7cd056a002a"
+    },
+    "ios-tests-final.log": {
+      "bytes": 51095,
+      "sha256": "1b02b6d8fa31dfdac1355b81a97fec2fa3146a18b978c47b93f0775181c8daad"
+    },
+    "build-07.log": {
+      "bytes": 66966,
+      "sha256": "6dd3546e7a9b119f33cba2df63d19746b2323f5e686c1031e1cb7b046abaf795"
+    },
+    "ios-tests-07.log": {
+      "bytes": 22009,
+      "sha256": "18df9991e99188348cc1bf38d989c1cccc72ad3300156e23994daead9314a69c"
+    },
+    "build-08.log": {
+      "bytes": 366948,
+      "sha256": "3f1aeffaa590cb082bb5c3937d43154182d83b96b74da0ecfc602021992131f7"
+    },
+    "ios-tests-08.log": {
+      "bytes": 21602,
+      "sha256": "6fccd07ea37b5e01eeb41ff39346b5b93c771e8a59704bf5825dcfe664d35241"
+    },
+    "release-build.log": {
+      "bytes": 1610636,
+      "sha256": "1503e141b2ec7ec148381b694dd3dd394fd847a5bda7ce125c0cce9b7c94a213"
+    },
+    "release-bundle.json": {
+      "bytes": 8915,
+      "sha256": "dcb998441ce6ddb859adb3339a7cc491b1a11a04ae8e5bb6f722d906bcb96315"
+    },
+    "renderer-bundle.json": {
+      "bytes": 4053,
+      "sha256": "455fe5f051922dba40a629a11c0f977e95bd2e069049134e0adae136e6d0828b"
+    }
+  },
+  "screenshots": {
+    "light.png": {
+      "sha256": "6ff0740dc0af4ec39ead6ed85e39b29f9fa6716fd9de50e8fc1742c1f36a7d38",
+      "kind": "actual iPhone simulator hosted WKWebView; synthetic content"
+    },
+    "dark-large-type.png": {
+      "sha256": "93bd886e5954169d00833062f36d8eaca164f083e41ec904083c3e443ccc371f",
+      "kind": "actual iPhone simulator hosted WKWebView; synthetic content"
+    },
+    "streaming-completed.png": {
+      "sha256": "aff88b47783fbb304f008476e40884dfa7c12f4b79efdd0a1f50f30364c4a350",
+      "kind": "actual iPhone simulator hosted WKWebView; synthetic content"
+    }
+  }
+}

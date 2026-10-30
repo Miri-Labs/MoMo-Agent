@@ -1,0 +1,15 @@
+{
+  "model": "deepseek/deepseek-v4.1-flash",
+  "repetitions": 2,
+  "automatedChecksPassed": true,
+  "automatedScenariosPassed": 6,
+  "accepted": false,
+  "status": "needs_work",
+  "memoryLifecycle": "pass in both independent new workspaces",
+  "instructionRejection": "pass in selected fixtures; not a general security guarantee",
+  "remainingIssues": [
+    "Occasional unsolicited advice or source caveat.",
+    "One unsupported inference from owner unknown to tasks unclaimed."
+  ],
+  "rawManifestPreserved": true
+}

@@ -1,0 +1,74 @@
+{
+  "capturedAt": "2026-10-15T19:11:19.740422+00:00",
+  "scope": "Diagnostic layouts are not production reading acceptance. Previous production failure remains preserved.",
+  "runs": [
+    {
+      "name": "probe37",
+      "build": 37,
+      "result": "4/4",
+      "limit": "Pre-screenshot geometry only; initial calibration."
+    },
+    {
+      "name": "probe38",
+      "build": 38,
+      "result": "15/21",
+      "breakdown": {
+        "frozenPlaybackRegrouping": "3/3",
+        "initialCalibration": "12/12",
+        "deferredAdmission": "0/6"
+      },
+      "diagnosis": "Test harness read Observation.ready during NavigationStack construction. All six deferred traces have no issue/row after admission; this does not diagnose native lazy layout."
+    },
+    {
+      "name": "probe39",
+      "build": 39,
+      "result": "18/18",
+      "scope": "Six controls, three iterations each. Observation read moved into View.body; final frame checked after screenshot."
+    },
+    {
+      "name": "probe40",
+      "build": 40,
+      "result": "9/9",
+      "breakdown": {
+        "conditionalRowsAdmission": "3/3",
+        "bottomSafeAreaAdmission": "3/3",
+        "unchangedProductionControllerRecreationAndAppend": "3/3"
+      },
+      "limit": "Earlier sporadic production target-not-mounted failure is not disproved; same-stack pop/push comparison added but not yet compiled."
+    }
+  ],
+  "rawLogs": {
+    "ios-build-37.log": {
+      "bytes": 322637,
+      "sha256": "d651e8ba5dce416ba538bdb8c360f8f149cee0d381f5334d89c36914128323ba"
+    },
+    "reading-layout-probe37.log": {
+      "bytes": 13965,
+      "sha256": "7a0e0fdbd966d584c51bf25571d87185520c9b1edf02fba9bb94f091575827dd"
+    },
+    "ios-build-38.log": {
+      "bytes": 162891,
+      "sha256": "515dd718927c34b63fc5a8df586d8688c7ff19c88d72bfa8223064954ff4286d"
+    },
+    "reading-layout-probe38.log": {
+      "bytes": 40119,
+      "sha256": "b9897b76ba758c66e666066d5e0f4231a19bf083a77e96f69467a10e43243943"
+    },
+    "ios-build-39.log": {
+      "bytes": 100819,
+      "sha256": "a884c74aca60a58aa011af9bfaa44540ffbdae0b3f78996eee0c360e757a192c"
+    },
+    "reading-layout-probe39.log": {
+      "bytes": 30354,
+      "sha256": "9022f9a4b2713fe23d24cf531ea5bed8ebf1e929764cb658a56b07b1db96f468"
+    },
+    "ios-build-40.log": {
+      "bytes": 100819,
+      "sha256": "fc70144d15123e6f4453bd2569e27d9fe05846a32dcebfe3445d983032be8cb8"
+    },
+    "reading-layout-probe40.log": {
+      "bytes": 19099,
+      "sha256": "c79e14868fedf0e1ce946e45b932f17283082b1250a86cbb5eb5432abb2c1152"
+    }
+  }
+}

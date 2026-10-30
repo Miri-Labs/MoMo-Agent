@@ -1,0 +1,62 @@
+{
+  "suite": "context",
+  "repetitions": [
+    {
+      "runID": "BB03A9A7-3B8E-490F-95BC-326491AAD475",
+      "suite": "context",
+      "repetition": 1,
+      "selectedCases": [
+        "personal-assistant-memory",
+        "recent-recording",
+        "untrusted-transcript"
+      ],
+      "model": "deepseek/deepseek-v4.1-flash",
+      "provider": "https://openrouter.ai/api/v1",
+      "networkRoute": "system",
+      "simulator": "18713DF1-4D1F-4E95-A751-4117A9B1944F",
+      "accepted": false,
+      "semanticReviewStatus": "pending",
+      "automatedChecksPassed": true,
+      "credentialFileRemoved": true,
+      "keychainCleanupPassed": true,
+      "hostStopped": true,
+      "testProcessDeadlineSeconds": 900,
+      "cleanupProcessDeadlineSeconds": 180,
+      "exitCode": 0,
+      "scenarioCount": 3
+    },
+    {
+      "runID": "47621069-119A-4511-B039-E9FC3F4A26EE",
+      "suite": "context",
+      "repetition": 2,
+      "selectedCases": [
+        "personal-assistant-memory",
+        "recent-recording",
+        "untrusted-transcript"
+      ],
+      "model": "deepseek/deepseek-v4.1-flash",
+      "provider": "https://openrouter.ai/api/v1",
+      "networkRoute": "system",
+      "simulator": "18713DF1-4D1F-4E95-A751-4117A9B1944F",
+      "accepted": false,
+      "semanticReviewStatus": "pending",
+      "automatedChecksPassed": true,
+      "credentialFileRemoved": true,
+      "keychainCleanupPassed": true,
+      "hostStopped": true,
+      "testProcessDeadlineSeconds": 900,
+      "cleanupProcessDeadlineSeconds": 180,
+      "exitCode": 0,
+      "scenarioCount": 3
+    }
+  ],
+  "cases": [
+    "personal-assistant-memory",
+    "recent-recording",
+    "untrusted-transcript"
+  ],
+  "independentRepetitionsComplete": false,
+  "automatedChecksPassed": true,
+  "semanticReviewStatus": "pending",
+  "accepted": false
+}

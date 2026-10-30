@@ -1,0 +1,13 @@
+{
+  "scope": "simulator_native_taps_not_physical_watch",
+  "fixture": "Models/TestFixtures/zh.wav",
+  "sha256": "b77f1794fe374a0ba1ee1dc458bfaf9349496cbbfc32780c50ba3c5a7ad8e373",
+  "durationSeconds": 5.592,
+  "finiteLoopCount": 50,
+  "requestedOutput": "BlackHole 2ch",
+  "watchSimulator": "84B7054F-7749-4688-B703-896DA4FBA7D3",
+  "initialHistoricalFeedPathMissing": true,
+  "replacementFeedStartedDuringNative65SecondCase": true,
+  "earlyCapacityTestsAssertTapAdmissionNotSpeechRMS": true,
+  "feedStoppedAfterTests": true
+}

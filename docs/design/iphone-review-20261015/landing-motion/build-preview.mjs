@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const root=path.dirname(fileURLToPath(import.meta.url));
+let html=fs.readFileSync(path.join(root,'draft-export.html'),'utf8');
+html=html.replace(/<link\b[\s\S]*?>/g,'').replace('<html lang="en">','<html lang="zh-CN" data-theme="light">');
+html=html.replace('</head>','<title>MoMoAgent · Personal Agent</title><link rel="stylesheet" href="landing-v5.css"></head>');
+html=html.replace('</body>','<script src="momoagent-avatar.js"></script><script src="landing-v5.js"></script></body>');
+fs.writeFileSync(path.join(root,'preview.html'),html.replace(/[ \t]+$/gm,''));
+console.log('Built connected Personal Agent landing');

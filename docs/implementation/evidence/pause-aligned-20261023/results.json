@@ -1,0 +1,188 @@
+{
+  "version": "1.19.12",
+  "baseline": "3c8c2674f0287c42ae3e4f4d3d2b111644294a4b",
+  "environment": "macOS arm64 sherpa CPU, model tests; no phone timing or energy claim",
+  "fixture": "official zh.wav repeated 24 times, 300 ms pauses, optional seeded noise",
+  "fixtureSHA256": "b77f1794fe374a0ba1ee1dc458bfaf9349496cbbfc32780c50ba3c5a7ad8e373",
+  "inputMetric": "planned window context frames at 16000 Hz",
+  "vadThreshold": 0.25,
+  "sourceSHA256": {
+    "Packages/MoMoAgentKit/Sources/MoMoSpeech/Analysis/SpeechPauseProfile.swift": "e1a4c2ea788999aa13751e4e9fb7278a4092a34575ddec2ad7d3b4c13b27cd58",
+    "Packages/MoMoAgentKit/Sources/MoMoSpeech/Analysis/ContinuousSpeechWindows.swift": "71abd59298fb03f5cc2430ef74621d829f11c1f40dc885e8c4b02b907eee808a",
+    "Packages/MoMoAgentKit/Sources/MoMoSpeech/API/SpeechEngine.swift": "fc14d096fcc3fb51f0b2f3da3ee701d365f0b1bece0f0eadb77582e20e07f61c",
+    "Packages/MoMoAgentKit/Tests/MoMoSpeechTests/CompleteCoverageTests.swift": "0d6e5ba94f06827dd10c15d2c85540cbd86142d04ed6efc21f1a6caaa9b45156"
+  },
+  "results": [
+    {
+      "noise": false,
+      "referenceCharacters": 312,
+      "fixedErrors": 0,
+      "alignedErrors": 0,
+      "fixedCharacters": 312,
+      "alignedCharacters": 312,
+      "fixedInput": 2469568,
+      "inputFrames": 2257728,
+      "selectedFrames": 2250784,
+      "asrFrames": 2474784,
+      "cores": [
+        {
+          "start": 6944,
+          "count": 274976
+        },
+        {
+          "start": 281920,
+          "count": 283360
+        },
+        {
+          "start": 565280,
+          "count": 282880
+        },
+        {
+          "start": 848160,
+          "count": 282240
+        },
+        {
+          "start": 1130400,
+          "count": 282720
+        },
+        {
+          "start": 1413120,
+          "count": 282880
+        },
+        {
+          "start": 1696000,
+          "count": 283360
+        },
+        {
+          "start": 1979360,
+          "count": 278368
+        }
+      ]
+    },
+    {
+      "noise": true,
+      "referenceCharacters": 312,
+      "fixedErrors": 6,
+      "alignedErrors": 1,
+      "fixedCharacters": 308,
+      "alignedCharacters": 312,
+      "fixedInput": 2469568,
+      "inputFrames": 2257728,
+      "selectedFrames": 2250784,
+      "asrFrames": 2474784,
+      "cores": [
+        {
+          "start": 6944,
+          "count": 274976
+        },
+        {
+          "start": 281920,
+          "count": 283360
+        },
+        {
+          "start": 565280,
+          "count": 282880
+        },
+        {
+          "start": 848160,
+          "count": 282240
+        },
+        {
+          "start": 1130400,
+          "count": 282720
+        },
+        {
+          "start": 1413120,
+          "count": 282880
+        },
+        {
+          "start": 1696000,
+          "count": 283360
+        },
+        {
+          "start": 1979360,
+          "count": 278368
+        }
+      ]
+    }
+  ],
+  "testSummaries": [
+    "✔ Test run with 43 tests in 4 suites passed after 49.613 seconds.",
+    "✔ Test run with 3 tests in 1 suite passed after 0.178 seconds.",
+    "➜ Test fixedRecordingSamplesReportWorkWithoutChangingTheDeviceLibrary() skipped.",
+    "✔ Test run with 3 tests in 1 suite passed after 19.496 seconds."
+  ],
+  "releaseValidation": {
+    "build": "unsigned Release, generic iOS with embedded watchOS app and widget",
+    "status": "passed",
+    "checks": {
+      "release_app_exists": true,
+      "bundle_has_only_regular_files": true,
+      "phone_bundle_identity": true,
+      "watch_app_embedded": true,
+      "watch_bundle_identity": true,
+      "phone_executable_checked": true,
+      "watch_executable_checked": true,
+      "binary_architectures_read": true,
+      "test_fixtures_absent": true,
+      "debug_entry_strings_absent": true,
+      "all_model_resources_match": true,
+      "gmail_user_oauth_mode": true,
+      "gmail_shared_client_absent": true,
+      "background_processing_declared": true,
+      "background_identifiers_declared": true,
+      "phone_disk_display_reason": true,
+      "watch_disk_write_reason": true,
+      "watch_elapsed_time_reason": true,
+      "watch_audio_background_declared": true,
+      "watch_microphone_usage_declared": true,
+      "watch_companion_declared": true,
+      "version_configuration_valid": true,
+      "phone_version_matches_configuration": true,
+      "watch_version_matches_configuration": true,
+      "widget_extension_embedded": true,
+      "widget_bundle_identity": true,
+      "widget_extension_declared": true,
+      "widget_executable_checked": true,
+      "widget_version_matches_configuration": true
+    },
+    "bundles": {
+      "phone": {
+        "CFBundleIdentifier": "com.momoagent.ios",
+        "CFBundleExecutable": "MoMoAgent",
+        "CFBundleShortVersionString": "1.19.12",
+        "CFBundleVersion": "106",
+        "MinimumOSVersion": "18.0",
+        "DTPlatformName": "iphoneos",
+        "DTSDKName": "iphoneos27.0"
+      },
+      "watch": {
+        "CFBundleIdentifier": "com.momoagent.ios.watchkitapp",
+        "CFBundleExecutable": "MoMoAgentWatch",
+        "CFBundleShortVersionString": "1.19.12",
+        "CFBundleVersion": "106",
+        "MinimumOSVersion": "11.0",
+        "DTPlatformName": "watchos",
+        "DTSDKName": "watchos27.0"
+      },
+      "widget": {
+        "CFBundleIdentifier": "com.momoagent.ios.watchkitapp.widget",
+        "CFBundleExecutable": "MoMoAgentWatchWidget",
+        "CFBundleShortVersionString": "1.19.12",
+        "CFBundleVersion": "106",
+        "MinimumOSVersion": "11.0",
+        "DTPlatformName": "watchos",
+        "DTSDKName": "watchos27.0"
+      }
+    },
+    "notChecked": [
+      "install_and_launch",
+      "runtime_behavior",
+      "code_signature_and_entitlements",
+      "physical_devices",
+      "18_hour_capture",
+      "App_Store_archive_or_submission",
+      "unknown_secret_detection"
+    ]
+  }
+}

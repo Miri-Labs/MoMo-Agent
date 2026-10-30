@@ -1,0 +1,1 @@
+../../../../Tests/iPhoneIntegrationTests/PhoneSpeechSettingsTests.swift

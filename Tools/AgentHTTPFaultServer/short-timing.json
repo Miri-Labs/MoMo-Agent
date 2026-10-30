@@ -1,0 +1,11 @@
+{
+  "timing": {
+    "delaySeconds": 8,
+    "dripIntervalSeconds": 0.1,
+    "dripDurationSeconds": 12,
+    "fragmentIntervalSeconds": 0.001,
+    "retryAfterSeconds": 1,
+    "retryAfterMilliseconds": 250,
+    "overBudgetSeconds": 86400
+  }
+}

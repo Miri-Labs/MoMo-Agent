@@ -1,0 +1,6 @@
+{
+  "timing": {
+    "dripIntervalSeconds": 0.1,
+    "dripDurationSeconds": 120
+  }
+}

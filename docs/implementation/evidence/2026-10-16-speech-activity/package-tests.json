@@ -1,0 +1,11 @@
+{
+  "archive": {
+    "passed": 120,
+    "failed": 0
+  },
+  "agent": {
+    "passed": 64,
+    "failed": 0
+  },
+  "log": "/tmp/momo-activity-package-final.log"
+}

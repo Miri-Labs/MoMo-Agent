@@ -1,0 +1,83 @@
+{
+  "bubble": [
+    {
+      "tag": "P",
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "padding": "0px",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "line": "24px",
+      "width": 220.6953125,
+      "x": 140.3046875
+    },
+    {
+      "tag": "BUTTON",
+      "bg": "oklch(0.9627 0.0178832 265.129)",
+      "radius": "22px",
+      "padding": "10px 16px",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "line": "24px",
+      "width": 252.6953125,
+      "x": 124.3046875
+    },
+    {
+      "tag": "DIV",
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "padding": "0px",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "line": "24px",
+      "width": 252.6953125,
+      "x": 124.3046875
+    },
+    {
+      "tag": "DIV",
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "padding": "0px",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "line": "24px",
+      "width": 252.6953125,
+      "x": 124.3046875
+    },
+    {
+      "tag": "DIV",
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "padding": "0px",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "line": "24px",
+      "width": 361,
+      "x": 16
+    },
+    {
+      "tag": "LI",
+      "bg": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "padding": "52px 0px 0px",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "line": "24px",
+      "width": 361,
+      "x": 16
+    }
+  ],
+  "input": {
+    "value": "这是一项界面交互测试。请用中文写一份约600字的桌面整理建议，分四个小标题，并给出一个三项清单。不调用工具。",
+    "height": 88
+  },
+  "scroll": [
+    {
+      "tag": "DIV",
+      "label": "对话",
+      "top": 46,
+      "height": 852,
+      "scrollHeight": 1184
+    }
+  ]
+}

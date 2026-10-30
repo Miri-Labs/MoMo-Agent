@@ -1,0 +1,185 @@
+{
+  "streaming": {
+    "chars": 148,
+    "animations": [],
+    "reveal": [],
+    "scrollY": 0,
+    "scrolling": 0
+  },
+  "before": {
+    "top": 0,
+    "count": 175,
+    "ports": [
+      {
+        "testid": null,
+        "top": 833.5,
+        "height": 796,
+        "scrollHeight": 1959,
+        "cls": "overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable] flex-1 me-[var(--chat-body-end-inset,0px)] print:!me-0 print:!overflow-visible print:!h-auto"
+      }
+    ]
+  },
+  "reading": {
+    "top": 0,
+    "count": 246,
+    "jumpVisible": true
+  },
+  "stopped": {
+    "chars": 403,
+    "buttons": [
+      "Retry",
+      "Retry",
+      "Retry",
+      "Retry",
+      "Stop response",
+      "Send message"
+    ]
+  },
+  "events": [
+    {
+      "ms": 3390,
+      "chars": 0,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 4483,
+      "chars": 20,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 4690,
+      "chars": 34,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 5260,
+      "chars": 56,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 5477,
+      "chars": 78,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 5604,
+      "chars": 85,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 5756,
+      "chars": 91,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 5972,
+      "chars": 111,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 6126,
+      "chars": 135,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 6276,
+      "chars": 148,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 6397,
+      "chars": 158,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 6662,
+      "chars": 175,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 6988,
+      "chars": 186,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 7139,
+      "chars": 208,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 7289,
+      "chars": 230,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 7444,
+      "chars": 246,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 7891,
+      "chars": 268,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 8046,
+      "chars": 290,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 8198,
+      "chars": 312,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 8302,
+      "chars": 318,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 8338,
+      "chars": 398,
+      "visible": "visible",
+      "graphemeSpans": 0
+    },
+    {
+      "ms": 8350,
+      "chars": 403,
+      "visible": "visible",
+      "graphemeSpans": 0
+    }
+  ],
+  "afterStop": {
+    "lastChars": 434,
+    "status": "Claude’s response was interrupted.",
+    "stopButtons": 0,
+    "jump": "Scroll to bottom",
+    "scroll": [
+      {
+        "top": 796,
+        "height": 796,
+        "total": 2306
+      }
+    ]
+  }
+}

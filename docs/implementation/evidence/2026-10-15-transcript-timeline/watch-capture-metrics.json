@@ -1,0 +1,37 @@
+{
+  "actualCapturedFrames" : 1094400,
+  "chunks" : [
+    {
+      "bytes" : 265240,
+      "chunkID" : "E11DA411-9833-4F49-BDE8-C1C3D1AD522C",
+      "count" : 960000,
+      "epochID" : "FA9F5560-E38D-4F73-87FF-928F3C8B0764",
+      "sha256" : "0f3dcf2b775c48abae8e18fc576f2763ddb695dda7584248c997c64a3b51b482",
+      "start" : 0
+    },
+    {
+      "bytes" : 46419,
+      "chunkID" : "5B7C2250-379D-4464-8EAD-2B7C7D3CE091",
+      "count" : 83200,
+      "epochID" : "FA9F5560-E38D-4F73-87FF-928F3C8B0764",
+      "sha256" : "8a7b7927285c833513b8cf3e73d76f8fc05fc0de8c2b46b0df64f566c462d6d8",
+      "start" : 960000
+    },
+    {
+      "bytes" : 38458,
+      "chunkID" : "B0455698-B6EE-4DF0-9B8A-3D48CF5CB7BC",
+      "count" : 51200,
+      "epochID" : "CAAD60E4-7897-4DA0-B067-48F209D178F2",
+      "sha256" : "fcbb3012e1f3fb942be025e28401239af4f9df5f0bb669f7b8988295828c32c3",
+      "start" : 0
+    }
+  ],
+  "epochCount" : 2,
+  "markCount" : 1,
+  "rootID" : "1CAD2F30-5120-439E-8BAA-FFC03FD2BFDA",
+  "sampleRate" : 16000,
+  "scope" : "watchOS_simulator_native_microphone_no_WC_delivery",
+  "sessionID" : "0FFBBDFF-2757-4855-A855-6D0204CCF1BA",
+  "unacknowledgedOriginalCount" : 3,
+  "wallClockElapsed" : "69.966899334 seconds"
+}

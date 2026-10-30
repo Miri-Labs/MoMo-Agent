@@ -1,0 +1,276 @@
+{
+  "sourceLanguage": "zh-Hans",
+  "strings": {
+    "NSAlarmKitUsageDescription": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按你的指令设置和管理 MoMo Agent 闹钟。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set and manage MoMo Agent alarms at your command."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MoMo Agent アラームをコマンドで設定および管理します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령으로 MoMo Agent 알람을 설정하고 관리하세요."
+          }
+        }
+      }
+    },
+    "NSCalendarsFullAccessUsageDescription": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按你的指令查找、创建和修改日历事项，并核对实际结果。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find, create and modify calendar events at your command and check the actual results."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コマンドでカレンダー イベントを検索、作成、変更し、実際の結果を確認します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령으로 캘린더 이벤트를 찾고, 생성하고, 수정하고 실제 결과를 확인하세요."
+          }
+        }
+      }
+    },
+    "NSCameraUsageDescription": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拍摄照片并添加到聊天。点击发送后，照片会发送给你选用的 AI 服务。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Take a photo and add it to the chat. After clicking Send, the photo will be sent to the AI ​​service you selected."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を撮ってチャットに追加します。 「送信」をクリックすると、選択したAIサービスに写真が送信されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진을 찍어 채팅에 추가하세요. 보내기를 클릭하면 선택한 AI 서비스로 사진이 전송됩니다."
+          }
+        }
+      }
+    },
+    "NSHealthShareUsageDescription": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按你的选择只读心率、静息心率、睡眠、步数、活动能量和训练记录。开启后，健康摘要会发送到你选用的 AI 服务，帮助 MoMo 理解近期状态。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reads only heart rate, resting heart rate, sleep, step count, activity energy and training records according to your choice. When turned on, health summaries will be sent to the AI ​​service you choose to help MoMo understand recent status."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択に従って、心拍数、安静時心拍数、睡眠、歩数、活動エネルギー、トレーニング記録のみを読み取ります。オンにすると、健康状態の概要が選択した AI サービスに送信され、MoMo が最近の状態を把握できるようになります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택에 따라 심박수, 안정시 심박수, 수면, 걸음 수, 활동 에너지 및 훈련 기록만 읽습니다. 켜면 MoMo가 최근 상태를 이해할 수 있도록 건강 ​​요약이 선택한 AI 서비스로 전송됩니다."
+          }
+        }
+      }
+    },
+    "NSLocationAlwaysAndWhenInUseUsageDescription": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许后台接收低功耗的到访报告，保留到达和离开的大致时间。你可以随时停用或清空地点记录。相关片段会发送到你选用的 AI 服务。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "allows the background to receive low-power arrival reports, retaining approximate times of arrival and departure. You can disable or clear your location history at any time. Relevant snippets are sent to the AI ​​service of your choice."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用すると、バックグラウンドで低電力到着レポートを受信し、おおよその到着時刻と出発時刻を保持できます。ロケーション履歴はいつでも無効化または消去できます。関連するスニペットが、選択した AI サービスに送信されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용하면 배경에서 저전력 도착 보고서를 수신하여 대략적인 도착 및 출발 시간을 유지할 수 있습니다. 언제든지 위치 기록을 비활성화하거나 삭제할 수 있습니다. 선택한 AI 서비스로 관련 스니펫이 전송됩니다."
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在你启用地点上下文后记录手机到访的位置、精度和时间。相关片段会发送到你选用的 AI 服务，与日历和录音一起帮助 MoMo 理解生活事件。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Records the location, accuracy, and time of phone visits when you enable location context. Relevant snippets are sent to the AI ​​service of your choice, where they work with calendars and recordings to help MoMo understand life events."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ロケーション コンテキストを有効にすると、電話による訪問の場所、精度、時刻が記録されます。関連するスニペットは選択した AI サービスに送信され、カレンダーや記録と連携して MoMo がライフ イベントを理解できるようにします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위치 컨텍스트를 활성화하면 전화 방문의 위치, 정확성 및 시간을 기록합니다. 관련 조각은 귀하가 선택한 AI 서비스로 전송되며, 여기서 달력 및 녹음과 함께 작동하여 MoMo가 생활 사건을 이해하는 데 도움을 줍니다."
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击语音输入时录制声音，在手机上识别为可编辑文字。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record your voice when you tap voice input and convert it to editable text on your iPhone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声入力をタップすると録音し、iPhone 上で編集可能な文字に変換します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 입력을 누르면 녹음하고 iPhone에서 편집 가능한 텍스트로 변환합니다."
+          }
+        }
+      }
+    },
+    "NSRemindersFullAccessUsageDescription": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按你的指令管理提醒事项，读取最新的截止日期与完成状态。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manage reminders according to your instructions and read the latest deadlines and completion status."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指示に従ってリマインダーを管理し、最新の期限と完了ステータスを確認します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지침에 따라 알림을 관리하고 최신 마감일 및 완료 상태를 읽어보세요."
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许通过加密连接直接与附近的 Mac 通信，减少连接延迟。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect directly to your nearby Mac over an encrypted connection to reduce latency."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暗号化された接続で近くの Mac と直接通信し、遅延を減らします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "암호화된 연결로 가까운 Mac과 직접 통신하여 지연을 줄입니다."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

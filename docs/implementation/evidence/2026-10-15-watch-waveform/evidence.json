@@ -1,0 +1,151 @@
+{
+  "date": "2026-10-15",
+  "branch": "codex/initial-implementation",
+  "scope": "Deterministic Watch-hosted tests and actual offscreen SwiftUI Canvas rendering with fixed meter data; not microphone capture or physical wrist-raise evidence.",
+  "before": {
+    "passedTests": 0,
+    "failedTests": 1,
+    "firstMeasuredLeadingMarginPt": 42.5,
+    "canvasSizePt": [
+      200,
+      60
+    ]
+  },
+  "after": {
+    "passedTests": 5,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "runtimeWarnings": [],
+    "canvasSizesPt": [
+      [
+        200,
+        60
+      ],
+      [
+        184,
+        70
+      ],
+      [
+        162,
+        54
+      ]
+    ],
+    "visibleLeadingAndTrailingMarginsEachBelowPt": 8
+  },
+  "changedInputsBetweenRedAndGreenRuns": [
+    "Apps/WatchApp/Features/Capture/CaptureView.swift"
+  ],
+  "sourceHashesUnchangedDuringEachBuildAndTest": true,
+  "images": [
+    {
+      "path": "width-before.png",
+      "source": "tmp_agent_output/20261015-watch-waveform-width-before-01/attachments/BD064FBD-328B-407A-8868-C95C0F9DD241.png",
+      "bytes": 3562,
+      "sha256": "8d6cc5ea8e0cf9364d6318669e4ae8c86d21c3a5a683d0a46bbfd55576857571"
+    },
+    {
+      "path": "width-after.png",
+      "source": "tmp_agent_output/20261015-watch-waveform-width-after-01/attachments/69CFF83E-C4E1-4CD6-ACC0-94A63CC6CAD7.png",
+      "bytes": 19038,
+      "sha256": "34ccf48b01a77c609e2a6b84f683d6088f2bde955b8212b61bebd2b231b0060e"
+    }
+  ],
+  "files": [
+    {
+      "path": "tmp_agent_output/20261015-watch-waveform-width-before-01/build-result.json",
+      "bytes": 139,
+      "sha256": "6e4023f9fc920f7d967789531ea6cffbc8c407d8c3d01d03e9cfdf2af28bd308",
+      "summary": {
+        "exitCode": 0,
+        "wallSeconds": 28.388172915991163,
+        "sourceInputCount": 51,
+        "sourceHashesUnchanged": true
+      }
+    },
+    {
+      "path": "tmp_agent_output/20261015-watch-waveform-width-before-01/test-result.json",
+      "bytes": 330,
+      "sha256": "569dff539fb1e7d9a22f5418317b6c91973c1fd312c61d869bb3abe5fdc63052",
+      "summary": {
+        "exitCode": 65,
+        "wallSeconds": 13.102851999996346,
+        "sourceInputCount": 51,
+        "sourceHashesUnchanged": true,
+        "result": "Failed",
+        "passedTests": 0,
+        "failedTests": 1,
+        "skippedTests": 0,
+        "runtimeWarnings": []
+      }
+    },
+    {
+      "path": "tmp_agent_output/20261015-watch-waveform-width-before-01/summary.json",
+      "bytes": 1614,
+      "sha256": "ca1fe999057198bcf0584ec0c74b10af6a626ab562c5b1010099620dc4ffa6f9",
+      "summary": {
+        "result": "Failed",
+        "passedTests": 0,
+        "failedTests": 1,
+        "skippedTests": 0,
+        "runtimeWarnings": []
+      }
+    },
+    {
+      "path": "tmp_agent_output/20261015-watch-waveform-width-before-01/source-after-tests.json",
+      "bytes": 6993,
+      "sha256": "42c1128770c449d38aa36f11b7ff926f5abdd680c1a67348d1ccaa7aaca4a914",
+      "summary": {}
+    },
+    {
+      "path": "tmp_agent_output/20261015-watch-waveform-width-after-01/build-result.json",
+      "bytes": 139,
+      "sha256": "94b8e48b47bb05a0625b55036ba087bef39a3f6528b1deb8e56051a593d5ac70",
+      "summary": {
+        "exitCode": 0,
+        "wallSeconds": 15.073401166999247,
+        "sourceInputCount": 51,
+        "sourceHashesUnchanged": true
+      }
+    },
+    {
+      "path": "tmp_agent_output/20261015-watch-waveform-width-after-01/test-result.json",
+      "bytes": 328,
+      "sha256": "524b521636d37346c393b23a613f22d594871c861e5fcc0ebaf5235d54396d3a",
+      "summary": {
+        "exitCode": 0,
+        "wallSeconds": 8.430995667004026,
+        "sourceInputCount": 51,
+        "sourceHashesUnchanged": true,
+        "result": "Passed",
+        "passedTests": 5,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "runtimeWarnings": []
+      }
+    },
+    {
+      "path": "tmp_agent_output/20261015-watch-waveform-width-after-01/summary.json",
+      "bytes": 1003,
+      "sha256": "c2e1650e7f9fd7ae16cf54e4d63b4a00dd895e1838fb40c5fc7dc112dddff968",
+      "summary": {
+        "result": "Passed",
+        "passedTests": 5,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "runtimeWarnings": []
+      }
+    },
+    {
+      "path": "tmp_agent_output/20261015-watch-waveform-width-after-01/source-after-tests.json",
+      "bytes": 6993,
+      "sha256": "618e1cbe32c68c2be993eeae4fa70a69d343d297f9c387be80b1c66d465b661d",
+      "summary": {}
+    }
+  ],
+  "notChecked": [
+    "physical_watch_wrist_raise",
+    "physical_background_capture",
+    "energy",
+    "installation_on_user_devices"
+  ]
+}

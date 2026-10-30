@@ -1,0 +1,76 @@
+{
+  "viewport": {
+    "width": 393,
+    "height": 852
+  },
+  "user": {
+    "font": "anthropic-sans, system-ui, \"Segoe UI\", Roboto, Helvetica, Arial, \"PingFang SC\", \"PingFang TC\", \"Hiragino Sans\", \"Apple SD Gothic Neo\", \"Kohinoor Devanagari\", \"Kohinoor Bangla\", \"Kohinoor Telugu\", \"Tamil Sangam MN\", \"Kohinoor Gujarati\", \"Malayalam Sangam MN\", \"Nirmala UI\", \"Noto Sans Devanagari UI\", \"Noto Sans Devanagari\", \"Noto Sans Bengali UI\", \"Noto Sans Bengali\", \"Noto Sans Telugu UI\", \"Noto Sans Telugu\", \"Noto Sans Tamil UI\", \"Noto Sans Tamil\", \"Noto Sans Gujarati UI\", \"Noto Sans Gujarati\", \"Noto Sans Kannada UI\", \"Noto Sans Kannada\", \"Noto Sans Malayalam UI\", \"Noto Sans Malayalam\", Thonburi, \"Leelawadee UI\", \"Noto Sans Thai UI\", \"Noto Sans Thai\", Kefa, Ebrima, \"Noto Sans Ethiopic\", \"Abyssinica SIL\", sans-serif, ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"PingFang SC\", \"PingFang TC\", \"Hiragino Sans\", \"Apple SD Gothic Neo\", sans-serif",
+    "size": "15px",
+    "line": "20px",
+    "weight": "400",
+    "bg": "rgba(0, 0, 0, 0)",
+    "radius": "0px",
+    "padding": "0px",
+    "width": 252,
+    "height": 100
+  },
+  "userParagraph": {
+    "font": "anthropic-sans, system-ui, \"Segoe UI\", Roboto, Helvetica, Arial, \"PingFang SC\", \"PingFang TC\", \"Hiragino Sans\", \"Apple SD Gothic Neo\", \"Kohinoor Devanagari\", \"Kohinoor Bangla\", \"Kohinoor Telugu\", \"Tamil Sangam MN\", \"Kohinoor Gujarati\", \"Malayalam Sangam MN\", \"Nirmala UI\", \"Noto Sans Devanagari UI\", \"Noto Sans Devanagari\", \"Noto Sans Bengali UI\", \"Noto Sans Bengali\", \"Noto Sans Telugu UI\", \"Noto Sans Telugu\", \"Noto Sans Tamil UI\", \"Noto Sans Tamil\", \"Noto Sans Gujarati UI\", \"Noto Sans Gujarati\", \"Noto Sans Kannada UI\", \"Noto Sans Kannada\", \"Noto Sans Malayalam UI\", \"Noto Sans Malayalam\", Thonburi, \"Leelawadee UI\", \"Noto Sans Thai UI\", \"Noto Sans Thai\", Kefa, Ebrima, \"Noto Sans Ethiopic\", \"Abyssinica SIL\", sans-serif, ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"PingFang SC\", \"PingFang TC\", \"Hiragino Sans\", \"Apple SD Gothic Neo\", sans-serif",
+    "size": "15px",
+    "line": "20px",
+    "weight": "400",
+    "bg": "rgba(0, 0, 0, 0)",
+    "radius": "0px",
+    "padding": "0px",
+    "width": 252,
+    "height": 100
+  },
+  "assistant": {
+    "font": "anthropic-sans, system-ui, \"Segoe UI\", Roboto, Helvetica, Arial, \"PingFang SC\", \"PingFang TC\", \"Hiragino Sans\", \"Apple SD Gothic Neo\", \"Kohinoor Devanagari\", \"Kohinoor Bangla\", \"Kohinoor Telugu\", \"Tamil Sangam MN\", \"Kohinoor Gujarati\", \"Malayalam Sangam MN\", \"Nirmala UI\", \"Noto Sans Devanagari UI\", \"Noto Sans Devanagari\", \"Noto Sans Bengali UI\", \"Noto Sans Bengali\", \"Noto Sans Telugu UI\", \"Noto Sans Telugu\", \"Noto Sans Tamil UI\", \"Noto Sans Tamil\", \"Noto Sans Gujarati UI\", \"Noto Sans Gujarati\", \"Noto Sans Kannada UI\", \"Noto Sans Kannada\", \"Noto Sans Malayalam UI\", \"Noto Sans Malayalam\", Thonburi, \"Leelawadee UI\", \"Noto Sans Thai UI\", \"Noto Sans Thai\", Kefa, Ebrima, \"Noto Sans Ethiopic\", \"Abyssinica SIL\", sans-serif, ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"PingFang SC\", \"PingFang TC\", \"Hiragino Sans\", \"Apple SD Gothic Neo\", sans-serif",
+    "size": "14px",
+    "line": "21px",
+    "weight": "400",
+    "bg": "rgba(0, 0, 0, 0)",
+    "radius": "0px",
+    "padding": "0px 0px 12px",
+    "width": 337,
+    "height": 979.484375
+  },
+  "assistantParagraph": {
+    "font": "anthropic-serif, \"Anthropic Serif Fallback Georgia\", \"Anthropic Serif Fallback Times\", \"Anthropic Serif Fallback DejaVu\", \"Anthropic Serif Fallback Noto\", Georgia, \"Arial Hebrew\", \"Noto Sans Hebrew\", \"Times New Roman\", Times, \"PingFang SC\", \"Microsoft YaHei\", \"Noto Sans CJK SC\", \"PingFang TC\", \"Microsoft JhengHei\", \"Noto Sans CJK TC\", \"Hiragino Sans\", \"Yu Gothic\", Meiryo, \"Noto Sans CJK JP\", \"Apple SD Gothic Neo\", \"Malgun Gothic\", \"Noto Sans CJK KR\", \"Kohinoor Devanagari\", \"Kohinoor Bangla\", \"Kohinoor Telugu\", \"Tamil Sangam MN\", \"Kohinoor Gujarati\", \"Malayalam Sangam MN\", \"Nirmala UI\", \"Noto Sans Devanagari UI\", \"Noto Sans Devanagari\", \"Noto Sans Bengali UI\", \"Noto Sans Bengali\", \"Noto Sans Telugu UI\", \"Noto Sans Telugu\", \"Noto Sans Tamil UI\", \"Noto Sans Tamil\", \"Noto Sans Gujarati UI\", \"Noto Sans Gujarati\", \"Noto Sans Kannada UI\", \"Noto Sans Kannada\", \"Noto Sans Malayalam UI\", \"Noto Sans Malayalam\", Thonburi, \"Leelawadee UI\", \"Noto Sans Thai UI\", \"Noto Sans Thai\", Kefa, Ebrima, \"Noto Sans Ethiopic\", \"Abyssinica SIL\", serif",
+    "size": "16px",
+    "line": "24px",
+    "weight": "400",
+    "bg": "rgba(0, 0, 0, 0)",
+    "radius": "0px",
+    "padding": "0px 32px 0px 4px",
+    "width": 337,
+    "height": 144
+  },
+  "input": {
+    "font": "anthropic-sans, system-ui, \"Segoe UI\", Roboto, Helvetica, Arial, \"PingFang SC\", \"PingFang TC\", \"Hiragino Sans\", \"Apple SD Gothic Neo\", \"Kohinoor Devanagari\", \"Kohinoor Bangla\", \"Kohinoor Telugu\", \"Tamil Sangam MN\", \"Kohinoor Gujarati\", \"Malayalam Sangam MN\", \"Nirmala UI\", \"Noto Sans Devanagari UI\", \"Noto Sans Devanagari\", \"Noto Sans Bengali UI\", \"Noto Sans Bengali\", \"Noto Sans Telugu UI\", \"Noto Sans Telugu\", \"Noto Sans Tamil UI\", \"Noto Sans Tamil\", \"Noto Sans Gujarati UI\", \"Noto Sans Gujarati\", \"Noto Sans Kannada UI\", \"Noto Sans Kannada\", \"Noto Sans Malayalam UI\", \"Noto Sans Malayalam\", Thonburi, \"Leelawadee UI\", \"Noto Sans Thai UI\", \"Noto Sans Thai\", Kefa, Ebrima, \"Noto Sans Ethiopic\", \"Abyssinica SIL\", sans-serif, ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, \"PingFang SC\", \"PingFang TC\", \"Hiragino Sans\", \"Apple SD Gothic Neo\", sans-serif",
+    "size": "15px",
+    "line": "21px",
+    "weight": "400",
+    "bg": "rgba(0, 0, 0, 0)",
+    "radius": "0px",
+    "padding": "0px",
+    "width": 335,
+    "height": 21
+  },
+  "surfaceVariables": [
+    [
+      "--cds-surface-0",
+      "#f9f9f7"
+    ],
+    [
+      "--cds-surface-1",
+      "#fcfcfb"
+    ],
+    [
+      "--cds-text-primary",
+      "#0b0b0b"
+    ]
+  ],
+  "scrollports": []
+}

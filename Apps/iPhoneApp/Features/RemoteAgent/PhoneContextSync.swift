@@ -1,0 +1,255 @@
+import Foundation
+import Observation
+import MoMoAgentClient
+import MoMoArchive
+
+/// Phone delivers original transcripts. Hermes owns memory; the phone only caches its current view.
+@MainActor @Observable
+final class PhoneContextSync {
+    let recordingSummaries: PhoneRecordingSummaries?
+    private(set) var summaryStorageFailure: String?
+    private(set) var memories: [ContextMemory] = []
+    private(set) var lastSynced: Date?
+    private(set) var failure: String?
+    private(set) var isSyncing = false
+    private(set) var memoryPending = 0
+    private(set) var memoryNeedsReview = 0
+    var pendingSources: Int { state.sources.values.filter { $0.receipt == nil }.count }
+    var lastSourcesSent: Date? { state.lastSourcesSent }
+    var hasLegacyChanges: Bool { !state.forget.isEmpty }
+    @ObservationIgnored var onAuthenticationRequired: ((Error) -> Void)?
+    @ObservationIgnored private var authenticationRequired = false
+    @ObservationIgnored private let archive: ArchiveStore
+    @ObservationIgnored private let deviceID: UUID
+    @ObservationIgnored private let client: AgentClient
+    @ObservationIgnored private let file: URL
+    @ObservationIgnored private var state: State
+    @ObservationIgnored private var inFlight: Task<Void, Error>?
+    @ObservationIgnored private var syncRequested = false
+    @ObservationIgnored private var polling: Task<Void, Never>?
+
+    private struct Source: Codable {
+        var envelope: SourceEnvelope
+        var receipt: SourceReceipt?
+    }
+    private struct State: Codable {
+        let libraryID: UUID
+        let connection: AgentConnection
+        var sources: [String: Source] = [:]
+        var forget: [ForgetMemory] = []
+        var memories: [ContextMemory] = []
+        var lastSynced: Date?
+        var lastSourcesSent: Date?
+        var memoryBackend: String?
+    }
+    init(directory: URL, archive: ArchiveStore, deviceID: UUID, connection: AgentConnection, key: String, configuration: URLSessionConfiguration = .ephemeral, transport: (any AgentTransport)? = nil) throws {
+        guard let endpoint = connection.dataURL else { throw SyncError.unavailable }
+        client = try AgentClient(baseURL: endpoint, credential: key, assistantID: connection.assistantID, configuration: configuration, transport: transport)
+        self.archive = archive; self.deviceID = deviceID; file = directory.appendingPathComponent("context.json")
+        if FileManager.default.fileExists(atPath: file.path) {
+            state = try JSONDecoder().decode(State.self, from: Data(contentsOf: file))
+            guard state.libraryID == archive.libraryInstanceID, state.connection.hasSameIdentity(as: connection) else { throw SyncError.identity }
+        } else { state = State(libraryID: archive.libraryInstanceID, connection: connection) }
+        memories = state.memoryBackend == "Hermes" ? state.memories : []; lastSynced = state.memoryBackend == "Hermes" ? state.lastSynced : nil
+        do { recordingSummaries = try PhoneRecordingSummaries(directory: directory, archive: archive, connection: connection, client: client) }
+        catch {
+            recordingSummaries = nil
+            summaryStorageFailure = String(localized: "录音总结缓存暂时无法读取，原数据已保留。")
+        }
+    }
+    var sources: [SourceReference] {
+        state.sources.values.filter { !$0.envelope.deleted }.flatMap { source in
+            source.envelope.spans.compactMap { span in
+                guard let session = UUID(uuidString: source.envelope.sessionId), let id = UUID(uuidString: span.id) else { return nil }
+                return SourceReference(sessionID: session, spanID: id, transcriptVersion: source.envelope.version, generation: source.envelope.generation)
+            }
+        }
+    }
+    func foreground() {
+        guard polling == nil, !authenticationRequired else { return }
+        recordingSummaries?.foreground()
+        polling = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refresh()
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            }
+        }
+    }
+    func stopPolling() { polling?.cancel(); polling = nil; recordingSummaries?.background() }
+    func background() { stopPolling(); inFlight?.cancel() }
+    func refresh() async {
+        do { try await synchronize() }
+        catch { if AgentTransportFailure.isCancelled(error) { return } }
+    }
+    func synchronize() async throws {
+        guard !authenticationRequired else { throw CancellationError() }
+        syncRequested = true
+        if let inFlight { return try await inFlight.value }
+        isSyncing = true
+        let task = Task {
+            repeat {
+                syncRequested = false
+                try await synchronizeArchive()
+            } while syncRequested && !Task.isCancelled
+        }
+        inFlight = task
+        defer { inFlight = nil; isSyncing = false }
+        do { try await task.value; failure = nil }
+        catch {
+            if AgentTransportFailure.isCancelled(error) { throw error }
+            if case AgentClientError.http(401, _, _, _) = error {
+                authenticationRequired = true; background(); onAuthenticationRequired?(error)
+            }
+            failure = AgentTransportFailure.isTransient(error)
+                ? String(localized: "尚未同步到 Mac，连接后自动重试。")
+                : error.localizedDescription
+            throw error
+        }
+    }
+    func forget(_ memory: ContextMemory) async {
+        do {
+            try await client.forget(ForgetMemory(memory: memory))
+            try await downloadMemories()
+            failure = nil
+        } catch {
+            guard !AgentTransportFailure.isCancelled(error) else { return }
+            if case AgentClientError.http(401, _, _, _) = error {
+                authenticationRequired = true; background(); onAuthenticationRequired?(error)
+            }
+            failure = AgentTransportFailure.isTransient(error)
+                ? String(localized: "暂时无法连接 Mac，请稍后重试。")
+                : error.localizedDescription
+        }
+    }
+    func prepareSubmission(input: String) async throws {
+        let expression = try NSRegularExpression(pattern: "momoagent://source/[^\\s)\\]>]+")
+        for match in expression.matches(in: input, range: NSRange(input.startIndex..., in: input)) {
+            guard let range = Range(match.range, in: input), let url = URLComponents(string: String(input[range])) else { throw SyncError.sourceChanged }
+            let parts = url.path.split(separator: "/"), query = url.queryItems ?? []
+            guard parts.count == 2, let session = UUID(uuidString: String(parts[0])), let span = UUID(uuidString: String(parts[1])),
+                  let version = query.first(where: { $0.name == "version" })?.value.flatMap(Int64.init),
+                  let generation = query.first(where: { $0.name == "generation" })?.value.flatMap(Int64.init) else { throw SyncError.sourceChanged }
+            let recording = try await archive.recordingSummary(sessionID: session)
+            let source = try await stage(recording)
+            guard source.envelope.version == version, source.envelope.generation == generation,
+                  source.envelope.spans.contains(where: { $0.id == span.uuidString.lowercased() }) else { throw SyncError.sourceChanged }
+            try await deliver(source)
+        }
+    }
+    private func stage(_ recording: RecordingSummary, allowEmptyInitial: Bool = true) async throws -> Source {
+        let id = recording.sessionID.uuidString.lowercased()
+        if let saved = state.sources[id], !saved.envelope.deleted,
+           saved.envelope.generation == recording.generation, saved.envelope.version == recording.transcriptVersion { return saved }
+        let snapshot = try await archive.transcriptSnapshot(sessionID: recording.sessionID)
+        let document = snapshot.document
+        if !allowEmptyInitial, state.sources[id] == nil, document.spans.isEmpty {
+            throw ArchiveError.missingTranscript(recording.sessionID)
+        }
+        let spans = try document.spans.map { span -> SourceEnvelope.Span in
+            guard let location = snapshot.locations[span.id] else { throw SyncError.missingSourceTime }
+            let text = span.speaker.map { "[\($0)] \(span.text)" } ?? span.text
+            return .init(id: span.id, text: text, recordedAt: location.recordedAt)
+        }
+        let source = Source(envelope: SourceEnvelope(library: archive.libraryInstanceID, session: recording.sessionID, device: deviceID,
+            generation: document.generation, version: document.version, recordedAt: recording.recordedAt, spans: spans))
+        if let newer = state.sources[id], newer.envelope.generation > document.generation ||
+            (newer.envelope.generation == document.generation && newer.envelope.version > document.version) { return newer }
+        var updated = state; updated.sources[id] = source; try commit(updated)
+        return source
+    }
+    private func deliver(_ source: Source) async throws {
+        let receipt = try await client.syncSource(source.envelope)
+        let expected = "\(source.envelope.generation):\(source.envelope.version):\(source.envelope.textSha256):\(source.envelope.deleted ? 1 : 0)"
+        guard receipt.sourceId == source.envelope.sourceID, receipt.sourceRevision == expected else { throw SyncError.identity }
+        var updated = state
+        if updated.sources[source.envelope.sessionId]?.envelope == source.envelope {
+            updated.sources[source.envelope.sessionId]?.receipt = receipt; try commit(updated)
+        }
+    }
+    private func synchronizeArchive() async throws {
+        let status = try await client.contextStatus()
+        guard status.workspaceId == state.connection.workspaceID, status.sourceSync, status.memoryWriter == "Hermes" else { throw SyncError.identity }
+        memoryPending = status.memoryPending ?? 0; memoryNeedsReview = status.memoryNeedsReview ?? 0
+        var uploadError: Error?
+        do { try await uploadSources() }
+        catch is CancellationError { throw CancellationError() }
+        catch { uploadError = error }
+        try await downloadMemories()
+        if let uploadError { throw uploadError }
+    }
+    private func uploadSources() async throws {
+        var cursor: String?
+        var firstError: Error?
+        var hadDeferredProjection = false
+        repeat {
+            try Task.checkCancellation()
+            let page = try await archive.recordingsPage(limit: 100, cursor: cursor)
+            for recording in page.items where recording.transcriptVersion > 0 {
+                do { _ = try await stage(recording, allowEmptyInitial: false) }
+                catch ArchiveError.missingTranscript, ArchiveError.sessionDeleted { continue }
+                catch ArchiveError.projectionConflict { hadDeferredProjection = true; continue }
+                catch is CancellationError { throw CancellationError() }
+                catch { if firstError == nil { firstError = error } }
+            }
+            cursor = page.nextCursor
+        } while cursor != nil
+        for id in Array(state.sources.keys).sorted() {
+            guard let source = state.sources[id], !source.envelope.deleted, let sessionID = UUID(uuidString: id) else { continue }
+            do { _ = try await archive.recordingSummary(sessionID: sessionID) }
+            catch ArchiveError.sessionDeleted {
+                var updated = state; updated.sources[id] = Source(envelope: source.envelope.tombstone())
+                try commit(updated)
+            }
+            catch is CancellationError { throw CancellationError() }
+            catch { if firstError == nil { firstError = error } }
+        }
+        let pendingIDs = state.sources.keys.sorted {
+            let lhs = state.sources[$0]?.envelope.recordedAt ?? 0
+            let rhs = state.sources[$1]?.envelope.recordedAt ?? 0
+            return lhs == rhs ? $0 < $1 : lhs > rhs
+        }
+        for id in pendingIDs {
+            try Task.checkCancellation()
+            guard let source = state.sources[id], source.receipt == nil else { continue }
+            do { try await deliver(source) }
+            catch is CancellationError { throw CancellationError() }
+            catch {
+                if case AgentClientError.http(401, _, _, _) = error { throw error }
+                if firstError == nil { firstError = error }
+            }
+        }
+        if let firstError { throw firstError }
+        if !hadDeferredProjection {
+            var updated = state; updated.lastSourcesSent = Date(); try commit(updated)
+        }
+    }
+    private func downloadMemories() async throws {
+        // Publish only a complete, consistent snapshot. A concurrent Mac write retries on the next refresh.
+        var items: [ContextMemory] = [], revision: Int64?, after: String?
+        var seen = Set<String>()
+        repeat {
+            let page = try await client.memories(after: after, revision: revision)
+            revision = page.revision; items += page.items; after = page.nextCursor
+            if let after, !seen.insert(after).inserted { throw SyncError.invalidPagination }
+        } while after != nil
+        var updated = state; updated.memories = items; updated.memoryBackend = "Hermes"; updated.lastSynced = Date(); try commit(updated)
+    }
+    private func commit(_ updated: State) throws {
+        try JSONEncoder().encode(updated).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        state = updated
+        memories = updated.memoryBackend == "Hermes" ? updated.memories : []
+        lastSynced = updated.memoryBackend == "Hermes" ? updated.lastSynced : nil
+    }
+    enum SyncError: LocalizedError {
+        case unavailable, identity, missingSourceTime, sourceChanged, invalidPagination
+        var errorDescription: String? {
+            switch self {
+            case .unavailable: String(localized: "Mac 连接缺少资料同步地址，请更新连接信息。")
+            case .identity: String(localized: "资料同步身份不一致，已保留本机资料并停止发送。")
+            case .missingSourceTime: String(localized: "录音片段缺少原始时间，尚未同步。")
+            case .sourceChanged: String(localized: "引用的录音稿已变化，请从转录页重新选择，任务尚未发送。")
+            case .invalidPagination: String(localized: "Mac 返回了重复的记忆分页，原缓存已保留。")
+            }
+        }
+    }
+}

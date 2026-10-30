@@ -1,0 +1,428 @@
+import Foundation
+import Testing
+import MoMoContracts
+@testable import MoMoArchive
+
+struct AutomaticProcessingTests {
+    let fingerprint = ContentHash.sha256(Data("automatic-priority".utf8))
+    let now = Date(timeIntervalSince1970: 1_792_238_400) // 2026-10-17 12:00 UTC
+    var calendar: Calendar { TimelineDay.calendar }
+
+    @Test func noSpeechReviewPreservesTextAndReopensOnlyTheRequestedTimeRange() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let store = try fixture.store(), anchor = now.addingTimeInterval(-60)
+        for index in 0..<3 {
+            _ = try await ingest(fixture, into: store, anchor: anchor, start: Int64(index * 1_600), sequence: Int64(index))
+        }
+        let analysis = try await nextAnalysis(store), window = try makeWindow(analysis)
+        try await store.commitAnalysisBatch(ticket: analysis, windows: [window],
+            analyzedCoverage: [FrameRange(start: 0, count: 4_800)],
+            noSpeechCoverage: [FrameRange(start: 1_600, count: 3_200)],
+            checkpoint: checkpoint(analysis, end: 4_800), waitingForMoreAudio: false)
+        let recognition = try #require(await store.claimTranscriptionWindow(configurationFingerprint: fingerprint))
+        let original = try await store.commitWindowTranscript(ticket: recognition, text: "已保留的正文", rawResult: Data())
+        let interval = DateInterval(start: anchor.addingTimeInterval(0.125), end: anchor.addingTimeInterval(0.25))
+        #expect(try await store.reopenNoSpeech(in: interval, configurationFingerprint: fingerprint) == 0.125)
+        #expect(try await store.readTranscript(sessionID: fixture.sessionID).spans == original.spans)
+        #expect(try await store.pendingAnalysisRanges(epochID: fixture.epochID, fingerprint: fingerprint, retainedOnly: true)
+            == [FrameRange(start: 2_000, count: 2_000)])
+        #expect(try await store.reopenNoSpeech(in: interval, configurationFingerprint: fingerprint) == 0)
+        let reopened = try fixture.store()
+        let ticket = try await nextAnalysis(reopened)
+        #expect(ticket.checkpoint?.sourceFrame == 2_000)
+        #expect(ticket.boundary.endFrame == 4_000)
+        let core = try FrameRange(start: 2_000, count: 2_000)
+        let sources = try ticket.inputs.map { input in
+            let m = input.envelope.manifest, start = max(core.start, m.frames.start), end = min(core.end, m.frames.end)
+            return ArchiveWindowSource(chunkID: m.chunkID, manifestSHA256: input.envelope.manifestSHA256,
+                audioSHA256: m.audioSHA256, sourceFrames: try FrameRange(start: start, count: end - start))
+        }
+        let recovered = ArchiveAnalysisWindow(id: ContentHash.sha256(Data("recovered".utf8)), sessionID: fixture.sessionID,
+            epochID: fixture.epochID, analysisAnchor: 2_000, coreFrames: core, contextFrames: core,
+            modelCoreFrames: try FrameRange(start: 0, count: 2_000), modelContextFrames: try FrameRange(start: 0, count: 2_000),
+            sources: sources, configurationFingerprint: fingerprint)
+        try await reopened.commitAnalysisBatch(ticket: ticket, windows: [recovered], analyzedCoverage: [core], noSpeechCoverage: [],
+            checkpoint: checkpoint(ticket, end: core.end), waitingForMoreAudio: false)
+        let next = try #require(await reopened.claimTranscriptionWindow(configurationFingerprint: fingerprint))
+        let result = try await reopened.commitWindowTranscript(ticket: next, text: "补查 KYC 测试", rawResult: Data())
+        #expect(result.spans.count == 2)
+        #expect(result.spans.first == original.spans.first)
+        #expect(try await reopened.searchTranscripts(query: "kyc").count == 1)
+        #expect(try await reopened.transcriptLocations(document: result)[result.spans[1].id]?.recordedAt
+            == anchor.addingTimeInterval(0.125))
+        #expect(try await reopened.reopenNoSpeech(in: interval, configurationFingerprint: fingerprint) == 0)
+    }
+
+    @Test func noSpeechReviewRejectsActiveAnalysisAndExcludesMissingOriginalAudio() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let store = try fixture.store(), anchor = now.addingTimeInterval(-60)
+        _ = try await ingest(fixture, into: store, anchor: anchor)
+        let ticket = try await nextAnalysis(store)
+        let range = try FrameRange(start: 0, count: 800)
+        try await store.commitAnalysisBatch(ticket: ticket, windows: [], analyzedCoverage: [range], noSpeechCoverage: [range],
+            checkpoint: checkpoint(ticket, end: range.end), waitingForMoreAudio: false, continuing: true)
+        let interval = DateInterval(start: anchor, duration: 1)
+        await #expect(throws: ArchiveError.staleAttempt) {
+            try await store.reopenNoSpeech(in: interval, configurationFingerprint: fingerprint)
+        }
+        try await store.cancelEpochAnalysis(ticket: ticket)
+        try await store.markReviewAudioUnavailable(epochID: fixture.epochID)
+        #expect(try await store.reopenNoSpeech(in: interval, configurationFingerprint: fingerprint) == 0)
+    }
+
+    @Test func noSpeechReviewUsesAudioDateAcrossMidnightInsteadOfSessionFolderDate() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let store = try fixture.store()
+        let midnight = calendar.startOfDay(for: now), anchor = midnight.addingTimeInterval(-0.125)
+        for index in 0..<3 {
+            _ = try await ingest(fixture, into: store, anchor: anchor, start: Int64(index * 1_600), sequence: Int64(index))
+        }
+        while let ticket = try await store.claimEpochAnalysis(configurationFingerprint: fingerprint) {
+            try await completeSilence(ticket, store: store)
+        }
+        let interval = DateInterval(start: midnight, duration: 86_400)
+        #expect(try await store.reopenNoSpeech(in: interval, configurationFingerprint: fingerprint) == 0.175)
+        #expect(try await store.pendingAnalysisRanges(epochID: fixture.epochID, fingerprint: fingerprint, retainedOnly: true)
+            == [FrameRange(start: 2_000, count: 2_800)])
+    }
+
+    @Test func unchangedRetransmissionsPreserveCompletedAnalysisAndOnlyReissueTheReceipt() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let store = try fixture.store()
+        let envelope = try await ingest(fixture, into: store, anchor: now.addingTimeInterval(-60))
+        let ticket = try await nextAnalysis(store)
+        try await completeSilence(ticket, store: store)
+        let receipt = try #require(await store.pendingReceipts().first)
+        try await store.applyReceipt(ReceiptApplied(receipt: receipt))
+        #expect(try await store.pendingAnalysisWakeCount(fingerprint: fingerprint) == 0)
+        let coverage = try await store.recordingCoverage(sessionID: fixture.sessionID, configurationFingerprint: fingerprint)
+        let changesBefore = try await store.receiveTestChangeCount()
+        for _ in 0..<50 {
+            guard case .duplicate(let repeated) = try await store.commitReceivedChunk(fixture.deliver(envelope, to: store)) else {
+                Issue.record("Matching valid bytes must remain an idempotent duplicate"); return
+            }
+            #expect(repeated == receipt)
+        }
+        let pending = try await store.pendingAnalysisWakeCount(fingerprint: fingerprint)
+        let changes = try await store.receiveTestChangeCount() - changesBefore
+        print("RETRANSMISSION_BENCHMARK deliveries=50 sqliteRowChanges=\(changes) pendingEpochs=\(pending)")
+        #expect(changes == 1, "Only the first replay needs to change the already-confirmed receipt back to pending.")
+        #expect(pending == 0,
+            "Re-sending confirmed bytes must not make completed analysis eligible again.")
+        #expect(try await store.recordingCoverage(sessionID: fixture.sessionID, configurationFingerprint: fingerprint).processedDuration == coverage.processedDuration)
+        #expect(try await store.pendingReceipts() == [receipt], "A lost acknowledgement must still be reissued.")
+        #expect(try await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: now, calendar: calendar) == nil)
+    }
+
+    @Test func currentProducerBlocksHistoryBeforeItsFirstWindowAndAllowsHigherPriorityPreemption() async throws {
+        let old = try Fixture(), current = try Fixture()
+        defer { old.remove(); current.remove() }
+        let store = try old.store()
+        _ = try await ingest(old, into: store, anchor: now.addingTimeInterval(-86_400))
+        let historical = try await nextAnalysis(store)
+        _ = try await ingest(current, into: store, anchor: now.addingTimeInterval(-60))
+        let work = try #require(await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: now,
+            calendar: calendar, activeAnalysis: historical))
+        guard case .analysis(let today) = work else { Issue.record("Today's analysis must preempt history"); return }
+        try await store.cancelEpochAnalysis(ticket: historical)
+        #expect(try await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: now,
+            calendar: calendar, activeAnalysis: today) == nil)
+        try await store.cancelEpochAnalysis(ticket: today)
+    }
+
+    @Test func incrementalCommitRetainsAttemptAndLeasesAndReopenResumesOnlyTheTail() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let store = try fixture.store()
+        _ = try await ingest(fixture, into: store, anchor: now.addingTimeInterval(-60))
+        let ticket = try await nextAnalysis(store)
+        let prefix = try FrameRange(start: 0, count: 800)
+        try await store.commitAnalysisBatch(ticket: ticket, windows: [], analyzedCoverage: [prefix], noSpeechCoverage: [prefix],
+            checkpoint: checkpoint(ticket, end: prefix.end), waitingForMoreAudio: false, continuing: true)
+        #expect(await store.audioLeases.count == ticket.leaseIDs.count)
+        #expect(try await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: now, calendar: calendar) == nil)
+        let reopened = try fixture.store()
+        try await reopened.recoverInterruptedJobs()
+        let resumed = try await nextAnalysis(reopened)
+        #expect(resumed.checkpoint?.sourceFrame == 800)
+        try await completeSilence(resumed, store: reopened)
+        try await store.cancelEpochAnalysis(ticket: ticket)
+        #expect(await store.audioLeases.isEmpty)
+    }
+
+    @Test func incrementalWindowCanRunBeforeProducerFinishesAndDeletionKeepsItsReadersLeased() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let store = try fixture.store()
+        _ = try await ingest(fixture, into: store, anchor: now.addingTimeInterval(-60))
+        let analysis = try await nextAnalysis(store), window = try makeWindow(analysis)
+        try await store.commitAnalysisBatch(ticket: analysis, windows: [window], analyzedCoverage: [window.coreFrames],
+            noSpeechCoverage: [], checkpoint: checkpoint(analysis, end: window.coreFrames.end),
+            waitingForMoreAudio: false, continuing: true)
+        let work = try #require(await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: now,
+            calendar: calendar, activeAnalysis: analysis))
+        guard case .transcription(let recognition) = work else { Issue.record("Published window must be runnable"); return }
+        let audio = try #require(analysis.inputs.first).audioURL
+        _ = try await store.deleteSession(id: fixture.sessionID)
+        #expect(FileManager.default.fileExists(atPath: audio.path))
+        try await store.cancelTranscriptionWindow(ticket: recognition)
+        #expect(FileManager.default.fileExists(atPath: audio.path))
+        await #expect(throws: ArchiveError.staleAttempt) {
+            try await store.commitAnalysisBatch(ticket: analysis, windows: [], analyzedCoverage: [window.coreFrames],
+                noSpeechCoverage: [], checkpoint: checkpoint(analysis, end: window.coreFrames.end), waitingForMoreAudio: false)
+        }
+        try await store.cancelEpochAnalysis(ticket: analysis)
+        #expect(!FileManager.default.fileExists(atPath: audio.path))
+    }
+
+    @Test(arguments: [false, true])
+    func incrementalOpenTailWaitsForChangedInputInsteadOfReplayingTheSameSnapshot(arrivesBeforeFinal: Bool) async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let store = try fixture.store()
+        _ = try await ingest(fixture, into: store, anchor: now.addingTimeInterval(-60))
+        let ticket = try await nextAnalysis(store)
+        let prefix = try FrameRange(start: 0, count: 800)
+        try await store.commitAnalysisBatch(ticket: ticket, windows: [], analyzedCoverage: [prefix], noSpeechCoverage: [prefix],
+            checkpoint: checkpoint(ticket, end: prefix.end), waitingForMoreAudio: false, continuing: true)
+        if arrivesBeforeFinal {
+            _ = try await ingest(fixture, into: store, anchor: now.addingTimeInterval(-60), start: 1_600, sequence: 1)
+        }
+        try await store.commitAnalysisBatch(ticket: ticket, windows: [], analyzedCoverage: [], noSpeechCoverage: [],
+            checkpoint: nil, waitingForMoreAudio: true)
+        if !arrivesBeforeFinal {
+            #expect(try await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: now, calendar: calendar) == nil)
+            _ = try await ingest(fixture, into: store, anchor: now.addingTimeInterval(-60), start: 1_600, sequence: 1)
+        }
+        let resumed = try await nextAnalysis(store)
+        #expect(resumed.checkpoint?.sourceFrame == 800)
+        try await store.cancelEpochAnalysis(ticket: resumed)
+        #expect(await store.audioLeases.isEmpty)
+    }
+
+    @Test func todayAnalysisOutranksAnAlreadyRegisteredHistoricalWindow() async throws {
+        let old = try Fixture(), today = try Fixture()
+        defer { old.remove(); today.remove() }
+        let store = try old.store()
+        _ = try await ingest(old, into: store, anchor: now.addingTimeInterval(-86_400))
+        let analysis = try #require(await store.claimEpochAnalysis(configurationFingerprint: fingerprint))
+        let window = try makeWindow(analysis)
+        try await store.commitAnalysisBatch(ticket: analysis, windows: [window], analyzedCoverage: [window.coreFrames],
+            noSpeechCoverage: [], checkpoint: checkpoint(analysis, end: window.coreFrames.end), waitingForMoreAudio: false)
+        _ = try await ingest(today, into: store, anchor: now.addingTimeInterval(-60))
+        let work = try #require(await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: now, calendar: calendar))
+        guard case .analysis(let ticket) = work else { Issue.record("Historical ASR outranked today's VAD."); return }
+        #expect(ticket.sessionID == today.sessionID)
+        try await store.cancelEpochAnalysis(ticket: ticket)
+    }
+
+    @Test func aThousandHistoricalChunksDoNotGetLeasedBeforeTodaysInput() async throws {
+        let old = try Fixture(), current = try Fixture()
+        defer { old.remove(); current.remove() }
+        let store = try old.store()
+        for index in 0..<1_000 {
+            _ = try await ingest(old, into: store, anchor: now.addingTimeInterval(-172_800),
+                start: Int64(index) * 1_600, sequence: Int64(index))
+        }
+        _ = try await ingest(current, into: store, anchor: now.addingTimeInterval(-60))
+        let before = await store.audioContentValidationCount
+        let ticket = try await nextAnalysis(store)
+        #expect(ticket.sessionID == current.sessionID)
+        #expect(ticket.inputs.count == 1)
+        #expect(await store.audioContentValidationCount - before == 1)
+        try await store.cancelEpochAnalysis(ticket: ticket)
+        #expect(await store.audioLeases.isEmpty)
+    }
+
+    @Test func sameEpochCanFinishTodayBeforeYesterdayAndPreservesReplayFloorAcrossReopen() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let store = try fixture.store()
+        let midnight = calendar.startOfDay(for: now)
+        let anchor = midnight.addingTimeInterval(-0.05)
+        _ = try await ingest(fixture, into: store, anchor: anchor)
+        let second = try await ingest(fixture, into: store, anchor: anchor, start: 1_600, sequence: 1)
+        try await store.applyReceipt(ReceiptApplied(receipt: #require(await store.pendingReceipts().first { $0.chunkID == second.manifest.chunkID })))
+        let current = try await nextAnalysis(store)
+        #expect(current.checkpoint?.sourceFrame == 800)
+        try await completeSilence(current, store: store)
+        #expect(try await store.analysisReplayFloors(configurationFingerprint: fingerprint)[fixture.epochID] == nil)
+        let floors = try await store.analysisReplayFloors(configurationFingerprint: fingerprint)
+        #expect(try await store.expireAudio(olderThan: now.addingTimeInterval(86_400), replayFloors: floors).isEmpty)
+        let reopened = try fixture.store()
+        let historical = try await nextAnalysis(reopened)
+        #expect(historical.checkpoint == nil)
+        #expect(historical.boundary == .processingRange(800))
+        try await completeSilence(historical, store: reopened)
+        #expect(try await reopened.analysisReplayFloors(configurationFingerprint: fingerprint)[fixture.epochID] == 3_200)
+        #expect(try await reopened.recordingCoverage(sessionID: fixture.sessionID, configurationFingerprint: fingerprint).processedDuration == 0.2)
+        #expect(try await reopened.recordingCoverage(sessionID: fixture.sessionID, configurationFingerprint: fingerprint).epochs.first?.closedAtFrame == nil)
+    }
+
+    @Test func samePriorityEpochsRotateAndTheTurnSurvivesReopen() async throws {
+        let fixtures = try (0..<3).map { _ in try Fixture() }
+        defer { fixtures.forEach { $0.remove() } }
+        let store = try fixtures[0].store()
+        for fixture in fixtures { _ = try await ingest(fixture, into: store, anchor: now.addingTimeInterval(-60)) }
+        var sessions = Set<UUID>()
+        for _ in fixtures {
+            let reopened = try fixtures[0].store()
+            let ticket = try await nextAnalysis(reopened)
+            sessions.insert(ticket.sessionID)
+            try await reopened.cancelEpochAnalysis(ticket: ticket)
+        }
+        #expect(sessions.count == 3)
+    }
+
+    @Test func historyWaitsForResourceEligibilityAndCurrentFailureDoesNotBlockIt() async throws {
+        let current = try Fixture(), old = try Fixture()
+        defer { current.remove(); old.remove() }
+        let store = try current.store()
+        _ = try await ingest(old, into: store, anchor: now.addingTimeInterval(-86_400))
+        #expect(try await store.claimAutomaticWork(configurationFingerprint: fingerprint, allowHistorical: false, now: now, calendar: calendar) == nil)
+        _ = try await ingest(current, into: store, anchor: now.addingTimeInterval(-60))
+        let first = try await nextAnalysis(store)
+        #expect(first.sessionID == current.sessionID)
+        try await store.deferEpochAnalysis(ticket: first, code: .recognition, now: now)
+        let next = try await nextAnalysis(store)
+        #expect(next.sessionID == old.sessionID)
+        try await store.cancelEpochAnalysis(ticket: next)
+        let retry = try await nextAnalysis(store, at: now.addingTimeInterval(6))
+        #expect(retry.sessionID == current.sessionID)
+        try await store.cancelEpochAnalysis(ticket: retry)
+    }
+
+    @Test func aWaitingTailDoesNotSpinOrBlockAnIndependentReceivedRange() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let store = try fixture.store()
+        _ = try await ingest(fixture, into: store, anchor: now.addingTimeInterval(-60))
+        let first = try await nextAnalysis(store)
+        try await store.commitAnalysisBatch(ticket: first, windows: [], analyzedCoverage: [], noSpeechCoverage: [],
+            checkpoint: nil, waitingForMoreAudio: true)
+        #expect(try await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: now, calendar: calendar) == nil)
+        _ = try await ingest(fixture, into: store, anchor: now.addingTimeInterval(-60), start: 3_200, sequence: 2)
+        let prefix = try await nextAnalysis(store)
+        #expect(prefix.boundary == .processingRange(1_600))
+        try await completeSilence(prefix, store: store)
+        let later = try await nextAnalysis(store)
+        #expect(later.checkpoint?.sourceFrame == 3_200)
+        try await completeSilence(later, store: store)
+        #expect(try await store.processingWaitState(configurationFingerprint: fingerprint) == .awaitingAudio)
+    }
+
+    @Test func currentRecognitionDoesNotPrefetchHistoryAndFrozenWindowsRemainReserved() async throws {
+        let current = try Fixture(), old = try Fixture()
+        defer { current.remove(); old.remove() }
+        let store = try current.store()
+        _ = try await ingest(current, into: store, anchor: now.addingTimeInterval(-60))
+        let analysis = try await nextAnalysis(store), window = try makeWindow(analysis)
+        try await store.commitAnalysisBatch(ticket: analysis, windows: [window], analyzedCoverage: [window.coreFrames],
+            noSpeechCoverage: [], checkpoint: checkpoint(analysis, end: window.coreFrames.end), waitingForMoreAudio: false)
+        _ = try await ingest(old, into: store, anchor: now.addingTimeInterval(-86_400))
+        #expect(try await store.claimAutomaticAnalysis(configurationFingerprint: fingerprint, activeWindow: window, now: now, calendar: calendar) == nil)
+        _ = try #require(await store.freezeTranscriptionBatch(configurationFingerprint: fingerprint))
+        let next = try await nextAnalysis(store)
+        #expect(next.sessionID == old.sessionID)
+        try await store.cancelEpochAnalysis(ticket: next)
+    }
+
+    @Test func sparseLateResultCannotCommitAfterDeletion() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let store = try fixture.store()
+        _ = try await ingest(fixture, into: store, anchor: calendar.startOfDay(for: now).addingTimeInterval(-0.05))
+        let ticket = try await nextAnalysis(store)
+        _ = try await store.deleteSession(id: fixture.sessionID)
+        await #expect(throws: ArchiveError.staleAttempt) { try await completeSilence(ticket, store: store) }
+        try await store.cancelEpochAnalysis(ticket: ticket)
+        #expect(await store.audioLeases.isEmpty)
+    }
+
+    @Test func recordedTimezoneAndMidnightGraceDeterminePriority() throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let envelope = try fixture.envelope(), frames = envelope.manifest.frames
+        let midnight = calendar.startOfDay(for: now)
+        let policy = ProcessingDatePolicy(now: midnight.addingTimeInterval(60), calendar: calendar)
+        let recent = try manifest(fixture, anchor: midnight.addingTimeInterval(-60), offset: 0)
+        #expect(policy.priority(frames, manifest: recent) == 0)
+        let old = try manifest(fixture, anchor: midnight.addingTimeInterval(-3_600), offset: 0)
+        #expect(policy.priority(frames, manifest: old) == 1)
+        let localToday = try manifest(fixture, anchor: midnight.addingTimeInterval(-3_600), offset: 28_800)
+        #expect(policy.priority(frames, manifest: localToday) == 0)
+    }
+
+    @Test func clockSkewDoesNotSplitReceivedAudioIntoMovingSubsecondTickets() throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let audio = try manifest(fixture, anchor: now, offset: -50_400)
+        let received = try FrameRange(start: 0, count: 960_000)
+        for elapsed in [0.0001, 0.1234, 1.2345] {
+            let policy = ProcessingDatePolicy(now: now.addingTimeInterval(elapsed), calendar: calendar)
+            let ranges = try policy.split(received, manifest: audio)
+            #expect(ranges.count == 1)
+            #expect(ranges.first?.0 == received)
+            #expect(ranges.first?.1 == 0)
+        }
+    }
+
+    @Test func aKnownMissingTailRemainsWaitingAfterAllReceivedAudioFinishes() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let store = try fixture.store()
+        _ = try await ingest(fixture, into: store, anchor: now.addingTimeInterval(-60))
+        try await store.markEpochClosed(epochID: fixture.epochID, endFrame: 3_200)
+        try await completeSilence(nextAnalysis(store), store: store)
+        #expect(try await store.processingWaitState(configurationFingerprint: fingerprint) == .awaitingAudio)
+        #expect(try await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: now, calendar: calendar) == nil)
+    }
+
+    private func nextAnalysis(_ store: ArchiveStore, at time: Date? = nil) async throws -> EpochAnalysisTicket {
+        let work = try #require(await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: time ?? now, calendar: calendar))
+        guard case .analysis(let ticket) = work else { throw ArchiveError.invalidTranscript }
+        return ticket
+    }
+
+    private func checkpoint(_ ticket: EpochAnalysisTicket, end: Int64) -> ArchiveCheckpoint {
+        ArchiveCheckpoint(sessionID: ticket.sessionID, epochID: ticket.epochID, sourceFrame: end, configurationFingerprint: fingerprint)
+    }
+
+    private func completeSilence(_ ticket: EpochAnalysisTicket, store: ArchiveStore) async throws {
+        let end = min(try #require(ticket.inputs.last).envelope.manifest.frames.end, ticket.boundary.endFrame ?? .max)
+        let range = try FrameRange(start: ticket.checkpoint?.sourceFrame ?? 0, count: end - (ticket.checkpoint?.sourceFrame ?? 0))
+        try await store.commitAnalysisBatch(ticket: ticket, windows: [], analyzedCoverage: [range], noSpeechCoverage: [range],
+            checkpoint: checkpoint(ticket, end: end), waitingForMoreAudio: false)
+    }
+
+    private func makeWindow(_ ticket: EpochAnalysisTicket) throws -> ArchiveAnalysisWindow {
+        let input = try #require(ticket.inputs.first), m = input.envelope.manifest
+        return ArchiveAnalysisWindow(id: ContentHash.sha256(Data(m.chunkID.uuidString.utf8)), sessionID: m.sessionID,
+            epochID: m.epochID, analysisAnchor: m.frames.start, coreFrames: m.frames, contextFrames: m.frames,
+            modelCoreFrames: m.frames, modelContextFrames: m.frames,
+            sources: [ArchiveWindowSource(chunkID: m.chunkID, manifestSHA256: input.envelope.manifestSHA256,
+                audioSHA256: m.audioSHA256, sourceFrames: m.frames)], configurationFingerprint: fingerprint)
+    }
+
+    @discardableResult private func ingest(_ fixture: Fixture, into store: ArchiveStore, anchor: Date,
+                                           start: Int64 = 0, sequence: Int64 = 0) async throws -> ManifestEnvelope {
+        let envelope = try ManifestEnvelope(manifest: manifest(fixture, anchor: anchor, start: start, sequence: sequence))
+        _ = try await store.commitReceivedChunk(fixture.deliver(envelope, to: store))
+        return envelope
+    }
+
+    private func manifest(_ fixture: Fixture, anchor: Date, offset: Int = 0, start: Int64 = 0, sequence: Int64 = 0) throws -> ChunkManifest {
+        try ChunkManifest(sessionID: fixture.sessionID, epochID: fixture.epochID, sourceDeviceID: fixture.deviceID,
+            sourceBuild: "priority-test", sequence: sequence, frames: FrameRange(start: start, count: 1_600), timebaseHz: 16_000,
+            wallClockAnchor: anchor, timezoneOffset: offset, codec: .pcmInt16, sampleRate: 16_000, channels: 1,
+            decodedFrameCount: 1_600, byteCount: Int64(fixture.audio.count), audioSHA256: ContentHash.sha256(fixture.audio),
+            sealedAt: anchor.addingTimeInterval(Double(start + 1_600) / 16_000), sourceKind: .fixture)
+    }
+}
+
+private extension ArchiveStore {
+    func markReviewAudioUnavailable(epochID: UUID) throws {
+        try database.execute("UPDATE chunks SET retention='missing_unexpected' WHERE epoch_id=?", [.text(epochID.uuidString)])
+    }
+    func receiveTestChangeCount() throws -> Int64 {
+        let row = try #require(database.rows("SELECT total_changes()").first)
+        return try row.requireInt(0)
+    }
+
+    func pendingAnalysisWakeCount(fingerprint: String) throws -> Int64 {
+        let row = try #require(database.rows("SELECT COUNT(*) FROM analysis_epochs WHERE configuration_hash=? AND has_pending=1",
+            [.text(fingerprint)]).first)
+        return try row.requireInt(0)
+    }
+}

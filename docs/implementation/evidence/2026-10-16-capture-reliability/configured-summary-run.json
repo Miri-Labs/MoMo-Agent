@@ -1,0 +1,21 @@
+{
+  "runID": "2717897C-3B09-4E5D-A095-668847680F93",
+  "simulator": "53EAE745-D38F-41A4-A226-39E0C0923C6F",
+  "test": "MoMoAgentIntegrationTests/TimelineConfiguredSummaryTests",
+  "executed": true,
+  "accepted": true,
+  "hostStopped": true,
+  "errorCodes": [],
+  "workspaceCleanup": "removed_new",
+  "fixtureBaseURL": "https://127.0.0.1:53689",
+  "exitCode": 0,
+  "summary": {
+    "totalTestCount": 2,
+    "passedTests": 2,
+    "failedTests": 0,
+    "skippedTests": 0
+  },
+  "removedWorkspaceCount": 2,
+  "preservedWorkspaceCount": 0,
+  "status": "passed"
+}

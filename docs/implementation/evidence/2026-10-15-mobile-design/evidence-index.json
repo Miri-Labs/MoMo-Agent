@@ -1,0 +1,1108 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-15",
+  "branch": "codex/initial-implementation",
+  "localEvidenceRoot": "tmp_agent_output",
+  "scope": "Metadata index of separate mobile design verification rounds, not a new aggregate test run. Explicit typed field allowlists retain status/counts/hashes only; original failures remain indexed. Raw logs, xcresult, API payloads, credentials, audio, binaries and CSS/JS bundles are excluded. Screenshots are unchanged copies or a reference to an existing committed artifact. Previous2026-10-14 index is unchanged.",
+  "roundNotes": {
+    "phone01": "5 passed / 2 failed. Original provider validation visibility and floating-point 43.99999999999994 vs 44 touch-target assertion failures retained.",
+    "phone02": "5 passed / 2 failed. Both keyboard cases failed the real software-keyboard height >100pt prerequisite.",
+    "keyboard03": "0 passed / 2 failed. Real software-keyboard >100pt prerequisite still failed; original evidence retained.",
+    "keyboard04": "0 passed / 2 failed. Actual software-keyboard gate passed; later assertion assumed returned caret was at end. Actual insertion occurred at tapped caret position.",
+    "keyboard05": "2 passed / 0 failed. Height >100pt gate unchanged; up to45s readiness wait is only for rendered/hittable keyboard. Actual typing, draft persistence, returned-caret editing and Dynamic Type reachability passed. Debug before later inline/secondary typography changes.",
+    "inline06": "2 passed / 0 failed after one-line leaf-page inline title modifier. Navigation and plan CRUD are separate from Keyboard05, not combined into a new7/7.",
+    "secondary07": "3 passed / 0 failed after the four secondary recording pages adopted PhoneTypography. Real local ASR recording journey, missing-transcript recovery, and system export cancellation;336 stable inputs, no runtime warnings. Separate from Keyboard05 and Inline06.",
+    "watchUI01": "Fresh1/1 UI pass after12pt font change. Native2 tests inherited from final-01 via33 unchanged inputs; not a fresh3/3.",
+    "release11": "Installed historical snapshot before effective inline Settings title.",
+    "release12": "Installed and visually reviewed historical compact-title snapshot before four secondary-page typography mappings.",
+    "release13": "Final installed and visually reviewed snapshot. Both targets launched;9 installed-file hashes match;118-file exact authorized credential scan has zero matches. Five actual Release pages reviewed. No new Release microphone capture, keyboard E2E or paid API call."
+  },
+  "files": [
+    {
+      "path": "20261014-mobile-design-phone-01/summary.json",
+      "exists": true,
+      "bytes": 2027,
+      "sha256": "eacf8dfeebfec24b6970513ed592550a16eb83dc743e77f12500de074c9d93fc",
+      "kind": "summary.json",
+      "summary": {
+        "result": "Failed",
+        "totalTestCount": 7,
+        "passedTests": 5,
+        "failedTests": 2,
+        "skippedTests": 0,
+        "runtimeWarningCount": 0
+      }
+    },
+    {
+      "path": "20261014-mobile-design-phone-01/build-result.json",
+      "exists": true,
+      "bytes": 162,
+      "sha256": "15007b0685c59eb4232b4f7588707984069ce745cf2b0d9471a1591d477f1c09",
+      "kind": "build-result.json",
+      "summary": {
+        "exitCode": 0,
+        "wallSeconds": 31.757605624999997,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261014-mobile-design-phone-01/ui-result.json",
+      "exists": true,
+      "bytes": 299,
+      "sha256": "0a0d4f815398efcb47262863485b51a5855028bb090128b390d0d774fd43573f",
+      "kind": "ui-result.json",
+      "summary": {
+        "exitCode": 65,
+        "wallSeconds": 223.4168936670012,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261014-mobile-design-phone-01/source-before.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "e4b26a6b4f346798ffc9a7a2fc7a149ef94720f792557417a746218afc98b369",
+      "kind": "source-before.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261014-mobile-design-phone-01/source-after-ui.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "e4b26a6b4f346798ffc9a7a2fc7a149ef94720f792557417a746218afc98b369",
+      "kind": "source-after-ui.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261014-mobile-design-phone-02/summary.json",
+      "exists": true,
+      "bytes": 2377,
+      "sha256": "82a8d5f9c93eb749aa8134588418eb792b3ec5f7e2e83138cece6e17d9e13f78",
+      "kind": "summary.json",
+      "summary": {
+        "result": "Failed",
+        "totalTestCount": 7,
+        "passedTests": 5,
+        "failedTests": 2,
+        "skippedTests": 0,
+        "runtimeWarningCount": 0
+      }
+    },
+    {
+      "path": "20261014-mobile-design-phone-02/build-result.json",
+      "exists": true,
+      "bytes": 162,
+      "sha256": "5657d23a8312c1a661821b0b69fd2f1357e2b6e72f56a3b3e98b23a4a44032c2",
+      "kind": "build-result.json",
+      "summary": {
+        "exitCode": 0,
+        "wallSeconds": 12.917637665999791,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261014-mobile-design-phone-02/ui-result.json",
+      "exists": true,
+      "bytes": 300,
+      "sha256": "7ece46c67ce31b08bf9af687b045cf0411d76c4a7f9c285a9a6733b4b34e909c",
+      "kind": "ui-result.json",
+      "summary": {
+        "exitCode": 65,
+        "wallSeconds": 235.71280083300007,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261014-mobile-design-phone-02/source-before.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "35969475c3f302be5f6fa0927f5ced68f22fd3d55e27eaa434eba621186c267d",
+      "kind": "source-before.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261014-mobile-design-phone-02/source-after-ui.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "35969475c3f302be5f6fa0927f5ced68f22fd3d55e27eaa434eba621186c267d",
+      "kind": "source-after-ui.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261014-mobile-design-phone-keyboard-03/summary.json",
+      "exists": true,
+      "bytes": 2377,
+      "sha256": "dd33197adc42477da0a1ddbebdbe36b7a1122e035be9c8e2162aeabb588ad412",
+      "kind": "summary.json",
+      "summary": {
+        "result": "Failed",
+        "totalTestCount": 2,
+        "passedTests": 0,
+        "failedTests": 2,
+        "skippedTests": 0,
+        "runtimeWarningCount": 0
+      }
+    },
+    {
+      "path": "20261014-mobile-design-phone-keyboard-03/ui-result.json",
+      "exists": true,
+      "bytes": 299,
+      "sha256": "bcd8df434d5e424f51ecd00a6ec523e72aa29ba816922cadaa0c79fc4179ee74",
+      "kind": "ui-result.json",
+      "summary": {
+        "exitCode": 65,
+        "wallSeconds": 36.87046370899952,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261014-mobile-design-phone-keyboard-03/source-after-ui.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "35969475c3f302be5f6fa0927f5ced68f22fd3d55e27eaa434eba621186c267d",
+      "kind": "source-after-ui.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-keyboard-04/summary.json",
+      "exists": true,
+      "bytes": 2717,
+      "sha256": "d0d5f5620e4bbe5693cef8e1992d63ebe68e22945cd615730a76b97b8300569f",
+      "kind": "summary.json",
+      "summary": {
+        "result": "Failed",
+        "totalTestCount": 2,
+        "passedTests": 0,
+        "failedTests": 2,
+        "skippedTests": 0,
+        "runtimeWarningCount": 0
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-keyboard-04/build-result.json",
+      "exists": true,
+      "bytes": 161,
+      "sha256": "bcc12766aa4d610623688029e9cb038520ef5f29ccd3d5ecb30ecc1a19e226d8",
+      "kind": "build-result.json",
+      "summary": {
+        "exitCode": 0,
+        "wallSeconds": 9.472921832999418,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-keyboard-04/ui-result.json",
+      "exists": true,
+      "bytes": 299,
+      "sha256": "f165af71c45901941dc49328fb29c4fadd8606e86f2cdb24350ab5f7bc4c375d",
+      "kind": "ui-result.json",
+      "summary": {
+        "exitCode": 65,
+        "wallSeconds": 52.42787833299917,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-keyboard-04/source-before.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "2f3269e72ac10cd6d9d145341ac67a5083ff414088b1202ebd9c22b8307db768",
+      "kind": "source-before.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-keyboard-04/source-after-ui.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "2f3269e72ac10cd6d9d145341ac67a5083ff414088b1202ebd9c22b8307db768",
+      "kind": "source-after-ui.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-keyboard-05/summary.json",
+      "exists": true,
+      "bytes": 975,
+      "sha256": "923840324899ef7eff42724f45d86d134fe8a7595e0eff4a4f49b3e16b4ae626",
+      "kind": "summary.json",
+      "summary": {
+        "result": "Passed",
+        "totalTestCount": 2,
+        "passedTests": 2,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "runtimeWarningCount": 0
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-keyboard-05/build-result.json",
+      "exists": true,
+      "bytes": 161,
+      "sha256": "a25e3f71ead264ab856d520bf5e500f70e2705d23508bbd2bb5fced49107b5fb",
+      "kind": "build-result.json",
+      "summary": {
+        "exitCode": 0,
+        "wallSeconds": 8.882391666998956,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-keyboard-05/ui-result.json",
+      "exists": true,
+      "bytes": 299,
+      "sha256": "4747c9ca8d5425e75d2b18485c23b91a98101862f91daea54e6e5ff175f515d3",
+      "kind": "ui-result.json",
+      "summary": {
+        "exitCode": 0,
+        "wallSeconds": 51.504793041000084,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-keyboard-05/source-before.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "5d61eff1db0237307134cd44362015dc5c25bc098a4168805aae0b137adaab7a",
+      "kind": "source-before.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-keyboard-05/source-after-ui.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "5d61eff1db0237307134cd44362015dc5c25bc098a4168805aae0b137adaab7a",
+      "kind": "source-after-ui.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-inline-06/summary.json",
+      "exists": true,
+      "bytes": 975,
+      "sha256": "8f5c0515a582a5fa09effee95b0a8c19449dac8ba04d5c29accdf1bb7703e913",
+      "kind": "summary.json",
+      "summary": {
+        "result": "Passed",
+        "totalTestCount": 2,
+        "passedTests": 2,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "runtimeWarningCount": 0
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-inline-06/build-result.json",
+      "exists": true,
+      "bytes": 162,
+      "sha256": "5a4c5eb4865f54aa74bc573c201a52f822c9af66efd2541b6d5e063e910d23a5",
+      "kind": "build-result.json",
+      "summary": {
+        "exitCode": 0,
+        "wallSeconds": 10.658675290998872,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-inline-06/ui-result.json",
+      "exists": true,
+      "bytes": 298,
+      "sha256": "ba6b1167e6cd870f8007410fc1120dc1104b9f4a3dfe4199bc994291fb2d21d7",
+      "kind": "ui-result.json",
+      "summary": {
+        "exitCode": 0,
+        "wallSeconds": 83.24924437499976,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-inline-06/source-before.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "d06386953694c3677d33147aeeff690178538d7d5a751625a09435617fee7df0",
+      "kind": "source-before.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-inline-06/source-after-ui.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "d06386953694c3677d33147aeeff690178538d7d5a751625a09435617fee7df0",
+      "kind": "source-after-ui.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-secondary-07/summary.json",
+      "exists": true,
+      "bytes": 976,
+      "sha256": "628abf4396eb25ae91941d4a6ddf3f2119fa41483b672bb58a3bc40900750ef8",
+      "kind": "summary.json",
+      "summary": {
+        "result": "Passed",
+        "totalTestCount": 3,
+        "passedTests": 3,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "runtimeWarningCount": 0
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-secondary-07/build-result.json",
+      "exists": true,
+      "bytes": 156,
+      "sha256": "8b785ab52ec293e8d08ebc624b42f70e871c649a068a24af68f434dc95c8459a",
+      "kind": "build-result.json",
+      "summary": {
+        "exitCode": 0,
+        "wallSeconds": 18.709184709,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-secondary-07/ui-result.json",
+      "exists": true,
+      "bytes": 294,
+      "sha256": "285abcac0919998f22df4c188b525e5243a367111e0f53e1b73e75c738556549",
+      "kind": "ui-result.json",
+      "summary": {
+        "exitCode": 0,
+        "wallSeconds": 158.596545834,
+        "sourceInputCount": 336,
+        "sourceHashesUnchanged": true,
+        "paidCredentialEnvironmentPresent": false
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-secondary-07/source-before.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "01c75bdf5d542bf0d7b15f191bf79b11cba31d2f2dafdb1dcee80e1c8830e2de",
+      "kind": "source-before.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-secondary-07/source-after-ui.json",
+      "exists": true,
+      "bytes": 61393,
+      "sha256": "01c75bdf5d542bf0d7b15f191bf79b11cba31d2f2dafdb1dcee80e1c8830e2de",
+      "kind": "source-after-ui.json",
+      "summary": {
+        "recordedInputCount": 336
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-keyboard-05/visual-review.json",
+      "exists": true,
+      "bytes": 971,
+      "sha256": "3a24918734baa3eee3f1cbd50bef5376291eb0244ff4cf64a66625fc62cfaa9c",
+      "kind": "visual-review.json",
+      "summary": {
+        "reviewer": "root",
+        "result": "passed",
+        "screenshotCount": 2
+      }
+    },
+    {
+      "path": "20261015-mobile-design-phone-secondary-07/visual-review.json",
+      "exists": true,
+      "bytes": 868,
+      "sha256": "ff0a70fbc4da80f3442cf9d778ddb62883c60c35cd963b6b45c75f4476ea07fe",
+      "kind": "visual-review.json",
+      "summary": {
+        "reviewer": "root",
+        "result": "passed",
+        "screenshotCount": 3
+      }
+    },
+    {
+      "path": "20261014-mobile-design-watch-01/stage-results.json",
+      "exists": true,
+      "bytes": 2552,
+      "sha256": "98d3d026aab3b346fb3b3cbb6c221b1ce37d95bc569cd41c781a2d2e61d352ac",
+      "kind": "stage-results.json",
+      "summary": {
+        "testExitCode": 0,
+        "sourceHashesUnchanged": true,
+        "sourceHashCount": 51,
+        "rawRunsRemoved": true,
+        "testSummary": {
+          "result": "Passed",
+          "totalTestCount": 1,
+          "passedTests": 1,
+          "failedTests": 0,
+          "skippedTests": 0,
+          "runtimeWarningCount": 0
+        }
+      }
+    },
+    {
+      "path": "20261014-mobile-design-watch-01/manual-visual-review.json",
+      "exists": true,
+      "bytes": 3086,
+      "sha256": "91a66cea6134ff7f0e2fdb167d309f4045bd071a2969ea299c20b30b0a90b787",
+      "kind": "manual-visual-review.json",
+      "summary": {
+        "result": "Passed",
+        "passedTests": 1,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "runtimeWarningCount": 0,
+        "testSeconds": 109.82165110111237,
+        "testWallSeconds": 115.09521312499965,
+        "testDeadlineSeconds": 120,
+        "sourceHashCount": 51,
+        "sourceHashesUnchanged": true,
+        "compiledCaptureViewSHA256": "fc3c1c3bd12a2f57ae5a129a9deedd606af21d6aa2ae1fe5052c79488c5a656c",
+        "reviewedAllSevenImages": true,
+        "cleanup": {
+          "ownedRunCount": 1,
+          "removedAllOwnedRuns": true,
+          "processesExited": true
+        }
+      }
+    },
+    {
+      "path": "20261014-mobile-design-watch-01/inherited-native-evidence.json",
+      "exists": true,
+      "bytes": 5657,
+      "sha256": "314739541952c917997effe8d18831bccf184b7b02d8fa7d3885c90b58393876",
+      "kind": "inherited-native-evidence.json",
+      "summary": {
+        "previousNativeRun": "tmp_agent_output/20261014-watch-blackhole-final-01",
+        "comparisonCount": 51,
+        "nativeInputCount": 33,
+        "nativeInputsUnchanged": true,
+        "changedInputCount": 2,
+        "nativeTestsRerun": false,
+        "notANewThreeTestRun": true
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-11/evidence.json",
+      "exists": true,
+      "bytes": 8776,
+      "sha256": "d95ffcdad4d9ec7764be35181ce76bc0471360d0f47375de3bb36d71d3d4b5d7",
+      "kind": "evidence.json",
+      "summary": {
+        "status": "build_and_static_checks_passed",
+        "buildExitCode": 0,
+        "verifierExitCode": 0,
+        "allBundleFileCount": 118,
+        "allBundleByteCount": 300682028,
+        "sourceManifestFileCount": 368,
+        "supplementaryDebugMarkerCount": 23,
+        "independentResourceAuditPassed": true,
+        "staticBrandingInspectionPassed": true,
+        "compiledUISourceProvenancePassed": true,
+        "compiledWatchCaptureViewSHA256": "fc3c1c3bd12a2f57ae5a129a9deedd606af21d6aa2ae1fe5052c79488c5a656c",
+        "compiledWatchAudioSessionSHA256": "122a8b0ba24ac908fde37464c757547a378a95e923dbb06b753c89ff7a92fd3d",
+        "compiledPhoneTypographySHA256": "4d490b2d6b5440a77e6c52347b506939707b60d1cb49e4f16549b47c842c5c3c",
+        "compiledAssistantViewSHA256": "79a7446efa58b0391f3ab2844bbaf11d50c2f4fdad48b074e541e84f7bf78141",
+        "compiledCaptureSourceSHA256": "9c868904093a71444a3142daee453c6ea7655821b9735c82b64b5dc9257e02e1",
+        "selfTests": {
+          "passed": 17,
+          "failed": 0,
+          "exitCode": 0
+        },
+        "staticChecks": {
+          "passed": 19,
+          "failed": 0,
+          "unchecked": 0
+        },
+        "changedBuildInputCount": 0,
+        "modelResourceCount": 4,
+        "allModelResourcesMatch": true
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-11/release-bundle.json",
+      "exists": true,
+      "bytes": 8800,
+      "sha256": "e9e49a3394bfb40dd5eb0ae46df222711f333bc5518fc6c7866082c1bcf55f7c",
+      "kind": "release-bundle.json",
+      "summary": {
+        "status": "passed",
+        "checkCount": 19,
+        "failedAssertionCount": 0,
+        "uncheckedAssertionCount": 0,
+        "errorCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-11/independent-resource-audit.json",
+      "exists": true,
+      "bytes": 1916,
+      "sha256": "4a99bcf209c2bdaf7d69e5045c8c24b3c002ba4c6e9381e8e38abdc2d759148d",
+      "kind": "independent-resource-audit.json",
+      "summary": {
+        "allBundleFileCount": 118,
+        "supplementaryAllPassed": true,
+        "sourceFixtureRetained": true,
+        "modelFileCount": 4,
+        "supplementaryMarkerCount": 23,
+        "supplementaryMarkerHitCount": 0,
+        "forbiddenPathCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-11/compiled-ui-source-provenance.json",
+      "exists": true,
+      "bytes": 1835,
+      "sha256": "a44c2e550c63243f423ebb64317538dbca685d4ec6781baf92cfce308462f9a6",
+      "kind": "compiled-ui-source-provenance.json",
+      "summary": {
+        "status": "passed",
+        "sourceHashCount": 368,
+        "sourceCopyCount": 6
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-11/credential-bundle-scan.json",
+      "exists": true,
+      "bytes": 235,
+      "sha256": "ced2a47706c1ebd281475d8c01fd67bce88d0b165243563239f522d78d90e32b",
+      "kind": "credential-bundle-scan.json",
+      "summary": {
+        "filesChecked": 118,
+        "passed": true,
+        "credentialValueLogged": false,
+        "matchCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-11/installation.json",
+      "exists": true,
+      "bytes": 3663,
+      "sha256": "d55d7d10fb5f770ae30acc8a7f125a9bb5fe0459a4e2103fe829c8e002a45ea5",
+      "kind": "installation.json",
+      "summary": {
+        "release": "Release11",
+        "status": "installed_and_launched_visual_review_pending",
+        "fullNavigationRetested": false,
+        "targetCount": 2,
+        "matchingFileCount": 9,
+        "allFileHashesMatch": true,
+        "allTargetsLaunched": true,
+        "visualReviewResult": null,
+        "reviewedScreenshotCount": 0,
+        "newReleaseMicrophoneCapture": false
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-11/source-hashes-before-build.json",
+      "exists": true,
+      "bytes": 66580,
+      "sha256": "c5a3023247575a55f8d1100c9510cc9e14d5c19f6b495eac7d1f01d79bcb981a",
+      "kind": "source-hashes-before-build.json",
+      "summary": {
+        "recordedInputCount": 368
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-11/source-hashes-after-build.json",
+      "exists": true,
+      "bytes": 66580,
+      "sha256": "c5a3023247575a55f8d1100c9510cc9e14d5c19f6b495eac7d1f01d79bcb981a",
+      "kind": "source-hashes-after-build.json",
+      "summary": {
+        "recordedInputCount": 368
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-12/evidence.json",
+      "exists": true,
+      "bytes": 8788,
+      "sha256": "09f654d786e54218a7dd58ac7d62a0f6d344488e1e0e75b17f35b279f09ab51a",
+      "kind": "evidence.json",
+      "summary": {
+        "status": "build_and_static_checks_passed",
+        "buildExitCode": 0,
+        "verifierExitCode": 0,
+        "allBundleFileCount": 118,
+        "allBundleByteCount": 300738860,
+        "sourceManifestFileCount": 368,
+        "supplementaryDebugMarkerCount": 23,
+        "independentResourceAuditPassed": true,
+        "staticBrandingInspectionPassed": true,
+        "compiledUISourceProvenancePassed": true,
+        "compiledWatchCaptureViewSHA256": "fc3c1c3bd12a2f57ae5a129a9deedd606af21d6aa2ae1fe5052c79488c5a656c",
+        "compiledWatchAudioSessionSHA256": "122a8b0ba24ac908fde37464c757547a378a95e923dbb06b753c89ff7a92fd3d",
+        "compiledPhoneTypographySHA256": "4d490b2d6b5440a77e6c52347b506939707b60d1cb49e4f16549b47c842c5c3c",
+        "compiledAssistantViewSHA256": "79a7446efa58b0391f3ab2844bbaf11d50c2f4fdad48b074e541e84f7bf78141",
+        "compiledCaptureSourceSHA256": "9c868904093a71444a3142daee453c6ea7655821b9735c82b64b5dc9257e02e1",
+        "selfTests": {
+          "passed": 17,
+          "failed": 0,
+          "exitCode": 0
+        },
+        "staticChecks": {
+          "passed": 19,
+          "failed": 0,
+          "unchecked": 0
+        },
+        "changedBuildInputCount": 0,
+        "modelResourceCount": 4,
+        "allModelResourcesMatch": true
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-12/release-bundle.json",
+      "exists": true,
+      "bytes": 8800,
+      "sha256": "f05be57f314fba062913c1554be5f6b8dbd9ddab8343047e91c2a22115b94489",
+      "kind": "release-bundle.json",
+      "summary": {
+        "status": "passed",
+        "checkCount": 19,
+        "failedAssertionCount": 0,
+        "uncheckedAssertionCount": 0,
+        "errorCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-12/independent-resource-audit.json",
+      "exists": true,
+      "bytes": 1916,
+      "sha256": "2d230804086dec1dac9a54fc3d83c60f986aa7294c373f0e0ca208c5eb106aea",
+      "kind": "independent-resource-audit.json",
+      "summary": {
+        "allBundleFileCount": 118,
+        "supplementaryAllPassed": true,
+        "sourceFixtureRetained": true,
+        "modelFileCount": 4,
+        "supplementaryMarkerCount": 23,
+        "supplementaryMarkerHitCount": 0,
+        "forbiddenPathCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-12/compiled-ui-source-provenance.json",
+      "exists": true,
+      "bytes": 1835,
+      "sha256": "27000da6ec13c00a0d7dacfa128e7ceae01406079ac60e4d51affec330091ca9",
+      "kind": "compiled-ui-source-provenance.json",
+      "summary": {
+        "status": "passed",
+        "sourceHashCount": 368,
+        "sourceCopyCount": 6
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-12/credential-bundle-scan.json",
+      "exists": true,
+      "bytes": 235,
+      "sha256": "d80207cc1fde7f592867e748e62ac4b84791cfb0d8c452edfb8af42facec244f",
+      "kind": "credential-bundle-scan.json",
+      "summary": {
+        "filesChecked": 118,
+        "passed": true,
+        "credentialValueLogged": false,
+        "matchCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-12/installation.json",
+      "exists": true,
+      "bytes": 5775,
+      "sha256": "e41e1296dda155279082caac827f9a185849abbb5ecc912f7823c0bd020bb58f",
+      "kind": "installation.json",
+      "summary": {
+        "release": "Release12",
+        "status": "installed_launched_and_visually_reviewed",
+        "fullNavigationRetested": false,
+        "targetCount": 2,
+        "matchingFileCount": 9,
+        "allFileHashesMatch": true,
+        "allTargetsLaunched": true,
+        "visualReviewResult": "passed",
+        "reviewedScreenshotCount": 5,
+        "newReleaseMicrophoneCapture": false
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-12/design-visual-audit.json",
+      "exists": true,
+      "bytes": 7067,
+      "sha256": "1e03d8baa9edf5a470b87d70fd03a85e96ce491422db9e84cedb169b5716df7f",
+      "kind": "design-visual-audit.json",
+      "summary": {
+        "status": "passed_with_stated_scope",
+        "release": "Release12",
+        "imageCount": 5,
+        "allImagesInspected": true,
+        "blockingFindingCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-12/git-preflight-initial.json",
+      "exists": true,
+      "bytes": 334,
+      "sha256": "9b443f0a292444d59c023fe5106ac4931798be65e96e904f5751dccac1443ca6",
+      "kind": "git-preflight-initial.json",
+      "summary": {
+        "candidateFiles": 650,
+        "release12InputCount": 368,
+        "diffCheckExitCode": 0,
+        "credentialValueLogged": false,
+        "passed": true,
+        "exactCredentialMatchCount": 0,
+        "privateKeyHeaderCount": 0,
+        "externalSymlinkCount": 0,
+        "largeFileCount": 0,
+        "changedReleaseInputCount": 0,
+        "scope": "Initial preflight snapshot; final staged preflight is separate to avoid self-hash cycles."
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-12/source-hashes-before-build.json",
+      "exists": true,
+      "bytes": 66580,
+      "sha256": "335b3c7f3134352629d28a868c85184ac7db680cf2aa82d22a239ca1161024a3",
+      "kind": "source-hashes-before-build.json",
+      "summary": {
+        "recordedInputCount": 368
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-12/source-hashes-after-build.json",
+      "exists": true,
+      "bytes": 66580,
+      "sha256": "335b3c7f3134352629d28a868c85184ac7db680cf2aa82d22a239ca1161024a3",
+      "kind": "source-hashes-after-build.json",
+      "summary": {
+        "recordedInputCount": 368
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-13/evidence.json",
+      "exists": true,
+      "bytes": 9532,
+      "sha256": "a1cae0242be4124882c008060b6334faac25b0e9dd6804db6eb9a1a97c339fde",
+      "kind": "evidence.json",
+      "summary": {
+        "status": "build_and_static_checks_passed",
+        "buildExitCode": 0,
+        "verifierExitCode": 0,
+        "allBundleFileCount": 118,
+        "allBundleByteCount": 300791628,
+        "sourceManifestFileCount": 368,
+        "supplementaryDebugMarkerCount": 23,
+        "independentResourceAuditPassed": true,
+        "staticBrandingInspectionPassed": true,
+        "compiledUISourceProvenancePassed": true,
+        "compiledWatchCaptureViewSHA256": "fc3c1c3bd12a2f57ae5a129a9deedd606af21d6aa2ae1fe5052c79488c5a656c",
+        "compiledWatchAudioSessionSHA256": "122a8b0ba24ac908fde37464c757547a378a95e923dbb06b753c89ff7a92fd3d",
+        "compiledPhoneTypographySHA256": "4d490b2d6b5440a77e6c52347b506939707b60d1cb49e4f16549b47c842c5c3c",
+        "compiledAssistantViewSHA256": "79a7446efa58b0391f3ab2844bbaf11d50c2f4fdad48b074e541e84f7bf78141",
+        "compiledCaptureSourceSHA256": "9c868904093a71444a3142daee453c6ea7655821b9735c82b64b5dc9257e02e1",
+        "selfTests": {
+          "passed": 17,
+          "failed": 0,
+          "exitCode": 0
+        },
+        "staticChecks": {
+          "passed": 19,
+          "failed": 0,
+          "unchecked": 0
+        },
+        "changedBuildInputCount": 0,
+        "modelResourceCount": 4,
+        "allModelResourcesMatch": true
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-13/release-bundle.json",
+      "exists": true,
+      "bytes": 8800,
+      "sha256": "ca768f29f880a54c9d644659bf0680138126a360c2ee362fd0fcbeb8c8aefdc5",
+      "kind": "release-bundle.json",
+      "summary": {
+        "status": "passed",
+        "checkCount": 19,
+        "failedAssertionCount": 0,
+        "uncheckedAssertionCount": 0,
+        "errorCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-13/independent-resource-audit.json",
+      "exists": true,
+      "bytes": 1916,
+      "sha256": "ee880385e4dc945f21524eab1ed43df208265a067aff696e1866d90a317bc3f2",
+      "kind": "independent-resource-audit.json",
+      "summary": {
+        "allBundleFileCount": 118,
+        "supplementaryAllPassed": true,
+        "sourceFixtureRetained": true,
+        "modelFileCount": 4,
+        "supplementaryMarkerCount": 23,
+        "supplementaryMarkerHitCount": 0,
+        "forbiddenPathCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-13/compiled-ui-source-provenance.json",
+      "exists": true,
+      "bytes": 3025,
+      "sha256": "9cddb9e237810810f405dc001bede7c1dcfca9b6baea52629d226ff5a8a158ef",
+      "kind": "compiled-ui-source-provenance.json",
+      "summary": {
+        "status": "passed",
+        "sourceHashCount": 368,
+        "sourceCopyCount": 10
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-13/credential-bundle-scan.json",
+      "exists": true,
+      "bytes": 235,
+      "sha256": "d1c059476c297ff2cf53206db1b36f4589bbcb1d1762ac86a63c6f55575d6c9a",
+      "kind": "credential-bundle-scan.json",
+      "summary": {
+        "filesChecked": 118,
+        "passed": true,
+        "credentialValueLogged": false,
+        "matchCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-13/installation.json",
+      "exists": true,
+      "bytes": 5868,
+      "sha256": "a65859b41bb36aa6be5e7d54ff870cc2b1fe766074763c8979cfa9f1144abac6",
+      "kind": "installation.json",
+      "summary": {
+        "release": "Release13",
+        "status": "installed_launched_and_visually_reviewed",
+        "fullNavigationRetested": false,
+        "targetCount": 2,
+        "matchingFileCount": 9,
+        "allFileHashesMatch": true,
+        "allTargetsLaunched": true,
+        "visualReviewResult": "passed",
+        "reviewedScreenshotCount": 5,
+        "newReleaseMicrophoneCapture": false
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-13/git-preflight-initial.json",
+      "exists": true,
+      "bytes": 334,
+      "sha256": "19b25af87de31fc180eb19d9d24853168867da9d5c032a6a85b1e56bc277bd8e",
+      "kind": "git-preflight-initial.json",
+      "summary": {
+        "candidateFiles": 650,
+        "release13InputCount": 368,
+        "diffCheckExitCode": 0,
+        "credentialValueLogged": false,
+        "passed": true,
+        "exactCredentialMatchCount": 0,
+        "privateKeyHeaderCount": 0,
+        "externalSymlinkCount": 0,
+        "largeFileCount": 0,
+        "changedReleaseInputCount": 0,
+        "scope": "Initial preflight snapshot; final staged preflight is separate to avoid self-hash cycles."
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-13/source-hashes-before-build.json",
+      "exists": true,
+      "bytes": 66580,
+      "sha256": "b1a78490012bd27d58874a0d79e0027c09cc9767ae124c3450e4d4696126a2a0",
+      "kind": "source-hashes-before-build.json",
+      "summary": {
+        "recordedInputCount": 368
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-13/source-hashes-after-build.json",
+      "exists": true,
+      "bytes": 66580,
+      "sha256": "b1a78490012bd27d58874a0d79e0027c09cc9767ae124c3450e4d4696126a2a0",
+      "kind": "source-hashes-after-build.json",
+      "summary": {
+        "recordedInputCount": 368
+      }
+    }
+  ],
+  "portableArtifacts": [
+    {
+      "source": "20261014-mobile-design-watch-01/ui/review/watch-recording-native-capture.png",
+      "repositoryPath": "docs/design/brand/mobile-web-reference-assets/watch-recording-12pt.png",
+      "kind": "existing-screenshot-reference",
+      "copiedWithoutModification": true,
+      "bytes": 41209,
+      "sha256": "955314a1e136d4c8c4c4f1a646f2fe91b0a263f7d73842861fc5f79da93c6410",
+      "scope": "Fresh Watch font UI01, controlled BlackHole input, not a Release recording."
+    },
+    {
+      "source": "20261014-mobile-design-watch-01/ui/review/watch-paused-after-native-capture.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/watch-ui01-paused.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 32345,
+      "sha256": "fcbb19f480ad4d1ca77ba477a589d8b709135ed3afb2b8aff510e7254c96f736",
+      "scope": "Fresh Watch font UI01 paused state; same isolated UI run."
+    },
+    {
+      "source": "20261015-mobile-design-phone-keyboard-05/attachments/4D85549D-6ED9-4204-9D24-B09F63B84DB7.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/keyboard05-a.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 294248,
+      "sha256": "ab0b274ad693f43fc67919bcd5c6640696912e528fb97c53839bd0ac7994dd8e",
+      "scope": "Keyboard05 Debug UI screenshot before final inline title and secondary-page font changes; actual software keyboard, no sent message."
+    },
+    {
+      "source": "20261015-mobile-design-phone-keyboard-05/attachments/BAF4FD4F-062B-4A81-B2E1-F6C6E38BC392.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/keyboard05-b.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 679055,
+      "sha256": "eebb77ffd1f488eafcd4f02237e6eaa64497ac830edf088adbf39e26dd40a857",
+      "scope": "Keyboard05 Debug UI screenshot before final inline title and secondary-page font changes; actual software keyboard, no sent message."
+    },
+    {
+      "source": "20261014-xcode27-release-12/home-light.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/release12-home-light.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 146114,
+      "sha256": "6562df03fd66ffd0b3471981bd85ec07e37e81381e20ea6272252ef127fd4c8e",
+      "scope": "Release12 actual installed screenshot; startup/page visual check, not keyboard or microphone E2E."
+    },
+    {
+      "source": "20261014-xcode27-release-12/home-dark.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/release12-home-dark.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 130498,
+      "sha256": "24ef49d75165b7eded9203df30098a46b74ea2d485c3e34040ffaea673354bd2",
+      "scope": "Release12 actual installed screenshot; startup/page visual check, not keyboard or microphone E2E."
+    },
+    {
+      "source": "20261014-xcode27-release-12/sidebar-light.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/release12-sidebar-light.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 170581,
+      "sha256": "bce2be5f7a386dfe1a24070b47aec2481c0f58c9a434d4b3653979eaad706233",
+      "scope": "Release12 actual installed screenshot; startup/page visual check, not keyboard or microphone E2E."
+    },
+    {
+      "source": "20261014-xcode27-release-12/settings-light.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/release12-settings-light.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 203868,
+      "sha256": "b21cb9a113dffd9466e7fe784e192337a8d97d7288273457e93c9d37fbecaba5",
+      "scope": "Release12 actual installed screenshot; startup/page visual check, not keyboard or microphone E2E."
+    },
+    {
+      "source": "20261014-xcode27-release-12/watch-idle.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/release12-watch-idle.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 35519,
+      "sha256": "fb439ef202fbbd6a375329125717f07385a5bfb9384ee7bfa3248f5b7b79266a",
+      "scope": "Release12 actual installed screenshot; startup/page visual check, not keyboard or microphone E2E."
+    },
+    {
+      "source": "20261014-xcode27-release-13/home-light.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/release13-home-light.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 146125,
+      "sha256": "0b5efb2c44c67805f6a21819a545e988cf7bc87e02d6b71e588cbfcf13f29fba",
+      "scope": "Release13 actual installed screenshot; startup/page visual check, not keyboard or microphone E2E."
+    },
+    {
+      "source": "20261014-xcode27-release-13/home-dark.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/release13-home-dark.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 130493,
+      "sha256": "c4f395e170d9d53fe3a6cf0b194dfb0d0d7fc7ebb7d99003ba1fc72d81c5f9af",
+      "scope": "Release13 actual installed screenshot; startup/page visual check, not keyboard or microphone E2E."
+    },
+    {
+      "source": "20261014-xcode27-release-13/sidebar-light.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/release13-sidebar-light.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 170498,
+      "sha256": "186d265f84bffce654c04d61ac8029db497b982d79d9db9977a4dca2d1749175",
+      "scope": "Release13 actual installed screenshot; startup/page visual check, not keyboard or microphone E2E."
+    },
+    {
+      "source": "20261014-xcode27-release-13/settings-light.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/release13-settings-light.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 203369,
+      "sha256": "36c765504ab7f37b41ea368bb29195b53945e3c125cef15766d81575c13572d6",
+      "scope": "Release13 actual installed screenshot; startup/page visual check, not keyboard or microphone E2E."
+    },
+    {
+      "source": "20261014-xcode27-release-13/watch-idle.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-15-mobile-design/release13-watch-idle.png",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true,
+      "bytes": 35269,
+      "sha256": "bc4dc862d37648cea3878c921363152ba76feea89b5848686d6bd4d391a4d409",
+      "scope": "Release13 actual installed screenshot; startup/page visual check, not keyboard or microphone E2E."
+    }
+  ],
+  "previousIndex": {
+    "path": "docs/implementation/evidence/2026-10-14-resume/evidence-index.json",
+    "fileEntryCount": 82,
+    "sha256": "c80e638eb1687a16fa5c817693b58e3210eba15e908a042e147044477a107ef1",
+    "unchanged": true
+  },
+  "summaryPolicy": "Only explicit scalar status/count/time/hash fields, selected selfTests/staticChecks/testSummary/cleanup fields and counts of arrays are exported; original failure text, requests, environment values and commands are not exported."
+}

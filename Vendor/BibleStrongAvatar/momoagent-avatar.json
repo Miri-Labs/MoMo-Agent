@@ -1,0 +1,490 @@
+{
+  "version": 1,
+  "avatar": {
+    "name": "MoMoAgent · Listening",
+    "surface": {
+      "type": "cube",
+      "width": 188,
+      "height": 156,
+      "depth": 70,
+      "roundness": 1.15
+    },
+    "bodyNodes": [
+      {
+        "id": "wave-left",
+        "name": "Long wave",
+        "surface": {
+          "type": "capsule",
+          "width": 54,
+          "height": 96,
+          "depth": 48,
+          "roundness": 1
+        },
+        "position": [
+          -39,
+          -67,
+          -4
+        ],
+        "rotation": [
+          0,
+          0,
+          -7
+        ]
+      },
+      {
+        "id": "wave-right",
+        "name": "Short wave",
+        "surface": {
+          "type": "capsule",
+          "width": 54,
+          "height": 72,
+          "depth": 48,
+          "roundness": 1
+        },
+        "position": [
+          30,
+          -61,
+          -4
+        ],
+        "rotation": [
+          0,
+          0,
+          8
+        ]
+      }
+    ],
+    "colors": {
+      "body": "#252525",
+      "eyes": "#FAFAFA"
+    },
+    "renderStyle": {
+      "type": "vector"
+    }
+  },
+  "expressions": {
+    "listening": {
+      "id": "listening",
+      "headX": -4,
+      "headY": -24,
+      "headZ": -2.8,
+      "widthLeft": 17,
+      "widthRight": 17,
+      "heightLeft": 29,
+      "heightRight": 28,
+      "spacing": 66,
+      "positionXLeft": 0,
+      "positionXRight": 0,
+      "positionYLeft": 12,
+      "positionYRight": 9,
+      "leftAngle": 0,
+      "rightAngle": 0,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    },
+    "attending": {
+      "id": "attending",
+      "headX": 4,
+      "headY": 24,
+      "headZ": 2.8,
+      "widthLeft": 17,
+      "widthRight": 17,
+      "heightLeft": 29,
+      "heightRight": 28,
+      "spacing": 66,
+      "positionXLeft": 0,
+      "positionXRight": 0,
+      "positionYLeft": 12,
+      "positionYRight": 9,
+      "leftAngle": 0,
+      "rightAngle": 0,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    },
+    "considering": {
+      "id": "considering",
+      "headX": -10,
+      "headY": -26,
+      "headZ": -14,
+      "widthLeft": 17,
+      "widthRight": 17,
+      "heightLeft": 29,
+      "heightRight": 28,
+      "spacing": 66,
+      "positionXLeft": -7,
+      "positionXRight": -7,
+      "positionYLeft": 12,
+      "positionYRight": 9,
+      "leftAngle": 0,
+      "rightAngle": 0,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    },
+    "connecting": {
+      "id": "connecting",
+      "headX": 7,
+      "headY": 21,
+      "headZ": 15,
+      "widthLeft": 17,
+      "widthRight": 17,
+      "heightLeft": 29,
+      "heightRight": 28,
+      "spacing": 66,
+      "positionXLeft": 7,
+      "positionXRight": 7,
+      "positionYLeft": 12,
+      "positionYRight": 9,
+      "leftAngle": 0,
+      "rightAngle": 0,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    },
+    "homeLeft": {
+      "id": "homeLeft",
+      "headX": -8,
+      "headY": -36,
+      "headZ": -12,
+      "widthLeft": 18,
+      "widthRight": 21,
+      "heightLeft": 34,
+      "heightRight": 28,
+      "spacing": 66,
+      "positionXLeft": -4,
+      "positionXRight": -4,
+      "positionYLeft": 10,
+      "positionYRight": 7,
+      "leftAngle": -4,
+      "rightAngle": -4,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    },
+    "homeRight": {
+      "id": "homeRight",
+      "headX": 7,
+      "headY": 36,
+      "headZ": 11,
+      "widthLeft": 21,
+      "widthRight": 18,
+      "heightLeft": 28,
+      "heightRight": 34,
+      "spacing": 66,
+      "positionXLeft": 4,
+      "positionXRight": 4,
+      "positionYLeft": 14,
+      "positionYRight": 11,
+      "leftAngle": 4,
+      "rightAngle": 4,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    },
+    "homeSmile": {
+      "id": "homeSmile",
+      "headX": -7,
+      "headY": 6,
+      "headZ": -5,
+      "widthLeft": 32,
+      "widthRight": 25,
+      "heightLeft": 7,
+      "heightRight": 33,
+      "spacing": 66,
+      "positionXLeft": 0,
+      "positionXRight": 0,
+      "positionYLeft": 12,
+      "positionYRight": 12,
+      "leftAngle": 0,
+      "rightAngle": 8,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    },
+    "focusLeft": {
+      "id": "focusLeft",
+      "headX": 7,
+      "headY": -9,
+      "headZ": -2,
+      "widthLeft": 17,
+      "widthRight": 17,
+      "heightLeft": 29,
+      "heightRight": 28,
+      "spacing": 66,
+      "positionXLeft": -3,
+      "positionXRight": -3,
+      "positionYLeft": 16,
+      "positionYRight": 13,
+      "leftAngle": 0,
+      "rightAngle": 0,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    },
+    "focusRight": {
+      "id": "focusRight",
+      "headX": 11,
+      "headY": 9,
+      "headZ": 2,
+      "widthLeft": 17,
+      "widthRight": 17,
+      "heightLeft": 29,
+      "heightRight": 28,
+      "spacing": 66,
+      "positionXLeft": 3,
+      "positionXRight": 3,
+      "positionYLeft": 16,
+      "positionYRight": 13,
+      "leftAngle": 0,
+      "rightAngle": 0,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    },
+    "speakingLeft": {
+      "id": "speakingLeft",
+      "headX": -11,
+      "headY": -18,
+      "headZ": -5,
+      "widthLeft": 17,
+      "widthRight": 17,
+      "heightLeft": 29,
+      "heightRight": 28,
+      "spacing": 66,
+      "positionXLeft": -2,
+      "positionXRight": -2,
+      "positionYLeft": 12,
+      "positionYRight": 9,
+      "leftAngle": 0,
+      "rightAngle": 0,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    },
+    "speakingRight": {
+      "id": "speakingRight",
+      "headX": 9,
+      "headY": 16,
+      "headZ": 5,
+      "widthLeft": 17,
+      "widthRight": 17,
+      "heightLeft": 29,
+      "heightRight": 28,
+      "spacing": 66,
+      "positionXLeft": 2,
+      "positionXRight": 2,
+      "positionYLeft": 12,
+      "positionYRight": 9,
+      "leftAngle": 0,
+      "rightAngle": 0,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    },
+    "attentiveLeft": {
+      "id": "attentiveLeft",
+      "headX": -9,
+      "headY": -18,
+      "headZ": -7,
+      "widthLeft": 17,
+      "widthRight": 17,
+      "heightLeft": 29,
+      "heightRight": 28,
+      "spacing": 66,
+      "positionXLeft": 0,
+      "positionXRight": 0,
+      "positionYLeft": 12,
+      "positionYRight": 9,
+      "leftAngle": 0,
+      "rightAngle": 0,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    },
+    "attentiveRight": {
+      "id": "attentiveRight",
+      "headX": 6,
+      "headY": 18,
+      "headZ": 8,
+      "widthLeft": 17,
+      "widthRight": 17,
+      "heightLeft": 29,
+      "heightRight": 28,
+      "spacing": 66,
+      "positionXLeft": 0,
+      "positionXRight": 0,
+      "positionYLeft": 12,
+      "positionYRight": 9,
+      "leftAngle": 0,
+      "rightAngle": 0,
+      "perspective": 0.2,
+      "eyeMotion": "none",
+      "bodyMotion": "none"
+    }
+  },
+  "animations": {
+    "listening": {
+      "name": "Listening",
+      "description": "A continuous visible head turn with a fixed center and occasional blink.",
+      "playbackMode": "pingPong",
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 1700,
+        "minIntervalMs": 3500,
+        "maxIntervalMs": 6200,
+        "durationMs": 180
+      },
+      "steps": [
+        {
+          "expressionId": "listening",
+          "holdMs": 0,
+          "transitionMs": 2600,
+          "transition": "smooth"
+        },
+        {
+          "expressionId": "attending",
+          "holdMs": 0,
+          "transitionMs": 2600,
+          "transition": "smooth"
+        }
+      ]
+    },
+    "thinking": {
+      "name": "Thinking",
+      "description": "An unmistakable curious tilt and an upward asymmetric gaze, with smooth alternating head poses.",
+      "playbackMode": "pingPong",
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 1200,
+        "minIntervalMs": 2800,
+        "maxIntervalMs": 4200,
+        "durationMs": 160
+      },
+      "steps": [
+        {
+          "expressionId": "considering",
+          "holdMs": 160,
+          "transitionMs": 1000,
+          "transition": "smooth"
+        },
+        {
+          "expressionId": "connecting",
+          "holdMs": 160,
+          "transitionMs": 1000,
+          "transition": "smooth"
+        }
+      ]
+    },
+    "home": {
+      "name": "Playful home",
+      "description": "Curious alternating head turns, a changing gaze and a clearly visible one-eye wink, without independent body drift.",
+      "playbackMode": "loop",
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 1700,
+        "minIntervalMs": 3600,
+        "maxIntervalMs": 6200,
+        "durationMs": 180
+      },
+      "steps": [
+        {
+          "expressionId": "homeLeft",
+          "holdMs": 0,
+          "transitionMs": 1850,
+          "transition": "smooth"
+        },
+        {
+          "expressionId": "homeRight",
+          "holdMs": 0,
+          "transitionMs": 2100,
+          "transition": "smooth"
+        },
+        {
+          "expressionId": "homeSmile",
+          "holdMs": 0,
+          "transitionMs": 1050,
+          "transition": "smooth"
+        }
+      ]
+    },
+    "focused": {
+      "name": "focused",
+      "description": "A steady small head turn while an actual tool is running.",
+      "playbackMode": "pingPong",
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 1700,
+        "minIntervalMs": 3800,
+        "maxIntervalMs": 6200,
+        "durationMs": 180
+      },
+      "steps": [
+        {
+          "expressionId": "focusLeft",
+          "holdMs": 0,
+          "transitionMs": 1850,
+          "transition": "smooth"
+        },
+        {
+          "expressionId": "focusRight",
+          "holdMs": 0,
+          "transitionMs": 1850,
+          "transition": "smooth"
+        }
+      ]
+    },
+    "speaking": {
+      "name": "speaking",
+      "description": "An open attentive turn while MoMo explains its answer.",
+      "playbackMode": "pingPong",
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 1700,
+        "minIntervalMs": 3800,
+        "maxIntervalMs": 6200,
+        "durationMs": 180
+      },
+      "steps": [
+        {
+          "expressionId": "speakingLeft",
+          "holdMs": 0,
+          "transitionMs": 1100,
+          "transition": "smooth"
+        },
+        {
+          "expressionId": "speakingRight",
+          "holdMs": 0,
+          "transitionMs": 1100,
+          "transition": "smooth"
+        }
+      ]
+    },
+    "attentive": {
+      "name": "Attentive listening",
+      "description": "An open-eyed lean toward the person, distinct from the quiet resting head turn.",
+      "playbackMode": "pingPong",
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 1700,
+        "minIntervalMs": 3500,
+        "maxIntervalMs": 6200,
+        "durationMs": 180
+      },
+      "steps": [
+        {
+          "expressionId": "attentiveLeft",
+          "holdMs": 0,
+          "transitionMs": 1900,
+          "transition": "smooth"
+        },
+        {
+          "expressionId": "attentiveRight",
+          "holdMs": 0,
+          "transitionMs": 1900,
+          "transition": "smooth"
+        }
+      ]
+    }
+  }
+}

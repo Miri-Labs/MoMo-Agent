@@ -1,0 +1,1 @@
+Memory StarMap rendering, simulation, timeline and gestures from Hermes Agent, Copyright (c) 2025 Nous Research, MIT. See Hermes-LICENSE.txt. MoMo adapter source: Apps/MacApp/MemoryUI.

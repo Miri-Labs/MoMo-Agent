@@ -1,0 +1,170 @@
+{
+  "url": "https://cursor.com/agents",
+  "viewport": [
+    393,
+    852
+  ],
+  "body": "rgb(245, 245, 245)",
+  "text": [
+    {
+      "text": "Open navigation",
+      "font": "\"X VF Mark\", system-ui, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklab(0.19125 0.00000869483 0.0000038445 / 0.66)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "6px",
+      "bounds": [
+        18,
+        14,
+        28,
+        28
+      ]
+    },
+    {
+      "text": "User menu",
+      "font": "\"X VF Mark\", system-ui, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklab(0.19125 0.00000869483 0.0000038445 / 0.66)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "6px",
+      "bounds": [
+        345,
+        12,
+        32,
+        32
+      ]
+    },
+    {
+      "text": "Cloud Agents requires a Premium Account",
+      "font": "\"X VF Mark\", system-ui, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+      "size": "14px",
+      "weight": "400",
+      "line": "18px",
+      "color": "oklab(0.19125 0.00000869483 0.0000038445 / 0.74)",
+      "background": "rgb(252, 252, 252)",
+      "radius": "12px",
+      "bounds": [
+        24,
+        88,
+        345,
+        46
+      ]
+    },
+    {
+      "text": "\n",
+      "font": "\"X VF Mark\", system-ui, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "rgb(20, 20, 20)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "bounds": [
+        32,
+        138,
+        329,
+        24
+      ]
+    },
+    {
+      "text": "Add context and tools",
+      "font": "\"X VF Mark\", system-ui, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklab(0.19125 0.00000869483 0.0000038445 / 0.66)",
+      "background": "oklab(0.19125 0.00000869483 0.0000038445 / 0.06)",
+      "radius": "9999px",
+      "bounds": [
+        32,
+        202,
+        24,
+        24
+      ]
+    },
+    {
+      "text": "Grok 4.7 High Fast​​",
+      "font": "\"X VF Mark\", system-ui, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklab(0.19125 0.00000869483 0.0000038445 / 0.74)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "9999px",
+      "bounds": [
+        68,
+        202,
+        147.9609375,
+        24
+      ]
+    },
+    {
+      "text": "Send message",
+      "font": "\"X VF Mark\", system-ui, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "rgb(252, 252, 252)",
+      "background": "oklab(0.19125 0.00000869483 0.0000038445 / 0.24)",
+      "radius": "9999px",
+      "bounds": [
+        337,
+        202,
+        24,
+        24
+      ]
+    },
+    {
+      "text": "Search",
+      "font": "\"X VF Mark\", system-ui, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklab(0.19125 0.00000869483 0.0000038445 / 0.66)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "6px",
+      "bounds": [
+        317,
+        266,
+        24,
+        24
+      ]
+    },
+    {
+      "text": "Search agents...",
+      "font": "\"X VF Mark\", system-ui, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "rgb(20, 20, 20)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "4px",
+      "bounds": [
+        317,
+        266,
+        64,
+        24
+      ]
+    },
+    {
+      "text": "Filter agents by source",
+      "font": "\"X VF Mark\", system-ui, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklab(0.19125 0.00000869483 0.0000038445 / 0.66)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "6px",
+      "bounds": [
+        349,
+        264,
+        28,
+        28
+      ]
+    }
+  ]
+}
