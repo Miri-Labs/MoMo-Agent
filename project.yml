@@ -1,0 +1,482 @@
+name: MoMoAgent
+options:
+  bundleIdPrefix: com.momoagent
+  developmentLanguage: en
+  deploymentTarget:
+    iOS: "18.0"
+    watchOS: "11.0"
+    macOS: "14.0"
+  xcodeVersion: "27.0"
+packages:
+  MoMoAgentWeb:
+    path: Packages/MoMoAgentWeb
+  MoMoAgentAgentClient:
+    path: Packages/MoMoAgentAgentClient
+  MoMoAgentKit:
+    path: Packages/MoMoAgentKit
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_EMIT_LOC_STRINGS: true
+    SWIFT_GENERATE_LOCALIZATION_SYMBOLS: false
+    LOCALIZATION_PREFERS_STRING_CATALOGS: true
+    SWIFT_STRICT_CONCURRENCY: complete
+    CODE_SIGN_STYLE: Automatic
+configs:
+  Debug: debug
+  Release: release
+  Beta: release
+configFiles:
+  Debug: Config/App.xcconfig
+  Release: Config/App.xcconfig
+  Beta: Config/Beta.xcconfig
+targets:
+  MoMoAgentMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Apps/MacApp/Desktop
+        excludes: [MemoryWeb, MacAppIcon.icon]
+      - path: Apps/MacApp/Desktop/MacAppIcon.icon
+        type: file
+        buildPhase: resources
+      - path: Apps/MacApp/Desktop/MemoryWeb
+        type: folder
+        buildPhase: resources
+      - Apps/ClientUI
+      - path: Vendor/TailscaleKit/LICENSE
+        buildPhase:
+          copyFiles:
+            destination: resources
+            subpath: TailscaleLicenses
+      - Apps/Shared/BrandPalette.swift
+      - path: Packages/MoMoAgentKit/Sources/MoMoContracts/Resources/Localizable.xcstrings
+        buildPhase: resources
+      - Apps/iPhoneApp/Resources/Assets.xcassets
+      - path: Apps/iPhoneApp/Features/Assistant/Rendering/Web
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(MOMO_MAC_BUNDLE_ID)"
+        PRODUCT_NAME: "$(MOMO_APP_DISPLAY_NAME)"
+        EXECUTABLE_NAME: MoMoAgentMac
+        ASSETCATALOG_COMPILER_APPICON_NAME: MacAppIcon
+        ENABLE_APP_SANDBOX: NO
+        CODE_SIGN_IDENTITY: "$(MOMO_MAC_CODE_SIGN_IDENTITY)"
+      configs:
+        Beta:
+          CODE_SIGN_IDENTITY: Apple Development
+    info:
+      path: Apps/MacApp/Desktop/Info.plist
+      properties:
+        CFBundleLocalizations: [en, zh-Hans, ja, ko]
+        CFBundleDisplayName: "$(MOMO_APP_DISPLAY_NAME)"
+        CFBundleName: "$(MOMO_APP_DISPLAY_NAME)"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        MoMoRepositoryRoot: "$(SRCROOT)"
+        MoMoDataFolder: "$(MOMO_MAC_DATA_FOLDER)"
+        MoMoLocalPort: "$(MOMO_MAC_LOCAL_PORT)"
+        NSLocalNetworkUsageDescription: "允许通过加密连接直接与附近的 iPhone 通信，减少连接延迟。"
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            "100.64.0.0/10":
+              NSExceptionAllowsInsecureHTTPLoads: true
+    dependencies:
+      - framework: Vendor/TailscaleKit/Build/TailscaleKit.xcframework
+        embed: true
+      - package: MoMoAgentAgentClient
+        product: MoMoAgentClient
+      - package: MoMoAgentAgentClient
+        product: MoMoAgentRTC
+      - package: MoMoAgentKit
+        product: MoMoContracts
+  MoMoAgent:
+    type: application
+    platform: iOS
+    sources:
+      - Apps/ClientUI
+      - path: Vendor/TailscaleKit/LICENSE
+        buildPhase:
+          copyFiles:
+            destination: resources
+            subpath: TailscaleLicenses
+      - path: Apps/iPhoneApp
+        excludes:
+          - Features/Assistant/Rendering/Web
+          - Resources/GmailSetup
+      - path: Apps/iPhoneApp/Features/Assistant/Rendering/Web
+        type: folder
+        buildPhase: resources
+      - path: Apps/iPhoneApp/Resources/GmailSetup
+        type: folder
+        buildPhase: resources
+      - Apps/Shared
+      - path: Packages/MoMoAgentKit/Sources/MoMoContracts/Resources/Localizable.xcstrings
+        buildPhase: resources
+      - path: Models/Speech
+        type: group
+        includes:
+          - manifest.json
+          - model.int8.onnx
+          - tokens.txt
+          - silero_vad.onnx
+        buildPhase:
+          copyFiles:
+            destination: resources
+            subpath: Speech
+      - path: Models/Speech/Speakers
+        type: group
+        includes: [eres2netv2.onnx, diarizen-wavlm-base-s80-md.onnx, segmentation-community-1.onnx]
+        buildPhase:
+          copyFiles:
+            destination: resources
+            subpath: Speech/Speakers
+      - path: Native/SpeechVendor/Licenses
+        type: group
+        buildPhase:
+          copyFiles:
+            destination: resources
+            subpath: SpeechLicenses
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(MOMO_PHONE_BUNDLE_ID)"
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: "$(MOMO_PHONE_ENTITLEMENTS)"
+      configs:
+        Beta:
+          CODE_SIGN_ENTITLEMENTS: Apps/iPhoneApp/Resources/MoMoAgentBeta.entitlements
+          MOMO_PUSH_ENVIRONMENT: development
+        Debug:
+          MOMO_TEST_FIXTURES_INPUT: Models/TestFixtures
+        Release:
+          MOMO_TEST_FIXTURES_INPUT: Tests/Support/SpeechFixtureMetadata.json
+    postBuildScripts:
+      - name: Copy Debug speech test fixtures
+        shell: /bin/bash
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - "$(SRCROOT)/$(MOMO_TEST_FIXTURES_INPUT)"
+        outputFiles:
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/TestFixtures"
+        script: |
+          set -euo pipefail
+          : "${TARGET_BUILD_DIR:?}" "${UNLOCALIZED_RESOURCES_FOLDER_PATH:?}" "${SRCROOT:?}"
+          fixture_output="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/TestFixtures"
+          rm -rf "${fixture_output}"
+          if [[ "${CONFIGURATION}" == "Debug" ]]; then
+            mkdir -p "${fixture_output}"
+            cp "${SRCROOT}/Models/TestFixtures/zh.wav" "${fixture_output}/zh.wav"
+            cp "${SRCROOT}/Models/TestFixtures/fixture.json" "${fixture_output}/fixture.json"
+          fi
+    info:
+      path: Apps/iPhoneApp/Resources/Info.plist
+      properties:
+        CFBundleLocalizations: [en, zh-Hans, ja, ko]
+        CFBundleDisplayName: "$(MOMO_APP_DISPLAY_NAME)"
+        CFBundleName: "$(MOMO_APP_DISPLAY_NAME)"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSCameraUsageDescription: "扫描 Mac 上的配对二维码，或拍摄照片添加到聊天。"
+        NSLocalNetworkUsageDescription: "允许通过加密连接直接与附近的 Mac 通信，减少连接延迟。"
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            "100.64.0.0/10":
+              NSExceptionAllowsInsecureHTTPLoads: true
+        NSMicrophoneUsageDescription: "选择蓝牙耳机作为录音设备后，持续录制耳机麦克风的声音，在手机上转写；点击语音输入时录制声音并识别为可编辑文字。"
+        NSCalendarsFullAccessUsageDescription: "开启后，只读日历事项并同步到你的 Mac，由你选用的 AI 服务回答相关问题；不会修改日历。"
+        NSRemindersFullAccessUsageDescription: "开启后，只读未完成的提醒事项并同步到你的 Mac，由你选用的 AI 服务回答相关问题；不会修改提醒事项。"
+        NSAlarmKitUsageDescription: "按你的指令设置和管理 MoMo Agent 闹钟。"
+        NSHealthShareUsageDescription: "按你的选择读取最近 7 天步数和最新心率，同步到配对的 Mac。回答健康或运动问题时，相关数据会发送到你选用的 AI 服务。"
+        MoMoPushEnvironment: "$(MOMO_PUSH_ENVIRONMENT)"
+        MoMoGmailAuthentication: userProvided
+        NSLocationWhenInUseUsageDescription: "在你启用地点上下文后记录手机到访的位置、精度和时间。相关片段会发送到你选用的 AI 服务，与日历和录音一起帮助 MoMo 理解生活事件。"
+        NSLocationAlwaysAndWhenInUseUsageDescription: "允许后台接收低功耗的到访报告，保留到达和离开的大致时间。你可以随时停用或清空地点记录。相关片段会发送到你选用的 AI 服务。"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UIBackgroundModes: [audio, processing]
+        BGTaskSchedulerPermittedIdentifiers:
+          - $(PRODUCT_BUNDLE_IDENTIFIER).transcription.processing
+          - $(PRODUCT_BUNDLE_IDENTIFIER).transcription.continued.*
+    dependencies:
+      - sdk: EventKit.framework
+      - framework: Vendor/TailscaleKit/Build/TailscaleKit.xcframework
+        embed: true
+      - sdk: HealthKit.framework
+      - sdk: AlarmKit.framework
+        weak: true
+      - package: MoMoAgentKit
+        product: MoMoContracts
+      - package: MoMoAgentKit
+        product: MoMoLink
+      - package: MoMoAgentKit
+        product: MoMoArchive
+      - package: MoMoAgentKit
+        product: MoMoRecording
+      - package: MoMoAgentKit
+        product: MoMoSpeech
+      - package: MoMoAgentAgentClient
+        product: MoMoAgentClient
+      - package: MoMoAgentWeb
+        product: MoMoWeb
+      - package: MoMoAgentAgentClient
+        product: MoMoAgentRTC
+      - target: MoMoAgentWatch
+        embed: true
+  MoMoAgentWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - Apps/WatchApp
+      - Apps/Shared
+      - path: Packages/MoMoAgentKit/Sources/MoMoContracts/Resources/Localizable.xcstrings
+        buildPhase: resources
+      - Apps/WatchShared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(MOMO_PHONE_BUNDLE_ID).watchkitapp"
+        TARGETED_DEVICE_FAMILY: "4"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SKIP_INSTALL: true
+    info:
+      path: Apps/WatchApp/Resources/Info.plist
+      properties:
+        MoMoWatchAppGroup: "$(MOMO_WATCH_APP_GROUP)"
+        MoMoWatchWidgetKind: "$(MOMO_WATCH_WIDGET_KIND)"
+        MoMoWatchURLScheme: "$(MOMO_WATCH_URL_SCHEME)"
+        CFBundleLocalizations: [en, zh-Hans, ja, ko]
+        CFBundleDisplayName: "$(MOMO_APP_DISPLAY_NAME)"
+        CFBundleName: "$(MOMO_APP_DISPLAY_NAME)"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: "$(MOMO_PHONE_BUNDLE_ID)"
+        WKRunsIndependentlyOfCompanionApp: true
+        NSMicrophoneUsageDescription: 在你开始录音后采集声音，传到你的 iPhone 本地转写。
+        UIBackgroundModes: [audio]
+        CFBundleURLTypes:
+          - CFBundleURLName: "$(MOMO_WATCH_WIDGET_KIND)"
+            CFBundleURLSchemes: ["$(MOMO_WATCH_URL_SCHEME)"]
+    entitlements:
+      path: Apps/WatchApp/Resources/MoMoAgentWatch.entitlements
+      properties:
+        com.apple.security.application-groups: ["$(MOMO_WATCH_APP_GROUP)"]
+    dependencies:
+      - package: MoMoAgentKit
+        product: MoMoContracts
+      - package: MoMoAgentKit
+        product: MoMoRecording
+      - package: MoMoAgentKit
+        product: MoMoLink
+      - target: MoMoAgentWatchWidget
+        embed: true
+  MoMoAgentWatchWidget:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - Apps/WatchWidget
+      - path: Packages/MoMoAgentKit/Sources/MoMoContracts/Resources/Localizable.xcstrings
+        buildPhase: resources
+      - Apps/WatchShared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(MOMO_PHONE_BUNDLE_ID).watchkitapp.widget"
+        TARGETED_DEVICE_FAMILY: "4"
+        SKIP_INSTALL: true
+        APPLICATION_EXTENSION_API_ONLY: true
+    info:
+      path: Apps/WatchWidget/Resources/Info.plist
+      properties:
+        MoMoWatchAppGroup: "$(MOMO_WATCH_APP_GROUP)"
+        MoMoWatchWidgetKind: "$(MOMO_WATCH_WIDGET_KIND)"
+        MoMoWatchURLScheme: "$(MOMO_WATCH_URL_SCHEME)"
+        CFBundleLocalizations: [en, zh-Hans, ja, ko]
+        CFBundleDisplayName: "$(MOMO_APP_DISPLAY_NAME)"
+        CFBundleName: "$(MOMO_APP_DISPLAY_NAME)"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Apps/WatchWidget/Resources/MoMoAgentWatchWidget.entitlements
+      properties:
+        com.apple.security.application-groups: ["$(MOMO_WATCH_APP_GROUP)"]
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+      - package: MoMoAgentKit
+        product: MoMoContracts
+  MoMoAgentRemoteUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: Tests/RemoteUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        PRODUCT_BUNDLE_IDENTIFIER: com.momoagent.remoteuitests
+    dependencies:
+      - target: MoMoAgent
+  MoMoAgentUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: Tests/AppUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        PRODUCT_BUNDLE_IDENTIFIER: com.momoagent.uitests
+    dependencies:
+      - target: MoMoAgent
+  MoMoAgentWatchUITests:
+    type: bundle.ui-testing
+    platform: watchOS
+    sources: Tests/WatchUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        PRODUCT_BUNDLE_IDENTIFIER: com.momoagent.watchuitests
+        TARGETED_DEVICE_FAMILY: "4"
+        TEST_TARGET_NAME: MoMoAgentWatch
+    dependencies:
+      - target: MoMoAgentWatch
+  MoMoAgentWatchIntegrationTests:
+    type: bundle.unit-test
+    platform: watchOS
+    sources: Tests/WatchIntegrationTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        PRODUCT_BUNDLE_IDENTIFIER: com.momoagent.watchintegrationtests
+        TARGETED_DEVICE_FAMILY: "4"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/MoMoAgentWatch.app/MoMoAgentWatch"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+    dependencies:
+      # The hosted test resolves Recording, Contracts and Link from its app loader.
+      - target: MoMoAgentWatch
+  MoMoAgentIntegrationTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests/iPhoneIntegrationTests
+      - Tests/Support/PhoneTranscriptionFixture.swift
+      - Apps/iPhoneApp/Application/Transcribing
+      - path: Models/TestFixtures
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        PRODUCT_BUNDLE_IDENTIFIER: com.momoagent.integrationtests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/MoMoAgent.app/MoMoAgent"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+    dependencies:
+      - target: MoMoAgent
+      # The hosted test resolves Contracts, Archive and Speech from its app loader.
+      - package: MoMoAgentKit
+        product: MoMoRecording
+  CaptureReplay:
+    type: tool
+    platform: macOS
+    sources: Tools/CaptureReplay/Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.momoagent.capture-replay
+    dependencies:
+      - package: MoMoAgentKit
+        product: MoMoContracts
+      - package: MoMoAgentKit
+        product: MoMoRecording
+      - package: MoMoAgentKit
+        product: MoMoArchive
+schemes:
+  MoMoAgentBeta:
+    build:
+      targets:
+        MoMoAgent: all
+    run:
+      config: Beta
+    archive:
+      config: Beta
+    profile:
+      config: Beta
+  MoMoAgentMacBeta:
+    build:
+      targets:
+        MoMoAgentMac: all
+    run:
+      config: Beta
+    archive:
+      config: Beta
+    profile:
+      config: Beta
+  MoMoAgentMac:
+    build:
+      targets:
+        MoMoAgentMac: all
+  MoMoAgentRemote:
+    build:
+      targets:
+        MoMoAgent: all
+        MoMoAgentRemoteUITests: [test]
+    test:
+      language: zh-Hans
+      region: CN
+      targets:
+        - name: MoMoAgentRemoteUITests
+          parallelizable: false
+  MoMoAgentThroughput:
+    build:
+      targets:
+        MoMoAgent: all
+        MoMoAgentIntegrationTests: [test]
+    test:
+      language: zh-Hans
+      region: CN
+      targets: [MoMoAgentIntegrationTests]
+      environmentVariables:
+        MOMO_UI_TEST_RUN_ID: 0B0628B0-EE7A-4F18-A2F8-E1FAE5A5236D
+        MOMO_UI_TEST_TIMELINE_FIXTURE: "1"
+        MOMO_RUN_PHONE_THROUGHPUT: "1"
+  MoMoAgentWatch:
+    build:
+      targets:
+        MoMoAgentWatch: all
+  MoMoAgentWatchTests:
+    build:
+      targets:
+        MoMoAgentWatch: all
+        MoMoAgentWatchIntegrationTests: [test]
+        MoMoAgentWatchUITests: [test]
+    test:
+      language: zh-Hans
+      region: CN
+      targets:
+        - name: MoMoAgentWatchIntegrationTests
+          parallelizable: false
+          randomExecutionOrder: false
+        - name: MoMoAgentWatchUITests
+          parallelizable: false
+          randomExecutionOrder: false
+      environmentVariables:
+        MOMO_WATCH_TEST_RUN_ID: 5513D7CB-F697-4C68-AF59-F5E21D0DA46D
+  MoMoAgent:
+    build:
+      targets:
+        MoMoAgent: all
+        MoMoAgentUITests: [test]
+        MoMoAgentIntegrationTests: [test]
+    test:
+      language: zh-Hans
+      region: CN
+      targets: [MoMoAgentUITests, MoMoAgentIntegrationTests]
+      environmentVariables:
+        MOMO_UI_TEST_RUN_ID: 782337A0-A517-409B-A47F-752273DD808A
+  CaptureReplay:
+    build:
+      targets:
+        CaptureReplay: all

@@ -1,0 +1,1697 @@
+{
+  "date": "2026-10-14",
+  "branch": "codex/initial-implementation",
+  "localEvidenceRoot": "/Users/syh/Workspace/MoMoAgent-worktrees/initial-implementation/tmp_agent_output",
+  "scope": "Index of existing resume results, not a new test run. Summaries use explicit field allowlists; XML counts include skipped testcase elements. Original failures and semantic limitations remain visible. BlackHole loaded after host restart; controlled native Watch capture passed in final-01, with latest UI06 separately passed on unchanged audio sources. These are inherited native plus fresh UI results, not a new 3/3 run. Release10 build/static/resource checks, exact authorized credential scan, two-target installation, matching file hashes and limited visual/startup checks are separately recorded; no new Release microphone capture is claimed. Raw xcresult, logs, API payloads, credentials, audio, TLS keys and build products are not copied into Git. Only explicitly indexed screenshots are copied or referenced.",
+  "files": [
+    {
+      "path": "resume-20261014-syh/ios-offline-27-01/summary.json",
+      "exists": true,
+      "bytes": 1166,
+      "sha256": "ab211a5dc6c49a7222944d38f7706cec1c42b7276b04d13cb0ca40f3c467bf10",
+      "summary": {
+        "totalTestCount": 83,
+        "passedTests": 83,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "result": "Passed",
+        "runtimeWarningCount": 0
+      }
+    },
+    {
+      "path": "resume-20261014-syh/ios-sequence-model-27-01/summary.json",
+      "exists": true,
+      "bytes": 3137,
+      "sha256": "afa57e9f0781f4abf475ed46784f004607d458283587b87931f3856b6bd40554",
+      "summary": {
+        "totalTestCount": 38,
+        "passedTests": 35,
+        "failedTests": 3,
+        "skippedTests": 0,
+        "result": "Failed",
+        "runtimeWarningCount": 0
+      }
+    },
+    {
+      "path": "resume-20261014-syh/ios-model-recovery-27-02/summary.json",
+      "exists": true,
+      "bytes": 1017,
+      "sha256": "e5654cea544745b42c1e20990798446775431e60efc72f05397fccb7ae9c727d",
+      "summary": {
+        "totalTestCount": 3,
+        "passedTests": 3,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "result": "Passed",
+        "runtimeWarningCount": 0
+      }
+    },
+    {
+      "path": "resume-20261014-syh/ios-core-smoke-27-01/summary.json",
+      "exists": true,
+      "bytes": 1018,
+      "sha256": "c61855f020f00fb8e898bdfa5ff6bda2789a0875f9e93dcbc3e7fa7fa4cb3da7",
+      "summary": {
+        "totalTestCount": 9,
+        "passedTests": 9,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "result": "Passed",
+        "runtimeWarningCount": 0
+      }
+    },
+    {
+      "path": "resume-20261014-syh/package-sequence-final-02/tests-swift-testing.xml",
+      "exists": true,
+      "bytes": 34128,
+      "sha256": "cf6e6cc400a68a813afc3542f81e89d166104cadaf83a71f4bbabac66005b034",
+      "summary": {
+        "totalTestCount": 224,
+        "passedTests": 223,
+        "failedTests": 0,
+        "skippedTests": 1
+      }
+    },
+    {
+      "path": "resume-20261014-syh/package-sequence-final-02/execution-report.json",
+      "exists": true,
+      "bytes": 49094,
+      "sha256": "b1fde4f860e8c364930e4f3a90bb15c63568bbf415f360ab21f482247dc3a191",
+      "summary": {
+        "exitCode": 0,
+        "processExited": true,
+        "paidCredentialEnvironmentPresent": false,
+        "changedSourceCountDuringRun": 0
+      }
+    },
+    {
+      "path": "resume-20261014-syh/j10-write-failures-02/tests-swift-testing.xml",
+      "exists": true,
+      "bytes": 1539,
+      "sha256": "b4d299961c3d3390594b041e0a7ca1404196afe9f3b6b0d65bab166194e34901",
+      "summary": {
+        "totalTestCount": 5,
+        "passedTests": 5,
+        "failedTests": 0,
+        "skippedTests": 0
+      }
+    },
+    {
+      "path": "resume-20261014-syh/j10-write-failures-02/execution-report.json",
+      "exists": true,
+      "bytes": 50148,
+      "sha256": "394330b74cc5ffcdf5dbd7c1923038b98d9334a11be23490f236255047904e21",
+      "summary": {
+        "exitCode": 0,
+        "processExited": true,
+        "paidCredentialEnvironmentPresent": false,
+        "changedSourceCountDuringRun": 0
+      }
+    },
+    {
+      "path": "resume-20261014-syh/live-quality-27-03/semantic-summary.json",
+      "exists": true,
+      "bytes": 5331,
+      "sha256": "0cc1d62659c3a098588d7dc231dd09fcdc475e1bf64ee022e9fb4e70fe46d7b3",
+      "summary": {
+        "status": "completed",
+        "evaluatedBuild": "ios-build-27-09",
+        "productionEquivalentTo": "ios-build-27-08 / Release05",
+        "acceptedCases": 22,
+        "overallAccepted": false,
+        "allCleanupPassed": true,
+        "machineArtifactsModified": false,
+        "automatedSummary": {
+          "passed": 23,
+          "failed": 1,
+          "skipped": 0
+        },
+        "semanticSummary": {
+          "answer": {
+            "pass": 22,
+            "fail": 1,
+            "not_evaluable": 1
+          },
+          "plan": {
+            "pass": 23,
+            "fail": 0,
+            "not_evaluable": 1
+          },
+          "sourceSupport": {
+            "pass": 23,
+            "fail": 0,
+            "not_evaluable": 1
+          },
+          "cases": {
+            "pass": 22,
+            "fail": 1,
+            "not_evaluable": 1
+          }
+        },
+        "knownLimitationClassifications": [
+          "transport_failure_no_output",
+          "answer_scope_failure"
+        ]
+      }
+    },
+    {
+      "path": "resume-20261014-syh/live-context-27-06-same-session/semantic-summary.json",
+      "exists": true,
+      "bytes": 4324,
+      "sha256": "4bffdb153c7294284f5e9e4619e5a335d9891324a3dc317d42307060bf606fcf",
+      "summary": {
+        "status": "completed",
+        "evaluatedBuild": "ios-build-27-09",
+        "productionEquivalentTo": "ios-build-27-08 / Release05",
+        "acceptedCases": 2,
+        "overallAccepted": false,
+        "allCleanupPassed": true,
+        "machineArtifactsModified": false,
+        "automatedSummary": {
+          "passed": 3,
+          "failed": 0,
+          "skipped": 0
+        },
+        "semanticSummary": {
+          "answer": {
+            "pass": 2,
+            "fail": 1,
+            "not_evaluable": 0
+          },
+          "plan": {
+            "pass": 2,
+            "fail": 1,
+            "not_evaluable": 0
+          },
+          "sourceBinding": {
+            "pass": 3,
+            "fail": 0,
+            "not_evaluable": 0
+          },
+          "cases": {
+            "pass": 2,
+            "fail": 1,
+            "not_evaluable": 0
+          }
+        },
+        "knownLimitationClassifications": [
+          "plan_certainty_grouping_and_artifact_description"
+        ]
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-06/evidence.json",
+      "exists": true,
+      "bytes": 6593,
+      "sha256": "3794651966e31b2cf810d1e70117344162a86dca3e13e5e189897c2f7c514d1b",
+      "summary": {
+        "status": "build_and_static_checks_passed",
+        "configuration": "Release",
+        "xcode": "27.0 / 27A266a",
+        "buildExitCode": 0,
+        "verifierExitCode": 0,
+        "sourceManifestFileCount": 355,
+        "allBundleFileCount": 114,
+        "allBundleByteCount": 298649470,
+        "independentResourceAuditPassed": true,
+        "supplementaryDebugMarkerCount": 23,
+        "selfTests": {
+          "passed": 17,
+          "failed": 0,
+          "exitCode": 0
+        },
+        "staticChecks": {
+          "passed": 19,
+          "failed": 0,
+          "unchecked": 0
+        },
+        "changedSourceCountDuringBuild": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-06/release-bundle.json",
+      "exists": true,
+      "bytes": 8800,
+      "sha256": "4da796808d00838b005fde2c6c8f8f21b3f0f744925a120721f128cab6bf9dc1",
+      "summary": {
+        "status": "passed",
+        "passedCheckCount": 19,
+        "failedAssertionCount": 0,
+        "uncheckedAssertionCount": 0,
+        "modelResourceCount": 4
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-06/independent-resource-audit.json",
+      "exists": true,
+      "bytes": 1916,
+      "sha256": "0fa80e3eebc18770b2ddb12117a9d70491c4cf6022cce85ea01fb9d183ba7757",
+      "summary": {
+        "allBundleFileCount": 114,
+        "allBundleByteCount": 298649470,
+        "supplementaryAllPassed": true,
+        "sourceFixtureRetained": true,
+        "modelFileCount": 4,
+        "licenseFileCount": 4,
+        "debugMarkerCount": 23,
+        "debugMarkerHitCount": 0,
+        "forbiddenPathCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-06/verifier-selftest.log",
+      "exists": true,
+      "bytes": 2950,
+      "sha256": "0fae6adedf0ea6b2a747ff71655bb163e9ba874a4ad635d17e555ef085497215",
+      "summary": {
+        "passedTests": 17,
+        "failedTests": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-06/credential-bundle-scan.json",
+      "exists": true,
+      "bytes": 235,
+      "sha256": "d50fda8616f087fc406e85ca8774bfcfdf7ea2acfc924e6df2c9f42a0f6c6073",
+      "summary": {
+        "filesChecked": 114,
+        "passed": true,
+        "credentialValueLogged": false,
+        "matchCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-06/source-hashes-before-build.json",
+      "exists": true,
+      "bytes": 64361,
+      "sha256": "054c4dee763882937bee5b941b6d4b9ea9cdef1a342c96c2e7d00abe03b6c0f6"
+    },
+    {
+      "path": "20261014-xcode27-release-06/source-hashes-after-build.json",
+      "exists": true,
+      "bytes": 64361,
+      "sha256": "054c4dee763882937bee5b941b6d4b9ea9cdef1a342c96c2e7d00abe03b6c0f6"
+    },
+    {
+      "path": "20261014-xcode27-release-06/source-hash-diff.json",
+      "exists": true,
+      "bytes": 3,
+      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+    },
+    {
+      "path": "20261014-xcode27-release-06/bundle-file-hashes.json",
+      "exists": true,
+      "bytes": 20879,
+      "sha256": "1ff5c55212af28f447a875adda6106ae74f83c7bfea917b82ef126138e5696d6"
+    },
+    {
+      "path": "20261014-xcode27-release-06/installation.json",
+      "exists": true,
+      "bytes": 1737,
+      "sha256": "286a6073d65c3f4d18850739483918f06c6c417a516674c06dc3045350c3b793",
+      "summary": {
+        "launchSucceeded": true,
+        "matchingFiles": [
+          {
+            "path": "MoMoAgent",
+            "snapshotSHA256": "576fbdf8588cf2f98a8d55744c5ea8cf1a1b72d6f4f57743c9ab944ec86f7441",
+            "installedSHA256": "576fbdf8588cf2f98a8d55744c5ea8cf1a1b72d6f4f57743c9ab944ec86f7441",
+            "matches": true
+          },
+          {
+            "path": "Info.plist",
+            "snapshotSHA256": "8cc89841d2360913b3df3c394311e4a8172549595e7d5bc7a702b79aaf47d2bb",
+            "installedSHA256": "8cc89841d2360913b3df3c394311e4a8172549595e7d5bc7a702b79aaf47d2bb",
+            "matches": true
+          },
+          {
+            "path": "Watch/MoMoAgentWatch.app/MoMoAgentWatch",
+            "snapshotSHA256": "272c88801d2f57f7211575cde50a498e92d49e31f1f1bef12282c00c087b89a3",
+            "installedSHA256": "272c88801d2f57f7211575cde50a498e92d49e31f1f1bef12282c00c087b89a3",
+            "matches": true
+          },
+          {
+            "path": "Watch/MoMoAgentWatch.app/Info.plist",
+            "snapshotSHA256": "e35cf96daf8f265f851a884472d76f579f994a0374544675266ec1428104f75a",
+            "installedSHA256": "e35cf96daf8f265f851a884472d76f579f994a0374544675266ec1428104f75a",
+            "matches": true
+          }
+        ],
+        "uiReview": {
+          "result": "passed",
+          "fullNavigationRetested": false
+        }
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-06/home.png",
+      "exists": true,
+      "bytes": 109477,
+      "sha256": "66b60ea4030a44ae93da321db5da8dcde8208fdb2009f32061d2338f5ff0d951",
+      "repositoryCopy": "docs/implementation/evidence/2026-10-14-resume/release06-home.png"
+    },
+    {
+      "path": "20261014-xcode27-release-07/evidence.json",
+      "exists": true,
+      "bytes": 6766,
+      "sha256": "7711e0ed36a33b2bf83890fd5cb9be0d05dc2dafd65e162797e3a11ba21e73d4",
+      "summary": {
+        "status": "build_and_static_checks_passed",
+        "configuration": "Release",
+        "xcode": "27.0 / 27A266a",
+        "buildExitCode": 0,
+        "verifierExitCode": 0,
+        "sourceManifestFileCount": 355,
+        "allBundleFileCount": 114,
+        "allBundleByteCount": 298649470,
+        "independentResourceAuditPassed": true,
+        "supplementaryDebugMarkerCount": 23,
+        "compiledCaptureSourceSHA256": "9c868904093a71444a3142daee453c6ea7655821b9735c82b64b5dc9257e02e1",
+        "selfTests": {
+          "passed": 17,
+          "failed": 0,
+          "exitCode": 0
+        },
+        "staticChecks": {
+          "passed": 19,
+          "failed": 0,
+          "unchecked": 0
+        },
+        "changedSourceCountDuringBuild": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-07/release-bundle.json",
+      "exists": true,
+      "bytes": 8800,
+      "sha256": "007172fd1488668c75551c8f4800fd167bfbd28b6c2e039a89d908891eb7cd83"
+    },
+    {
+      "path": "20261014-xcode27-release-07/verifier-selftest.log",
+      "exists": true,
+      "bytes": 2950,
+      "sha256": "d3aef29a8a4fef579c573dee5f774acb37ab44b12c74eaee798b5515399405a4"
+    },
+    {
+      "path": "20261014-xcode27-release-07/source-hashes-before-build.json",
+      "exists": true,
+      "bytes": 64361,
+      "sha256": "9713fc2b461f74b893a38e497ee1c423b4c817f037acce2f6c56036f425e5ced"
+    },
+    {
+      "path": "20261014-xcode27-release-07/source-hashes-after-build.json",
+      "exists": true,
+      "bytes": 64361,
+      "sha256": "9713fc2b461f74b893a38e497ee1c423b4c817f037acce2f6c56036f425e5ced"
+    },
+    {
+      "path": "20261014-xcode27-release-07/source-hash-diff.json",
+      "exists": true,
+      "bytes": 3,
+      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+    },
+    {
+      "path": "20261014-xcode27-release-07/source-changes-from-release06.json",
+      "exists": true,
+      "bytes": 352,
+      "sha256": "70fdec649d2e4a3088ea41357f7ba04a6504ca40b4872f3d6b3581347ff9f623"
+    },
+    {
+      "path": "20261014-xcode27-release-07/bundle-file-hashes.json",
+      "exists": true,
+      "bytes": 20879,
+      "sha256": "aaef937138b18bef124c35a5898258c7a8162fc670312669784d33fed6204f50"
+    },
+    {
+      "path": "20261014-xcode27-release-07/independent-resource-audit.json",
+      "exists": true,
+      "bytes": 1916,
+      "sha256": "dd0a9346d06d84e68679d6a36a665fce35ee03526a05972110488efe932b3050",
+      "summary": {
+        "allBundleFileCount": 114,
+        "allBundleByteCount": 298649470,
+        "supplementaryAllPassed": true,
+        "sourceFixtureRetained": true,
+        "modelFileCount": 4,
+        "debugMarkerCount": 23,
+        "debugMarkerHitCount": 0,
+        "forbiddenPathCount": 0
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-07/credential-bundle-scan.json",
+      "exists": true,
+      "bytes": 235,
+      "sha256": "b26e281a7eefa328c64c0c7587188c6aa144d7eb4384e5f3896b0fe22332e838",
+      "summary": {
+        "filesChecked": 114,
+        "passed": true,
+        "credentialValueLogged": false,
+        "matchCount": 0
+      }
+    },
+    {
+      "path": "20261014-watch-sendable-e2e-01/build-result.json",
+      "exists": true,
+      "bytes": 69,
+      "sha256": "0055ff43934eb0bc8ebaa5eecd8c84c67827342a3a8fc446e1717a1a803c688c",
+      "summary": {
+        "exitCode": 0
+      }
+    },
+    {
+      "path": "20261014-watch-sendable-e2e-01/short-test-result.json",
+      "exists": true,
+      "bytes": 70,
+      "sha256": "ee6d5b1ad8fcc85a67b39423836317098e827d12a6ff4b9e34f3a9c2b4a55cee",
+      "summary": {
+        "exitCode": 65
+      }
+    },
+    {
+      "path": "20261014-watch-sendable-e2e-01/short-summary.json",
+      "exists": true,
+      "bytes": 2038,
+      "sha256": "7bd90084001482ac2095e8fa250c49d4ef245aa45a52a2de5a110f40d42790a8",
+      "summary": {
+        "totalTestCount": 1,
+        "passedTests": 0,
+        "failedTests": 1,
+        "skippedTests": 0,
+        "result": "Failed",
+        "runtimeWarningCount": 1
+      }
+    },
+    {
+      "path": "20261014-virtual-audio-01/installation.json",
+      "exists": true,
+      "bytes": 846,
+      "sha256": "403dd33442671e7f5d2b3f09ac58b0e30cc57d094a5f317687359da10de04cf6",
+      "summary": {
+        "installedVersion": "0.7.1",
+        "pkgSHA256": "57b540f27a3e29c37e310e01bee0fdfab76733087e47f997ef9dccf851400dcf",
+        "installerExitCode": 0,
+        "installerRequiresRestart": true,
+        "signature": "Developer ID Installer: Existential Audio Inc. (Q5C99V536K)",
+        "notarization": "trusted by Apple notary service",
+        "gatekeeper": "accepted; Notarized Developer ID",
+        "blackHoleVisibleImmediatelyAfterInstall": false,
+        "computerRestarted": false,
+        "coreaudiodRestarted": false,
+        "globalAudioDefaultsChanged": false,
+        "fixtureSHA256": "31a4c94106ccfd8714bcfb060e05159083ad1e621fa8bb7716836a25f66559b4",
+        "fixtureSeconds": 90,
+        "fixtureSampleRate": 48000,
+        "fixtureChannels": 2
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-07/installation.json",
+      "exists": true,
+      "bytes": 1737,
+      "sha256": "3e78f9fce95e244ea63a4a922bc1fa8bfb864bb0eaf82d01e55e04ebfe46abd8",
+      "summary": {
+        "launchSucceeded": true,
+        "matchingFiles": [
+          {
+            "path": "MoMoAgent",
+            "snapshotSHA256": "54d146a4c488bc28fecfe54b18fc1f741b57c5c8ae83633b94fd8e894231a305",
+            "installedSHA256": "54d146a4c488bc28fecfe54b18fc1f741b57c5c8ae83633b94fd8e894231a305",
+            "matches": true
+          },
+          {
+            "path": "Info.plist",
+            "snapshotSHA256": "8cc89841d2360913b3df3c394311e4a8172549595e7d5bc7a702b79aaf47d2bb",
+            "installedSHA256": "8cc89841d2360913b3df3c394311e4a8172549595e7d5bc7a702b79aaf47d2bb",
+            "matches": true
+          },
+          {
+            "path": "Watch/MoMoAgentWatch.app/MoMoAgentWatch",
+            "snapshotSHA256": "2616381cd7070bfa0a233bf93d920e4d328abcf2be6d405018a46be58003fef5",
+            "installedSHA256": "2616381cd7070bfa0a233bf93d920e4d328abcf2be6d405018a46be58003fef5",
+            "matches": true
+          },
+          {
+            "path": "Watch/MoMoAgentWatch.app/Info.plist",
+            "snapshotSHA256": "e35cf96daf8f265f851a884472d76f579f994a0374544675266ec1428104f75a",
+            "installedSHA256": "e35cf96daf8f265f851a884472d76f579f994a0374544675266ec1428104f75a",
+            "matches": true
+          }
+        ],
+        "uiReview": {
+          "result": "passed",
+          "fullNavigationRetested": false
+        }
+      }
+    },
+    {
+      "path": "20261014-xcode27-release-07/home.png",
+      "exists": true,
+      "bytes": 109383,
+      "sha256": "06d7f077ac0d34456a2d894a78467b6581759f1a884b099ef0435dffcfcf7431",
+      "repositoryCopy": "docs/implementation/evidence/2026-10-14-resume/release07-home.png"
+    },
+    {
+      "path": "20261014-virtual-audio-01/pre-restart-cleanup.json",
+      "exists": true,
+      "bytes": 1563,
+      "sha256": "039be653505b3a22f008da0e1052afff3fc8140f60ab971d7cebebe6137124ab",
+      "summary": {
+        "shutdownExitCodes": [
+          0,
+          0
+        ],
+        "terminateExitCodes": [
+          3,
+          0
+        ],
+        "bootedDeviceCount": 0,
+        "matchingAppOrTestProcessCount": 0,
+        "computerRestarted": false
+      }
+    },
+    {
+      "path": "20261014-watch-blackhole-final-01/short/summary.json",
+      "exists": true,
+      "bytes": 1041,
+      "sha256": "dbea26eb4b6af1e96f67589715d3610e2bd512c1f5a6856e4c0598f0f3d444e1",
+      "kind": "result-summary",
+      "summary": {
+        "totalTestCount": 1,
+        "passedTests": 1,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "result": "Passed",
+        "runtimeWarningCount": 0
+      },
+      "summaryFieldAllowlist": [
+        "totalTestCount",
+        "passedTests",
+        "failedTests",
+        "skippedTests",
+        "result",
+        "runtimeWarningCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-final-01/short/owned-run-cleanup.json",
+      "exists": true,
+      "bytes": 1918,
+      "sha256": "a186a75c373d0913641412a6ff7a89cbb90cac6509fbcefb15608a12bc3547e0",
+      "kind": "cleanup-summary",
+      "summary": {
+        "runCount": 1,
+        "removedAllOwnedRuns": true,
+        "fileCount": 8
+      },
+      "summaryFieldAllowlist": [
+        "runCount",
+        "removedAllOwnedRuns",
+        "fileCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-final-01/boundary/summary.json",
+      "exists": true,
+      "bytes": 1041,
+      "sha256": "a037e672a23d421eb8cb06d7b3d7fb5a78ae5811db0e3877615bbee512e0cc4a",
+      "kind": "result-summary",
+      "summary": {
+        "totalTestCount": 1,
+        "passedTests": 1,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "result": "Passed",
+        "runtimeWarningCount": 0
+      },
+      "summaryFieldAllowlist": [
+        "totalTestCount",
+        "passedTests",
+        "failedTests",
+        "skippedTests",
+        "result",
+        "runtimeWarningCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-final-01/boundary/owned-run-cleanup.json",
+      "exists": true,
+      "bytes": 3641,
+      "sha256": "bc93cab4af1237f8ebe2feef00e0829ea60e145529e6a6174a13a263fd699788",
+      "kind": "cleanup-summary",
+      "summary": {
+        "runCount": 1,
+        "removedAllOwnedRuns": true,
+        "fileCount": 16
+      },
+      "summaryFieldAllowlist": [
+        "runCount",
+        "removedAllOwnedRuns",
+        "fileCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-final-01/ui/summary.json",
+      "exists": true,
+      "bytes": 1041,
+      "sha256": "bb800c565f225dc534dfa7b9231d30c02892c0da657e6adab44fe1939fd3a9e7",
+      "kind": "result-summary",
+      "summary": {
+        "totalTestCount": 1,
+        "passedTests": 1,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "result": "Passed",
+        "runtimeWarningCount": 0
+      },
+      "summaryFieldAllowlist": [
+        "totalTestCount",
+        "passedTests",
+        "failedTests",
+        "skippedTests",
+        "result",
+        "runtimeWarningCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-final-01/ui/owned-run-cleanup.json",
+      "exists": true,
+      "bytes": 2783,
+      "sha256": "a57e8c6e0600fbd7a1b0452ba895bd047f9e2ce8609f748b37a16155b390af14",
+      "kind": "cleanup-summary",
+      "summary": {
+        "runCount": 1,
+        "removedAllOwnedRuns": true,
+        "fileCount": 12
+      },
+      "summaryFieldAllowlist": [
+        "runCount",
+        "removedAllOwnedRuns",
+        "fileCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-final-01/build-provenance.json",
+      "exists": true,
+      "bytes": 325,
+      "sha256": "ba7692d7ee42fbf7c803d64be3d4185a3ace3ca2c7ea3f43c0d42d94c8c503c0",
+      "kind": "result-summary",
+      "summary": {
+        "noNewBuild": true,
+        "sourceHashCount": 51,
+        "buildExitCode": 0,
+        "sourceUnchanged": true
+      },
+      "summaryFieldAllowlist": [
+        "noNewBuild",
+        "sourceHashCount",
+        "buildExitCode",
+        "sourceUnchanged"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-final-01/source-hashes-before.json",
+      "exists": true,
+      "bytes": 7018,
+      "sha256": "9d7a6c662fb1f960517dc09c78ee551b62d7fe55db2f097e825c43f1769b59aa",
+      "kind": "source-manifest-hash",
+      "summary": {
+        "sourceHashCount": 51
+      },
+      "summaryFieldAllowlist": [
+        "sourceHashCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-final-01/source-hashes-final.json",
+      "exists": true,
+      "bytes": 7018,
+      "sha256": "9d7a6c662fb1f960517dc09c78ee551b62d7fe55db2f097e825c43f1769b59aa",
+      "kind": "source-manifest-hash",
+      "summary": {
+        "sourceHashCount": 51
+      },
+      "summaryFieldAllowlist": [
+        "sourceHashCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-final-01/boundary/attachments/5E3F1D4B-8D15-4B0B-85F4-A3485EA8F123.json",
+      "exists": true,
+      "bytes": 1220,
+      "sha256": "bb5f102601433a7433f48b6812d4e916d59eb3727f93496b0017c6602ec155ae",
+      "kind": "native-capture-allowlist",
+      "summary": {
+        "actualCapturedFrames": 1096000,
+        "sampleRate": 16000,
+        "epochCount": 2,
+        "markCount": 1,
+        "unacknowledgedOriginalCount": 3,
+        "scope": "watchOS_simulator_native_microphone_no_WC_delivery",
+        "actualSeconds": 68.5,
+        "chunks": [
+          {
+            "bytes": 265329,
+            "count": 960000,
+            "sha256": "3f8e271ed1f1c5f5c86fb59661105aaf4c1aa1f0919a58609a3cc7f3692c86b0",
+            "start": 0
+          },
+          {
+            "bytes": 46214,
+            "count": 83200,
+            "sha256": "e2f0a7ab487894bdecc26c8cfc73707f4346784bc66b315e7571d5d6d2138ac2",
+            "start": 960000
+          },
+          {
+            "bytes": 38719,
+            "count": 52800,
+            "sha256": "37a3448509cf73b3e660440a83b50a6fb71e5786e62e6cdaa6a9cc4662556172",
+            "start": 0
+          }
+        ]
+      },
+      "summaryFieldAllowlist": [
+        "actualCapturedFrames",
+        "sampleRate",
+        "epochCount",
+        "markCount",
+        "unacknowledgedOriginalCount",
+        "scope",
+        "actualSeconds",
+        "chunks"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-final-01/boundary/independent-decoded-volume.json",
+      "exists": true,
+      "bytes": 814,
+      "sha256": "241d728c4914352a1f56da0346a5f2ac051b5e345187e5e266e7d86f68ea3f70",
+      "kind": "decoded-statistics-no-audio",
+      "summary": {
+        "chunkCount": 3,
+        "chunks": [
+          {
+            "exitCode": 0,
+            "meanVolumeDB": "-20.7",
+            "maximumVolumeDB": "-4.3",
+            "sha256": "3f8e271ed1f1c5f5c86fb59661105aaf4c1aa1f0919a58609a3cc7f3692c86b0"
+          },
+          {
+            "exitCode": 0,
+            "meanVolumeDB": "-20.5",
+            "maximumVolumeDB": "-4.8",
+            "sha256": "e2f0a7ab487894bdecc26c8cfc73707f4346784bc66b315e7571d5d6d2138ac2"
+          },
+          {
+            "exitCode": 0,
+            "meanVolumeDB": "-21.7",
+            "maximumVolumeDB": "-4.8",
+            "sha256": "37a3448509cf73b3e660440a83b50a6fb71e5786e62e6cdaa6a9cc4662556172"
+          }
+        ]
+      },
+      "summaryFieldAllowlist": [
+        "chunkCount",
+        "chunks"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-e2e-06/ui/summary.json",
+      "exists": true,
+      "bytes": 1041,
+      "sha256": "ebc1ede03962143a861dd71a4bf12455127d03051c0fda9b7815785fe53ad19b",
+      "kind": "result-summary",
+      "summary": {
+        "totalTestCount": 1,
+        "passedTests": 1,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "result": "Passed",
+        "runtimeWarningCount": 0
+      },
+      "summaryFieldAllowlist": [
+        "totalTestCount",
+        "passedTests",
+        "failedTests",
+        "skippedTests",
+        "result",
+        "runtimeWarningCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-e2e-06/ui/owned-run-cleanup.json",
+      "exists": true,
+      "bytes": 2783,
+      "sha256": "37b05ab95d32a8d3a3e04c96ece88d504d1b0bdfe0bae034ea56fbbf5b4faa8e",
+      "kind": "cleanup-summary",
+      "summary": {
+        "runCount": 1,
+        "removedAllOwnedRuns": true,
+        "fileCount": 12
+      },
+      "summaryFieldAllowlist": [
+        "runCount",
+        "removedAllOwnedRuns",
+        "fileCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-e2e-06/source-hashes-before.json",
+      "exists": true,
+      "bytes": 7018,
+      "sha256": "3c8351d85f18d2edb88e1e83f854ffab1194b8c5f1203833631747c79d7ef9b7",
+      "kind": "source-manifest-hash",
+      "summary": {
+        "sourceHashCount": 51
+      },
+      "summaryFieldAllowlist": [
+        "sourceHashCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-e2e-06/source-hashes-after.json",
+      "exists": true,
+      "bytes": 7018,
+      "sha256": "3c8351d85f18d2edb88e1e83f854ffab1194b8c5f1203833631747c79d7ef9b7",
+      "kind": "source-manifest-hash",
+      "summary": {
+        "sourceHashCount": 51
+      },
+      "summaryFieldAllowlist": [
+        "sourceHashCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-e2e-06/source-hashes-after-previews.json",
+      "exists": true,
+      "bytes": 7018,
+      "sha256": "3c8351d85f18d2edb88e1e83f854ffab1194b8c5f1203833631747c79d7ef9b7",
+      "kind": "source-manifest-hash",
+      "summary": {
+        "sourceHashCount": 51
+      },
+      "summaryFieldAllowlist": [
+        "sourceHashCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-e2e-06/source-hashes-after-ui.json",
+      "exists": true,
+      "bytes": 7018,
+      "sha256": "3c8351d85f18d2edb88e1e83f854ffab1194b8c5f1203833631747c79d7ef9b7",
+      "kind": "source-manifest-hash",
+      "summary": {
+        "sourceHashCount": 51
+      },
+      "summaryFieldAllowlist": [
+        "sourceHashCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-e2e-06/build-result.json",
+      "exists": true,
+      "bytes": 104,
+      "sha256": "2d91e5b86cad0cec3763353e88af0cbb64cc8c59b00dc08107881b42e44f000d",
+      "kind": "result-summary",
+      "summary": {
+        "exitCode": 0,
+        "elapsedSeconds": 9.002606916999866,
+        "sourceHashCount": 51,
+        "unchanged": true
+      },
+      "summaryFieldAllowlist": [
+        "exitCode",
+        "elapsedSeconds",
+        "sourceHashCount",
+        "unchanged"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-e2e-06/ui/execution.json",
+      "exists": true,
+      "bytes": 16668,
+      "sha256": "47d34524af5a9083dd9344f8ba07ddf321059eee7a0ea95813f7e905e1b2f42e",
+      "kind": "execution-allowlist-no-commands",
+      "summary": {
+        "case": "MoMoAgentWatchUITests/WatchCaptureJourneyTests/testRecordMarkPauseRelaunchResumeStopAndKeepPendingAudio",
+        "testExitCode": 0,
+        "testWallSeconds": 114.27245208400018,
+        "processesExited": true,
+        "fixtureSHA256": "31a4c94106ccfd8714bcfb060e05159083ad1e621fa8bb7716836a25f66559b4",
+        "xctestrunSHA256": "d2dc06f07dc71ee4ee2caf3ffb5e5d64e9152387a30cbe70aad258d8bbb4bbbd"
+      },
+      "summaryFieldAllowlist": [
+        "case",
+        "testExitCode",
+        "testWallSeconds",
+        "processesExited",
+        "fixtureSHA256",
+        "xctestrunSHA256"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-e2e-06/inherited-native-evidence.json",
+      "exists": true,
+      "bytes": 441,
+      "sha256": "549dfc5f33cc7abd099e60e9356cbab44895fb5dc61d138be773d19628bf0848",
+      "kind": "inherited-native-source-provenance",
+      "summary": {
+        "previousCompleteGate": "tmp_agent_output/20261014-watch-blackhole-final-01",
+        "changedInputFileCount": 1,
+        "unchangedAudioAndNativeTestInputs": true,
+        "changedInputFiles": {
+          "Apps/WatchApp/Features/Capture/CaptureView.swift": {
+            "old": "ca32ba84292e55a523c8b4da8dea9c26a16894b53140bfe846166b8890fa9f29",
+            "new": "f2af669827de9fa6fe7374e41e287fd853f57c2b0cda12b7c5d2d22893ce928a"
+          }
+        }
+      },
+      "summaryFieldAllowlist": [
+        "previousCompleteGate",
+        "changedInputFileCount",
+        "unchangedAudioAndNativeTestInputs",
+        "changedInputFiles"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-e2e-06/manual-visual-review.json",
+      "exists": true,
+      "bytes": 2642,
+      "sha256": "ac177ac682c35db8c1302e7afbf6ee0f07f58aae2af963f8e81c890785bb4a12",
+      "kind": "manual-visual-allowlist",
+      "summary": {
+        "reviewedAllSevenImages": true,
+        "testSeconds": 109.42263495922089,
+        "testDeadlineSeconds": 120,
+        "testResult": "Passed",
+        "sourceHashesCount": 51,
+        "sourceHashesStable": true,
+        "imageCount": 7,
+        "runtimeWarningCount": 0
+      },
+      "summaryFieldAllowlist": [
+        "reviewedAllSevenImages",
+        "testSeconds",
+        "testDeadlineSeconds",
+        "testResult",
+        "sourceHashesCount",
+        "sourceHashesStable",
+        "imageCount",
+        "runtimeWarningCount"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-e2e-06/preview-02/report.json",
+      "exists": true,
+      "bytes": 1222,
+      "sha256": "2b0aa7b340635d2c52a487a033e69aa4456c7468dc0452f62610c509f3890346",
+      "kind": "result-summary",
+      "summary": {
+        "result": "Manual preview completed with normal pause and stop UI",
+        "recordedFrames": 208000,
+        "sampleRate": 16000,
+        "recordedSeconds": 13.0,
+        "audioHashMatchedMetadata": true,
+        "manualWorkflowCompleted": true,
+        "ownedRunRemoved": true,
+        "playerExited": true,
+        "sourceHashesUnchanged": true
+      },
+      "summaryFieldAllowlist": [
+        "result",
+        "recordedFrames",
+        "sampleRate",
+        "recordedSeconds",
+        "audioHashMatchedMetadata",
+        "manualWorkflowCompleted",
+        "ownedRunRemoved",
+        "playerExited",
+        "sourceHashesUnchanged"
+      ]
+    },
+    {
+      "path": "20261014-watch-blackhole-e2e-06/preview/execution.json",
+      "exists": true,
+      "bytes": 8185,
+      "sha256": "7efbefea3142ac6e1d8abc7fdc0396ce012256ee50ef22e59474b9be8ae0c6be",
+      "kind": "historical-incomplete-preview",
+      "summary": {
+        "manualWorkflowCompleted": false,
+        "ownedRunRemoved": true,
+        "playerExited": true
+      },
+      "summaryFieldAllowlist": [
+        "manualWorkflowCompleted",
+        "ownedRunRemoved",
+        "playerExited"
+      ]
+    },
+    {
+      "path": "20261014-brand-phone-ui-01/summary.json",
+      "exists": true,
+      "bytes": 1018,
+      "sha256": "c05aaa68fdbe79c8fed6f5ade7b7131cebf4a2556c3ce85bd3ddd8d0f53700f3",
+      "kind": "phone-branding-test-allowlist",
+      "summary": {
+        "totalTestCount": 3,
+        "passedTests": 3,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "result": "Passed",
+        "runtimeWarningCount": 0
+      },
+      "summaryFieldAllowlist": [
+        "totalTestCount",
+        "passedTests",
+        "failedTests",
+        "skippedTests",
+        "result",
+        "runtimeWarningCount"
+      ]
+    },
+    {
+      "path": "20261014-brand-phone-ui-01/result.json",
+      "exists": true,
+      "bytes": 69,
+      "sha256": "c0371f5000ca1a8b8cfcb8945327a480ca83675f67e62e8b06d76f5a2a5aab62",
+      "kind": "phone-branding-test-allowlist",
+      "summary": {
+        "exitCode": 0
+      },
+      "summaryFieldAllowlist": [
+        "exitCode"
+      ]
+    },
+    {
+      "path": "20261014-brand-phone-02/build-result.json",
+      "exists": true,
+      "bytes": 117,
+      "sha256": "c6b6304ae399e0e79d055645b8865a5b74459983090ff86a3d2674b412ee179b",
+      "kind": "phone-branding-test-allowlist",
+      "summary": {
+        "exitCode": 0,
+        "inputCount": 335,
+        "sourceUnchanged": true
+      },
+      "summaryFieldAllowlist": [
+        "exitCode",
+        "inputCount",
+        "sourceUnchanged"
+      ]
+    },
+    {
+      "path": "20261014-brand-phone-02/source-before.json",
+      "exists": true,
+      "bytes": 48158,
+      "sha256": "3cae719e845a970947fc5422d3c150adf7b5d361948906fe8d6520d560910c3b",
+      "kind": "phone-branding-test-allowlist",
+      "summary": {
+        "sourceInputCount": 335
+      },
+      "summaryFieldAllowlist": [
+        "sourceInputCount"
+      ]
+    },
+    {
+      "path": "20261014-brand-phone-02/source-after.json",
+      "exists": true,
+      "bytes": 48158,
+      "sha256": "3cae719e845a970947fc5422d3c150adf7b5d361948906fe8d6520d560910c3b",
+      "kind": "phone-branding-test-allowlist",
+      "summary": {
+        "sourceInputCount": 335
+      },
+      "summaryFieldAllowlist": [
+        "sourceInputCount"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/evidence.json",
+      "exists": true,
+      "bytes": 7650,
+      "sha256": "722c854a24dfe9d3fd1bab399513aced4e7ca239b3ddab097f035d9dc3d669b3",
+      "kind": "release10-allowlist",
+      "summary": {
+        "status": "build_and_static_checks_passed",
+        "configuration": "Release",
+        "xcode": "27.0 / 27A266a",
+        "buildExitCode": 0,
+        "verifierExitCode": 0,
+        "sourceManifestFileCount": 367,
+        "allBundleFileCount": 118,
+        "allBundleByteCount": 300133756,
+        "independentResourceAuditPassed": true,
+        "supplementaryDebugMarkerCount": 23,
+        "compiledWatchCaptureViewSHA256": "f2af669827de9fa6fe7374e41e287fd853f57c2b0cda12b7c5d2d22893ce928a",
+        "compiledWatchAudioSessionSHA256": "122a8b0ba24ac908fde37464c757547a378a95e923dbb06b753c89ff7a92fd3d",
+        "compiledCaptureSourceSHA256": "9c868904093a71444a3142daee453c6ea7655821b9735c82b64b5dc9257e02e1",
+        "staticBrandingInspectionPassed": true,
+        "launchExecuted": false,
+        "selfTests": {
+          "passed": 17,
+          "failed": 0,
+          "exitCode": 0
+        },
+        "staticChecks": {
+          "passed": 19,
+          "failed": 0,
+          "unchecked": 0
+        },
+        "modelResources": {
+          "model.int8.onnx": {
+            "expected_sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51",
+            "actual_sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51",
+            "matches": true
+          },
+          "tokens.txt": {
+            "expected_sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
+            "actual_sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
+            "matches": true
+          },
+          "silero_vad.onnx": {
+            "expected_sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+            "actual_sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+            "matches": true
+          },
+          "manifest.json": {
+            "expected_sha256": "9d405771ff30199328df5de05af52a7c62d2017ef90fc689688baad3bd7ee4b2",
+            "actual_sha256": "9d405771ff30199328df5de05af52a7c62d2017ef90fc689688baad3bd7ee4b2",
+            "matches": true
+          }
+        },
+        "postBuildSourceDifferenceCount": 0,
+        "scope": "Build/static report only; install and visual result are separate installation.json"
+      },
+      "summaryFieldAllowlist": [
+        "status",
+        "configuration",
+        "xcode",
+        "buildExitCode",
+        "verifierExitCode",
+        "sourceManifestFileCount",
+        "allBundleFileCount",
+        "allBundleByteCount",
+        "independentResourceAuditPassed",
+        "supplementaryDebugMarkerCount",
+        "compiledWatchCaptureViewSHA256",
+        "compiledWatchAudioSessionSHA256",
+        "compiledCaptureSourceSHA256",
+        "staticBrandingInspectionPassed",
+        "launchExecuted",
+        "selfTests",
+        "staticChecks",
+        "modelResources",
+        "postBuildSourceDifferenceCount",
+        "scope"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/release-bundle.json",
+      "exists": true,
+      "bytes": 8800,
+      "sha256": "7caf8da46fdfd7efce7cef5d789a247c87078b9f620ddccaeb74c97d528b611d",
+      "kind": "release10-allowlist",
+      "summary": {
+        "scope": "release_bundle_static_checks",
+        "passedCheckCount": 19,
+        "failedCheckCount": 0,
+        "uncheckedCheckCount": 0,
+        "errorCount": 0
+      },
+      "summaryFieldAllowlist": [
+        "scope",
+        "passedCheckCount",
+        "failedCheckCount",
+        "uncheckedCheckCount",
+        "errorCount"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/independent-resource-audit.json",
+      "exists": true,
+      "bytes": 1916,
+      "sha256": "bc274fe19ee24f74bd7fab21067ad51f8dd3d494a58beeefe87aea26a916e06d",
+      "kind": "release10-allowlist",
+      "summary": {
+        "allBundleFileCount": 118,
+        "allBundleByteCount": 300133756,
+        "supplementaryAllPassed": true,
+        "sourceFixtureRetained": true,
+        "modelFileCount": 4,
+        "licenseFileCount": 4,
+        "debugMarkerCount": 23,
+        "debugMarkerHitCount": 0,
+        "forbiddenPathCount": 0
+      },
+      "summaryFieldAllowlist": [
+        "allBundleFileCount",
+        "allBundleByteCount",
+        "supplementaryAllPassed",
+        "sourceFixtureRetained",
+        "modelFileCount",
+        "licenseFileCount",
+        "debugMarkerCount",
+        "debugMarkerHitCount",
+        "forbiddenPathCount"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/branding-inspection.json",
+      "exists": true,
+      "bytes": 2882,
+      "sha256": "b5dc13aa6209919e319eb3c7d87e47afedb5aac1d2026c158abcb2faa5ee0ba5",
+      "kind": "release10-allowlist",
+      "summary": {
+        "status": "static_branding_checks_passed",
+        "iconResourcesPassed": true,
+        "phoneDynamicPalettePassed": true,
+        "watchStaticPaletteSourceMatches": true,
+        "watchPaletteSourceSHA256": "fd3efc0bdaeda774fa445de738a3d8324d8c710c51085747a7215a3dbf6c0372",
+        "watchUsesNamedColorVariants": false,
+        "runtimeInspectedByThisScript": false,
+        "phoneIconPassed": true,
+        "watchIconPassed": true,
+        "scope": "Static only; Watch uses explicit sRGB code rather than unused named-color variants. Runtime verification is separate."
+      },
+      "summaryFieldAllowlist": [
+        "status",
+        "iconResourcesPassed",
+        "phoneDynamicPalettePassed",
+        "watchStaticPaletteSourceMatches",
+        "watchPaletteSourceSHA256",
+        "watchUsesNamedColorVariants",
+        "runtimeInspectedByThisScript",
+        "phoneIconPassed",
+        "watchIconPassed",
+        "scope"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/source-hashes-before-build.json",
+      "exists": true,
+      "bytes": 66422,
+      "sha256": "959a68c031b6981b37042718c6ac1721439ea4ea1ef35db9cc7d8441a166ce16",
+      "kind": "source-manifest-hash",
+      "summary": {
+        "sourceHashCount": 367
+      },
+      "summaryFieldAllowlist": [
+        "sourceHashCount"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/source-hashes-after-build.json",
+      "exists": true,
+      "bytes": 66422,
+      "sha256": "959a68c031b6981b37042718c6ac1721439ea4ea1ef35db9cc7d8441a166ce16",
+      "kind": "source-manifest-hash",
+      "summary": {
+        "sourceHashCount": 367
+      },
+      "summaryFieldAllowlist": [
+        "sourceHashCount"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/source-hash-diff.json",
+      "exists": true,
+      "bytes": 3,
+      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+      "kind": "source-manifest-hash",
+      "summary": {
+        "changedSourceCount": 0
+      },
+      "summaryFieldAllowlist": [
+        "changedSourceCount"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/source-changes-from-release09.json",
+      "exists": true,
+      "bytes": 625,
+      "sha256": "1a1aba996acfbe01d6be601dbe9fae25a86196467947c5c85923a522a40ad739",
+      "kind": "source-provenance-hash",
+      "summary": {
+        "topLevelKeys": [
+          "Apps/Shared/BrandPalette.swift",
+          "Apps/WatchApp/Features/Capture/CaptureView.swift"
+        ]
+      },
+      "summaryFieldAllowlist": [
+        "topLevelKeys"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/bundle-file-hashes.json",
+      "exists": true,
+      "bytes": 21426,
+      "sha256": "8e26916e7abcff417eceba675eb99cb7b688c0331e3b8743b7d1c12b3e85dc3f",
+      "kind": "bundle-manifest-hash",
+      "summary": {
+        "indexedFileCount": 118
+      },
+      "summaryFieldAllowlist": [
+        "indexedFileCount"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/credential-bundle-scan.json",
+      "exists": true,
+      "bytes": 235,
+      "sha256": "a092ffc6fbc5edb391ac12e1240e851bde6f152e8193462989123b71c8b15fa2",
+      "kind": "release10-allowlist",
+      "summary": {
+        "filesChecked": 118,
+        "passed": true,
+        "credentialValueLogged": false,
+        "matchCount": 0,
+        "scope": "Exact authorized credential-byte scan only; not arbitrary unknown-secret detection."
+      },
+      "summaryFieldAllowlist": [
+        "filesChecked",
+        "passed",
+        "credentialValueLogged",
+        "matchCount",
+        "scope"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/installation.json",
+      "exists": true,
+      "bytes": 5364,
+      "sha256": "493732c159eb35c20e988e2c81f983036cbbac4762b24295d4e3d0142c8fe211",
+      "kind": "release10-allowlist",
+      "summary": {
+        "release": "Release10",
+        "status": "installed_launched_and_visually_reviewed",
+        "targets": [
+          {
+            "name": "phone",
+            "bundleID": "com.momoagent.ios",
+            "launchSucceeded": true,
+            "matchingFiles": [
+              {
+                "path": "MoMoAgent",
+                "snapshotSHA256": "b13a5bb8140dda8d5ed5d69ed13cffabbc8f644a21b11ffa6add1fbcb316dbd7",
+                "installedSHA256": "b13a5bb8140dda8d5ed5d69ed13cffabbc8f644a21b11ffa6add1fbcb316dbd7",
+                "matches": true
+              },
+              {
+                "path": "Info.plist",
+                "snapshotSHA256": "b1d903b155ba1e83d4b326082049ed0e8d9b2b8ebf010477ac57f07176a71890",
+                "installedSHA256": "b1d903b155ba1e83d4b326082049ed0e8d9b2b8ebf010477ac57f07176a71890",
+                "matches": true
+              },
+              {
+                "path": "Assets.car",
+                "snapshotSHA256": "3266eafdab8f14f81b1ada3d01a7182df1ecc6fa2317da034a2dce53c63fb7e1",
+                "installedSHA256": "3266eafdab8f14f81b1ada3d01a7182df1ecc6fa2317da034a2dce53c63fb7e1",
+                "matches": true
+              },
+              {
+                "path": "Watch/MoMoAgentWatch.app/MoMoAgentWatch",
+                "snapshotSHA256": "d423677c921ee07cd83ebe91d03bc567c12c4cd0e434b4579197c4dbfaba2759",
+                "installedSHA256": "d423677c921ee07cd83ebe91d03bc567c12c4cd0e434b4579197c4dbfaba2759",
+                "matches": true
+              },
+              {
+                "path": "Watch/MoMoAgentWatch.app/Info.plist",
+                "snapshotSHA256": "5fd8a778f4f830d98d20f2e947006ef6629a0bf0c64c5c88f088ac13c6c65175",
+                "installedSHA256": "5fd8a778f4f830d98d20f2e947006ef6629a0bf0c64c5c88f088ac13c6c65175",
+                "matches": true
+              },
+              {
+                "path": "Watch/MoMoAgentWatch.app/Assets.car",
+                "snapshotSHA256": "d511fdaa1da8daee1d5f12bbbf39519436bda162900964dde403106e1f13f519",
+                "installedSHA256": "d511fdaa1da8daee1d5f12bbbf39519436bda162900964dde403106e1f13f519",
+                "matches": true
+              }
+            ]
+          },
+          {
+            "name": "watch",
+            "bundleID": "com.momoagent.ios.watchkitapp",
+            "launchSucceeded": true,
+            "matchingFiles": [
+              {
+                "path": "MoMoAgentWatch",
+                "snapshotSHA256": "d423677c921ee07cd83ebe91d03bc567c12c4cd0e434b4579197c4dbfaba2759",
+                "installedSHA256": "d423677c921ee07cd83ebe91d03bc567c12c4cd0e434b4579197c4dbfaba2759",
+                "matches": true
+              },
+              {
+                "path": "Info.plist",
+                "snapshotSHA256": "5fd8a778f4f830d98d20f2e947006ef6629a0bf0c64c5c88f088ac13c6c65175",
+                "installedSHA256": "5fd8a778f4f830d98d20f2e947006ef6629a0bf0c64c5c88f088ac13c6c65175",
+                "matches": true
+              },
+              {
+                "path": "Assets.car",
+                "snapshotSHA256": "d511fdaa1da8daee1d5f12bbbf39519436bda162900964dde403106e1f13f519",
+                "installedSHA256": "d511fdaa1da8daee1d5f12bbbf39519436bda162900964dde403106e1f13f519",
+                "matches": true
+              }
+            ]
+          }
+        ],
+        "targetCount": 2,
+        "matchingFileCount": 9,
+        "fullNavigationRetested": false,
+        "uiReview": {
+          "result": "passed",
+          "reviewer": "root",
+          "fullNavigationRetested": false,
+          "debugRecordingEvidenceNotReleaseRun": true
+        },
+        "environmentAtFinish": {
+          "phoneAppearance": "light",
+          "watchRecordingState": "ended",
+          "appInstalledOnBothTargets": true,
+          "activeTestOrPlayerProcessesObserved": false,
+          "retainedExistingArchive": true
+        },
+        "scope": "Installation, startup, phone light/dark home and icon, Watch recovered-state ending verified; no fresh Release microphone run."
+      },
+      "summaryFieldAllowlist": [
+        "release",
+        "status",
+        "targets",
+        "targetCount",
+        "matchingFileCount",
+        "fullNavigationRetested",
+        "uiReview",
+        "environmentAtFinish",
+        "scope"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/home-light.png",
+      "exists": true,
+      "bytes": 119088,
+      "sha256": "4fbca0177d4e9cbad3b6b42c8089eae4218d9e8d4ad9135858bc463677a5ced7",
+      "kind": "actual-release-screenshot-hash",
+      "summary": {
+        "visuallyReviewed": true,
+        "reviewScope": "phone home light"
+      },
+      "summaryFieldAllowlist": [
+        "visuallyReviewed",
+        "reviewScope"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/home-dark.png",
+      "exists": true,
+      "bytes": 105070,
+      "sha256": "0e261365b632111f7bf660cfd00c1f57fcba1a5f53626b9f37afcad8ddc3ec88",
+      "kind": "actual-release-screenshot-hash",
+      "summary": {
+        "visuallyReviewed": true,
+        "reviewScope": "phone home dark"
+      },
+      "summaryFieldAllowlist": [
+        "visuallyReviewed",
+        "reviewScope"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/watch-idle.png",
+      "exists": true,
+      "bytes": 36789,
+      "sha256": "11ebc71acc37f47df95e1628798d22ef3998318673451fef70c2df33a6e6f75a",
+      "kind": "actual-release-screenshot-hash",
+      "summary": {
+        "visuallyReviewed": true,
+        "reviewScope": "Watch ended state"
+      },
+      "summaryFieldAllowlist": [
+        "visuallyReviewed",
+        "reviewScope"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/phone-icon.png",
+      "exists": true,
+      "bytes": 3159348,
+      "sha256": "5f4722131044f732d1cb3c601236984677a647d6a6c748eedfb500ab88bb52a5",
+      "kind": "actual-release-screenshot-hash",
+      "summary": {
+        "visuallyReviewed": true,
+        "reviewScope": "Phone SpringBoard icon"
+      },
+      "summaryFieldAllowlist": [
+        "visuallyReviewed",
+        "reviewScope"
+      ]
+    },
+    {
+      "path": "20261014-xcode27-release-10/git-preflight.json",
+      "exists": true,
+      "bytes": 334,
+      "sha256": "13d93c0407d1ccf798f22ed55eaaf7a391bc745b0970e38e5276dda3097de811",
+      "kind": "preflight-allowlist-no-values",
+      "summary": {
+        "candidateFiles": 644,
+        "release10InputCount": 367,
+        "diffCheckExitCode": 0,
+        "credentialValueLogged": false,
+        "passed": true,
+        "exactAuthorizedCredentialMatchCount": 0,
+        "privateKeyHeaderCount": 0,
+        "externalSymlinkCount": 0,
+        "largeFileCount": 0,
+        "changedRelease10InputCount": 0,
+        "scope": "Initial existing preflight snapshot only. Later staged scan is separate to avoid a self-referential index hash."
+      },
+      "summaryFieldAllowlist": [
+        "candidateFiles",
+        "release10InputCount",
+        "diffCheckExitCode",
+        "credentialValueLogged",
+        "passed",
+        "exactAuthorizedCredentialMatchCount",
+        "privateKeyHeaderCount",
+        "externalSymlinkCount",
+        "largeFileCount",
+        "changedRelease10InputCount",
+        "scope"
+      ]
+    }
+  ],
+  "releaseSnapshots": {
+    "Release06": {
+      "sourceRelation": "Before AudioCaptureEngine tap @Sendable fix; retained historical installed snapshot.",
+      "successor": "Release07"
+    },
+    "Release07": {
+      "sourceRelation": "Includes AudioCaptureEngine tap @Sendable fix; only production source difference from Release06.",
+      "watchCapturePassed": false,
+      "installedHomeVerified": true
+    },
+    "Release10": {
+      "sourceRelation": "Final CaptureView f2af6698, same native audio inputs as final-01; source matches final UI06.",
+      "buildAndStaticChecksPassed": true,
+      "installedOnPhoneAndWatch": true,
+      "installedMatchingFileCount": 9,
+      "lightAndDarkHomeVisuallyReviewed": true,
+      "phoneIconVisuallyReviewed": true,
+      "watchRestoredStateEndedNormally": true,
+      "newReleaseMicrophoneCaptureExecuted": false,
+      "recordingEvidence": "Debug UI06 plus inherited unchanged-audio native final-01; not a new Release capture test.",
+      "credentialExactByteScan": {
+        "filesChecked": 118,
+        "matchCount": 0,
+        "passed": true,
+        "credentialValueLogged": false
+      }
+    }
+  },
+  "currentWatchEvidence": {
+    "nativeRun": "20261014-watch-blackhole-final-01",
+    "nativePassed": 2,
+    "nativeSkipped": 0,
+    "currentUIRun": "20261014-watch-blackhole-e2e-06",
+    "currentUIPassed": 1,
+    "currentUISkipped": 0,
+    "notANewThreeTestRun": true,
+    "inputKind": "Public fixture through BlackHole into real AVAudioEngine, controlled Simulator input",
+    "nativeSourceInputsUnchanged": true,
+    "comparedInputCount": 51,
+    "changedInputs": [
+      "Apps/WatchApp/Features/Capture/CaptureView.swift"
+    ],
+    "unchangedSourceHashes": {
+      "Apps/WatchApp/Application/WatchRuntime.swift": "73f18b1c39f7747e16ff37b54f6613f9cb115c48140c02af1e3db4be323afb23",
+      "Apps/WatchApp/Platform/WatchAudioSession.swift": "122a8b0ba24ac908fde37464c757547a378a95e923dbb06b753c89ff7a92fd3d",
+      "Packages/MoMoAgentKit/Sources/MoMoRecording/Capture/AudioCaptureEngine.swift": "9c868904093a71444a3142daee453c6ea7655821b9735c82b64b5dc9257e02e1",
+      "Packages/MoMoAgentKit/Sources/MoMoRecording/Capture/CaptureEncoder.swift": "0a4fcff8b8a51324a4ea4234e912bd2933b327d9fbbb50af5e0b85b894f68f96",
+      "Packages/MoMoAgentKit/Sources/MoMoRecording/Ledger/RecordingStore.swift": "59315084c0635a73903f90b51bdfa4a399eada28f72ea93dd012024873ae09fc",
+      "Tests/WatchIntegrationTests/WatchNativeCaptureTests.swift": "33d2678b7b59dbdb746150c9562c8a8d152c678a2156edc05d801ec05b0ca62d",
+      "Tests/WatchUITests/WatchCaptureJourneyTests.swift": "2572605ea754b49ba1a2f611515808a853b22c7da1a3ab080ece99de72c2753b"
+    },
+    "currentCaptureViewSHA256": "f2af669827de9fa6fe7374e41e287fd853f57c2b0cda12b7c5d2d22893ce928a",
+    "limits": [
+      "No physical microphone or wrist-quality claim",
+      "No real Watch SE2, battery, 18-hour or WatchConnectivity file-delivery acceptance",
+      "Earlier 0Hz, zero-frame, crash and UI failures preserved separately"
+    ]
+  },
+  "curation": {
+    "updatedAt": "2026-10-14T14:45:23.682431+00:00",
+    "historicalFileEntryCountPreserved": 38,
+    "historicalFileEntriesSHA256": "51b1a28a3a268b89999159a63391804c7b85c94729d68922baa66c381f94d237",
+    "summaryPolicy": "Append named, explicitly selected summary fields; never recursively copy raw reports, command output, API messages or credentials. Screenshot copies must match source SHA and avoid duplicate bytes.",
+    "finalReleaseInstallationIncluded": true,
+    "screenshotReview": "Latest UI06 active/paused and Release10 home-light/home-dark images inspected; existing BrandGuide accepted preview referenced without duplicate bytes."
+  },
+  "portableArtifacts": [
+    {
+      "source": "20261014-watch-blackhole-e2e-06/ui/review/watch-recording-native-capture.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-14-resume/watch-recording-native-capture-ui06.png",
+      "bytes": 46088,
+      "sha256": "1d8d08097a189d69b6c29342fd50614dd48fed51b07dee8597067ea237032619",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true
+    },
+    {
+      "source": "20261014-watch-blackhole-e2e-06/ui/review/watch-paused-after-native-capture.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-14-resume/watch-paused-after-native-capture-ui06.png",
+      "bytes": 32948,
+      "sha256": "07fb1ec81413be1c3221f9193931a883ffed94c0f4d426258749c376054dd164",
+      "kind": "actual-simulator-screenshot",
+      "copiedWithoutModification": true
+    },
+    {
+      "source": "20261014-watch-blackhole-e2e-06/preview/recording.png",
+      "repositoryPath": "docs/design/brand/watch-recording-accepted.png",
+      "bytes": 45882,
+      "sha256": "8f7d1945f4cf5b1350e7fc29dfa6a1c3ddce65bfd8b5346d35816c56d55e7146",
+      "kind": "existing-brandguide-screenshot-reference",
+      "copiedWithoutModification": true
+    },
+    {
+      "source": "20261014-xcode27-release-10/home-light.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-14-resume/release10-home-light.png",
+      "bytes": 119088,
+      "sha256": "4fbca0177d4e9cbad3b6b42c8089eae4218d9e8d4ad9135858bc463677a5ced7",
+      "kind": "actual-release-simulator-screenshot",
+      "copiedWithoutModification": true
+    },
+    {
+      "source": "20261014-xcode27-release-10/home-dark.png",
+      "repositoryPath": "docs/implementation/evidence/2026-10-14-resume/release10-home-dark.png",
+      "bytes": 105070,
+      "sha256": "0e261365b632111f7bf660cfd00c1f57fcba1a5f53626b9f37afcad8ddc3ec88",
+      "kind": "actual-release-simulator-screenshot",
+      "copiedWithoutModification": true
+    }
+  ],
+  "currentPhoneBrandEvidence": {
+    "testRun": "20261014-brand-phone-ui-01",
+    "passedTests": 3,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "runtimeWarningCount": 0,
+    "note": "The shorthand UI03 referred to three tests, not a separate run directory. Release10 install/visual evidence is indexed separately."
+  }
+}

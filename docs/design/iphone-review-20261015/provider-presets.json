@@ -1,0 +1,61 @@
+[
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "url": "https://api.deepseek.com",
+    "protocol": "OpenAI Chat Completions",
+    "help": "https://platform.deepseek.com/api_keys",
+    "docs": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "models": [
+      {
+        "name": "DeepSeek Flash",
+        "id": "deepseek-flash"
+      },
+      {
+        "name": "DeepSeek V4 Pro",
+        "id": "deepseek-v4-pro"
+      }
+    ]
+  },
+  {
+    "id": "kimi",
+    "name": "Kimi",
+    "url": "https://api.moonshot.cn/v1",
+    "protocol": "OpenAI Chat Completions",
+    "help": "https://platform.kimi.com",
+    "docs": "https://platform.kimi.com/docs/api/overview",
+    "models": []
+  },
+  {
+    "id": "zhipu",
+    "name": "智谱 GLM",
+    "url": "https://open.bigmodel.cn/api/paas/v4",
+    "protocol": "OpenAI Chat Completions",
+    "help": "https://bigmodel.cn",
+    "docs": "https://docs.bigmodel.cn/cn/api/introduction",
+    "models": [
+      {
+        "name": "GLM 5.3",
+        "id": "glm-5.3"
+      }
+    ]
+  },
+  {
+    "id": "siliconflow",
+    "name": "硅基流动",
+    "url": "https://api.siliconflow.cn/v1",
+    "protocol": "OpenAI Chat Completions",
+    "help": "https://cloud.siliconflow.cn",
+    "docs": "https://api-docs.siliconflow.cn/docs/userguide/quickstart",
+    "models": []
+  },
+  {
+    "id": "custom",
+    "name": "自定义服务",
+    "url": "",
+    "protocol": "OpenAI Chat Completions",
+    "help": null,
+    "docs": null,
+    "models": []
+  }
+]

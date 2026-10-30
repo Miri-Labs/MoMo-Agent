@@ -1,0 +1,15 @@
+{
+  "fixtureID": "sherpa-sensevoice-official-zh-20240717",
+  "sourceKind": "fixture",
+  "file": "zh.wav",
+  "sha256": "b77f1794fe374a0ba1ee1dc458bfaf9349496cbbfc32780c50ba3c5a7ad8e373",
+  "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2",
+  "archiveSHA256": "7d1efa2138a65b0b488df37f8b89e3d91a60676e416f515b952358d83dfd347e",
+  "archiveMember": "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/test_wavs/zh.wav",
+  "referenceText": "开放时间早上9点至下午5点。",
+  "referenceURL": "https://k2-fsa.github.io/sherpa/onnx/sense-voice/pretrained.html#with-inverse-text-normalization",
+  "language": "zh",
+  "sampleRate": 16000,
+  "channels": 1,
+  "usage": "Public upstream example; synthetic silence is added for software boundary tests, not Watch recording quality."
+}

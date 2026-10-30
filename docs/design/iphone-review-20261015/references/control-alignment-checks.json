@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-15",
+  "revision": "v7",
+  "jump": {
+    "centerOffset": 0,
+    "hitWidth": 44,
+    "hitHeight": 44,
+    "visibleText": "",
+    "label": "回到最新",
+    "restoresFollowing": true
+  },
+  "actions": [
+    {
+      "label": "复制回答",
+      "svgSize": 18,
+      "hitSize": 44,
+      "visibleText": ""
+    },
+    {
+      "label": "重新生成",
+      "svgSize": 18,
+      "hitSize": 44,
+      "visibleText": ""
+    }
+  ],
+  "sourceOnSeparateRow": true,
+  "penLayoutProblems": [],
+  "scope": "Local review prototype and Pen; native app unchanged"
+}

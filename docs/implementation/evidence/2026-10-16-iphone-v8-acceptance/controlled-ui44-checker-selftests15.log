@@ -1,0 +1,12 @@
+WARN `--no-project` was provided, but no project was found
+../Users/syh/.local/share/uv/python/cpython-3.13.11-macos-aarch64-none/lib/python3.13/pathlib/_local.py:329: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x101ca32e0>
+  @property
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/syh/.local/share/uv/python/cpython-3.13.11-macos-aarch64-none/lib/python3.13/pathlib/_local.py:329: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x101ca2b60>
+  @property
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.............
+----------------------------------------------------------------------
+Ran 15 tests in 0.213s
+
+OK

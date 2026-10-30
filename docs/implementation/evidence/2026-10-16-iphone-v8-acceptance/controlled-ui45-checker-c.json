@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "runID": "0DDDAFEB-969D-4679-A04A-A1C2D906826E",
+  "scenario": "cancel-before-body",
+  "status": "passed",
+  "checks": [
+    {
+      "check": "ledger_read",
+      "status": "passed"
+    },
+    {
+      "check": "request_count",
+      "status": "passed"
+    },
+    {
+      "check": "relaunch_did_not_add_requests",
+      "status": "passed"
+    },
+    {
+      "check": "request_sequence",
+      "status": "passed"
+    },
+    {
+      "check": "single_session",
+      "status": "passed"
+    },
+    {
+      "check": "operation_identity",
+      "status": "passed"
+    },
+    {
+      "check": "app_attempts",
+      "status": "passed"
+    },
+    {
+      "check": "request_body_hashes",
+      "status": "passed"
+    },
+    {
+      "check": "request_times_ordered",
+      "status": "passed"
+    },
+    {
+      "check": "no_rejection_limit_or_unknown_events",
+      "status": "passed"
+    },
+    {
+      "check": "event_sequences_and_times",
+      "status": "passed"
+    },
+    {
+      "check": "stream_1_ordered_terminal",
+      "status": "passed"
+    },
+    {
+      "check": "ledger_schema_and_identity",
+      "status": "passed"
+    },
+    {
+      "check": "request_citations_are_formal_source_references",
+      "status": "passed"
+    },
+    {
+      "check": "source_1_version_generation_unchanged",
+      "status": "passed"
+    },
+    {
+      "check": "source_2_version_generation_unchanged",
+      "status": "passed"
+    },
+    {
+      "check": "playable_source_audio_retained",
+      "status": "passed"
+    },
+    {
+      "check": "archive_source_validation",
+      "status": "passed"
+    },
+    {
+      "check": "session_final_operation",
+      "status": "passed"
+    },
+    {
+      "check": "presentation_session_and_draft",
+      "status": "passed"
+    },
+    {
+      "check": "pi_tasks_and_submissions_settled",
+      "status": "passed"
+    },
+    {
+      "check": "durable_admissions_match_operations",
+      "status": "passed"
+    },
+    {
+      "check": "one_logical_user_question",
+      "status": "passed"
+    },
+    {
+      "check": "selected_sources_preserved",
+      "status": "passed"
+    },
+    {
+      "check": "cancelled_before_body_has_no_assistant_content",
+      "status": "passed"
+    },
+    {
+      "check": "pi_durable_and_presentation",
+      "status": "passed"
+    },
+    {
+      "check": "evidence_unchanged_during_read",
+      "status": "passed"
+    }
+  ],
+  "metrics": {
+    "validatedSources": 2,
+    "sourceChunks": 2,
+    "rawUserInputs": 1,
+    "logicalUserQuestions": 1,
+    "durableInputAdmissions": 1,
+    "assistantMessages": 0
+  },
+  "inputs": {
+    "controlled-stream-ledger.json": {
+      "bytes": 1779,
+      "sha256": "15463cdba20f826d7867e8e3895416ce0c874ae7068cb552c75fa8d5bc174174"
+    },
+    "Library/Application Support/MoMoAgent/archive.sqlite": {
+      "bytes": 4096,
+      "sha256": "2e96884c16791c7d4bde90a6db2c9da33c2a2aab3e52088adc148c368552a423"
+    },
+    "Library/Application Support/MoMoAgent/archive.sqlite-wal": {
+      "bytes": 1095952,
+      "sha256": "c604b7cb14240e68ce7d57f61e23e32c8dd4eccabf86e1236145c2c25834e4c3"
+    },
+    "Documents/recordings/2026-10-16/CF35B4CE-C1F0-41E7-901C-9C4528B2E15C/audio/5B9A902E-5084-4DEA-B91F-96B960356AA5.wav": {
+      "bytes": 178988,
+      "sha256": "b77f1794fe374a0ba1ee1dc458bfaf9349496cbbfc32780c50ba3c5a7ad8e373"
+    },
+    "Documents/recordings/2026-10-16/5917FB4B-332B-4528-89D5-F138A171D961/audio/E8913A2A-B7B9-4E26-9394-255692C9BB42.wav": {
+      "bytes": 178988,
+      "sha256": "b77f1794fe374a0ba1ee1dc458bfaf9349496cbbfc32780c50ba3c5a7ad8e373"
+    },
+    "Library/Application Support/MoMoAgent/Agent/FDBC350C-9B7C-423F-B28F-3F08A329F4F4/session.json": {
+      "bytes": 2350,
+      "sha256": "d44743e58daa4031bc05ce7946989faa95a1bc6173b5f343b7c844d006fd9acb"
+    },
+    "Library/Application Support/MoMoAgent/assistant-presentation.json": {
+      "bytes": 289,
+      "sha256": "508473752593a9277c52e7f195ce5df8672ea188b8ba53bfd74a840e22544cf0"
+    },
+    "Library/Application Support/MoMoAgent/Agent/FDBC350C-9B7C-423F-B28F-3F08A329F4F4/pi.sqlite": {
+      "bytes": 4096,
+      "sha256": "2e96884c16791c7d4bde90a6db2c9da33c2a2aab3e52088adc148c368552a423"
+    },
+    "Library/Application Support/MoMoAgent/Agent/FDBC350C-9B7C-423F-B28F-3F08A329F4F4/pi.sqlite-wal": {
+      "bytes": 449112,
+      "sha256": "fc061a0d39d246c698b3c69e59137f02b6b8be896ea557109136cae02460c954"
+    }
+  },
+  "scope": "Read-only persisted evidence; does not replace screenshots, real button interaction, external network, ASR, or audio listening."
+}

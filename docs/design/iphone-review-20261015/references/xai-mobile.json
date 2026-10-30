@@ -1,0 +1,234 @@
+{
+  "url": "https://x.ai/bot",
+  "viewport": [
+    393,
+    852
+  ],
+  "body": "rgb(255, 255, 255)",
+  "text": [
+    {
+      "text": "SpaceXSI Homepage",
+      "font": "xVf, \"xVf Fallback\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "rgb(10, 10, 10)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "bounds": [
+        16,
+        29.0390625,
+        51,
+        25.921875
+      ]
+    },
+    {
+      "text": "Download",
+      "font": "xVf, \"xVf Fallback\"",
+      "size": "14px",
+      "weight": "500",
+      "line": "20px",
+      "color": "rgb(255, 255, 255)",
+      "background": "rgb(10, 10, 10)",
+      "radius": "9999px",
+      "bounds": [
+        215.421875,
+        22,
+        101.578125,
+        40
+      ]
+    },
+    {
+      "text": "",
+      "font": "xVf, \"xVf Fallback\"",
+      "size": "14px",
+      "weight": "500",
+      "line": "20px",
+      "color": "rgb(10, 10, 10)",
+      "background": "color(srgb 0.947338 0.943846 0.936862)",
+      "radius": "9999px",
+      "bounds": [
+        325,
+        16,
+        52,
+        52
+      ]
+    },
+    {
+      "text": "Grok Bot is here",
+      "font": "xVf, \"xVf Fallback\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "rgb(10, 10, 10)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "9999px",
+      "bounds": [
+        127.6171875,
+        128,
+        137.7578125,
+        36
+      ]
+    },
+    {
+      "text": "Meet \n Grok Bot",
+      "font": "xVf, \"xVf Fallback\"",
+      "size": "36px",
+      "weight": "500",
+      "line": "37.8px",
+      "color": "rgb(10, 10, 10)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "bounds": [
+        60.046875,
+        180,
+        272.8984375,
+        42.296875
+      ]
+    },
+    {
+      "text": "AI teammates you can give real work to. Bots can sign in to your tools, use them",
+      "font": "xVf, \"xVf Fallback\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "26px",
+      "color": "rgb(125, 129, 135)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "bounds": [
+        16,
+        238.296875,
+        361,
+        78
+      ]
+    },
+    {
+      "text": "Download for macOS",
+      "font": "xVf, \"xVf Fallback\"",
+      "size": "14px",
+      "weight": "400",
+      "line": "20px",
+      "color": "rgb(255, 255, 255)",
+      "background": "rgb(10, 10, 10)",
+      "radius": "9999px",
+      "bounds": [
+        36.546875,
+        340.296875,
+        191.3984375,
+        36
+      ]
+    },
+    {
+      "text": "Contact sales",
+      "font": "xVf, \"xVf Fallback\"",
+      "size": "14px",
+      "weight": "400",
+      "line": "20px",
+      "color": "rgb(10, 10, 10)",
+      "background": "color(srgb 0.92863 0.92521 0.91837)",
+      "radius": "9999px",
+      "bounds": [
+        235.9453125,
+        340.296875,
+        120.5078125,
+        36
+      ]
+    },
+    {
+      "text": "",
+      "font": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "rgb(20, 20, 20)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "10px",
+      "bounds": [
+        22,
+        468.296875,
+        72,
+        44
+      ]
+    },
+    {
+      "text": "",
+      "font": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "rgb(20, 20, 20)",
+      "background": "rgba(10, 10, 10, 0.055)",
+      "radius": "10px",
+      "bounds": [
+        22,
+        514.296875,
+        72,
+        44
+      ]
+    },
+    {
+      "text": "",
+      "font": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "rgb(20, 20, 20)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "10px",
+      "bounds": [
+        22,
+        560.296875,
+        72,
+        44
+      ]
+    },
+    {
+      "text": "",
+      "font": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "rgb(20, 20, 20)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "10px",
+      "bounds": [
+        22,
+        606.296875,
+        72,
+        44
+      ]
+    },
+    {
+      "text": "",
+      "font": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "rgb(20, 20, 20)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "10px",
+      "bounds": [
+        22,
+        652.296875,
+        72,
+        44
+      ]
+    },
+    {
+      "text": "",
+      "font": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "rgb(20, 20, 20)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "10px",
+      "bounds": [
+        22,
+        698.296875,
+        72,
+        44
+      ]
+    }
+  ]
+}

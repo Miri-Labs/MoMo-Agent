@@ -1,0 +1,301 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-15T14:19:12.202129+00:00",
+  "sourceCommit": "aed2c1f52d5600af8c0086fe5b9abeab90ac4ce8",
+  "device": "AC2B247F-999E-48DA-BC31-A81CF5662EB0",
+  "packageTests": {
+    "archivePassed": 103,
+    "agentTotal": 62,
+    "agentSkipped": 1,
+    "agentSkipReason": "Bailian online test not enabled"
+  },
+  "nodeTests": {
+    "avatarPassed": 6,
+    "chatCorePassed": 12,
+    "upstreamSourceHashCount": 24
+  },
+  "nativeRoundSummaries": {
+    "ios-ui-02": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-ui-02-summary.json",
+      "summaryBytes": 2006,
+      "summarySHA256": "e12b1e61d0632e41c62bf56888d1e39de74c059418b2d72db04725ba41b0d830",
+      "result": "Failed",
+      "totalTestCount": 14,
+      "passedTests": 12,
+      "failedTests": 2,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792064078.655,
+      "finishTime": 1792064486.199,
+      "runtimeWarningCount": 0
+    },
+    "ios-hosted-02": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-hosted-02-summary.json",
+      "summaryBytes": 1211,
+      "summarySHA256": "20ab6e991a4df2d5b606ac8f0aa3a4233869deed8806416b83e40da94ea83217",
+      "result": "Passed",
+      "totalTestCount": 61,
+      "passedTests": 61,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792063756.96,
+      "finishTime": 1792063831.453,
+      "runtimeWarningCount": 0
+    },
+    "ios-chat-03": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-chat-03-summary.json",
+      "summaryBytes": 1018,
+      "summarySHA256": "88ab09d3e553685e9567cefb1f35081fe06f14c83424d34b616623b6327112b6",
+      "result": "Passed",
+      "totalTestCount": 6,
+      "passedTests": 6,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792065063.135,
+      "finishTime": 1792065085.337,
+      "runtimeWarningCount": 0
+    },
+    "ios-ui-03": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-ui-03-summary.json",
+      "summaryBytes": 2034,
+      "summarySHA256": "5667eecb2ff3deabd2e9409845b53778566e0d034885722fdc0583583211f5e6",
+      "result": "Failed",
+      "totalTestCount": 2,
+      "passedTests": 0,
+      "failedTests": 2,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792065108.338,
+      "finishTime": 1792065164.276,
+      "runtimeWarningCount": 0
+    },
+    "ios-hosted-03": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-hosted-03-summary.json",
+      "summaryBytes": 2377,
+      "summarySHA256": "6effe8be94b7a073ebb07f41778d0eaa80c7ffcc62947194f31026842b7237d9",
+      "result": "Failed",
+      "totalTestCount": 67,
+      "passedTests": 65,
+      "failedTests": 2,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792066838.757,
+      "finishTime": 1792066897.691,
+      "runtimeWarningCount": 0
+    },
+    "ios-ui-04": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-ui-04-summary.json",
+      "summaryBytes": 2805,
+      "summarySHA256": "8ba33c68a4c95698d29ba520355a906193a0d8afd0ea3a5bcd0224d39adbc053",
+      "result": "Failed",
+      "totalTestCount": 9,
+      "passedTests": 7,
+      "failedTests": 2,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792067764.691,
+      "finishTime": 1792067975.384,
+      "runtimeWarningCount": 0
+    },
+    "ios-hosted-04": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-hosted-04-summary.json",
+      "summaryBytes": 1211,
+      "summarySHA256": "0281ea4e5b864035a9e8e622d8041ff51f71c949393b93b233f4f6f3df4659a4",
+      "result": "Passed",
+      "totalTestCount": 25,
+      "passedTests": 25,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792069140.483,
+      "finishTime": 1792069179.096,
+      "runtimeWarningCount": 0
+    },
+    "ios-ui-05": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-ui-05-summary.json",
+      "summaryBytes": 3999,
+      "summarySHA256": "f0c790cab26e93a5a970f1a48af043b946ce2fe4594c9415137bc86183d8ed39",
+      "result": "Failed",
+      "totalTestCount": 14,
+      "passedTests": 8,
+      "failedTests": 6,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792069275.155,
+      "finishTime": 1792069612.781,
+      "runtimeWarningCount": 0
+    },
+    "ios-ui-06": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-ui-06-summary.json",
+      "summaryBytes": 1556,
+      "summarySHA256": "e600b3f0fbd843a535eae2981be509541439413cdddcdcfbe2646873a7ebaed3",
+      "result": "Failed",
+      "totalTestCount": 8,
+      "passedTests": 7,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792071409.227,
+      "finishTime": 1792071574.807,
+      "runtimeWarningCount": 0
+    },
+    "ios-hosted-05": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-hosted-05-summary.json",
+      "summaryBytes": 1579,
+      "summarySHA256": "de5b66cfb0b369816fdad8a9b77c4de2168bd86841c204a02c410d60e47ae402",
+      "result": "Failed",
+      "totalTestCount": 1,
+      "passedTests": 0,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792072855.353,
+      "finishTime": 1792072871.208,
+      "runtimeWarningCount": 0
+    },
+    "ios-hosted-06": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-hosted-06-summary.json",
+      "summaryBytes": 1579,
+      "summarySHA256": "3274e83d68b0f0df9bc0735f3312ae63f72fc668b05a6e070869137631aba726",
+      "result": "Failed",
+      "totalTestCount": 1,
+      "passedTests": 0,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792073258.267,
+      "finishTime": 1792073272.002,
+      "runtimeWarningCount": 0
+    },
+    "ios-hosted-07": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-hosted-07-summary.json",
+      "summaryBytes": 1579,
+      "summarySHA256": "926400fe983fadbe900274953c782e3a0dbd91ea53922991b8977dcbfce07fc2",
+      "result": "Failed",
+      "totalTestCount": 1,
+      "passedTests": 0,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792073371.894,
+      "finishTime": 1792073388.059,
+      "runtimeWarningCount": 0
+    },
+    "ios-ui-07": {
+      "summaryPath": "tmp_agent_output/iphone-v8-20261015/ios-ui-07-summary.json",
+      "summaryBytes": 1017,
+      "summarySHA256": "b3a449a5d23ce5aea2e4a77949354cbf80ce11c74cbfccabf2a9c4b1c1d31602",
+      "result": "Passed",
+      "totalTestCount": 2,
+      "passedTests": 2,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "startTime": 1792073530.21,
+      "finishTime": 1792073595.053,
+      "runtimeWarningCount": 0
+    }
+  },
+  "release": {
+    "sourceCommit": "aed2c1f52d5600af8c0086fe5b9abeab90ac4ce8",
+    "buildSucceeded": true,
+    "staticChecksPassed": 19,
+    "staticChecksTotal": 19,
+    "webSourceMatches": true,
+    "webFileCount": 39,
+    "installationHashesMatch": true,
+    "installedHashCount": 4,
+    "sourceInputCount": 420,
+    "changedDuringBuild": [],
+    "modelsMatch": true,
+    "scope": "Simulator Release build and static checks, followed by installation and home screenshot; not App Store archive or physical Watch launch."
+  },
+  "releaseStaticChecks": {
+    "release_app_exists": true,
+    "bundle_has_only_regular_files": true,
+    "phone_bundle_identity": true,
+    "watch_app_embedded": true,
+    "watch_bundle_identity": true,
+    "phone_executable_checked": true,
+    "watch_executable_checked": true,
+    "binary_architectures_read": true,
+    "test_fixtures_absent": true,
+    "debug_entry_strings_absent": true,
+    "all_model_resources_match": true,
+    "background_processing_declared": true,
+    "background_identifiers_declared": true,
+    "phone_disk_display_reason": true,
+    "watch_disk_write_reason": true,
+    "watch_elapsed_time_reason": true,
+    "watch_audio_background_declared": true,
+    "watch_microphone_usage_declared": true,
+    "watch_companion_declared": true
+  },
+  "releaseVerifierSelftestPassed": 17,
+  "syntheticCredentialAndWithdrawnMarkerHits": [],
+  "evidenceFiles": [
+    {
+      "path": "tmp_agent_output/iphone-v8-20261015/package-tests-04.log",
+      "bytes": 56302,
+      "sha256": "36a622df13317889cb285286e996695592713d5bbc5d39eaf8da54c7b7afd36a"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-20261015/avatar-build-final.log",
+      "bytes": 61,
+      "sha256": "783c2caa9703466830c24f9d64cd251aed182be6832baa3c3240aaa2fd7f4513"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-20261015/avatar-tests-final.log",
+      "bytes": 496,
+      "sha256": "0c473cc890b4a631098621239f8f78187cfe444bf968360c4f03ad452a59ef83"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-20261015/chat-core-final.log",
+      "bytes": 852,
+      "sha256": "880a5c9218138c524178a3d6f2bfd45f83555bfcbb708dbfc3623ef6ca35865b"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-20261015/ios-build-17.log",
+      "bytes": 238486,
+      "sha256": "2e7c74aec0d36532a7649c7c5bc9f4e963692b6d1fbc94928e404489b5f52b7d"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-20261015/ios-ui-07.log",
+      "bytes": 22602,
+      "sha256": "76ed29da436fe608030013486aa3d42db14031305037f157b7b361472bec16d3"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-20261015/release-verifier-selftest.log",
+      "bytes": 2950,
+      "sha256": "3c03fa567c4066b0b845ac18123042a7d5db3562b5a49a5d338029132abbe35c"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-20261015/ios-release-build-01.log",
+      "bytes": 1524403,
+      "sha256": "39c883e1a8a1d2ff6a765e72ba8dd40be2c3355a1644121b78a64f0ab19bff1b"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-20261015/ios-release-bundle-01.json",
+      "bytes": 8893,
+      "sha256": "5579a67e5148fd74a22977cbdd8239654d50dd5203b4af3839097b87e4a7fadb"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-20261015/release01-resource-verification.json",
+      "bytes": 38745,
+      "sha256": "7649140e90b8fe1b8b8918c4278f80ab7a1f342d6bb11c6e3e481dce0ccc6671"
+    },
+    {
+      "path": "tmp_agent_output/iphone-v8-20261015/release01-installation.json",
+      "bytes": 1148,
+      "sha256": "92ff8695e918aa0b2df99f8a84e1487993ca9d778251d06aedfc4a82340c96d4"
+    }
+  ],
+  "boundaries": [
+    "Rounds are separate and cannot be added into a single full pass count.",
+    "UIKit token candidate and its test were withdrawn after hosted05-07 failed.",
+    "UI07 declines an optional system password offer; it does not prove such offers are disabled.",
+    "No paid model calls, physical devices, WatchConnectivity or complete v0.1 acceptance."
+  ]
+}

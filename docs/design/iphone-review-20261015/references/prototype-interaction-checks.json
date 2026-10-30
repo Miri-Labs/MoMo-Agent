@@ -1,0 +1,167 @@
+[
+  {
+    "test": "early-stop-after-first-fragment",
+    "state": {
+      "busy": false,
+      "received": "今天的散步，可以留下这几个片段。\n\n### 慢下来",
+      "visible": "今天的散步，可以留下这几个片段。\n\n### 慢下来",
+      "status": "stopped",
+      "userMessages": 1,
+      "following": true,
+      "reduced": false,
+      "scrollTop": 0,
+      "scrollHeight": 614,
+      "viewport": 614
+    },
+    "disabled": true
+  },
+  {
+    "test": "stop-partial-preserves-draft",
+    "state": {
+      "busy": false,
+      "received": "今天的散步，可以留下这几个片段。\n\n### 慢下来的一段路\n\n走到湖边时，风比来时轻了一些。你没有急着拍照，而是沿着树荫继续走，让下午留出了一点空白。\n\n### 值得记住的小事\n\n- 路过咖啡店，点了一杯 café。\n- 湖边有一家人在野餐 👨‍👩‍👧‍👦，孩子把面包屑分给了小鸟。\n- 回去的路上换了一条小路，发现了刚开的桂花。\n\n不一定每次出门都要完成什么。今",
+      "visible": "今天的散步，可以留下这几个片段。\n\n### 慢下来的一段路\n\n走到湖边时，风比来时轻了一些。你没有急着拍照，而是沿着树荫继续走，让下午留出了一点空白。\n\n### 值得记住的小事\n\n- 路过咖啡店，点了一杯 café。\n- 湖边有一家人在野餐 👨‍👩‍👧‍👦，孩子把面包屑分给了小鸟。\n- 回去的路上换了一条小路，发现了刚开的桂花。\n\n不一定每次出门都要完成什么。今",
+      "status": "stopped",
+      "userMessages": 1,
+      "following": true,
+      "reduced": false,
+      "scrollTop": 0,
+      "scrollHeight": 614,
+      "viewport": 614
+    },
+    "draft": "下一条草稿，不应因停止丢失"
+  },
+  {
+    "test": "send-after-stop",
+    "users": 2,
+    "busy": true
+  },
+  {
+    "test": "read-without-forced-follow",
+    "beforeTop": 265.5,
+    "after": {
+      "busy": true,
+      "received": "今天的散步，可以留下这几个片段。\n\n### 慢下来的一段路\n\n走到湖边时，风比来时轻了一些。你没有急着拍照，而是沿着树荫继续走，让下午留出了一点空白。\n\n### 值得记住的小事\n\n- 路过咖啡店，点了一杯 café。\n- 湖边有一家人在野餐 👨‍👩‍👧‍👦，孩子把面包屑分给了小鸟。\n- 回去的路上换了一条小路，发现了刚开的桂花。\n\n不一定每次出门都要完成什么。今天值得保留的，是你愿意把脚步放慢的这一会儿。\n\n### 留给下次的线索\n\n下次可以带上耳机，也可以什么都不带。沿着湖走一圈，再挑一条没走过的小路，看看同一个地方在不同时间有什么变化。\n\n如果想把这次经历留得更完整，可以记录下面三件事：\n\n- 当时听见的声音，比如脚步、水声和远处的谈话。\n- 一处让你停下来的细节，不需要给它起一个特别的名字。\n- 回家以后，身体和心情有没有发生一点变化。\n\n### 一份简短记录\n\n| 片段 | 当时的感受 | 想保留的细节 |\n| --- | --- | --- |\n| 湖边的树荫 | 放松 | 风吹过水面 |\n| 路边的咖啡店 | 安静 | 杯子握在手里的温度 |\n\n下面是一段可以自己修改的记录格式：\n\n```text\n时间：周末下午\n地点：公园湖边\n片段：沿着树荫散步，路过咖啡店，再走一条陌生的小路。\n这行较长的文字用于检查代码区域能独立横向滚动，不把整段对话撑出手机屏幕。\n```\n\n### 不急着下结论\n\n这段记录不需要马上变成一个结论。把今天真正发生的事放在一起，就已经是一种整理。以后回看时，也许你会记起光照在树叶上的样子，或是那一阵让人想多走一会儿的风。\n\n如果你愿意，还可以补上一句：今天最想留住的，是",
+      "visible": "今天的散步，可以留下这几个片段。\n\n### 慢下来的一段路\n\n走到湖边时，风比来时轻了一些。你没有急着拍照，而是沿着树荫继续走，让下午留出了一点空白。\n\n### 值得记住的小事\n\n- 路过咖啡店，点了一杯 café。\n- 湖边有一家人在野餐 👨‍👩‍👧‍👦，孩子把面包屑分给了小鸟。\n- 回去的路上换了一条小路，发现了刚开的桂花。\n\n不一定每次出门都要完成什么。今天值得保留的，是你愿意把脚步放慢的这一会儿。\n\n### 留给下次的线索\n\n下次可以带上耳机，也可以什么都不带。沿着湖走一圈，再挑一条没走过的小路，看看同一个地方在不同时间有什么变化。\n\n如果想把这次经历留得更完整，可以记录下面三件事：\n\n- 当时听见的声音，比如脚步、水声和远处的谈话。\n- 一处让你停下来的细节，不需要给它起一个特别的名字。\n- 回家以后，身体和心情有没有发生一点变化。\n\n### 一份简短记录\n\n| 片段 | 当时的感受 | 想保留的细节 |\n| --- | --- | --- |\n| 湖边的树荫 | 放松 | 风吹过水面 |\n| 路边的咖啡店 | 安静 | 杯子握在手里的温度 |\n\n下面是一段可以自己修改的记录格式：\n\n```text\n时间：周末下午\n地点：公园湖边\n片段：沿着树荫散步，路过咖啡店，再走一条陌生的小路。\n这行较长的文字用于检查代码区域能独立横向滚动，不把整段对话撑出手机屏幕。\n```\n\n### 不急着下结论\n\n这段记录不需要马上变成一个结论。把今天真正发生的事放在一起，就已经是一种整理。以后回看时，也许你会记起光照在树叶上的样子，或是那一阵让人想多走一会儿的风。\n\n如果你愿意，还可以补上一句：今天最想留住的，是",
+      "status": "waiting",
+      "userMessages": 1,
+      "following": false,
+      "reduced": false,
+      "scrollTop": 226,
+      "scrollHeight": 1308,
+      "viewport": 614
+    },
+    "jumpHidden": false
+  },
+  {
+    "test": "jump-restores-follow",
+    "following": true,
+    "gap": 0
+  },
+  {
+    "test": "long-markdown-complete",
+    "hasCode": true,
+    "hasTable": false,
+    "horizontalOverflow": false,
+    "grapheme": true,
+    "combining": true,
+    "resolvedBy": "markdown-after-boundary-fix"
+  },
+  {
+    "test": "interruption",
+    "state": {
+      "busy": false,
+      "received": "今天的散步，可以留下这几个片段。\n\n### 慢下来的一段路\n\n走到湖边时，风比来时轻了一些。你没有急着拍照，而是沿着树荫继续走，让下午留出了一点空白。\n\n### 值得记住的小事\n\n- 路过咖啡店，点了一杯 café。\n- 湖边有一家人在野餐",
+      "visible": "今天的散步，可以留下这几个片段。\n\n### 慢下来的一段路\n\n走到湖边时，风比来时轻了一些。你没有急着拍照，而是沿着树荫继续走，让下午留出了一点空白。\n\n### 值得记住的小事\n\n- 路过咖啡店，点了一杯 café。\n- 湖边有一家人在野餐",
+      "status": "error",
+      "userMessages": 1,
+      "following": true,
+      "reduced": false,
+      "scrollTop": 0,
+      "scrollHeight": 614,
+      "viewport": 614
+    }
+  },
+  {
+    "test": "retry-without-duplicate-user",
+    "users": 1,
+    "status": "done"
+  },
+  {
+    "test": "synchronous-stop-before-first-received",
+    "method": "review controller",
+    "state": {
+      "busy": false,
+      "received": "",
+      "visible": "",
+      "status": "stopped",
+      "userMessages": 1,
+      "following": true,
+      "reduced": false,
+      "scrollTop": 0,
+      "scrollHeight": 614,
+      "viewport": 614
+    }
+  },
+  {
+    "test": "markdown-after-boundary-fix",
+    "hasTable": true,
+    "tableRows": 3,
+    "listItems": 6,
+    "code": true,
+    "sameFirstBlock": true,
+    "horizontalOverflow": false
+  },
+  {
+    "test": "system-reduced-motion",
+    "reduced": true,
+    "animations": [],
+    "receivedEqualsVisible": true
+  },
+  {
+    "test": "empty-send-disabled",
+    "disabled": true
+  },
+  {
+    "test": "composer-six-line-cap",
+    "height": 164,
+    "scrollHeight": 260,
+    "overflow": true
+  },
+  {
+    "test": "route-disposes-demo",
+    "controllerAbsent": true,
+    "panelAbsent": true,
+    "noPlanNavigation": true
+  },
+  {
+    "test": "mobile-fit",
+    "width": 393,
+    "bodyWidth": 393,
+    "phone": {
+      "x": 14.96875,
+      "y": 221.8515625,
+      "width": 363.0625,
+      "height": 787.1015625,
+      "top": 221.8515625,
+      "right": 378.03125,
+      "bottom": 1008.953125,
+      "left": 14.96875
+    },
+    "font": "16px",
+    "modelHit": 40.6484375
+  },
+  {
+    "test": "dark-palette",
+    "bg": "rgb(22, 22, 22)",
+    "ink": "rgb(242, 242, 242)",
+    "overflow": false
+  },
+  {
+    "test": "grapheme-animation-observer",
+    "familySingleSpan": true,
+    "accentSingleSpan": true,
+    "brokenZWJOrAccent": false,
+    "observedIn": "preceding browser run"
+  }
+]

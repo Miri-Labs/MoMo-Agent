@@ -1,0 +1,38 @@
+{
+  "activationAPI": "setActive(true)",
+  "category": "AVAudioSessionCategoryRecord",
+  "deactivated": true,
+  "elapsedSeconds": 3.38224196434021,
+  "emptyTapCallbacks": 0,
+  "engineStarted": true,
+  "frames": 144000,
+  "hardwareFormat": {
+    "channels": 2,
+    "sampleRate": 48000
+  },
+  "initializationOrder": "permission -> category record/default -> activation -> new engine -> inputNode exactly once",
+  "inputAvailable": true,
+  "inputChannels": 1,
+  "mode": "AVAudioSessionModeDefault",
+  "permissionGranted": true,
+  "processID": 30213,
+  "recordPermission": 1735552628,
+  "rms": 0.1329378159518547,
+  "routeInputs": [
+    {
+      "channels": 0,
+      "name": "MicrophoneBuiltIn",
+      "type": "MicrophoneBuiltIn"
+    }
+  ],
+  "scope": "Apple APIs only; no product dependencies; no PCM file or audio persistence",
+  "sessionActivated": true,
+  "sessionSampleRate": 48000,
+  "startedAt": 1792079513.351812,
+  "status": "captured_real_input_frames",
+  "tapCallbacks": 30,
+  "tapFormat": {
+    "channels": 2,
+    "sampleRate": 48000
+  }
+}

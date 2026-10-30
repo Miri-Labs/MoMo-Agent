@@ -1,0 +1,27 @@
+{
+  "url": "https://claude-storybook.bystanderss.chatgpt.site/",
+  "date": "2026-10-15",
+  "sourceType": "third-party demo; provenance claims unverified",
+  "files": [
+    {
+      "file": "storybook-inline-0.js",
+      "bytes": 815,
+      "sha256": "e325f0138811925bb440cbd36b6070a53704db7f841a531a88062667cac1e044"
+    },
+    {
+      "file": "storybook-inline-1.js",
+      "bytes": 433968,
+      "sha256": "76561d938f0b3bdede2a7f603dace74491bd372e09b3cde910d024df0967ff71"
+    },
+    {
+      "file": "storybook-inline-2.js",
+      "bytes": 139365,
+      "sha256": "179790b0ca7cdaf1cee76b9a53eb3ef534396993926380553d70177e49089227"
+    },
+    {
+      "file": "storybook-inline-3.js",
+      "bytes": 921,
+      "sha256": "5ac48fbf486482d007001c4874e79451025700a55cf3422ad464765cc9fecc58"
+    }
+  ]
+}

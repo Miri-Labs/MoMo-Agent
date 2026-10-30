@@ -1,0 +1,234 @@
+{
+  "url": "https://chatgpt.com/",
+  "viewport": [
+    393,
+    852
+  ],
+  "body": "oklch(0.991069 0 none)",
+  "text": [
+    {
+      "text": "ChatGPT 徽标",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklch(0.159066 0 none)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "bounds": [
+        -274.6796875,
+        16,
+        110,
+        44
+      ]
+    },
+    {
+      "text": "搜索聊天",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklch(0.159066 0 none)",
+      "background": "rgb(255, 255, 255)",
+      "radius": "999px",
+      "bounds": [
+        -68,
+        16,
+        44,
+        44
+      ]
+    },
+    {
+      "text": "图像",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklch(0.159066 0 none)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "16px",
+      "bounds": [
+        -274.6796875,
+        86,
+        250.6796875,
+        44
+      ]
+    },
+    {
+      "text": "插件",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklch(0.159066 0 none)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "16px",
+      "bounds": [
+        -274.6796875,
+        134,
+        250.6796875,
+        44
+      ]
+    },
+    {
+      "text": "深度研究",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklch(0.159066 0 none)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "16px",
+      "bounds": [
+        -274.6796875,
+        182,
+        250.6796875,
+        44
+      ]
+    },
+    {
+      "text": "查看套餐和定价",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklch(0.159066 0 none)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "16px",
+      "bounds": [
+        -274.6796875,
+        230,
+        250.6796875,
+        44
+      ]
+    },
+    {
+      "text": "OpenAI 帮助",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "weight": "400",
+      "line": "24px",
+      "color": "oklch(0.159066 0 none)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "16px",
+      "bounds": [
+        -274.6796875,
+        278,
+        250.6796875,
+        44
+      ]
+    },
+    {
+      "text": "",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "17px",
+      "weight": "500",
+      "line": "24.0001px",
+      "color": "oklch(0.159066 0 none)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "bounds": [
+        -274.6796875,
+        359,
+        250.6796875,
+        24
+      ]
+    },
+    {
+      "text": "",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "15px",
+      "weight": "400",
+      "line": "19.9999px",
+      "color": "oklch(0.478359 0 none)",
+      "background": "rgba(0, 0, 0, 0)",
+      "radius": "0px",
+      "bounds": [
+        -274.6796875,
+        391,
+        250.6796875,
+        39.984375
+      ]
+    },
+    {
+      "text": "",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "15px",
+      "weight": "500",
+      "line": "19.9999px",
+      "color": "oklch(0.159066 0 none)",
+      "background": "rgb(255, 255, 255)",
+      "radius": "999px",
+      "bounds": [
+        -274.6796875,
+        446.984375,
+        250.6796875,
+        44
+      ]
+    },
+    {
+      "text": "新聊天",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "17px",
+      "weight": "500",
+      "line": "24px",
+      "color": "rgb(255, 255, 255)",
+      "background": "oklch(0.560902 0.214451 265.129)",
+      "radius": "999px",
+      "bounds": [
+        -274.6796875,
+        792,
+        100.6015625,
+        52
+      ]
+    },
+    {
+      "text": "设置",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "16px",
+      "weight": "500",
+      "line": "24.0001px",
+      "color": "oklch(0.159066 0 none)",
+      "background": "oklch(0.964154 0 none)",
+      "radius": "999px",
+      "bounds": [
+        -76,
+        792,
+        52,
+        52
+      ]
+    },
+    {
+      "text": "打开边栏",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "14px",
+      "weight": "400",
+      "line": "20px",
+      "color": "oklch(0.159066 0 none)",
+      "background": "rgba(243, 243, 243, 0.9)",
+      "radius": "999px",
+      "bounds": [
+        16,
+        16,
+        44,
+        44
+      ]
+    },
+    {
+      "text": "登录",
+      "font": "-apple-system-body, ui-sans-serif, -apple-system, \"system-ui\", \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, \"sans-serif\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"",
+      "size": "14px",
+      "weight": "400",
+      "line": "20px",
+      "color": "rgb(255, 255, 255)",
+      "background": "oklch(0.159066 0 none)",
+      "radius": "999px",
+      "bounds": [
+        317.15625,
+        16,
+        59.84375,
+        44
+      ]
+    }
+  ]
+}

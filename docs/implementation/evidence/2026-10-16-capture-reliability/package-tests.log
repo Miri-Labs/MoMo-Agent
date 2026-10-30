@@ -1,0 +1,113 @@
+warning: 'momoagentkit': failed to retrieve search paths with pkg-config; maybe pkg-config is not installed
+warning: 'momoagentkit': couldn't find pc file for sqlite3
+Building for debugging...
+[Computing dependencies]
+[1 / 4] MoMoArchive
+[1 / 3] MoMoArchiveTests-product
+[2 / 5] MoMoArchiveTests-product
+[4 / 7] MoMoArchiveTests-product
+[10 / 12] MoMoArchiveTests-product
+[12 / 15] MoMoSpeech
+Build complete! (3.60秒)
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite CaptureTapHealthTests started.
+◇ Suite CaptureDiagnosticContextTests started.
+◇ Test actualBoundedStreamCountsOnlyDroppedYieldAsOverflow() started.
+◇ Test newCaptureCountersDoNotReusePriorTapOrEmptyCallbacks() started.
+◇ Test fullContextRoundTripsThroughPersistentLedger() started.
+◇ Test boundedTransitionsKeepLatestFailureAndOriginalAudio() started.
+◇ Test safeErrorNeverSerializesDescriptionPathsOrUntrustedDomain() started.
+◇ Test legacyDiagnosticWithoutContextRemainsReadableFromLedger() started.
+◇ Test concurrentCallbacksAndSnapshotsKeepExactTotalsAndLatestArrival() started.
+✔ Test actualBoundedStreamCountsOnlyDroppedYieldAsOverflow() passed after 0.001 seconds.
+✔ Test newCaptureCountersDoNotReusePriorTapOrEmptyCallbacks() passed after 0.001 seconds.
+✔ Test concurrentCallbacksAndSnapshotsKeepExactTotalsAndLatestArrival() passed after 0.001 seconds.
+✔ Suite CaptureTapHealthTests passed after 0.001 seconds.
+✔ Test safeErrorNeverSerializesDescriptionPathsOrUntrustedDomain() passed after 0.001 seconds.
+✔ Test fullContextRoundTripsThroughPersistentLedger() passed after 0.036 seconds.
+✔ Test legacyDiagnosticWithoutContextRemainsReadableFromLedger() passed after 0.038 seconds.
+✔ Test boundedTransitionsKeepLatestFailureAndOriginalAudio() passed after 0.063 seconds.
+✔ Suite CaptureDiagnosticContextTests passed after 0.064 seconds.
+✔ Test run with 7 tests in 2 suites passed after 0.064 seconds.
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite ArchiveCoverageTests started.
+◇ Suite TimelineTests started.
+◇ Suite ActivityTimelineTests started.
+◇ Suite PlaybackTimelineTests started.
+◇ Suite TimelineIssueTests started.
+◇ Test scopedRetryPreservesCompletedWindowAndRejectsChangedGeneration() started.
+◇ Test existingPunctuationIsRevisedAwayOnceWithoutDeletingOriginalAudio() started.
+◇ Test unexpectedlyMissingSilentAudioStillSurfacesAProblem() started.
+◇ Test fractionalAudioEndCannotCreateAPhantomMissingFrame() started.
+◇ Test shortNaturalPauseStaysInPlaybackButDoesNotCountAsSpeech() started.
+◇ Test punctuationOnlyWindowCompletesWithoutTextSearchOrCitation() started.
+◇ Test controlOnlyEpochHasUnknownTimebaseAndMissingAudioWithoutInventedSilence() started.
+◇ Test duplicateAndOverlappingAnalysisUseFrameUnionWithoutFillingMissingAudio() started.
+◇ Test closedAndOpenEpochsKeepSeparateFramesAndAnUnknownTail() started.
+◇ Test aMissingTailIsUnknownRatherThanSilence() started.
+◇ Test confirmedSilenceHasNoNodeButAMarkAndTheOriginalAudioSurvive() started.
+◇ Test missingLocalOriginalPreservesReceiptHistoryWithoutBecomingSilence() started.
+◇ Test missingModelPreservesReceivedAudioAndMarkSourcesWithoutReportingZeroProgress() started.
+◇ Test persistedTerminalFailureIsDistinctFromPendingAndNoSpeech() started.
+◇ Test punctuationMigrationKeepsLegacyFailureStoppedUntilExplicitCurrentGenerationRetry(scoped:) started.
+◇ Test oldWindowRevisionIsRejectedAfterNewTextAndPlaybackChecksEachSession() started.
+◇ Test unrelatedAppendDoesNotRegenerateEarlierWindowSummary() started.
+◇ Test marksResolveToTheCorrectChunkAndCurrentTranscriptAcrossFiles() started.
+◇ Test longQuietGapSplitsOneCaptureAndPlaybackKeepsOnlySpeechWithContext() started.
+◇ Test shortContentIsReversibleAndPendingContentIsNeverHidden() started.
+◇ Test recordedTimezoneAndMidnightDetermineDayNotPhoneOrReceiptTime() started.
+◇ Test halfHourDoesNotSplitAnActiveConversation() started.
+◇ Test nearbySpeechCrossesTheOldBoundaryAndLongInactivityStartsANewNode() started.
+◇ Test midnightStillClipsAudioByDateWithoutDuplicatingTheSentence() started.
+◇ Test punctuationOnlyResultsAreOmittedButOriginalAudioAndPendingStateRemain() started.
+◇ Test groupsAllSessionsBeforeFilteringIncludingBeyondListPage() started.
+◇ Test missingAudioRemainsAnExplicitDescriptorAndRevisionInvalidatesOldTarget() started.
+◇ Test activeClockValidationKeepsAppendRevisionDeletionAndFilesBarriers() started.
+◇ Test frozenMetadataDoesNotPinAudioAndNewReceiptsDoNotChangeItsRange() started.
+◇ Test unknownTailHasNoInventedGapAndMissingLocalAudioCannotBeRetried() started.
+◇ Test modernPendingWindowsRemainSeparateAndRetryCannotExpandPastTheSelectedIssue() started.
+◇ Test exactGapAndFailuresPreserveSuccessfulTextAndRetryOnlyTheChosenFailure() started.
+◇ Test case passing 1 argument scoped → false to punctuationMigrationKeepsLegacyFailureStoppedUntilExplicitCurrentGenerationRetry(scoped:) started.
+◇ Test case passing 1 argument scoped → true to punctuationMigrationKeepsLegacyFailureStoppedUntilExplicitCurrentGenerationRetry(scoped:) started.
+✔ Test controlOnlyEpochHasUnknownTimebaseAndMissingAudioWithoutInventedSilence() passed after 0.448 seconds.
+✔ Test fractionalAudioEndCannotCreateAPhantomMissingFrame() passed after 0.448 seconds.
+✔ Test missingLocalOriginalPreservesReceiptHistoryWithoutBecomingSilence() passed after 0.448 seconds.
+✔ Test punctuationOnlyWindowCompletesWithoutTextSearchOrCitation() passed after 0.450 seconds.
+✔ Test closedAndOpenEpochsKeepSeparateFramesAndAnUnknownTail() passed after 0.450 seconds.
+✔ Test existingPunctuationIsRevisedAwayOnceWithoutDeletingOriginalAudio() passed after 0.450 seconds.
+✔ Test shortNaturalPauseStaysInPlaybackButDoesNotCountAsSpeech() passed after 0.450 seconds.
+✔ Test scopedRetryPreservesCompletedWindowAndRejectsChangedGeneration() passed after 0.450 seconds.
+✔ Test unexpectedlyMissingSilentAudioStillSurfacesAProblem() passed after 0.450 seconds.
+✔ Test duplicateAndOverlappingAnalysisUseFrameUnionWithoutFillingMissingAudio() passed after 0.450 seconds.
+✔ Test persistedTerminalFailureIsDistinctFromPendingAndNoSpeech() passed after 0.450 seconds.
+✔ Test aMissingTailIsUnknownRatherThanSilence() passed after 0.450 seconds.
+✔ Test missingModelPreservesReceivedAudioAndMarkSourcesWithoutReportingZeroProgress() passed after 0.450 seconds.
+✔ Test confirmedSilenceHasNoNodeButAMarkAndTheOriginalAudioSurvive() passed after 0.450 seconds.
+✔ Test shortContentIsReversibleAndPendingContentIsNeverHidden() passed after 0.450 seconds.
+✔ Test halfHourDoesNotSplitAnActiveConversation() passed after 0.450 seconds.
+✔ Test unrelatedAppendDoesNotRegenerateEarlierWindowSummary() passed after 0.450 seconds.
+✔ Test marksResolveToTheCorrectChunkAndCurrentTranscriptAcrossFiles() passed after 0.450 seconds.
+✔ Test midnightStillClipsAudioByDateWithoutDuplicatingTheSentence() passed after 0.450 seconds.
+✔ Test oldWindowRevisionIsRejectedAfterNewTextAndPlaybackChecksEachSession() passed after 0.450 seconds.
+✔ Test recordedTimezoneAndMidnightDetermineDayNotPhoneOrReceiptTime() passed after 0.450 seconds.
+✔ Test nearbySpeechCrossesTheOldBoundaryAndLongInactivityStartsANewNode() passed after 0.450 seconds.
+✔ Test frozenMetadataDoesNotPinAudioAndNewReceiptsDoNotChangeItsRange() passed after 0.450 seconds.
+✔ Test longQuietGapSplitsOneCaptureAndPlaybackKeepsOnlySpeechWithContext() passed after 0.450 seconds.
+✔ Suite ActivityTimelineTests passed after 0.450 seconds.
+✔ Test missingAudioRemainsAnExplicitDescriptorAndRevisionInvalidatesOldTarget() passed after 0.451 seconds.
+✔ Test unknownTailHasNoInventedGapAndMissingLocalAudioCannotBeRetried() passed after 0.459 seconds.
+✔ Test punctuationMigrationKeepsLegacyFailureStoppedUntilExplicitCurrentGenerationRetry(scoped:) with 2 test cases passed after 0.479 seconds.
+✔ Suite ArchiveCoverageTests passed after 0.480 seconds.
+✔ Test punctuationOnlyResultsAreOmittedButOriginalAudioAndPendingStateRemain() passed after 0.494 seconds.
+✔ Test activeClockValidationKeepsAppendRevisionDeletionAndFilesBarriers() passed after 0.503 seconds.
+✔ Suite PlaybackTimelineTests passed after 0.504 seconds.
+✔ Test modernPendingWindowsRemainSeparateAndRetryCannotExpandPastTheSelectedIssue() passed after 0.554 seconds.
+✔ Test exactGapAndFailuresPreserveSuccessfulTextAndRetryOnlyTheChosenFailure() passed after 0.438 seconds.
+✔ Suite TimelineIssueTests passed after 0.568 seconds.
+✔ Test groupsAllSessionsBeforeFilteringIncludingBeyondListPage() passed after 1.343 seconds.
+✔ Suite TimelineTests passed after 1.343 seconds.
+✔ Test run with 32 tests in 5 suites passed after 1.343 seconds.

@@ -1,0 +1,168 @@
+{
+  "url": "https://chatgpt.com/",
+  "viewport": {
+    "width": 393,
+    "height": 852
+  },
+  "events": [
+    {
+      "ms": 272,
+      "chars": 0,
+      "tail": "",
+      "buttons": [
+        "发送消息"
+      ]
+    },
+    {
+      "ms": 1307,
+      "chars": 0,
+      "tail": "",
+      "buttons": [
+        "停止生成"
+      ]
+    },
+    {
+      "ms": 1375,
+      "chars": 0,
+      "tail": "",
+      "buttons": [
+        "发送消息"
+      ]
+    },
+    {
+      "ms": 1390,
+      "chars": 0,
+      "tail": "",
+      "buttons": [
+        "停止生成"
+      ]
+    },
+    {
+      "ms": 3359,
+      "chars": 19,
+      "tail": "ChatGPT 是 AI，可能会犯错。",
+      "buttons": [
+        "停止生成"
+      ]
+    },
+    {
+      "ms": 3708,
+      "chars": 92,
+      "tail": "你说：\n\n这是一项界面交互测试。请用中文写一份约600字的桌面整理建议，分四个小标题，并给出一个三项清单。不调用工具。\n\nChatGPT 说：\n\nChatGPT 是 AI，可能会犯错。",
+      "buttons": [
+        "复制",
+        "复制回复",
+        "停止生成"
+      ]
+    },
+    {
+      "ms": 8622,
+      "chars": 92,
+      "tail": "你说：\n\n这是一项界面交互测试。请用中文写一份约600字的桌面整理建议，分四个小标题，并给出一个三项清单。不调用工具。\n\nChatGPT 说：\n\nChatGPT 是 AI，可能会犯错。",
+      "buttons": [
+        "复制",
+        "复制回复",
+        "发送消息"
+      ]
+    }
+  ],
+  "assistant": "<!--if--><!--comp--><!--comp--><!--if--><!--comp--><!--if--><!----><h4 data-message-attribution=\"\" class=\"xjm9jq1 x1roiz7s xu82sp8 x1hyvwdk x1uvop7r x1i1rx1s x1ba95oy xb3r6kr x1hhue18 x1717udv x10l6tqk x1ldw5w0 xuxw1ft x1xua9za xp4ehzc x1tmzsfv\">ChatGPT 说：</h4><!----><!--if--><div class=\"xjbqb8w xbs2zpe x1jchvi3 x1r771fr xh8yej3 x14nib4c x1ep1s60 x193iq5w xeuugli x1n2onr6\"><span aria-hidden=\"true\" data-assistant-placeholder-slot=\"\" class=\"x1spfj64\" hidden=\"\"><span class=\"xyw15ih xl8t4ro x1u6ievf xa4qsjk x1urxqfu x1aquc0h xn0cd8s x1fmv208 x1s8s8c9 x1e6avla x1lliihq xka9shp x5bl8le xc5b1jm x2js1xq x1o0tod x10l6tqk\"><span></span></span></span><div><div data-assistant-markdown=\"\" data-assistant-markdown-root=\"\" class=\"xh8yej3 x1ghz6dp x193iq5w xeuugli x1mzt3pk x5x58ly xhkq44x xvyh8ph xwxxt6x x1ewz1rw x1r0vnzf x1ux7cnd xp43mbd xtbxs66 xak2u8z x1yc453h x16sz92x\"><?start name=\"assistant-pending-2103a62c-741d-4553-ac10-b68865005f94-reasoning\"?><?end ?><?start name=\"assistant-pending-2103a62c-741d-4553-ac10-b68865005f94-committed\"?><?marker name=\"assistant-pending-2103a62c-741d-4553-ac10-b68865005f94-committed-tail\"?><?end ?><?start name=\"assistant-pending-2103a62c-741d-4553-ac10-b68865005f94-pending\"?><?marker name=\"assistant-pending-2103a62c-741d-4553-ac10-b68865005f94-pending-tail\"?><?end ?></div><!----></div><div data-message-intervention=\"\" class=\"xrvj5dj x161yhwk x1k8jhqm\"></div><!----><!----></div><!--if--><!--if--><!--/if--><!--/if--><!----><!----><!--for--><!--/for--><!--comp--><!--/comp--><!----><!----><!--for--><div class=\"xzq6wi8 x6s0dn4 xsizsl4 x78zum5 xbjcvb9 x1lvaidh x5gxw34 x1lu42hc x1r0vwrn\" aria-label=\"回复操作\" data-assistant-message-actions=\"\" data-message-actions=\"\" role=\"group\"><!--comp--><!--comp--><button class=\"x1y0btm7 x9f619 xln7xf2 x17j2mab xc0rdgb xl56j7k x1q51uy1 x1n2onr6 x2b8uid x1b2iylo xwgcxoh x1hl2dhg xhe84ma xcuo91f x9jqm76 xhkbipy xl65fg8 x1jlfb0b x1fo1fc9 x1s3pajs x11wgzky xulogpc x1cpjm7i x8ccfc1 x255zhq x1txhlq7 xtg4hg7 x1o0wn7w xkk1bqk x1hmns74 xy5mcqj xjbqb8w x15xj62w x9r1u3d x116uinm xu82sp8 x1gnnqk1 x13yhu5o x1ypdohk xtgyt42 xrvj5dj x1kee97p xtcsvct xy5k6zg xc8icb0 x11doy3g x1gg8mnh x1nb6za0 xk2swo9 x1717udv x1ku5rj1 x1vlh6m7 x1dafclu xcr73hy\" type=\"button\" data-icon-only=\"\" data-icon-position=\"start\" data-icon-shape=\"non-circular\" data-radius=\"full\" data-size=\"small\" data-variant=\"ghost\" data-w-component=\"button\" aria-label=\"复制回复\" data-copy-message=\"\" data-copy-state=\"idle\" data-oai-tooltip=\"\" data-oai-tooltip-side=\"bottom\" data-oai-tooltip-side-offset=\"8\" data-target-offset=\"both\"><svg aria-hidden=\"true\" fill=\"none\" class=\"xgltsgi x1e0upst\" height=\"20\" viewBox=\"0 0 20 20\" width=\"20\"><use href=\"#lightweight-conversation-copy\"></use></svg></button><!----><!----><span class=\"xjm9jq1 xc342km x1hyvwdk x1i1rx1s xb3r6kr x1717udv x10l6tqk xuxw1ft\" aria-live=\"polite\" aria-atomic=\"true\" role=\"status\"></span><!----><!--/comp--><!--for--><!--/for--><!--comp--><div data-octane-hydrate-id=\":in-n:\"><!--hydrate--><!--try--><!--try",
+  "requests": [
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-shared-DYlOMt6E.js",
+      "status": 200,
+      "type": "script",
+      "duration": 17
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-prepare-client-BQvOFesC.js",
+      "status": 200,
+      "type": "script",
+      "duration": 20
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-conversation-route-stylesheet-CjA2RyPq.js",
+      "status": 200,
+      "type": "script",
+      "duration": 38
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/sentinel-1ITmb_HS.js",
+      "status": 200,
+      "type": "script",
+      "duration": 1
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-observer-Bnj0Rw-4.js",
+      "status": 200,
+      "type": "script",
+      "duration": 3
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-icon-sprite-CmIXY5t4.js",
+      "status": 200,
+      "type": "script",
+      "duration": 2
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/sentinel/chat-requirements/prepare",
+      "status": 200,
+      "type": "fetch",
+      "duration": 932
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/conversation/prepare",
+      "status": 200,
+      "type": "fetch",
+      "duration": 928
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-Cl2KjaVb.svg",
+      "status": 200,
+      "type": "fetch",
+      "duration": 2
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/conversation/prepare",
+      "status": 200,
+      "type": "fetch",
+      "duration": 662
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/navigated-conversation-outcome-DeeqCvfj.js",
+      "status": 200,
+      "type": "script",
+      "duration": 2
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/deferred-conversation-runtime-DAzCe-3d.js",
+      "status": 200,
+      "type": "script",
+      "duration": 1
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-followup-dom-controller-Ddb6w9bP.js",
+      "status": 200,
+      "type": "script",
+      "duration": 2
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-followup-client-B7mR-23I.js",
+      "status": 200,
+      "type": "script",
+      "duration": 2
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-followup-retry-Bo5-jcuN.js",
+      "status": 200,
+      "type": "script",
+      "duration": 2
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/sentinel/chat-requirements/finalize",
+      "status": 200,
+      "type": "fetch",
+      "duration": 793
+    }
+  ]
+}

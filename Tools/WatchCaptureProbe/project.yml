@@ -1,0 +1,54 @@
+name: WatchCaptureProbe
+options:
+  deploymentTarget:
+    watchOS: "11.0"
+    iOS: "18.0"
+  xcodeVersion: "27.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    CODE_SIGN_STYLE: Automatic
+targets:
+  WatchCaptureProbe:
+    type: application
+    platform: watchOS
+    sources: [Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.momoagent.diagnostics.captureprobe
+        TARGETED_DEVICE_FAMILY: "4"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Capture Probe
+        WKApplication: true
+        WKWatchOnly: true
+        NSMicrophoneUsageDescription: 仅进行三秒输入诊断，保留帧数和音量统计；Recorder 的临时录音完成即删除。
+  PhoneCaptureProbe:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.momoagent.diagnostics.phonecaptureprobe
+        TARGETED_DEVICE_FAMILY: "1"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+    info:
+      path: PhoneInfo.plist
+      properties:
+        CFBundleDisplayName: Phone Capture Probe
+        NSMicrophoneUsageDescription: 仅进行三秒输入诊断，保留帧数和音量统计；Recorder 的临时录音完成即删除。
+        UILaunchScreen: {}
+schemes:
+  WatchCaptureProbe:
+    build:
+      targets:
+        WatchCaptureProbe: all
+  PhoneCaptureProbe:
+    build:
+      targets:
+        PhoneCaptureProbe: all

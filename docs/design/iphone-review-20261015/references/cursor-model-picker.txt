@@ -1,0 +1,87 @@
+[p4 "Cursor Agent - Turn your ideas into code" | space "MoMoAgent iPhone design review"(2): 4 managed, 0 untracked — p1 "MoMoAgent · iPhone 草稿 review", p2 "Claude Design System (CDS) - Storybook", p3 "ChatGPT: Chat, Work, Create & Code with AI", p4* "Cursor Agent - Turn your ideas into code"]
+root
+  container
+    container
+      button "Open navigation" [ref=53, loc=css:button[aria-label="Open navigation"]]
+        text ""
+      button "User menu" [ref=54, loc=css:button[aria-label="User menu"]]
+        image
+    container
+      container
+        button [ref=45]
+          text "Cloud Agents requires a Premium Account"
+          text ""
+        form
+          container
+            paragraph
+            text "Ask Cursor to build, fix bugs, explore"
+          container
+            button "Add context and tools" [ref=46, loc=css:button[aria-label="Add context and tools"]]
+              text ""
+            container
+              button [ref=47]
+                text "Grok 4.7 High Fast​​"
+                text ""
+              text "Cmd + /"
+            button "Send message" [ref=48, loc=css:button[aria-label="Send message"]]
+              svg_root
+      container "Cursor Learn"
+        text ""
+        container
+          text "Cursor Learn"
+          text "Learn the foundations and practical patterns for building software with AI"
+        button [ref=49, loc=href:/learn, url=https://cursor.com/learn]
+          text "Start Learning"
+      container
+        container
+          button "Search" [ref=50, loc=css:button[aria-label="Search"]]
+            svg_root
+          textbox "Search agents..." [ref=51, loc=css:input[placeholder="Search agents..."]]
+        button "Filter agents by source" [ref=55, loc=css:button[aria-label="Filter agents by source"]]
+          text ""
+  menu "Grok 4.7 High Fast​​" [ref=56, loc=role:menu[name="Grok 4.7 High Fast​​"]]
+    menu "Model selection"
+      unordered_list
+        list_item
+          textbox "Search menu items" [ref=57, loc=css:input[placeholder="Search models"]]
+            text "Search models"
+        group
+          menuitem [ref=58]
+            container
+              paragraph
+                text "Grok 4.7"
+                text "High Fast​​"
+              text "NEW"
+            text ""
+          menuitem [ref=59]
+            paragraph
+              text "Grok 4.6"
+              text "High Fast​​"
+          menuitem [ref=60]
+            paragraph
+              text "Composer 2.5"
+              text "Fast"
+          menuitem [ref=61]
+            paragraph
+              text "Claude Opus 5.5"
+              text "Medium"
+          menuitem [ref=62]
+            paragraph
+              text "GPT-5.6 Sol"
+              text "Medium"
+          menuitem [ref=63]
+            paragraph
+              text "Gemini 4 Argon"
+              text "Medium"
+          menuitem [ref=64]
+            paragraph
+              text "Claude Fable 5.1"
+              text "High"
+          menuitem [ref=65]
+            paragraph
+              text "Muse Spark 1.3"
+              text "High"
+          menuitem [ref=66]
+            paragraph
+              text "Claude Sonnet 5.5"
+              text "High"

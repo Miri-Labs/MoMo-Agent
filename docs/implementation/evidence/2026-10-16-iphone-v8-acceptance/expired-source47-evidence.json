@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "actual-expired-source-ui-and-readonly-durable-evidence",
+  "round": "expired-source-ui47",
+  "appCaptionCommit": "00ceb2582da91fea3211117bf64c1386a55195f1",
+  "runID": "83C0F8E7-51E9-4AC0-A7AC-5B8EEE7FC45B",
+  "scenario": "interrupted-citation",
+  "test": {
+    "selector": "PhoneControlledStreamJourneyTests/testInterruptedReplyRetriesAndExpiredCitationRemainsReadableAfterRelaunch",
+    "passed": 1,
+    "failed": 0,
+    "testSeconds": 85.415,
+    "observerElapsedSeconds": 98.554,
+    "originalLog": {
+      "path": "tmp_agent_output/iphone-v8-acceptance-20261015/expired-source-ui47.log",
+      "bytes": 23116,
+      "sha256": "13ffa336de0d2bff662525b34362f8b773c8829fd791bc440430385c2e1ac48e"
+    },
+    "originalXCResult": "tmp_agent_output/iphone-v8-acceptance-20261015/expired-source-ui47.xcresult",
+    "attachmentManifest": {
+      "path": "tmp_agent_output/iphone-v8-acceptance-20261015/expired-source-ui47-attachments/manifest.json",
+      "bytes": 5992,
+      "sha256": "8f195d3c76458d7d1fbb8af487819d8d55ba31fc3cbc8d57adefbc5bab2e7955"
+    }
+  },
+  "checker": {
+    "passed": 31,
+    "failed": 0,
+    "unchecked": 0,
+    "inputCount": 9,
+    "inputsUnchangedDuringRead": true,
+    "sourceHashes": {
+      "Tests/Support/verify-controlled-ui-ledger.py": "6333ccba9243b3538c823ebaa368cd5b720a33724834785f67e02f83c2a0fa73",
+      "Tests/Support/test-verify-controlled-ui-ledger.py": "970172e20bf888deba2450fb256de335b4ad2ee19df90e95007636c1333620c0"
+    },
+    "sourceHashesUnchanged": true,
+    "metrics": {
+      "validatedSources": 2,
+      "sourceChunks": 2,
+      "rawUserInputs": 2,
+      "logicalUserQuestions": 1,
+      "durableInputAdmissions": 2
+    }
+  },
+  "observations": {
+    "screenshotIndependentlyViewed": true,
+    "visibleCaption": "暂无可用波形",
+    "transcriptReadable": true,
+    "playControlVisiblyUnavailable": true,
+    "noInventedWaveformDisplayed": true,
+    "interpretation": "Screenshot shows the unavailable audio state; formal SourceReference, deleted files, unchanged source versions/generations, retry identity, draft and relaunch claims are checked against persisted evidence."
+  },
+  "scopeLimits": [
+    "One controlled simulator B journey using synthetic transcripts and public audio; no paid provider API, real microphone, WatchConnectivity, or physical device claim.",
+    "The immutable Pi history has two user input records projecting to one logical question; retry does not create a second logical question.",
+    "Only caption text changed for this App round. This record does not claim a newly rebuilt Release or rerun of A/C.",
+    "Original failures and earlier rounds remain preserved. Only the sanitized checker report and supplied screenshot are copied; no SQLite database, raw response payload, audio, credentials, or raw xcresult is redistributed."
+  ],
+  "artifacts": [
+    {
+      "kind": "checker-report",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/expired-source47-checker-041325/ledger-b.json",
+        "bytes": 4708,
+        "sha256": "bd425575d1e79336ab0213b9a1485ac0706833e33df481d5deb16e1cee908ab1"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/expired-source47-checker-b.json",
+        "bytes": 4708,
+        "sha256": "bd425575d1e79336ab0213b9a1485ac0706833e33df481d5deb16e1cee908ab1"
+      }
+    },
+    {
+      "kind": "actual-simulator-screenshot",
+      "original": {
+        "path": "tmp_agent_output/iphone-v8-acceptance-20261015/expired-source-ui47-attachments/1B49F733-4380-42E6-BCEC-62C94B1B66AF.png",
+        "bytes": 167325,
+        "sha256": "63d80b2a6eb20931a0d66636db6f52bc660089836baa488961bd5a3748644f50"
+      },
+      "portable": {
+        "path": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/expired-source47-unavailable-waveform.png",
+        "bytes": 167325,
+        "sha256": "63d80b2a6eb20931a0d66636db6f52bc660089836baa488961bd5a3748644f50"
+      }
+    }
+  ]
+}

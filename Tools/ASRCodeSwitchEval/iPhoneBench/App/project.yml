@@ -1,0 +1,35 @@
+# On-device ASR bench. Separate from the shipping app; generate into ignored tmp_agent_output:
+#   xcodegen --spec Tools/ASRCodeSwitchEval/iPhoneBench/App/project.yml \
+#            --project tmp_agent_output/iphone-bench/xcode/App  # same depth as this spec, so package paths resolve
+# Links the app's own speech runtime (Vendor/SherpaOnnx: patched sherpa-onnx 1.13.8 + ORT 1.28.2).
+name: ASRBench
+options:
+  bundleIdPrefix: com.momoagent
+  deploymentTarget:
+    iOS: "18.0"
+packages:
+  SherpaOnnx:
+    path: ../../../../Vendor/SherpaOnnx
+configFiles:
+  Debug: Bench.xcconfig
+  Release: Bench.xcconfig
+targets:
+  ASRBench:
+    type: application
+    platform: iOS
+    # Sources/Info.plist (audio background mode, Files access) is merged with the generated keys.
+    sources: [Sources]
+    dependencies:
+      - package: SherpaOnnx
+        product: MoMoSherpaBridge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(BENCH_BUNDLE_ID)
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: true
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: true
+        INFOPLIST_KEY_UILaunchScreen_Generation: true
+        INFOPLIST_KEY_CFBundleDisplayName: ASR Bench
+        ENABLE_USER_SCRIPT_SANDBOXING: true

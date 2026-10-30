@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/tailscale/libtailscale",
+  "commit": "d1dc45d039edb7759ecbee6ba2aea0c4bca884b8",
+  "license": "BSD-3-Clause",
+  "local_changes": [
+    "Managed tailnet-only HTTP forwarder on port 8767 to the MoMo loopback access service; no TLS certificate or DNS setup",
+    "Public logout and safe node close",
+    "Runnable local control/DERP fixture for native integration testing",
+    "Apple control/DERP requests follow live CFNetwork system settings or explicit app proxy settings; ignore inherited shell routes and prevent nested ALL_PROXY SOCKS wrapping; preserve loopback bypass",
+    "Session-scoped UDP bridge for native desktop WebRTC over embedded tailnet, with endpoint pinning, bounded sessions and node-close cleanup"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "thinkingExpanded": [
+    {
+      "rows": "1fr",
+      "height": 111
+    }
+  ],
+  "reduced": true,
+  "animations": [
+    {
+      "text": "C",
+      "animation": "_grapheme-reveal_1plog_1",
+      "duration": "0.09s"
+    },
+    {
+      "text": "l",
+      "animation": "_grapheme-reveal_1plog_1",
+      "duration": "0.09s"
+    },
+    {
+      "text": "a",
+      "animation": "_grapheme-reveal_1plog_1",
+      "duration": "0.09s"
+    }
+  ],
+  "familySplit": true
+}

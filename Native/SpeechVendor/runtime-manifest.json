@@ -1,0 +1,75 @@
+{
+  "release": "sherpa-coreml-1.13.8-wml.1",
+  "repository": "xilanhua12138/MoMo-Agent",
+  "platforms": {
+    "ios": {
+      "asset": "sherpa-coreml-ios.zip",
+      "sha256": "7c04d4e581f2997cf3aa84e8e5bed061b618c2d818615d2fb211d53b7cd05515",
+      "files": {
+        "Info.plist": {
+          "sha256": "0857fc9844c30ce28775bf4ecd3949487772e99a778202be115f8fd6fc9d0969"
+        },
+        "ios-arm64/SherpaOnnxC.framework/Headers/sherpa-onnx/c-api/c-api.h": {
+          "sha256": "2a1b95084be8fd1deb3228fcad2fd3f7f0258b64582f7402281ec174c7b7f4ce"
+        },
+        "ios-arm64/SherpaOnnxC.framework/Info.plist": {
+          "sha256": "7720c423accf9cf22a9ebb694a283658d4ebe0ce0416ecfaf709e6529d06ac37"
+        },
+        "ios-arm64/SherpaOnnxC.framework/Modules/module.modulemap": {
+          "sha256": "b8a4f253774183fa531116df4772eca938f310908745e1be1e01d67eb1288ab2"
+        },
+        "ios-arm64/SherpaOnnxC.framework/SherpaOnnxC": {
+          "sha256": "2d07d03f39847d46658cc405eead0681899a2ea7e5acf97a47361daef082a399"
+        },
+        "ios-arm64_x86_64-simulator/SherpaOnnxC.framework/Headers/sherpa-onnx/c-api/c-api.h": {
+          "sha256": "2a1b95084be8fd1deb3228fcad2fd3f7f0258b64582f7402281ec174c7b7f4ce"
+        },
+        "ios-arm64_x86_64-simulator/SherpaOnnxC.framework/Info.plist": {
+          "sha256": "7720c423accf9cf22a9ebb694a283658d4ebe0ce0416ecfaf709e6529d06ac37"
+        },
+        "ios-arm64_x86_64-simulator/SherpaOnnxC.framework/Modules/module.modulemap": {
+          "sha256": "b8a4f253774183fa531116df4772eca938f310908745e1be1e01d67eb1288ab2"
+        },
+        "ios-arm64_x86_64-simulator/SherpaOnnxC.framework/SherpaOnnxC": {
+          "sha256": "30b2140defe8a03bfa474f67252bf9d0ee34ebb4d27e344a7aa15f5399c2f4e4"
+        }
+      }
+    },
+    "macos": {
+      "asset": "sherpa-coreml-macos.zip",
+      "sha256": "8f7b375e78c4bbf8caae4df3e32a1e523d817cb2887f46950f99304ba263210b",
+      "files": {
+        "Info.plist": {
+          "sha256": "4673489ec7b23c2d1cf03bfb9ece80d17596994a5424e841bda799a0f32418bc"
+        },
+        "macos-arm64_x86_64/SherpaOnnxC.framework/Headers": {
+          "link": "Versions/Current/Headers"
+        },
+        "macos-arm64_x86_64/SherpaOnnxC.framework/Modules": {
+          "link": "Versions/Current/Modules"
+        },
+        "macos-arm64_x86_64/SherpaOnnxC.framework/Resources": {
+          "link": "Versions/Current/Resources"
+        },
+        "macos-arm64_x86_64/SherpaOnnxC.framework/SherpaOnnxC": {
+          "sha256": "3db03891b0a40c32e1abb9f28e26460730326082e4d370f448bb730bbd1d9363"
+        },
+        "macos-arm64_x86_64/SherpaOnnxC.framework/Versions/A/Headers/sherpa-onnx/c-api/c-api.h": {
+          "sha256": "2a1b95084be8fd1deb3228fcad2fd3f7f0258b64582f7402281ec174c7b7f4ce"
+        },
+        "macos-arm64_x86_64/SherpaOnnxC.framework/Versions/A/Modules/module.modulemap": {
+          "sha256": "b8a4f253774183fa531116df4772eca938f310908745e1be1e01d67eb1288ab2"
+        },
+        "macos-arm64_x86_64/SherpaOnnxC.framework/Versions/A/Resources/Info.plist": {
+          "sha256": "a390f5cea699f479f26e2be7084d73fc883d89368fee2a529ff782ef84abb7be"
+        },
+        "macos-arm64_x86_64/SherpaOnnxC.framework/Versions/A/SherpaOnnxC": {
+          "sha256": "c1a63d4054428ca77bd1f093cc4b688bd9999a4413caaac4ba4c5239f0c672fb"
+        },
+        "macos-arm64_x86_64/SherpaOnnxC.framework/Versions/Current": {
+          "link": "A"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1 @@
+场景清单见 cases.json / cases.md。当前 220 个设计场景，以 cases.md 为准；设计评审入口为 momoagent-iphone-review-v8.pen，播放器补充见 AUDIO_PLAYER.md。

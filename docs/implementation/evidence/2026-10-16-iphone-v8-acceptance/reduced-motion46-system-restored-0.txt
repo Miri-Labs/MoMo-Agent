@@ -1,0 +1,78 @@
+Attributes: Application, 0x111603e80, pid: 85856, label: '设置'
+Element subtree:
+ →Application, 0x111603e80, pid: 85856, label: '设置'
+    Window (Main), 0x111600280, {{0.0, 0.0}, {375.0, 667.0}}
+      Other, 0x111603c00, {{0.0, 0.0}, {375.0, 667.0}}
+        Other, 0x111600500, {{0.0, 0.0}, {375.0, 667.0}}
+          Other, 0x111600640, {{0.0, 0.0}, {375.0, 667.0}}
+            Other, 0x111600780, {{0.0, 0.0}, {375.0, 667.0}}
+              Other, 0x1116008c0, {{0.0, 0.0}, {375.0, 667.0}}
+                Other, 0x111600a00, {{0.0, 0.0}, {375.0, 667.0}}
+                  Other, 0x111600b40, {{0.0, 0.0}, {375.0, 667.0}}
+                    Other, 0x111600c80, {{0.0, 0.0}, {375.0, 667.0}}
+                      Other, 0x111600dc0, {{0.0, 0.0}, {375.0, 667.0}}
+                        NavigationBar, 0x111600f00, {{0.0, 20.0}, {375.0, 54.0}}, identifier: '动态效果'
+                          Button, 0x111601040, {{16.0, 20.0}, {44.0, 44.0}}, identifier: 'BackButton', label: '无障碍'
+                          StaticText, 0x111601180, {{153.5, 31.5}, {67.5, 21.0}}, label: '动态效果'
+                        Other, 0x1116012c0, {{0.0, 0.0}, {375.0, 667.0}}
+                          Other, 0x1116030c0, {{0.0, 0.0}, {375.0, 667.0}}
+                            Other, 0x111603200, {{0.0, 0.0}, {375.0, 667.0}}
+                              Other, 0x111603340, {{0.0, 0.0}, {375.0, 667.0}}
+                                Other, 0x111603480, {{0.0, 74.0}, {375.0, 593.0}}
+                                  Table, 0x1116035c0, {{0.0, 0.0}, {375.0, 667.0}}
+                                    Other, 0x111603700, {{0.0, 74.0}, {375.0, 17.5}}
+                                    Cell, 0x111603840, {{16.0, 91.5}, {343.0, 53.5}}, identifier: 'REDUCE_MOTION'
+                                      Other, 0x111603980, {{16.0, 91.5}, {343.0, 53.5}}
+                                        Other, 0x111603ac0, {{16.0, 91.5}, {343.0, 53.5}}
+                                          Switch, 0x110766bc0, {{32.0, 104.5}, {311.0, 28.0}}, identifier: 'REDUCE_MOTION', label: '减弱动态效果', value: 0
+                                            Button, 0x1037f0640, {{32.0, 108.0}, {101.5, 20.5}}, identifier: 'REDUCE_MOTION', label: '减弱动态效果'
+                                            Switch, 0x1037f1a40, {{282.0, 104.5}, {63.0, 28.0}}, value: 0
+                                    Other, 0x1037f0dc0, {{0.0, 145.0}, {375.0, 30.5}}, identifier: '减弱用户界面的动态效果，包括图标的视差效果。'
+                                      Other, 0x1037f1e00, {{16.0, 145.0}, {343.0, 30.5}}, label: '减弱用户界面的动态效果，包括图标的视差效果。'
+                                    Other, 0x1037f1900, {{0.0, 175.5}, {375.0, 17.5}}
+                                    Cell, 0x1037f2080, {{16.0, 193.0}, {343.0, 53.5}}, identifier: 'REDUCE_MOTION_AUTOPLAY_ANIMATED_IMAGES'
+                                      Other, 0x1037f1040, {{16.0, 193.0}, {343.0, 53.5}}
+                                        Other, 0x1037f1cc0, {{16.0, 193.0}, {343.0, 53.5}}
+                                          Switch, 0x1037f26c0, {{32.0, 206.0}, {311.0, 28.0}}, identifier: 'REDUCE_MOTION_AUTOPLAY_ANIMATED_IMAGES', label: '自动播放动图', value: 1
+                                            Button, 0x1037f0b40, {{32.0, 209.5}, {101.5, 20.5}}, identifier: 'REDUCE_MOTION_AUTOPLAY_ANIMATED_IMAGES', label: '自动播放动图'
+                                            Switch, 0x1037f2300, {{282.0, 206.0}, {63.0, 28.0}}, value: 1
+                                    Cell, 0x1037f1f40, {{16.0, 246.5}, {343.0, 53.5}}, identifier: 'REDUCE_MOTION_AUTOPLAY_VIDEO_PREVIEWS'
+                                      Other, 0x1037f2800, {{16.0, 246.5}, {343.0, 53.5}}
+                                        Other, 0x107cd2e40, {{16.0, 246.5}, {343.0, 53.5}}
+                                          Switch, 0x107cd1b80, {{32.0, 259.5}, {311.0, 28.0}}, identifier: 'REDUCE_MOTION_AUTOPLAY_VIDEO_PREVIEWS', label: '自动播放视频预览', value: 1
+                                            Button, 0x107cd1040, {{32.0, 263.0}, {135.0, 20.5}}, identifier: 'REDUCE_MOTION_AUTOPLAY_VIDEO_PREVIEWS', label: '自动播放视频预览'
+                                            Switch, 0x107cd1a40, {{282.0, 259.5}, {63.0, 28.0}}, value: 1
+                                    Cell, 0x107cd1cc0, {{16.0, 300.0}, {343.0, 53.5}}, identifier: 'ReduceMotionAutoplayMessagesEffects'
+                                      Other, 0x107cd2940, {{16.0, 300.0}, {343.0, 53.5}}
+                                        Other, 0x107cd2d00, {{16.0, 300.0}, {343.0, 53.5}}
+                                          Switch, 0x107cd1f40, {{32.0, 313.0}, {311.0, 28.0}}, identifier: 'ReduceMotionAutoplayMessagesEffects', label: '自动播放信息效果', value: 1
+                                            Button, 0x107cd1680, {{32.0, 316.5}, {135.0, 20.5}}, identifier: 'ReduceMotionAutoplayMessagesEffects', label: '自动播放信息效果'
+                                            Switch, 0x107cd17c0, {{282.0, 313.0}, {63.0, 28.0}}, value: 1
+                                    Other, 0x107cd1540, {{0.0, 353.5}, {375.0, 30.5}}, identifier: '控制是否自动播放信息中的视频、动图和全屏幕效果。'
+                                      Other, 0x107cd2bc0, {{16.0, 353.5}, {343.0, 30.5}}, label: '控制是否自动播放信息中的视频、动图和全屏幕效果。'
+                                    Other, 0x107cd1400, {{0.0, 384.0}, {375.0, 17.5}}
+                                    Cell, 0x107cd3340, {{16.0, 401.5}, {343.0, 53.5}}, identifier: 'PREFER_NONBLINKING_CURSOR'
+                                      Other, 0x107cd3200, {{16.0, 401.5}, {343.0, 53.5}}
+                                        Other, 0x107cd2f80, {{16.0, 401.5}, {343.0, 53.5}}
+                                          Switch, 0x107cd30c0, {{32.0, 414.5}, {311.0, 28.0}}, identifier: 'PREFER_NONBLINKING_CURSOR', label: '首选非闪动光标', value: 0
+                                            Button, 0x107cd1e00, {{32.0, 418.0}, {118.0, 20.5}}, identifier: 'PREFER_NONBLINKING_CURSOR', label: '首选非闪动光标'
+                                            Switch, 0x107cd21c0, {{282.0, 414.5}, {63.0, 28.0}}, value: 0
+                                    Other, 0x107cd35c0, {{0.0, 455.0}, {375.0, 30.5}}, identifier: '首选在文本中不会闪烁的光标指示器。'
+                                      Other, 0x107cd3700, {{16.0, 455.0}, {343.0, 30.5}}, label: '首选在文本中不会闪烁的光标指示器。'
+                                    Other, 0x107cd1900, {{342.0, 74.0}, {30.0, 593.0}}, label: '垂直滚动条, 1页', value: 0%
+                                      Other, 0x107cd3e80, {{369.0, 121.0}, {3.0, 543.0}}
+                                    Other, 0x107cd2a80, {{0.0, 634.0}, {375.0, 30.0}}, label: '水平滚动条, 1页', value: 0%
+                                      Other, 0x107cd2080, {{3.0, 661.0}, {369.0, 3.0}}
+                        Toolbar, 0x107cd3480, {{0.0, 0.0}, {375.0, 667.0}}, identifier: 'Toolbar', label: '工具栏'
+                          Other, 0x107cd12c0, {{0.0, 0.0}, {375.0, 667.0}}
+                    Toolbar, 0x107cd2300, {{0.0, 0.0}, {375.0, 667.0}}, identifier: 'Toolbar', label: '工具栏'
+                      Other, 0x107cd0c80, {{0.0, 0.0}, {375.0, 667.0}}
+                Other, 0x107cd2440, {{0.0, 0.0}, {375.0, 667.0}}
+                  Other, 0x107cd2580, {{0.0, 0.0}, {375.0, 667.0}}
+Path to element:
+ →Application, 0x111603e80, pid: 85856, label: '设置'
+Query chain:
+ →Find: Application 'com.apple.Preferences'
+  Output: {
+    Application, 0x107cd26c0, pid: 85856, label: '设置'
+  }

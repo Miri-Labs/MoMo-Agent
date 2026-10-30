@@ -1,0 +1,24 @@
+// Put your signing team in ignored Config/Local.xcconfig.
+// Gmail clients are supplied by the user in Settings; no shared OAuth credentials ship in the app.
+
+// Shared by iPhone and Watch. Update both values before delivering a new app.
+MARKETING_VERSION = 0.0.1
+CURRENT_PROJECT_VERSION = 22
+
+MOMO_PHONE_BUNDLE_ID = com.momoagent.ios
+MOMO_MAC_BUNDLE_ID = com.momoagent.mac.dev
+MOMO_APP_DISPLAY_NAME = MoMo Agent
+MOMO_WATCH_APP_GROUP = group.com.momoagent.watch
+MOMO_WATCH_WIDGET_KIND = com.momoagent.watch.capture
+MOMO_WATCH_URL_SCHEME = momoagent
+MOMO_MAC_DATA_FOLDER = MoMoAgent
+MOMO_MAC_LOCAL_PORT = 8765
+
+// Direct device builds use Apple development push; distribution switches this explicitly.
+MOMO_PUSH_ENVIRONMENT = development
+
+// Override only for personal-team local installs; release distribution retains APNs.
+MOMO_PHONE_ENTITLEMENTS = Apps/iPhoneApp/Resources/MoMoAgent.entitlements
+MOMO_MAC_CODE_SIGN_IDENTITY = -
+
+#include? "Local.xcconfig"

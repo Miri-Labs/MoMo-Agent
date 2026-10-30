@@ -1,0 +1,114 @@
+{
+  "results": [
+    {
+      "scenario": "stop-regenerate-retry",
+      "runID": "A1F5E81A-B773-42B6-A04B-A52172A14237",
+      "exitCode": 0,
+      "status": "passed",
+      "checks": 35,
+      "nonPassing": [],
+      "metrics": {
+        "validatedSources": 2,
+        "sourceChunks": 2,
+        "rawUserInputs": 3,
+        "logicalUserQuestions": 1,
+        "durableInputAdmissions": 3
+      },
+      "report": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui45-checker-ab-040440/ledger-a.json",
+      "reportSHA256": "beb715abf55fe20aba627db9bd50d1e7fb10f85361b4e1555847e58225c4f753",
+      "evidenceInputs": {
+        "controlled-stream-ledger.json": {
+          "bytes": 7147,
+          "sha256": "7d413801f4d2be8a9899bfab44e79995053f6749b2a0f589d467163add4a111a"
+        },
+        "Library/Application Support/MoMoAgent/archive.sqlite": {
+          "bytes": 4096,
+          "sha256": "2e96884c16791c7d4bde90a6db2c9da33c2a2aab3e52088adc148c368552a423"
+        },
+        "Library/Application Support/MoMoAgent/archive.sqlite-wal": {
+          "bytes": 1095952,
+          "sha256": "08e598fa60edee764c01a3844b044fba20a91b36f917f106cb384e58565d0aef"
+        },
+        "Documents/recordings/2026-10-16/A9F68E4F-35AE-4371-AF1D-7840FD13D627/audio/588B88BD-D62E-41CC-85CD-34AB1997FFA1.wav": {
+          "bytes": 178988,
+          "sha256": "b77f1794fe374a0ba1ee1dc458bfaf9349496cbbfc32780c50ba3c5a7ad8e373"
+        },
+        "Documents/recordings/2026-10-16/0FDCD39D-29DD-4F3A-825E-58613CCC0554/audio/5A632E9F-3234-4D56-B677-3E8FFB9D5055.wav": {
+          "bytes": 178988,
+          "sha256": "b77f1794fe374a0ba1ee1dc458bfaf9349496cbbfc32780c50ba3c5a7ad8e373"
+        },
+        "Library/Application Support/MoMoAgent/Agent/AACCB9F4-C261-472F-9E08-11D3E9A51AFE/session.json": {
+          "bytes": 2371,
+          "sha256": "ce0d24105bf8d66e094ce1b0cfd4d4d17c706f9ce4d76f1cf14e541c332b559b"
+        },
+        "Library/Application Support/MoMoAgent/assistant-presentation.json": {
+          "bytes": 289,
+          "sha256": "efe15ec6db19093d7c3fda9065aa6b016664bb517c650d151de9f1b4c19d55c9"
+        },
+        "Library/Application Support/MoMoAgent/Agent/AACCB9F4-C261-472F-9E08-11D3E9A51AFE/pi.sqlite": {
+          "bytes": 4096,
+          "sha256": "2e96884c16791c7d4bde90a6db2c9da33c2a2aab3e52088adc148c368552a423"
+        },
+        "Library/Application Support/MoMoAgent/Agent/AACCB9F4-C261-472F-9E08-11D3E9A51AFE/pi.sqlite-wal": {
+          "bytes": 1351392,
+          "sha256": "6262922a97b856b5fec26e2346b2403933dbc5b752a239c287998d33459d8dee"
+        }
+      }
+    },
+    {
+      "scenario": "interrupted-citation",
+      "runID": "7DB6AAAE-284F-4A39-9767-6F825CAA8502",
+      "exitCode": 0,
+      "status": "passed",
+      "checks": 31,
+      "nonPassing": [],
+      "metrics": {
+        "validatedSources": 2,
+        "sourceChunks": 2,
+        "rawUserInputs": 2,
+        "logicalUserQuestions": 1,
+        "durableInputAdmissions": 2
+      },
+      "report": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui45-checker-ab-040440/ledger-b.json",
+      "reportSHA256": "4eb13b4bcbf27b6662e872a9e9239308776d2764e1a0afebb29480887c210d06",
+      "evidenceInputs": {
+        "controlled-stream-ledger.json": {
+          "bytes": 3373,
+          "sha256": "0609a9649b7ef069dc971bd2b7303378d218a982526dd48360620ef21771f5b7"
+        },
+        "Library/Application Support/MoMoAgent/archive.sqlite": {
+          "bytes": 4096,
+          "sha256": "2e96884c16791c7d4bde90a6db2c9da33c2a2aab3e52088adc148c368552a423"
+        },
+        "Library/Application Support/MoMoAgent/archive.sqlite-wal": {
+          "bytes": 1161872,
+          "sha256": "84c0514dfc499002455d4bf46a137c3dc198c1e3edcf6a3491652dc2756da14e"
+        },
+        "Documents/recordings/2026-10-16/3761B83C-80C2-4A42-A5E5-5794319C67D0/audio/18E41D86-E48F-4D22-86BC-3AD076B5165C.wav": null,
+        "Documents/recordings/2026-10-16/81066F84-44A1-4414-97F9-9D8DA0E20253/audio/112B7A57-F8FC-4227-AF25-7BAD81E106BE.wav": null,
+        "Library/Application Support/MoMoAgent/Agent/D4C10B90-82B1-4212-8CE0-A16B51D26DF7/session.json": {
+          "bytes": 2349,
+          "sha256": "6c232fee173af337c291d6fde02270bccf73212a2c4472309ea5ba7f9ab5ded0"
+        },
+        "Library/Application Support/MoMoAgent/assistant-presentation.json": {
+          "bytes": 435,
+          "sha256": "689e5f12f654eb60583734d49f17fdccaacfca79c4fe989741ace1700a253a98"
+        },
+        "Library/Application Support/MoMoAgent/Agent/D4C10B90-82B1-4212-8CE0-A16B51D26DF7/pi.sqlite": {
+          "bytes": 4096,
+          "sha256": "2e96884c16791c7d4bde90a6db2c9da33c2a2aab3e52088adc148c368552a423"
+        },
+        "Library/Application Support/MoMoAgent/Agent/D4C10B90-82B1-4212-8CE0-A16B51D26DF7/pi.sqlite-wal": {
+          "bytes": 758112,
+          "sha256": "c77a528655062413a58b963f0d8fd2aa8fa5af91abfcb0a418f807a226c82ec7"
+        }
+      }
+    }
+  ],
+  "sourceHashes": {
+    "Tests/Support/verify-controlled-ui-ledger.py": "6333ccba9243b3538c823ebaa368cd5b720a33724834785f67e02f83c2a0fa73",
+    "Tests/Support/test-verify-controlled-ui-ledger.py": "970172e20bf888deba2450fb256de335b4ad2ee19df90e95007636c1333620c0"
+  },
+  "sourceHashesUnchanged": true,
+  "scope": "Read-only frozen synthetic UI45 A/B snapshots; C was verified separately and not rerun."
+}

@@ -1,0 +1,29 @@
+{
+  "sample": "你好 👨‍👩‍👧‍👦 é，文字顺着到达。",
+  "segments": [
+    "你",
+    "好",
+    " ",
+    "👨",
+    "‍",
+    "👩",
+    "‍",
+    "👧",
+    "‍",
+    "👦",
+    " ",
+    "e",
+    "́",
+    "，",
+    "文",
+    "字",
+    "顺",
+    "着",
+    "到",
+    "达",
+    "。"
+  ],
+  "keyframes": [
+    "@keyframes _grapheme-reveal_1plog_1 { \n  0% { opacity: 0; filter: blur(6px); }\n  100% { opacity: 1; filter: blur(0px); }\n}"
+  ]
+}

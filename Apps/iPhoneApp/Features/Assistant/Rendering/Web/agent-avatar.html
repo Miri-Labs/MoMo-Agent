@@ -1,0 +1,99 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'">
+<style>
+html,body,#agent{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
+svg.life-avatar{display:block}
+body{color:#252525;--eyes:#fafafa}body.dark{color:#f4f4f4;--eyes:#171717}
+.life-avatar path{fill:currentColor!important}.life-avatar .avatar-eyes path{fill:var(--eyes)!important}
+</style></head><body><div id="agent" aria-hidden="true"></div>
+<script src="vendor/momoagent-avatar.js"></script>
+<script>
+const actor = MoMoAvatar.create(document.getElementById('agent'), {size:'100%'});
+const svg = document.querySelector('svg.life-avatar');
+// Match the native 1.5x viewport without changing the character's resting size.
+svg.setAttribute('viewBox','-225 -225 450 450');
+const greetingLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
+greetingLayer.classList.add('avatar-greeting');
+greetingLayer.append(svg.querySelector('g'));
+svg.append(greetingLayer);
+let appearance = {active:false, reduceMotion:true, greeting:0, expression:'present'};
+let completionFeedback = false;
+let destroyed = false;
+let greetingFrame = null, lastPaint = 0, pose = {lift:0,squash:1,rotation:0};
+const canMove = () => !destroyed && appearance.active && !appearance.reduceMotion && !document.hidden;
+const isBusy = expression => ['thinking','working','speaking'].includes(expression);
+const baseExpression = () => appearance.expression === 'settled' && !completionFeedback ? 'present' : appearance.expression || 'present';
+function cancelGreeting(){
+  if(greetingFrame !== null) cancelAnimationFrame(greetingFrame);
+  greetingFrame = null;
+  pose = {lift:0,squash:1,rotation:0};
+  greetingLayer.removeAttribute('transform');
+  actor.setExpression(baseExpression());
+}
+function greet(){
+  if(greetingFrame !== null) cancelAnimationFrame(greetingFrame);
+  const busy = isBusy(baseExpression());
+  actor.setExpression(busy ? 'listening' : 'greeting');
+  const started = performance.now(), from = {...pose};
+  const duration = busy ? 600 : appearance.playful ? 900 : 780;
+  lastPaint = -Infinity;
+  const tracks = busy ? {
+    lift:[[0,from.lift],[200,7],[600,0]],
+    squash:[[0,from.squash],[160,.95],[320,1.03],[600,1]],
+    rotation:[[0,from.rotation],[220,5],[600,0]]
+  } : appearance.playful ? {
+    lift:[[0,from.lift],[110,0],[350,44],[680,0],[900,0]],
+    squash:[[0,from.squash],[110,.84],[310,1.10],[680,.90],[900,1]],
+    rotation:[[0,from.rotation],[110,-9],[350,10],[710,-3],[900,0]]
+  } : {
+    lift:[[0,from.lift],[100,0],[300,25],[610,0],[780,0]],
+    squash:[[0,from.squash],[100,.89],[280,1.07],[610,.93],[780,1]],
+    rotation:[[0,from.rotation],[100,-6],[300,7],[780,0]]
+  };
+  const sample = (track,time) => {
+    const index = track.findIndex(point => point[0] >= time);
+    if(index <= 0) return track[index < 0 ? track.length - 1 : 0][1];
+    const [start,a] = track[index-1], [end,b] = track[index];
+    const t = (time-start)/(end-start), ease = t*t*(3-2*t);
+    return a+(b-a)*ease;
+  };
+  function tick(now){
+    greetingFrame = null;
+    if(!canMove() || now-started >= duration){cancelGreeting();return}
+    if(now-lastPaint >= 1000/(appearance.lowPower ? 30 : 60)){
+      for(const field of Object.keys(tracks)) pose[field] = sample(tracks[field],now-started);
+      // SVG geometry redraws at the current device scale; the WKWebView stays stationary.
+      greetingLayer.setAttribute('transform',`translate(0 ${-pose.lift}) rotate(${pose.rotation}) translate(0 150) scale(${2-pose.squash} ${pose.squash}) translate(0 -150)`);
+      lastPaint = now;
+    }
+    greetingFrame = requestAnimationFrame(tick);
+  }
+  greetingFrame = requestAnimationFrame(tick);
+}
+function sync(){
+  actor.setLowPower(appearance.lowPower);
+  const expression = baseExpression();
+  const profile = {listening:'attentive', thinking:'thinking', working:'focused', speaking:'speaking'}[expression];
+  actor.setAnimation(profile || (appearance.playful ? 'home' : 'listening'));
+  actor.setActive(canMove());
+  if(!canMove()) cancelGreeting();
+  else if(greetingFrame === null) actor.setExpression(expression);
+}
+window.agentAvatar = {
+  update(value){
+    const changed = value.greeting !== appearance.greeting;
+    if(value.conversationID !== appearance.conversationID || value.expression !== 'settled') completionFeedback = false;
+    else if(isBusy(appearance.expression)) completionFeedback = true;
+    appearance=value;
+    document.body.classList.toggle('dark',value.dark);
+    sync();
+    if(changed && canMove()) greet();
+    else if(changed && value.active && !document.hidden) actor.setExpression(isBusy(baseExpression()) ? 'listening' : 'greeting');
+  },
+  destroy(){destroyed=true;cancelGreeting();actor.destroy()}
+};
+document.addEventListener('visibilitychange',sync);
+window.addEventListener('pagehide',()=>window.agentAvatar.destroy(),{once:true});
+</script></body></html>

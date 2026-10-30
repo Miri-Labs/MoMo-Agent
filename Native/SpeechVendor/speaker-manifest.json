@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "files": {
+    "eres2netv2.onnx": "bf1a75b9930474cf3389ef415e6e5d38ca96fea4a3a00f7e301d080a58ee2239",
+    "diarizen-wavlm-base-s80-md.onnx": "ddc29bab8f9331ea26398becf6af5c57ff513f1f2d49200f68a5547799b3563a",
+    "segmentation-community-1.onnx": "62d59a487d8ba877d0bd1638c53aa06a810bdb104fb776a27ec2204521711006"
+  },
+  "sources": {
+    "eres2netv2.onnx": {
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2netv2_sv_zh-cn_16k-common.onnx",
+      "upstream": "https://modelscope.cn/models/iic/speech_eres2netv2_sv_zh-cn_16k-common",
+      "sha256": "bf1a75b9930474cf3389ef415e6e5d38ca96fea4a3a00f7e301d080a58ee2239",
+      "license": "Apache-2.0"
+    },
+    "diarizen-wavlm-base-s80-md.onnx": {
+      "url": "https://huggingface.co/simLeipzig/ultrawhisper-diarizen-onnx/resolve/main/diarizen-wavlm-base-s80-md.onnx",
+      "upstream": "https://huggingface.co/BUT-FIT/diarizen-wavlm-base-s80-md",
+      "sha256": "ddc29bab8f9331ea26398becf6af5c57ff513f1f2d49200f68a5547799b3563a",
+      "license": "CC-BY-NC-4.0"
+    },
+    "segmentation-community-1.onnx": {
+      "url": "https://huggingface.co/altunenes/speaker-diarization-community-1-onnx/resolve/main/segmentation-community-1.onnx",
+      "upstream": "https://huggingface.co/pyannote/speaker-diarization-community-1",
+      "sha256": "62d59a487d8ba877d0bd1638c53aa06a810bdb104fb776a27ec2204521711006",
+      "license": "CC-BY-4.0"
+    }
+  }
+}

@@ -1,0 +1,270 @@
+"""Contracts for MoMo-owned initialization and environment isolation."""
+import importlib.util
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[2]
+spec = importlib.util.spec_from_file_location("momo_agent", ROOT / "Apps/MacApp/Runtime/momo_agent.py")
+runtime = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runtime)
+
+
+class BundledRuntimeTests(unittest.TestCase):
+    def test_offline_bundle_uses_its_interpreter_and_preserves_existing_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "Moved App/AgentRuntime"
+            executable = root / "python/bin/python3.14"
+            executable.parent.mkdir(parents=True)
+            executable.write_text("synthetic")
+            executable.chmod(0o755)
+            fingerprint = runtime.fingerprint()
+            manifest = {"schema_version": 1, "architecture": runtime.platform.machine(), "dependencies": fingerprint}
+            (root / "runtime-manifest.json").write_text(json.dumps(manifest))
+            data = Path(tmp) / "data"
+            runtime.initialize(data, 19000)
+            before = {str(p.relative_to(data)): p.read_bytes() for p in data.rglob("*") if p.is_file()}
+            with patch.object(runtime, "REPOSITORY", root), patch.object(runtime, "fingerprint", return_value=fingerprint), \
+                    patch.object(runtime, "prepare_access") as install, patch.object(runtime.subprocess, "run") as child:
+                runtime.prepare(data)
+                self.assertEqual(runtime.prepared_python(data), executable)
+                install.assert_not_called()
+                child.assert_not_called()
+            self.assertEqual(before, {str(p.relative_to(data)): p.read_bytes() for p in data.rglob("*") if p.is_file()})
+            for field, invalid in [("architecture", "wrong"), ("dependencies", {}), ("schema_version", 99)]:
+                bad = dict(manifest, **{field: invalid})
+                (root / "runtime-manifest.json").write_text(json.dumps(bad))
+                with patch.object(runtime, "REPOSITORY", root), self.assertRaises(ValueError):
+                    runtime.prepared_python(data)
+            (root / "runtime-manifest.json").write_text(json.dumps(manifest))
+            executable.unlink()
+            with patch.object(runtime, "REPOSITORY", root), self.assertRaises(ValueError):
+                runtime.prepared_python(data)
+
+
+class RuntimeTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.data = Path(self.directory.name) / "agent"
+
+    def test_reinitialization_preserves_identity_credential_and_configuration(self):
+        first = runtime.initialize(self.data, 8765)
+        credential = (self.data / "api-key").read_bytes()
+        config = self.data / "hermes/config.yaml"
+        configured = json.loads(config.read_text())
+        configured["model"]["default"] = "chosen-by-user"
+        config.write_text(json.dumps(configured))
+        self.assertEqual(first, runtime.initialize(self.data, 8765))
+        self.assertEqual(credential, (self.data / "api-key").read_bytes())
+        self.assertEqual(json.loads(config.read_text())["model"]["default"], "chosen-by-user")
+        self.assertEqual((self.data / "api-key").stat().st_mode & 0o777, 0o600)
+        with self.assertRaises(ValueError):
+            runtime.initialize(self.data, 8766)
+
+    def test_nonempty_unowned_directory_is_preserved(self):
+        self.data.mkdir()
+        original = self.data / "personal.txt"
+        original.write_text("keep this")
+        with self.assertRaises(ValueError):
+            runtime.initialize(self.data, 8765)
+        self.assertEqual(original.read_text(), "keep this")
+        self.assertFalse((self.data / "connection.json").exists())
+
+    def test_partial_or_nonprivate_credential_is_not_accepted(self):
+        runtime.initialize(self.data, 8765)
+        token = self.data / "api-key"
+        token.chmod(0o644)
+        with self.assertRaises(ValueError):
+            runtime.read_connection(self.data)
+        token.chmod(0o600)
+        (self.data / "hermes/config.yaml").unlink()
+        with self.assertRaises(ValueError):
+            runtime.read_connection(self.data)
+
+    def test_environment_does_not_adopt_another_hermes_or_provider(self):
+        with patch.dict(os.environ, {"HERMES_HOME": "/elsewhere", "HERMES_RUNTIME_DIR": "/other-tools",
+                                     "OPENAI_API_KEY": "unrelated-secret", "PYTHONPATH": "/unrelated"}):
+            child = runtime.child_environment(self.data)
+        self.assertEqual(child["HERMES_HOME"], str(self.data / "hermes"))
+        self.assertEqual(child["HERMES_RUNTIME_DIR"], str(self.data / "runtime/tools"))
+        self.assertNotIn("OPENAI_API_KEY", child)
+        self.assertNotIn("PYTHONPATH", child)
+        self.assertEqual(child["PYTHONPYCACHEPREFIX"], str(self.data / "runtime/bytecode"))
+
+    def test_finder_launch_exports_system_proxy_and_always_bypasses_local_services(self):
+        with patch.dict(os.environ, {}, clear=True), patch.object(runtime, 'system_proxy_environment', return_value={
+                'HTTP_PROXY': 'http://127.0.0.1:7890', 'HTTPS_PROXY': 'http://127.0.0.1:7890', 'NO_PROXY': '*.local,10.0.0.0/8'}):
+            child = runtime.child_environment(self.data)
+        self.assertEqual(child['HTTPS_PROXY'], 'http://127.0.0.1:7890')
+        self.assertEqual(child['no_proxy'], '*.local,10.0.0.0/8,127.0.0.1,localhost,::1')
+        self.assertEqual(child['NO_PROXY'], child['no_proxy'])
+
+    def test_explicit_proxy_and_bypass_policy_win_over_system_settings(self):
+        for bypass in ['*', 'internal.example']:
+            with patch.dict(os.environ, {'https_proxy': 'http://operator.invalid:8080', 'no_proxy': bypass}, clear=True), \
+                    patch.object(runtime, 'system_proxy_environment') as system:
+                child = runtime.child_environment(self.data)
+            system.assert_not_called()
+            self.assertNotIn('HTTPS_PROXY', child)
+            self.assertEqual(child['https_proxy'], 'http://operator.invalid:8080')
+            self.assertEqual(child['NO_PROXY'], '*' if bypass == '*' else 'internal.example,127.0.0.1,localhost,::1')
+
+    def test_native_memory_upgrade_preserves_persona_and_is_idempotent(self):
+        runtime.initialize(self.data, 8765)
+        soul = self.data / "hermes/SOUL.md"
+        soul.write_text("我的私人助手。\n<!-- MoMo sources -->\n旧版自动资料说明。\n\n用户添加的偏好。\n<!-- MoMo reply before action -->\n先回复再行动。\n")
+        config = json.loads((self.data / "hermes/config.yaml").read_text())
+        with patch.object(runtime, "prepared_python", return_value=Path("/synthetic/python")):
+            runtime.configure_context(self.data, config, None)
+            runtime.configure_context(self.data, config, None)
+        for server in config["mcp_servers"].values():
+            self.assertEqual(server["env"]["PYTHONPYCACHEPREFIX"], str(self.data / "runtime/bytecode"))
+        text = soul.read_text()
+        self.assertIn("我的私人助手。", text)
+        self.assertIn("用户添加的偏好。", text)
+        self.assertIn("先回复再行动。", text)
+        self.assertNotIn("<!-- MoMo sources -->", text)
+        self.assertTrue(config["memory"]["memory_enabled"])
+        self.assertFalse(config["gateway"]["multiplex_profiles"])
+        self.assertEqual(0, config["agent"]["auto_recovery_cycles"])
+        self.assertIn("delegation", config["platform_toolsets"]["api_server"])
+        self.assertNotIn("<!-- MoMo nonblocking conversation -->", text)
+        self.assertEqual(["momoagent"], config["plugins"]["enabled"])
+        self.assertTrue((self.data / "hermes/plugins/momoagent/policy.md").is_file())
+
+    def test_default_persona_keeps_entire_upstream_behavior(self):
+        runtime.initialize(self.data, 8765)
+        expected = (runtime.SOURCE / "SOUL.md").read_text().strip().partition(". ")[2]
+        self.assertIn(expected, (self.data / "hermes/SOUL.md").read_text())
+
+    def test_product_rename_preserves_user_soul_and_runtime_identity(self):
+        connection = runtime.initialize(self.data, 8765)
+        soul = self.data / "hermes/SOUL.md"
+        suffix = "\n\n用户保留的偏好，历史名称 MoMoAgent 不改。\n"
+        soul.write_text("你是 MoMo，MoMoAgent 的私人助手，运行在 Hermes 引擎上。" + suffix)
+        runtime.install_prompt(self.data, {})
+        expected = "你是 MoMo，MoMo Agent 的私人助手，运行在 Hermes 引擎上。" + suffix
+        self.assertEqual(expected, soul.read_text())
+        runtime.install_prompt(self.data, {})
+        self.assertEqual(expected, soul.read_text())
+        self.assertEqual("MoMoAgent", connection["application"])
+
+    def test_product_rename_leaves_custom_identity_unchanged(self):
+        runtime.initialize(self.data, 8765)
+        soul = self.data / "hermes/SOUL.md"
+        custom = "你是 MoMo，MoMoAgent 的私人助手，使用我的定制人格。\n"
+        soul.write_text(custom)
+        runtime.install_prompt(self.data, {})
+        self.assertEqual(custom, soul.read_text())
+
+    def test_generated_legacy_blocks_upgrade_without_duplicate_instructions(self):
+        runtime.initialize(self.data, 8765)
+        soul = self.data / "hermes/SOUL.md"
+        soul.write_text("你是 MoMo，MoMoAgent 的私人助手。用明确的来源和真实执行结果提供帮助；资料或执行状态未知时直接说明。\n"
+                        "<!-- MoMo sources -->\n旧资料段。\n<!-- /MoMo sources -->\n"
+                        "<!-- MoMo reply before action -->\n用户交代任务时，旧规则。\n"
+                        "<!-- MoMo nonblocking conversation -->\n主会话持续和用户交流。旧规则。\n\n用户保留文字。\n")
+        config = {"plugins": {"enabled": ["my-plugin"]}}
+        runtime.install_prompt(self.data, config)
+        first = soul.read_text()
+        runtime.install_prompt(self.data, config)
+        self.assertEqual(first, soul.read_text())
+        self.assertIn(runtime.default_soul(), first)
+        self.assertIn("用户保留文字。", first)
+        self.assertNotIn("旧规则", first)
+        self.assertEqual(["my-plugin", "momoagent"], config["plugins"]["enabled"])
+
+    def test_network_dependency_upgrade_preserves_agent_fingerprint_and_identity(self):
+        connection = runtime.initialize(self.data, 8765)
+        executable = self.data / 'runtime/venv/bin/python'; executable.parent.mkdir(parents=True); executable.touch()
+        record = runtime.fingerprint(); record.pop('access_lock_sha256')
+        marker = self.data / 'runtime/prepared.json'; marker.write_text(json.dumps(record))
+        phases = []
+        with patch.object(runtime, 'prepare_access') as install:
+            runtime.prepare(self.data, progress=phases.append)
+            install.assert_called_once_with(self.data)
+        self.assertEqual(['connection', 'ready'], phases)
+        self.assertEqual(runtime.fingerprint(), json.loads(marker.read_text()))
+        self.assertEqual(connection, runtime.read_connection(self.data))
+        self.assertEqual(executable, runtime.prepared_python(self.data))
+
+    def prepared_fixture(self):
+        runtime.initialize(self.data, 8765)
+        executable = self.data / 'runtime/venv/bin/python'
+        executable.parent.mkdir(parents=True)
+        executable.write_bytes(b'existing interpreter')
+        record = runtime.fingerprint()
+        record['source'] = '/removed/MoMoAgent-deliveries/main-1.36.0/runtime-source/Vendor/HermesAgent'
+        marker = self.data / 'runtime/prepared.json'
+        marker.write_text(json.dumps(record))
+        return executable, marker, record
+
+    def test_release_path_change_reuses_environment_and_preserves_user_data(self):
+        executable, marker, _ = self.prepared_fixture()
+        memory = self.data / 'hermes/MEMORY.md'
+        memory.write_text('User-owned memory remains unchanged.')
+        preserved = {p: p.read_bytes() for p in self.data.rglob('*') if p.is_file() and p != marker}
+        # Starting directly after an app update must work even before maintenance.
+        self.assertEqual(executable, runtime.prepared_python(self.data))
+        phases = []
+        with patch.object(runtime, 'prepare_access') as install:
+            runtime.prepare(self.data, progress=phases.append)
+            runtime.prepare(self.data, progress=phases.append)
+            install.assert_not_called()
+        self.assertEqual(['ready', 'ready'], phases)
+        self.assertEqual(runtime.fingerprint(), json.loads(marker.read_text()))
+        self.assertEqual(0o600, marker.stat().st_mode & 0o777)
+        self.assertEqual(preserved, {p: p.read_bytes() for p in preserved})
+
+    def test_source_move_does_not_hide_actual_agent_dependency_changes(self):
+        _, marker, record = self.prepared_fixture()
+        for field in ['lock_sha256', 'manifest_sha256', 'upstream_commit', 'extras']:
+            with self.subTest(field=field):
+                changed = dict(record); changed[field] = 'different'
+                marker.write_text(json.dumps(changed))
+                with patch.object(runtime, 'prepare_access') as install:
+                    with self.assertRaises(ValueError): runtime.prepared_python(self.data)
+                    with self.assertRaisesRegex(ValueError, 'Agent dependencies changed'):
+                        runtime.prepare(self.data)
+                    install.assert_not_called()
+                self.assertEqual(changed, json.loads(marker.read_text()))
+
+    def test_source_move_and_network_upgrade_keep_failure_retryable(self):
+        _, marker, record = self.prepared_fixture()
+        record['access_lock_sha256'] = 'older-adapter'
+        marker.write_text(json.dumps(record))
+        with patch.object(runtime, 'prepare_access', side_effect=OSError('offline')):
+            with self.assertRaises(OSError): runtime.prepare(self.data)
+        self.assertEqual(record, json.loads(marker.read_text()))
+        with self.assertRaises(ValueError): runtime.prepared_python(self.data)
+        with patch.object(runtime, 'prepare_access') as install:
+            runtime.prepare(self.data)
+            install.assert_called_once_with(self.data)
+        self.assertEqual(runtime.fingerprint(), json.loads(marker.read_text()))
+
+    def test_missing_python_is_not_accepted_after_a_source_move(self):
+        executable, marker, record = self.prepared_fixture()
+        executable.unlink()
+        with self.assertRaises(ValueError): runtime.prepared_python(self.data)
+        with self.assertRaises(ValueError): runtime.prepare(self.data)
+        self.assertEqual(record, json.loads(marker.read_text()))
+
+    def test_failed_network_upgrade_does_not_mark_environment_prepared(self):
+        runtime.initialize(self.data, 8765)
+        executable = self.data / 'runtime/venv/bin/python'; executable.parent.mkdir(parents=True); executable.touch()
+        record = runtime.fingerprint(); record.pop('access_lock_sha256')
+        marker = self.data / 'runtime/prepared.json'; marker.write_text(json.dumps(record))
+        phases = []
+        with patch.object(runtime, 'prepare_access', side_effect=OSError('offline')):
+            with self.assertRaises(OSError): runtime.prepare(self.data, progress=phases.append)
+        self.assertEqual(['connection'], phases)
+        self.assertEqual(record, json.loads(marker.read_text()))
+        with self.assertRaises(ValueError): runtime.prepared_python(self.data)
+
+
+if __name__ == "__main__":
+    unittest.main()

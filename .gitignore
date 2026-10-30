@@ -1,0 +1,13 @@
+.DS_Store
+.build/
+DerivedData*/
+*.xcuserstate
+xcuserdata/
+tmp_agent_output/
+.env
+Config/Local.xcconfig
+Models/
+*.xcresult
+__pycache__/
+*.pyc
+node_modules/

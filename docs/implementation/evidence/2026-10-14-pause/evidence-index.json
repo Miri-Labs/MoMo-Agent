@@ -1,0 +1,175 @@
+{
+  "date": "2026-10-14",
+  "branch": "codex/initial-implementation",
+  "localEvidenceRoot": "/Users/xilanhua/WorkSpace/mizzen/mizzen-insight/tmp_agent_output/20261014-momoagent-xcode",
+  "scope": "Frozen existing results; no tests rerun during pause handoff. Raw xcresult, audio, credentials, TLS keys and build products are not committed.",
+  "files": [
+    {
+      "path": "package-tests-19.log",
+      "exists": true,
+      "bytes": 43559,
+      "sha256": "612f6f32981bcc65de0c16fdcdad50367bc06991244335d48b638326262ef278"
+    },
+    {
+      "path": "package-tests-21-agent.log",
+      "exists": true,
+      "bytes": 4180,
+      "sha256": "649031ba72d6570573691e784bcecc8f8807757e1f4e89a27857158001429e6b"
+    },
+    {
+      "path": "package-tests-22.log",
+      "exists": true,
+      "bytes": 26918,
+      "sha256": "16fd6959067d3a784ac7c43d7550cfe0fb82a7f7032b8dbe5cc9fb2f38dc881f"
+    },
+    {
+      "path": "package-tests-23-selected-source.log",
+      "exists": true,
+      "bytes": 1462,
+      "sha256": "e07d948f674488809511a6c18c27445671b903d8597a1140bb404c7ee38308c6"
+    },
+    {
+      "path": "ios-build-34.log",
+      "exists": true,
+      "bytes": 175536,
+      "sha256": "eb4b6794f6425ea1239f3f347777d28a5a4aa0dbbd24620e46a9d1cb45bee78f"
+    },
+    {
+      "path": "ios-tests-16-summary.json",
+      "exists": true,
+      "bytes": 1018,
+      "sha256": "dfe770013c7fe554f7299d259082e5013353d41e6acc8cc47b042f7f382f3f92",
+      "summary": {
+        "totalTestCount": 60,
+        "passedTests": 55,
+        "failedTests": 0,
+        "skippedTests": 5
+      }
+    },
+    {
+      "path": "ios-tests-18-summary.json",
+      "exists": true,
+      "bytes": 1018,
+      "sha256": "3795950ec96aaf77d389c96cd2de6d028400a1b1c6a9a57905417d24bed7ea41",
+      "summary": {
+        "totalTestCount": 10,
+        "passedTests": 10,
+        "failedTests": 0,
+        "skippedTests": 0
+      }
+    },
+    {
+      "path": "ios-tests-20-summary.json",
+      "exists": true,
+      "bytes": 1628,
+      "sha256": "e319f9cd45c5d2701125221685ab5aadef7494ef9b732e55ff4d6cbd7fecae0c",
+      "summary": {
+        "totalTestCount": 13,
+        "passedTests": 12,
+        "failedTests": 1,
+        "skippedTests": 0
+      }
+    },
+    {
+      "path": "ios-tests-21.log",
+      "exists": true,
+      "bytes": 17459,
+      "sha256": "cace04ab592692cd99c3cc342f3f4dc3a13e61a2479bf453e7b613185ebf209b"
+    },
+    {
+      "path": "j17-app-03/run.json",
+      "exists": true,
+      "bytes": 592,
+      "sha256": "8acd3fc4e68a2147cb13fbbccc903701be29876386a3b71af133dbf9a52696c3",
+      "summary": {
+        "status": "failed",
+        "accepted": false,
+        "summary": {
+          "totalTestCount": 16,
+          "passedTests": 15,
+          "failedTests": 1,
+          "skippedTests": 0
+        },
+        "hostStopped": true,
+        "errorCodes": [
+          "xcodebuild_failed"
+        ]
+      }
+    },
+    {
+      "path": "live-agent-04/run.json",
+      "exists": true,
+      "bytes": 317,
+      "sha256": "bfb2fee115726317171f423720604e471937fb55b9daf56657d09a6ceaf40184",
+      "summary": {
+        "accepted": true,
+        "credentialFileRemoved": true
+      }
+    },
+    {
+      "path": "live-ui-agent-01/run.json",
+      "exists": true,
+      "bytes": 631,
+      "sha256": "2072aeee2a7ae3b9abf9bba8d621b68beb49e6cf64560738869af74c3ecbb9da",
+      "summary": {
+        "status": "passed",
+        "accepted": true,
+        "summary": {
+          "totalTestCount": 1,
+          "passedTests": 1,
+          "failedTests": 0,
+          "skippedTests": 0
+        },
+        "credentialFileRemoved": true,
+        "hostStopped": true,
+        "isolatedWorkspaceRemoved": true,
+        "errorCodes": []
+      }
+    },
+    {
+      "path": "ios-release-bundle-09.json",
+      "exists": true,
+      "bytes": 1604,
+      "sha256": "4a181eea0fea72a2f53524297ca9b8ddbf103ef6856177a3ff567f34d2e55b5b",
+      "summary": {
+        "status": "passed"
+      }
+    },
+    {
+      "path": "watch-build-01.log",
+      "exists": true,
+      "bytes": 195849,
+      "sha256": "40ea9018d1e3ce91630e839af87d8997f56fbe3e70049e628f7dbfbe9add48bf"
+    },
+    {
+      "path": "watchos-runtime-download-01.log",
+      "exists": true,
+      "bytes": 175527,
+      "sha256": "ee543f90d7d928b4b8e3c89f8aa34fe74dc99f286616f56e30fb0edee78f446d"
+    },
+    {
+      "path": "j17-native-header-probe/native-original.log",
+      "exists": true,
+      "bytes": 484,
+      "sha256": "2688ab283ecbae50afcf477a671ff4fd5a7b76f19e8f584ac412faca63eff34f"
+    },
+    {
+      "path": "j17-native-header-probe/native-response-property.log",
+      "exists": true,
+      "bytes": 770,
+      "sha256": "f54070ec121cd073b0574acc53f4daf2f6a4651671d7a872e383c355d0ba6e2c"
+    },
+    {
+      "path": "j17-native-header-probe/native-async-bytes-02.log",
+      "exists": true,
+      "bytes": 507,
+      "sha256": "68cd2014a506093485dcfbb5531a6ac43d8b44173134155d16775a26de7482e6"
+    },
+    {
+      "path": "j17-native-header-probe/fixture-selftest-lifecycle.log",
+      "exists": true,
+      "bytes": 2100,
+      "sha256": "9ccb11c17ab4c3c4746e15da534b6a7c2a8b64c1db87837e5c75ffd2b866c865"
+    }
+  ]
+}

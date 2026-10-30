@@ -1,0 +1,795 @@
+{
+  "date": "2026-10-15",
+  "scope": "Public unauthenticated mobile web frontend assets",
+  "files": [],
+  "errors": [
+    {
+      "url": "https://chatgpt.com/unauth-mweb/scripts/declarative-partial-updates-cc0dc41806f1.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-initial-composer-sentinel-runtime-CDo1trwF.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-initial-sentinel-prewarm-C5JImGOj.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/octane-home-client-B6RgRAOT.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/stylex-remaining-modern-GqMTXQvB.css",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/stylex-initial-modern-jctUwosA.css",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/scripts/legacy-hash-router-c9167e14712f.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/scripts/app-install-beacon-handoff-872c1ef4c00f.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/application-presentation-runtime-Dt7-ZJv-.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-Cpp3k0AT.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CUuC05cf.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DXSTf3Zh.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-Bm0HtvzR.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DpCHbQIG.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/octane-signals-engine-DDxy3SYp.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/rolldown-runtime-DOd5ywYy.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DTKXgBrM.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BaDkvrOy.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/client-loader-D_zJ6Pek.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/frame-support-D-P2VU6Q.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DdJZb3wE.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BTKqdIWA.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-3oAKa9VE.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-IqcYUsd2.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-_T2Qsljt.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/media-opening-U0_W4NC4.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-UBuTNoeb.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/client-polyfills-CGKFffaO.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CghDdiEa.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-Cs_XvMoi.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/authenticated-history-signals-geQLDiaq.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-Rt80Jov8.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DtpLkDsb.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DK4HH4zX.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-C4iWEalX.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-D0JKPCGl.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BPrEFMy9.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BjNSi9Lj.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-byh5-saS.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-wdAyEMZB.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-D2K7gACT.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-fUQ8wfXb.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DbVD-ABz.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CUOkPbue.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BmAWLdZU.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CW2n4Efr.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/octane-shell-shared-Bcz3PlRS.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/application-frame-runtime-modules-BHatBESV.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DIoxl6mq.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DcWA0q67.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-lSr1azcw.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CRGYVokb.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-OT3UjrJR.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CQ57wIiN.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-Dp0JpEMO.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-36p0D53l.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a--R2NPscw.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-6hsUkXm6.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BXwZvS6W.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-D6ol10V_.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BbrUJAJp.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-uXxYQ2va.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-IzYziC5I.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DsT8ZvOA.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DrCurcf9.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BXlOFTeE.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-z0RhN8h6.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-hsIeqHKb.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-D-w-KXNf.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BaHO80v2.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BNOT4GFD.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-B5QtGDu0.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CycNDl6K.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CHdHD6_3.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CnWw0zZj.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/analytics-CR28MdXF.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DtxTkvaM.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-Dkzm4mvx.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BNYBvvko.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/abort-signal-any-v9QObZBS.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BKIf19rj.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DCPCOHv0.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CJj3hwXc.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-D_0HAwPo.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DmXfSNKq.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BcetSTJ-.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CyYOnlwD.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/ces-page-diagnostics-5jPyGiOs.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DCvMHrJ3.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-D-2kopgN.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BZG30HpH.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DuhAT1Zq.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DC2f1WD6.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-KIR8sEgC.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-PXf05nOy.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CaFoL-ov.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-prepare-client-BQvOFesC.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-B-hiJG-E.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CzcljLpQ.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-P9CpeIo6.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-PDffAyhw.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-0Rs2VXxP.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-B0L4Ruds.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-RBErpbQX.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CNoZO9OT.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-iKV1CJHx.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-GftDaamB.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/octane-signal-bootstrap-cZhy5vT8.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-Bi_ZWTPI.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-C8jp6t0-.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CjLe4r1o.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-Cyzc9usw.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CnnFz2hg.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-AFfVf4n2.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CjMUG7VI.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-history-cache-boundary-CznekP5w.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-telemetry-7MR40sr4.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/analytics-ces-business-context-CPgn11sE.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-home-interaction-loaders-B3MwSY2H.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/application-hydration-capture-D8fzwvB-.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-shared-DYlOMt6E.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/page-load-performance-C-FQmz9y.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BOLNBliA.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-composer-accepted-turn-FFACimgT.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/early-shared-runtime-h1jtyfU_.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-Bm_8nHFJ.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a--tOLhrKL.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-n_B8KDPu.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-Bo7GwWyx.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-D15aFp9E.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BfriJXBm.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-B-TWB0ub.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DzblMKsW.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DhScj3yr.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DCPhnIxE.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-Ccq-3bwH.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-conversation-route-stylesheet-CjA2RyPq.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/retired-service-worker-cleanup-DLazpfkU.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-C3TDJTRd.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/sentinel-1ITmb_HS.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BfmkIeh5.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/app.startup-BVDQZkQd.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CX0f2Xmn.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-4EPbdvKX.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-w6ZR9KJ9.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DO3dILd0.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-icon-sprite-CmIXY5t4.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/desktop-product-popover-DqEcqidD.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/recurring-login-banner-C1R_P3kd.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/application-composer-Bq-V9j5Q.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/zh-CN-CLLA7n2c.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/conversation-observer-Bnj0Rw-4.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/composer-height-resource-1-bafRWD.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-D7wdiyFv.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CT8OP6Pf.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BC7_QoNj.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CJYw3Ddx.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DC2WiJU7.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-desktop-sidebar-CSHRzxFD.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-responsive-shell-DgR9gj6F.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-DJreg1o6.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-PGm_m9Xx.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-GLRl1Wf7.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-sidebar-navigation-metrics-QrEGonI_.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-vxSzG1Fw.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-JRQMaiTN.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-mlQtPB6n.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-NWn6NwQ8.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/settings-hydration-asCBGncX.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/account-settings-preferences-D3KgnGDZ.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/authenticated-browser-client-CgvGojQr.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-H-VZFPZZ.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-shell-actions-RvLXbm6B.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-desktop-one-tap-DTK2Fhdf.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-mobile-sidebar-controller-BTJc_Pw_.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-mobile-sidebar-controller-DrAY6-C_.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/logout-click-telemetry-CVNQCUqy.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-Bxth24_e.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/dictation-composer-preferences-C6liUh9z.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CjKC3S2p.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CMFu0mkd.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-57pV11Mm.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-C6wTcq6d.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CII3xGgg.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-CXMF-dUs.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-HVF90PEv.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-B8doc-Ub.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/google-one-tap-C7mUgO8D.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/performance-metrics-Cuc5qnyN.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-performance-bootstrap-C8S8Y2dv.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/native-composer-draft-bootstrap-ozoPVYeD.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-BeYVSsUq.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-vyTayQtN.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/application-idle-signals-C60JXirF.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/onINP-Ux77p0ip.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/web-vitals.attribution-B4rGc8Ot.js",
+      "error": "TypeError: fetch failed"
+    },
+    {
+      "url": "https://chatgpt.com/unauth-mweb/assets/a-C9Ju1xAH.js",
+      "error": "TypeError: fetch failed"
+    }
+  ]
+}

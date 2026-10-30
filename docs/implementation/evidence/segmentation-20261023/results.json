@@ -1,0 +1,358 @@
+{
+  "baseCommit": "e6b686df0f1c939df7e839da625ebd7f3e33f5cb",
+  "execution": "macOS arm64; sherpa CPU; single-window recognition; warm-up excluded from native decode timing",
+  "sourceAudio": "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/test_wavs/zh.wav",
+  "sourceAudioSHA256": "b77f1794fe374a0ba1ee1dc458bfaf9349496cbbfc32780c50ba3c5a7ad8e373",
+  "vadThreshold": 0.25,
+  "vadMinimumSilenceSeconds": 2,
+  "contextSeconds": 1,
+  "experimentOnlyChange": "In an ignored source copy, allow maximumCoreFrames <= 480000 instead of 320000. Production source is unchanged.",
+  "metrics": "Character-level Levenshtein distance after removing non-letter/non-number characters; public repeated-phrase fixtures only.",
+  "knownPauseVariant": "Uses centers of inserted 300ms pauses from fixture construction, not automatically detected pauses.",
+  "results": [
+    {
+      "contexts": [
+        [
+          39.442,
+          44.508
+        ],
+        [
+          89.458,
+          94.524
+        ]
+      ],
+      "decodeSeconds": 0.25908975,
+      "errors": 2,
+      "fixture": "short-noise",
+      "inputSeconds": 10.132,
+      "referenceCharacters": 26,
+      "selectedSeconds": 10.132,
+      "text": "开饭时间早上9点至下午5点开饭时间早上9点至下午5点",
+      "variant": "20s-pad300",
+      "windows": 2
+    },
+    {
+      "contexts": [
+        [
+          39.442,
+          44.508
+        ],
+        [
+          89.458,
+          94.524
+        ]
+      ],
+      "decodeSeconds": 0.205754583,
+      "errors": 2,
+      "fixture": "short-noise",
+      "inputSeconds": 10.132,
+      "referenceCharacters": 26,
+      "selectedSeconds": 10.132,
+      "text": "开饭时间早上9点至下午5点开饭时间早上9点至下午5点",
+      "variant": "30s-pad300",
+      "windows": 2
+    },
+    {
+      "contexts": [
+        [
+          39.642,
+          44.308
+        ],
+        [
+          89.658,
+          94.324
+        ]
+      ],
+      "decodeSeconds": 0.19353029100000002,
+      "errors": 0,
+      "fixture": "short-noise",
+      "inputSeconds": 9.332,
+      "referenceCharacters": 26,
+      "selectedSeconds": 9.332,
+      "text": "开放时间早上9点至下午5点开放时间早上9点至下午5点",
+      "variant": "20s-pad100",
+      "windows": 2
+    },
+    {
+      "contexts": [
+        [
+          39.742,
+          44.208
+        ],
+        [
+          89.758,
+          94.224
+        ]
+      ],
+      "decodeSeconds": 0.17546866700000002,
+      "errors": 2,
+      "fixture": "short-noise",
+      "inputSeconds": 8.932,
+      "referenceCharacters": 26,
+      "selectedSeconds": 8.932,
+      "text": "开饭时间早上9点至下午5点开饭时间早上9点至下午5点",
+      "variant": "20s-pad0",
+      "windows": 2
+    },
+    {
+      "contexts": [
+        [
+          39.642,
+          44.508
+        ],
+        [
+          89.658,
+          94.524
+        ]
+      ],
+      "decodeSeconds": 0.181219041,
+      "errors": 2,
+      "fixture": "short-noise",
+      "inputSeconds": 9.732,
+      "referenceCharacters": 26,
+      "selectedSeconds": 9.732,
+      "text": "开饭时间早上9点至下午5点开饭时间早上9点至下午5点",
+      "variant": "20s-left100-right300",
+      "windows": 2
+    },
+    {
+      "contexts": [
+        [
+          39.442,
+          44.308
+        ],
+        [
+          89.458,
+          94.324
+        ]
+      ],
+      "decodeSeconds": 0.200490917,
+      "errors": 2,
+      "fixture": "short-noise",
+      "inputSeconds": 9.732,
+      "referenceCharacters": 26,
+      "selectedSeconds": 9.732,
+      "text": "开饭时间早上9点至下午5点开饭时间早上9点至下午5点",
+      "variant": "20s-left300-right100",
+      "windows": 2
+    },
+    {
+      "contexts": [
+        [
+          39,
+          44.592
+        ],
+        [
+          89,
+          94.592
+        ]
+      ],
+      "decodeSeconds": 0.20073033299999998,
+      "errors": 0,
+      "fixture": "short-noise",
+      "inputSeconds": 11.184,
+      "referenceCharacters": 26,
+      "selectedSeconds": 11.184,
+      "text": "开放时间早上9点至下午5点开放时间早上9点至下午5点",
+      "variant": "original-utterance",
+      "windows": 2
+    },
+    {
+      "contexts": [
+        [
+          0.434,
+          21.434
+        ],
+        [
+          19.434,
+          41.434
+        ],
+        [
+          39.434,
+          61.434
+        ],
+        [
+          59.434,
+          81.434
+        ],
+        [
+          79.434,
+          101.434
+        ],
+        [
+          99.434,
+          121.434
+        ],
+        [
+          119.434,
+          134.208
+        ]
+      ],
+      "decodeSeconds": 3.1443664169999996,
+      "errors": 0,
+      "fixture": "long-continuous",
+      "inputSeconds": 145.7739375,
+      "referenceCharacters": 312,
+      "selectedSeconds": 133.774,
+      "text": "开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点",
+      "variant": "20s-pad300",
+      "windows": 7
+    },
+    {
+      "contexts": [
+        [
+          0.434,
+          31.434
+        ],
+        [
+          29.434,
+          61.434
+        ],
+        [
+          59.434,
+          91.434
+        ],
+        [
+          89.434,
+          121.434
+        ],
+        [
+          119.434,
+          134.208
+        ]
+      ],
+      "decodeSeconds": 2.8205401670000003,
+      "errors": 0,
+      "fixture": "long-continuous",
+      "inputSeconds": 141.7739375,
+      "referenceCharacters": 312,
+      "selectedSeconds": 133.774,
+      "text": "开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点",
+      "variant": "30s-pad300",
+      "windows": 5
+    },
+    {
+      "contexts": [
+        [
+          0.434,
+          21.434
+        ],
+        [
+          19.434,
+          41.434
+        ],
+        [
+          39.434,
+          61.434
+        ],
+        [
+          59.434,
+          81.434
+        ],
+        [
+          79.434,
+          101.434
+        ],
+        [
+          99.434,
+          121.434
+        ],
+        [
+          119.434,
+          141.108
+        ],
+        [
+          139.434,
+          141.108
+        ]
+      ],
+      "decodeSeconds": 2.8400371250000003,
+      "errors": 0,
+      "fixture": "long-pauses",
+      "inputSeconds": 154.348,
+      "referenceCharacters": 312,
+      "selectedSeconds": 140.674,
+      "text": "开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点",
+      "variant": "20s-pad300",
+      "windows": 8
+    },
+    {
+      "contexts": [
+        [
+          0.434,
+          31.434
+        ],
+        [
+          29.434,
+          61.434
+        ],
+        [
+          59.434,
+          91.434
+        ],
+        [
+          89.434,
+          121.434
+        ],
+        [
+          119.434,
+          141.108
+        ]
+      ],
+      "decodeSeconds": 2.987889541,
+      "errors": 1,
+      "fixture": "long-pauses",
+      "inputSeconds": 148.6474375,
+      "referenceCharacters": 312,
+      "selectedSeconds": 140.674,
+      "text": "开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点",
+      "variant": "30s-pad300",
+      "windows": 5
+    },
+    {
+      "contexts": [
+        [
+          0.434,
+          18.526
+        ],
+        [
+          16.526,
+          36.202
+        ],
+        [
+          34.202,
+          53.878
+        ],
+        [
+          51.878,
+          71.554
+        ],
+        [
+          69.554,
+          89.23
+        ],
+        [
+          87.23,
+          106.906
+        ],
+        [
+          104.906,
+          124.582
+        ],
+        [
+          122.582,
+          141.108
+        ]
+      ],
+      "decodeSeconds": 2.7564497080000003,
+      "errors": 0,
+      "fixture": "long-pauses",
+      "inputSeconds": 154.674,
+      "referenceCharacters": 312,
+      "selectedSeconds": 140.674,
+      "text": "开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点开放时间早上9点至下午5点",
+      "variant": "20s-known-pauses",
+      "windows": 8
+    }
+  ]
+}

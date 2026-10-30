@@ -1,0 +1,138 @@
+{
+  "date": "2026-10-16",
+  "pen": "../iphone-review-20261015/momoagent-home-suggestions.pen",
+  "assets": [
+    {
+      "file": "references/field-living-memories.jpg",
+      "origin": "https://field.io/work/oppo-living-memories",
+      "author": "FIELD",
+      "usage": "reference-only"
+    },
+    {
+      "file": "references/gmunk-mathographics.jpg",
+      "origin": "https://gmunk.com/Mathographics",
+      "author": "GMUNK",
+      "usage": "reference-only"
+    },
+    {
+      "file": "references/ryoji-ikeda-test-pattern.jpg",
+      "origin": "https://www.ryojiikeda.com/project/testpattern/",
+      "author": "Ryoji Ikeda; installation photograph as credited on source page",
+      "usage": "reference-only"
+    },
+    {
+      "file": "references/tyler-hobbs-flow-fields.jpg",
+      "origin": "https://www.tylerxhobbs.com/words/flow-fields",
+      "author": "Tyler Hobbs",
+      "usage": "reference-only"
+    },
+    {
+      "file": "references/user-card-reference.png",
+      "origin": "User supplied image 2026-10-16",
+      "usage": "reference-only"
+    },
+    {
+      "file": "materials/J9NdA7.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node J9NdA7",
+      "usage": "original-project-artwork",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation.",
+      "revision": "2026-10-16: user selected H01; restrained lilac and sage palette; H02 retained as unselected historical alternative"
+    },
+    {
+      "file": "materials/PL8FL.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node PL8FL",
+      "usage": "original-project-artwork",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation.",
+      "revision": "2026-10-16: user selected H01; restrained lilac and sage palette; H02 retained as unselected historical alternative"
+    },
+    {
+      "file": "materials/fqvSG.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node fqvSG",
+      "usage": "original-project-artwork",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation.",
+      "revision": "2026-10-16: user selected H01; restrained lilac and sage palette; H02 retained as unselected historical alternative"
+    },
+    {
+      "file": "materials/kChIE.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node kChIE",
+      "usage": "original-project-artwork",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation.",
+      "revision": "2026-10-16: user selected H01; restrained lilac and sage palette; H02 retained as unselected historical alternative"
+    },
+    {
+      "file": "materials/rfOp1.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node rfOp1",
+      "usage": "original-project-artwork",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation.",
+      "revision": "2026-10-16: user selected H01; restrained lilac and sage palette; H02 retained as unselected historical alternative"
+    },
+    {
+      "file": "materials/wLyUi.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node wLyUi",
+      "usage": "original-project-artwork",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation.",
+      "revision": "2026-10-16: user selected H01; restrained lilac and sage palette; H02 retained as unselected historical alternative"
+    },
+    {
+      "file": "screens/BlpQQ.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node BlpQQ",
+      "usage": "project-design-review",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation.",
+      "revision": "2026-10-16: user selected H01; restrained lilac and sage palette; H02 retained as unselected historical alternative"
+    },
+    {
+      "file": "screens/GiJ7x.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node GiJ7x",
+      "usage": "project-design-review",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation.",
+      "revision": "2026-10-16: user selected H01; restrained lilac and sage palette; H02 retained as unselected historical alternative"
+    },
+    {
+      "file": "screens/aZemZ.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node aZemZ",
+      "usage": "project-design-review",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation.",
+      "revision": "2026-10-16: user selected H01; restrained lilac and sage palette; H02 retained as unselected historical alternative"
+    },
+    {
+      "file": "screens/jxWEG.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node jxWEG",
+      "usage": "project-design-review",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation.",
+      "revision": "2026-10-16: user selected H01; restrained lilac and sage palette; H02 retained as unselected historical alternative"
+    },
+    {
+      "file": "screens/l8XEC.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node l8XEC",
+      "usage": "project-design-review",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation."
+    },
+    {
+      "file": "screens/lmAUR.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node lmAUR",
+      "usage": "project-design-review",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation."
+    },
+    {
+      "file": "screens/qjiby.png",
+      "origin": "Pen editable geometry/export: ../iphone-review-20261015/momoagent-home-suggestions.pen node qjiby",
+      "usage": "project-design-review",
+      "notes": "Original mathematical dot motifs. Existing project brand and Avatar on home screens. Synthetic example copy. No image generation."
+    }
+  ],
+  "selected_home": "GiJ7x",
+  "local_card_palette": {
+    "lilac": {
+      "surface": "#F1F0F7",
+      "dots": "#868BB4",
+      "text": "#32313D",
+      "secondary": "#6D6A7D"
+    },
+    "sage": {
+      "surface": "#EDF4F0",
+      "dots": "#6E9C8F",
+      "text": "#293831",
+      "secondary": "#5C7368"
+    }
+  }
+}
