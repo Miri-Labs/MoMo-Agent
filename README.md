@@ -23,7 +23,7 @@ English | [简体中文](./README.zh-CN.md)
 
 **MoMo Agent** is an open-source, fully self-hosted **all-day personal agent** built natively for **Apple Watch, iPhone, and Mac**.
 
-It continuously captures your day from your wrist on **Apple Watch** *(AirPods capture is under active development)*, transcribes speech **100% locally and for free on your iPhone**, and syncs over an **embedded Tailscale private network** to your **Mac**, where your personal agent organizes long-term memories and executes real tasks using your existing **OpenAI Codex** or **Claude** subscription.
+It continuously captures your day from your wrist on **Apple Watch** or through a **Bluetooth earphone** connected to your iPhone *(beta)*, transcribes speech **100% locally and for free on your iPhone**, and syncs over an **embedded Tailscale private network** to your **Mac**, where your personal agent organizes long-term memories and executes real tasks using your existing **OpenAI Codex** or **Claude** subscription.
 
 <p align="center">
   <img src="docs/assets/devices-3d-en.png" width="100%" alt="Three-dimensional Apple Watch, iPhone and Mac mini at a shared physical scale: capture, transcribe, and run your personal agent." />
@@ -39,7 +39,7 @@ It continuously captures your day from your wrist on **Apple Watch** *(AirPods c
 - **Embedded Tailscale Private Mesh**: Built-in user-space `tsnet` (`TailscaleKit`) establishes a direct encrypted peer-to-peer tunnel between your iPhone and Mac from anywhere—no public IP, no port forwarding.
 - **24/7 Wearable Capture**:
   - **Apple Watch (Available Now)**: Continuous background recording, automatic chunking, wrist bookmarks, and background `WCSession` delivery to iPhone.
-  - **AirPods (In Development 🚧)**: Seamless hands-free voice capture and ambient context intake via AirPods.
+  - **Bluetooth Earphones (Beta 🧪)**: No Apple Watch? Your iPhone records through any earphone with a Bluetooth hands-free (HFP) microphone. Recording pauses while other audio plays, because iOS cannot record from a third-party earphone and play hi-fi audio at the same time, and resumes automatically when it stops. Tested so far on Shokz OpenMove; AirPods and other earphones are next.
 
 ---
 
@@ -73,7 +73,7 @@ It continuously captures your day from your wrist on **Apple Watch** *(AirPods c
 flowchart LR
     subgraph Wearable["Wearable Capture"]
         W["Apple Watch App\n24/7 Chunked Recording"]
-        A["AirPods Capture\n(In Development)"]
+        A["Bluetooth Earphone\nvia iPhone (Beta)"]
     end
 
     subgraph Phone["iPhone (On-Device ASR & Mobile Hub)"]
@@ -104,7 +104,7 @@ flowchart LR
 
 | Layer | Component | Key Capabilities | Cost |
 | :--- | :--- | :--- | :--- |
-| **Capture** | `MoMoAgentWatch` (`watchOS 10+`) | Always-on recording, live waveform, mute/bookmark, reliable background transfer; AirPods support in progress | **$0** |
+| **Capture** | `MoMoAgentWatch` (`watchOS 10+`) | Always-on recording, live waveform, mute/bookmark, reliable background transfer; Bluetooth earphone capture on iPhone (beta) | **$0** |
 | **On-Device ASR** | `MoMoSpeech` (`iOS 17+` / `macOS 15+`) | Offline SenseVoice (zh/en/ja/ko/yue), dual-stage VAD (libfvad + Silero), speaker embedding & diarization | **$0** |
 | **Archive** | `MoMoArchive` (`SQLite + FTS5`) | Append-only event store, crash-safe recovery, millisecond full-text search, silence-skipping playback | **$0** |
 | **Private Mesh** | `EmbeddedTailnet` (`TailscaleKit`) | User-space WireGuard / Tailscale mesh embedded inside the app; QR-code pairing with 6-digit verification | **$0** (Tailscale Free Plan) |
@@ -180,7 +180,7 @@ MoMo-Agent/
 ### Roadmap
 
 - [x] **v0.0.1** — Apple Watch 24/7 continuous capture, iPhone free offline SenseVoice + speaker diarization, embedded Tailscale private mesh, Mac self-hosted agent powered by Codex / Claude subscription, full English & Simplified Chinese UI, and WebRTC remote desktop.
-- [ ] **AirPods Continuous & Triggered Capture** *(In Progress)* — Hands-free voice memo & ambient conversation capture directly from AirPods.
+- [ ] **Bluetooth Earphone & AirPods Capture** *(Beta)* — All-day iPhone capture through a Bluetooth earphone, tested so far on Shokz OpenMove. Next: AirPods and other earphones, and hands-free triggered voice memos.
 - [ ] **Proactive Agent** — Proactively anticipates needs and solves problems based on your real-world life context.
 - [ ] **Plugin & Skill SDK** — Custom local tools for Apple Notes, Things 3, Obsidian, and local git repositories.
 
