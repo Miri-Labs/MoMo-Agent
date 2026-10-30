@@ -1599,19 +1599,9 @@ extension ArchiveStore {
                    OR second_id IN (SELECT id FROM speaker_clusters WHERE session_id=?)
                 """, [sid, sid])
             try database.execute("DELETE FROM speaker_clusters WHERE session_id=?", [sid])
-            if let old, !old.spans.isEmpty {
-                try storeDocument(
-                    TranscriptDocument(
-                        sessionID: sessionID,
-                        version: old.version + 1,
-                        generation: old.generation,
-                        spans: [],
-                        updatedAt: Date()),
-                    invalidatesExistingSources: true)
-            }
-            try database.execute("UPDATE analysis_windows SET state='pending',attempt_id=NULL,raw_result=NULL WHERE session_id=? AND state='complete'", [sid])
-            try database.execute("UPDATE transcription_jobs SET state='pending',attempt_id=NULL,error_code=NULL WHERE chunk_id IN (SELECT id FROM chunks WHERE session_id=?) AND state='complete'", [sid])
-            try database.execute("DELETE FROM processing_failures WHERE session_id=?", [sid])
+            // Re-planned from audio once the active configuration is known; resetting windows in
+            // place would strand carried windows whose IDs the planner cannot rebuild.
+            try requestAnalysisReplan(sessionID: sessionID)
         }
     }
 
@@ -1903,19 +1893,9 @@ extension ArchiveStore {
                    OR second_id IN (SELECT id FROM speaker_clusters WHERE session_id=?)
                 """, [sid, sid])
             try database.execute("DELETE FROM speaker_clusters WHERE session_id=?", [sid])
-            if let old = try currentTranscriptOrNil(sessionID: sessionID), !old.spans.isEmpty {
-                try storeDocument(
-                    TranscriptDocument(
-                        sessionID: sessionID,
-                        version: old.version + 1,
-                        generation: old.generation,
-                        spans: [],
-                        updatedAt: Date()),
-                    invalidatesExistingSources: true)
-            }
-            try database.execute("UPDATE analysis_windows SET state='pending',attempt_id=NULL,raw_result=NULL WHERE session_id=? AND state='complete'", [sid])
-            try database.execute("UPDATE transcription_jobs SET state='pending',attempt_id=NULL,error_code=NULL WHERE chunk_id IN (SELECT id FROM chunks WHERE session_id=?) AND state='complete'", [sid])
-            try database.execute("DELETE FROM processing_failures WHERE session_id=?", [sid])
+            // Re-planned from audio once the active configuration is known; resetting windows in
+            // place would strand carried windows whose IDs the planner cannot rebuild.
+            try requestAnalysisReplan(sessionID: sessionID)
         }
     }
 

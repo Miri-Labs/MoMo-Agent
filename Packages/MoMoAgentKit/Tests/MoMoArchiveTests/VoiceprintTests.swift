@@ -366,6 +366,7 @@ struct VoiceprintTests {
 
         try await store.simulateBuild16PreV4State(sessions: [unconfirmedBuild16.sessionID, confirmedBuild16.sessionID])
         try await store.upgradeSpeakerProfilesIfNeeded()
+        try await replanAndAnalyze(fixture: unconfirmedBuild16, store: store)
 
         // Confirmed Build 16 session keeps 100% of its spans and labels untouched.
         let preserved = try await store.readTranscript(sessionID: confirmedBuild16.sessionID)
@@ -483,6 +484,7 @@ struct VoiceprintTests {
         // Trigger v6 upgrade: snapshots anchors and re-queues all 6 windows of the retained legacy session.
         try await store.simulatePreV6State()
         try await store.upgradeSpeakerProfilesIfNeeded()
+        try await replanAndAnalyze(fixture: fixture, store: store)
         let afterReset = try await store.readTranscript(sessionID: fixture.sessionID)
         #expect(afterReset.spans.isEmpty)
 
@@ -608,6 +610,37 @@ struct VoiceprintTests {
         #expect(rematchedHistory.spans[0].speaker == "小陈")
         #expect(rematchedHistory.spans[1].speaker == "小陈")
         #expect(rematchedHistory.spans[2].speaker != "小陈")
+    }
+
+    /// A requeued session is re-planned from audio; stand in for the analysis pass with one window per chunk.
+    private func replanAndAnalyze(fixture: Fixture, store: ArchiveStore) async throws {
+        let fingerprint = ContentHash.sha256(Data("voiceprint-window".utf8))
+        _ = try await store.replanRequestedAnalysis(configurationFingerprint: fingerprint)
+        let generation = try await store.readTranscript(sessionID: fixture.sessionID).generation
+        var replayed = false
+        while let ticket = try await store.claimEpochAnalysis(configurationFingerprint: fingerprint,
+                                                              sessionID: fixture.sessionID, expectedGeneration: generation) {
+            if !replayed { #expect(ticket.checkpoint == nil) }
+            replayed = true
+            let lower = ticket.checkpoint?.sourceFrame ?? 0
+            let upper = min(try #require(ticket.inputs.last).envelope.manifest.frames.end, ticket.boundary.endFrame ?? .max)
+            let windows = try ticket.inputs.filter { $0.envelope.manifest.frames.start >= lower && $0.envelope.manifest.frames.end <= upper }.map { input in
+                let manifest = input.envelope.manifest, frames = manifest.frames
+                // One window per chunk, anchored at its own chunk like the original append.
+                let model = try FrameRange(start: 0, count: frames.count)
+                return ArchiveAnalysisWindow(id: ContentHash.sha256(Data("\(fixture.sessionID)-\(frames.start / 64_000)".utf8)),
+                    sessionID: fixture.sessionID, epochID: fixture.epochID, analysisAnchor: frames.start, coreFrames: frames, contextFrames: frames,
+                    modelCoreFrames: model, modelContextFrames: model,
+                    sources: [.init(chunkID: manifest.chunkID, manifestSHA256: input.envelope.manifestSHA256,
+                                    audioSHA256: manifest.audioSHA256, sourceFrames: frames)],
+                    configurationFingerprint: fingerprint)
+            }
+            try await store.commitAnalysisBatch(ticket: ticket, windows: windows,
+                analyzedCoverage: [try FrameRange(start: lower, count: upper - lower)], noSpeechCoverage: [],
+                checkpoint: ArchiveCheckpoint(sessionID: fixture.sessionID, epochID: fixture.epochID,
+                    sourceFrame: upper, configurationFingerprint: fingerprint), waitingForMoreAudio: true)
+        }
+        #expect(replayed)
     }
 
     private func append(_ embedding: [Float], fixture: Fixture, store: ArchiveStore, index: Int,

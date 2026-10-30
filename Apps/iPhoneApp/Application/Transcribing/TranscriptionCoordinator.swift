@@ -590,6 +590,8 @@ public actor TranscriptionCoordinator {
         for previous in speech.previousConfigurationFingerprints {
             try await archive.preserveCompletedAnalysis(from: previous, to: speech.configurationFingerprint)
         }
+        // After preservation, so re-planned epochs are not refilled with carried results.
+        try await archive.replanRequestedAnalysis(configurationFingerprint: speech.configurationFingerprint)
         // Reopen low-volume October 27–28 audio skipped before causal VAD P98 envelope normalization.
         let oct27Interval = DateInterval(start: Date(timeIntervalSince1970: 1_793_102_400),
                                          end: Date(timeIntervalSince1970: 1_793_174_400))
