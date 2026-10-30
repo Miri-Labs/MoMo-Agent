@@ -1,0 +1,24 @@
+{
+  "runID": "6A5A4D16-1EF5-429B-8125-6074FBBDAC12",
+  "suite": "context",
+  "repetition": 1,
+  "selectedCases": [
+    "personal-assistant-memory",
+    "recent-recording",
+    "untrusted-transcript"
+  ],
+  "model": "anthropic/claude-sonnet-4.6",
+  "provider": "https://openrouter.ai/api/v1",
+  "networkRoute": "system",
+  "simulator": "18713DF1-4D1F-4E95-A751-4117A9B1944F",
+  "accepted": false,
+  "semanticReviewStatus": "pending",
+  "automatedChecksPassed": false,
+  "credentialFileRemoved": true,
+  "keychainCleanupPassed": true,
+  "hostStopped": true,
+  "testProcessDeadlineSeconds": 900,
+  "cleanupProcessDeadlineSeconds": 180,
+  "exitCode": 65,
+  "scenarioCount": 3
+}

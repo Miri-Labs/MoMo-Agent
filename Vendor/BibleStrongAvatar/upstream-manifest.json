@@ -1,0 +1,127 @@
+{
+  "repository": "https://github.com/smontlouis/bible-strong-avatar-lab",
+  "commit": "79fe9ba06e4874b11394b8e8a3f2c493c9d197ba",
+  "license": "AGPL-3.0-only",
+  "files": [
+    {
+      "path": "LICENSE",
+      "bytes": 34523,
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    },
+    {
+      "path": "package.json",
+      "bytes": 2528,
+      "sha256": "2c070e94decf6c3c7289cd9fbe763b3e5c18fe14ec0d6618d4fb34da201e23ba"
+    },
+    {
+      "path": "packages/avatar-core/LICENSE",
+      "bytes": 34523,
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    },
+    {
+      "path": "packages/avatar-core/package.json",
+      "bytes": 1726,
+      "sha256": "d5602b117f46c149945b8b481f41c69013efed817c84f3621efee704683e23b4"
+    },
+    {
+      "path": "packages/avatar-core/src/__tests__/core-test.ts",
+      "bytes": 12658,
+      "sha256": "debff054a55f6f180a7552c0dd1c46d059020bbaf6814ef86d69e377162f19f6"
+    },
+    {
+      "path": "packages/avatar-core/src/ambientMotion.ts",
+      "bytes": 4317,
+      "sha256": "da4221fd8fae33740c8ab5dcaa632017e048eb99e4fe479c83a9d212497eb8b8"
+    },
+    {
+      "path": "packages/avatar-core/src/avatarDefinition.schema.json",
+      "bytes": 8236,
+      "sha256": "ab0d6d575ce400c0b48f6a3a9728519342f007abcc19ce99dc775d8471f3d711"
+    },
+    {
+      "path": "packages/avatar-core/src/avatarDefinition.ts",
+      "bytes": 16250,
+      "sha256": "627ee0dbf6975f718b9727ddbb7f59354bff9cb8b8979f1f7901e7791dded268"
+    },
+    {
+      "path": "packages/avatar-core/src/body.ts",
+      "bytes": 4057,
+      "sha256": "0b3574de6d33a19ad12ba440d9ee7cb230db0ab2fb814a1750b73f1f84e12078"
+    },
+    {
+      "path": "packages/avatar-core/src/geometry.ts",
+      "bytes": 45243,
+      "sha256": "91cf1b92bf2e61788f85c36c349de64b383089377b4478e82a645769c94b5ff2"
+    },
+    {
+      "path": "packages/avatar-core/src/index.ts",
+      "bytes": 194,
+      "sha256": "56cc16aa070f227c8d3354fe36301f890e625f693f98e41e77f937358cc95ee7"
+    },
+    {
+      "path": "packages/avatar-core/src/runtime.ts",
+      "bytes": 12217,
+      "sha256": "0050a4f27709ed52a8533086b5a3ba5803aa2a9959f1b68a14b70a00630a8273"
+    },
+    {
+      "path": "packages/avatar-core/src/scene.ts",
+      "bytes": 2688,
+      "sha256": "ee85fb79f34bd3bff7c21350c49d3ca2faf45ad714cb02a26b65fd31c0f4c108"
+    },
+    {
+      "path": "packages/avatar-core/src/surfaces.ts",
+      "bytes": 21831,
+      "sha256": "3d0ef8788ca97b7bb363e90865d4482c2e99662538d6d1661567b7b571e58b2c"
+    },
+    {
+      "path": "packages/avatar-core/tsconfig.build.json",
+      "bytes": 235,
+      "sha256": "63dd31848319e3ed95f55a05e3b6ca50792ba3593b516472b9ae844f8fc13cec"
+    },
+    {
+      "path": "packages/avatar-core/tsconfig.json",
+      "bytes": 347,
+      "sha256": "a9af60d0341fa5467b27dfe3ac7b178d9303872fedce8f8e0c19a25d7a1f9be9"
+    },
+    {
+      "path": "packages/avatar-core/vite.config.ts",
+      "bytes": 1147,
+      "sha256": "081280dd8a7e2fab653ba452d64b15cdae1cd0ea8ffa46b1f78a58b2bfe86792"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "bytes": 87561,
+      "sha256": "1f6a8a3b004dbafe32be2db0cd8740332ae8d82ec0b1d41bd86cdd365e0665a1"
+    },
+    {
+      "path": "scripts/generate-standalone-engine.mjs",
+      "bytes": 1376,
+      "sha256": "ba81bb809f04d12693341a64ac4627473780db903207ebc703648314ad368779"
+    },
+    {
+      "path": "src/features/avatar/ambientMotion.ts",
+      "bytes": 42,
+      "sha256": "93ddd57b7f60842ca82300a9126b3902edad7583a9a0500c93f011926c2f7977"
+    },
+    {
+      "path": "src/features/avatar/geometry.ts",
+      "bytes": 42,
+      "sha256": "93ddd57b7f60842ca82300a9126b3902edad7583a9a0500c93f011926c2f7977"
+    },
+    {
+      "path": "src/features/export/proceduralBrowserRuntime.ts",
+      "bytes": 18048,
+      "sha256": "45526351c083c4bad52ab233510cfb623c20237d0df3b634a94250d879731dde"
+    },
+    {
+      "path": "src/features/export/standaloneEngine.entry.ts",
+      "bytes": 239,
+      "sha256": "b5834ec3fb852a2cdb643a0e4705ae026a156f6b701faad97847d842d2dbb2df"
+    },
+    {
+      "path": "src/features/export/standaloneEngine.generated.ts",
+      "bytes": 19071,
+      "sha256": "9471252ab407ff38f1b6a7e78ee50f2d39054a0ccb50ca8ffa6d80a332a06b21"
+    }
+  ]
+}

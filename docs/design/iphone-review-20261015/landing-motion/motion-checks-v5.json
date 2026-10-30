@@ -1,0 +1,124 @@
+{
+  "checkedAt": "2026-10-16",
+  "normal": {
+    "early": false,
+    "frames": 1344,
+    "premature": 0,
+    "stages": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "state": {
+      "avatarActive": false,
+      "avatarCount": 1,
+      "completed": true,
+      "entered": false,
+      "episodesSeen": [
+        0,
+        1,
+        2
+      ],
+      "homeAnimating": false,
+      "homeProgress": 0,
+      "homeVelocity": 0,
+      "phaseTime": 16.60000000000582,
+      "primaryDisabled": false,
+      "primaryVisible": true,
+      "progress": 3,
+      "reduced": false,
+      "scenario": 2,
+      "settled": true,
+      "sourceOpen": false,
+      "target": 3,
+      "visited": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "width": 393
+    }
+  },
+  "narrow": {
+    "button": {
+      "bottom": 675.0890502929688,
+      "height": 44.198486328125,
+      "left": 19.54198455810547,
+      "right": 300.45800018310547,
+      "top": 630.8905639648438,
+      "width": 280.916015625,
+      "x": 19.54198455810547,
+      "y": 630.8905639648438
+    },
+    "early": false,
+    "scrollWidth": 320,
+    "state": {
+      "avatarActive": false,
+      "avatarCount": 1,
+      "completed": true,
+      "entered": false,
+      "episodesSeen": [
+        0,
+        1,
+        2
+      ],
+      "homeAnimating": false,
+      "homeProgress": 0,
+      "homeVelocity": 0,
+      "phaseTime": 0,
+      "primaryDisabled": false,
+      "primaryVisible": true,
+      "progress": 3,
+      "reduced": true,
+      "scenario": 2,
+      "settled": true,
+      "sourceOpen": false,
+      "target": 3,
+      "visited": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "width": 320
+    }
+  },
+  "dark": {
+    "button": {
+      "background": "rgb(242, 242, 242)",
+      "color": "rgb(22, 22, 22)"
+    },
+    "state": {
+      "avatarActive": false,
+      "avatarCount": 1,
+      "completed": true,
+      "entered": true,
+      "episodesSeen": [
+        0,
+        1,
+        2
+      ],
+      "homeAnimating": false,
+      "homeProgress": 1,
+      "homeVelocity": 0,
+      "phaseTime": 0,
+      "primaryDisabled": true,
+      "primaryVisible": false,
+      "progress": 3,
+      "reduced": true,
+      "scenario": 2,
+      "settled": true,
+      "sourceOpen": false,
+      "target": 3,
+      "visited": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "width": 320
+    }
+  }
+}

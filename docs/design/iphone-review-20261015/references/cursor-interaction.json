@@ -1,0 +1,26 @@
+{
+  "filtered": {
+    "url": "https://cursor.com/agents",
+    "query": "Claude",
+    "items": [
+      "Claude Opus 5.5 Medium\n\nEdit",
+      "Claude Opus 5 High",
+      "Claude Opus 4.8 High",
+      "Claude Fable 5.1 High",
+      "Claude Fable 5 High",
+      "Claude Sonnet 5.5 High",
+      "Claude Sonnet 5 High",
+      "Claude Sonnet 4.6 Medium",
+      "Claude Opus 4.7 Extra High",
+      "Claude Opus 4.6 High",
+      "Claude Opus 4.5",
+      "Claude Haiku 5.5 High",
+      "Claude Haiku 4.5",
+      "Claude Sonnet 4.5",
+      "Claude Sonnet 4 No Thinking"
+    ]
+  },
+  "context": "[p4 \"Cursor Agent - Turn your ideas into code\" | space \"MoMoAgent iPhone design review\"(2): 4 managed, 0 untracked — p1 \"MoMoAgent · iPhone 草稿 review\", p2 \"Claude Design System (CDS) - Storybook\", p3 \"ChatGPT: Chat, Work, Create & Code with AI\", p4* \"Cursor Agent - Turn your ideas into code\"]\nroot\n  container\n    container\n      button \"Open navigation\" [ref=53, loc=css:button[aria-label=\"Open navigation\"]]\n        text \"\"\n      button \"User menu\" [ref=54, loc=css:button[aria-label=\"User menu\"]]\n        image\n    container\n      container\n        button [ref=45]\n          text \"Cloud Agents requires a Premium Account\"\n          text \"\"\n        form\n          container\n            paragraph\n            text \"Ask Cursor to build, fix bugs, explore\"\n          container\n            button \"Add context and tools\" [ref=46, loc=css:button[aria-label=\"Add context and tools\"]]\n              text \"\"\n            container\n              button [ref=47]\n                text \"Grok 4.7 High Fast​​\"\n                text \"\"\n              text \"Cmd + /\"\n            button \"Send message\" [ref=48, loc=css:button[aria-label=\"Send message\"]]\n              svg_root\n      container \"Cursor Learn\"\n        text \"\"\n        container\n          text \"Cursor Learn\"\n          text \"Learn the foundations and practical patterns for building software with AI\"\n        button [ref=49, loc=href:/learn, url=https://cursor.com/learn]\n          text \"Start Learning\"\n      container\n        container\n          button \"Search\" [ref=50, loc=css:button[aria-label=\"Search\"]]\n            svg_root\n          textbox \"Search agents...\" [ref=51, loc=css:input[placeholder=\"Search agents...\"]]\n        button \"Filter agents by source\" [ref=55, loc=css:button[aria-label=\"Filter agents by source\"]]\n          text \"\"\n  menu [ref=81]\n    menu \"Add context and tools\"\n      unordered_list\n        group\n          menuitem [ref=82]\n            text \"\"\n            container\n              text \"Multitask\"\n              text \"Orchestrate multiple subagents in parallel\"\n        group\n          menuitem [ref=83]\n            text \"\"\n            text \"Files\"\n          menuitem [ref=84]\n            text \"\"\n            text \"Skills\"\n            text \"\"\n          menuitem [ref=85]\n            text \"\"\n            text \"MCP Servers\"\n            text \"\"\n",
+  "selectionChanged": false,
+  "taskSubmitted": false
+}

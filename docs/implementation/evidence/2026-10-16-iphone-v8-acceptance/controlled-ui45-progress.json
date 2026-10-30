@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-15T20:06:32.558035+00:00",
+  "scope": "Completed 375pt-controlled-ui45 App journeys and independent persisted-state reports. No tests or checker rerun during evidence assembly. Earlier44 failures/results remain unchanged.",
+  "ui": {
+    "executed": 3,
+    "passed": 3,
+    "failed": 0,
+    "xctestSeconds": 183.228,
+    "xcodeReportedElapsedSeconds": 190.196,
+    "deviceWidthPoints": 375,
+    "cases": [
+      {
+        "scenario": "stop-regenerate-retry",
+        "runID": "A1F5E81A-B773-42B6-A04B-A52172A14237",
+        "uiPassed": true,
+        "uiXCTestSeconds": 68.313,
+        "checkerPassed": 35,
+        "checkerExecuted": 35,
+        "metrics": {
+          "validatedSources": 2,
+          "sourceChunks": 2,
+          "rawUserInputs": 3,
+          "logicalUserQuestions": 1,
+          "durableInputAdmissions": 3
+        }
+      },
+      {
+        "scenario": "interrupted-citation",
+        "runID": "7DB6AAAE-284F-4A39-9767-6F825CAA8502",
+        "uiPassed": true,
+        "uiXCTestSeconds": 64.072,
+        "checkerPassed": 31,
+        "checkerExecuted": 31,
+        "metrics": {
+          "validatedSources": 2,
+          "sourceChunks": 2,
+          "rawUserInputs": 2,
+          "logicalUserQuestions": 1,
+          "durableInputAdmissions": 2
+        }
+      },
+      {
+        "scenario": "cancel-before-body",
+        "runID": "0DDDAFEB-969D-4679-A04A-A1C2D906826E",
+        "uiPassed": true,
+        "uiXCTestSeconds": 50.843,
+        "checkerPassed": 27,
+        "checkerExecuted": 27,
+        "metrics": {
+          "validatedSources": 2,
+          "sourceChunks": 2,
+          "rawUserInputs": 1,
+          "logicalUserQuestions": 1,
+          "durableInputAdmissions": 1,
+          "assistantMessages": 0
+        }
+      }
+    ]
+  },
+  "rawSources": [
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-controlled-ui45.log",
+      "bytes": 64262,
+      "sha256": "cc3a163e6ca204bbd8d09d1de72d466dde165ae80849acc285c61f6edf0771f0"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-controlled-ui45-attachments/manifest.json",
+      "bytes": 23785,
+      "sha256": "a57fe445fd5fda6c1bb0c67c1b15ae6eaae2a696088fc936b842fd94d26d8853"
+    }
+  ],
+  "snapshotContainer": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui45-snapshot-container",
+  "newFirstBodyCancellation": {
+    "runID": "0DDDAFEB-969D-4679-A04A-A1C2D906826E",
+    "durableInputAdmissions": 1,
+    "assistantMessages": 0,
+    "logicalUserQuestions": 1,
+    "scope": "An admitted request receives headers but is cancelled before body delivery; metadata remains cancelled, unanswered submission is aborted, local draft survives restart and restart adds no request. This is not a pre-admission cancellation test.",
+    "persistedChecks": "Actual independent checker C27/27, beyond prior synthetic controls."
+  },
+  "visualReview": {
+    "status": "representative-exported-screenshots-read",
+    "observations": [
+      "A stopped reply remains visible with the new unsent draft and no visible stopped-status error.",
+      "A formal native citation player is playing the cited five-second range; screenshot alone is not acoustic listening evidence.",
+      "Expired source text remains readable and original-audio expiry is explained, with disabled playback. The captured card still displays the waveform preparation placeholder; no claim that this placeholder was removed.",
+      "C after relaunch shows the one original user question and unsent local draft, without any assistant answer."
+    ],
+    "scope": "Four representative actual screenshots, not a complete visual matrix or all navigation captures."
+  },
+  "portableArtifacts": [
+    {
+      "kind": "read-only-persisted-evidence-report",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui45-checker-a.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui45-checker-ab-040440/ledger-a.json",
+      "bytes": 5249,
+      "sha256": "beb715abf55fe20aba627db9bd50d1e7fb10f85361b4e1555847e58225c4f753"
+    },
+    {
+      "kind": "read-only-persisted-evidence-report",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui45-checker-b.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui45-checker-ab-040440/ledger-b.json",
+      "bytes": 4708,
+      "sha256": "4eb13b4bcbf27b6662e872a9e9239308776d2764e1a0afebb29480887c210d06"
+    },
+    {
+      "kind": "read-only-persisted-evidence-report",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui45-checker-c.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui45-checker-c-040247/ledger-c.json",
+      "bytes": 4568,
+      "sha256": "75b2e46ec920f1c3127e58371743d8fd019c7d909a217d092651ab0576082e84"
+    },
+    {
+      "kind": "checker-summary",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui45-checker-ab-summary.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui45-checker-ab-040440/summary.json",
+      "bytes": 5492,
+      "sha256": "0f48fed8adce79895f00530d3006a969b8aeb345821ed29fa281a69f4e94754a"
+    },
+    {
+      "kind": "checker-summary",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui45-checker-c-summary.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui45-checker-c-040247/summary.json",
+      "bytes": 2672,
+      "sha256": "2d2ad95370fa7446bf603d35fe4ebaaa8d9179af0845f4a8748abf7b49f37732"
+    },
+    {
+      "kind": "simulator-screenshot",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui45-source-playing.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-controlled-ui45-attachments/6C2F2D78-50F0-40BD-A5ED-5656A50D9F78.png",
+      "bytes": 80874,
+      "sha256": "37e07c14d6b5e7e9be30e999d03597f48d33e4eda7f55c02ebe3e441a87923fa"
+    },
+    {
+      "kind": "simulator-screenshot",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui45-expired-source.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-controlled-ui45-attachments/7D10B928-5394-4E4C-BB41-CAC78E2E543C.png",
+      "bytes": 90057,
+      "sha256": "440de0be600007b5c2cf309c9da8836ad23383dfc6f2992523e7c393112474c7"
+    },
+    {
+      "kind": "simulator-screenshot",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui45-stopped-with-draft.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-controlled-ui45-attachments/94DB11CF-CCB4-48EE-A2B4-B2E990C3E482.png",
+      "bytes": 107664,
+      "sha256": "750a9b14542c4ff7d7cc91397570c137acdbd4b8d7de999e9ae0cd9ca89e47c0"
+    },
+    {
+      "kind": "simulator-screenshot",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui45-no-body-cancel-relaunched.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-controlled-ui45-attachments/41E0F286-DE58-469E-B0A3-5FF57FDC2E1D.png",
+      "bytes": 58733,
+      "sha256": "0d9ce29b4fa6e8fe2c408aeaf91b168fe39f759759be0d073bd3fca3708899cc"
+    }
+  ],
+  "limits": [
+    "Controlled URLProtocol uses synthetic responses with formal Pi/Archive; no paid model/API or live acoustic/ASR quality conclusion.",
+    "35/31/27 are persisted checks, not extra UI cases. Three UI cases are not the complete220-case acceptance plan.",
+    "Reduce Motion46 and final Release are outside this report."
+  ],
+  "privacy": "Copied only safe reports/metrics/hashes and synthetic-fixture screenshots; no credential files, raw audio, raw database or private model content copied."
+}

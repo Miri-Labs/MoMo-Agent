@@ -1,0 +1,47 @@
+{
+  "results": [
+    {
+      "scenario": "stop-regenerate-retry",
+      "exitCode": 0,
+      "status": "passed",
+      "checks": 35,
+      "nonPassing": [],
+      "metrics": {
+        "validatedSources": 2,
+        "sourceChunks": 2,
+        "rawUserInputs": 3,
+        "logicalUserQuestions": 1,
+        "durableInputAdmissions": 3
+      },
+      "report": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui44-checker-03-035853/ledger-a.json",
+      "reportSHA256": "790b555e508602cfcba05bb0f095aeb720db2181f50d317e32a8409b245100ca"
+    },
+    {
+      "scenario": "interrupted-citation",
+      "exitCode": 0,
+      "status": "passed",
+      "checks": 31,
+      "nonPassing": [],
+      "metrics": {
+        "validatedSources": 2,
+        "sourceChunks": 2,
+        "rawUserInputs": 2,
+        "logicalUserQuestions": 1,
+        "durableInputAdmissions": 2
+      },
+      "report": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui44-checker-03-035853/ledger-b.json",
+      "reportSHA256": "98a4e31e34c1933108ab100f13e45c4f68f6af9b4b6916b86320a9047b51416f"
+    }
+  ],
+  "selftestsExitCode": 0,
+  "selftestsCount": 15,
+  "diffCheckExitCode": 0,
+  "originalFailureSHA256": "263ce9d6d36be96a06476da306497e46614623a8770930bb4c5db762da6c962a",
+  "originalFailureUnchanged": true,
+  "sourceHashes": {
+    "Tests/Support/verify-controlled-ui-ledger.py": "6333ccba9243b3538c823ebaa368cd5b720a33724834785f67e02f83c2a0fa73",
+    "Tests/Support/test-verify-controlled-ui-ledger.py": "970172e20bf888deba2450fb256de335b4ad2ee19df90e95007636c1333620c0"
+  },
+  "sourceHashesUnchanged": true,
+  "cancelBeforeBody": "checker synthetic positive and negative controls passed; no actual run supplied yet"
+}

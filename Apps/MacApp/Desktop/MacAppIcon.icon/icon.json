@@ -1,0 +1,22 @@
+{
+  "fill" : {
+    "solid" : "srgb:0.09020,0.09020,0.09020,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "momo-foreground.svg",
+          "name" : "MoMo"
+        }
+      ],
+      "specular" : false
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}

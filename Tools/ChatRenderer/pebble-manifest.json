@@ -1,0 +1,10 @@
+{
+  "width": 64,
+  "height": 56,
+  "columns": 16,
+  "frames": 174,
+  "fps": 30,
+  "sourceSHA256": "39d140dd5ba7115e0f478309d7665d8becfd7eb9aa21db96d7e4e15caef5108f",
+  "atlasSHA256": "8109fadac904f840c86eeabb0f7f7e167f6737b0e8602e07b65eb6a5a874e2de",
+  "stillSHA256": "138093bad27e9d42749a72d74ed5abfee206fae7c8e1ec76e1ebbbaf440fe03c"
+}

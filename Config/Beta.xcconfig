@@ -1,0 +1,11 @@
+#include "App.xcconfig"
+
+// Separate identities and storage let Beta coexist with the installed release.
+MOMO_PHONE_BUNDLE_ID = com.momoagent.ios.beta
+MOMO_MAC_BUNDLE_ID = com.momoagent.mac.beta
+MOMO_APP_DISPLAY_NAME = MoMo Agent Beta
+MOMO_WATCH_APP_GROUP = group.com.momoagent.watch.beta
+MOMO_WATCH_WIDGET_KIND = com.momoagent.watch.beta.capture
+MOMO_WATCH_URL_SCHEME = momoagent-beta
+MOMO_MAC_DATA_FOLDER = MoMoAgent Beta
+MOMO_MAC_LOCAL_PORT = 8775

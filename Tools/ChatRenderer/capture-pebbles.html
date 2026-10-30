@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Brand pebble atlas generator</title>
+<canvas width="64" height="56"></canvas>
+<script type="module">
+// Build-only: copy this HTML and the pinned Three module into the capture directory.
+import * as THREE from './three.module.min.js';
+import {createPebbleRenderer} from '/Tools/ChatRenderer/pebble-source.mjs';
+window.renderPebbleFrame = createPebbleRenderer(THREE, document.querySelector('canvas'));
+window.renderPebbleFrame(0);
+</script>
+</html>

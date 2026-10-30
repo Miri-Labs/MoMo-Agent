@@ -1,0 +1,437 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-15T20:03:27.451757+00:00",
+  "scope": "Build44 results and the explicitly listed build45 results only. No native test or checker was rerun while assembling this report. Original build41–43 report and all earlier failures remain unchanged.",
+  "rawSources": [
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/ios-build44.log",
+      "bytes": 183698,
+      "sha256": "fad5fc8517789691639d7aab4f2e13c471326cd4e99704a9a5dde79240ddb113"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/ios-build45.log",
+      "bytes": 206711,
+      "sha256": "0b2627c2a09c1fc71f7ed95934d56ce20257628962e8275f6efaf0955f84e6eb"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/reading-full44.log",
+      "bytes": 70229,
+      "sha256": "8b6d1303e0b03a013c1f4cf6846eeb7054c5997dee09a0d813e10bee267dbb3d"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/reading-full45-repeat.log",
+      "bytes": 188282,
+      "sha256": "befa11e9d822e71794afd550f5956e88ee8ee143ed8105a104862381d89651dd"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui44.log",
+      "bytes": 47842,
+      "sha256": "bf4381d9c74a8320a6607759a085495c24eedab4190b4d9c63724a1f452101b8"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility44.log",
+      "bytes": 20198,
+      "sha256": "00bfed3ddf1bb4f9bcef2b2ccde42cf03f059d7b172d7685b4c80f426f401698"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility45.log",
+      "bytes": 14000,
+      "sha256": "95e4b817534a96d1a6d82a3bf462c66ffc4f83a659bbd544a90bafcecad6c559"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility44-attachments/manifest.json",
+      "bytes": 9201,
+      "sha256": "dc6195d1adeb8036441274ec69878222ae62916004e3787b895da370e008d821"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility45-attachments/manifest.json",
+      "bytes": 12569,
+      "sha256": "b0f78a53e13a4c05e534c98f3ea02fb51dde6fd6009a7206a92fd5cead4d6a2f"
+    }
+  ],
+  "sourceInputs": [
+    {
+      "build": 44,
+      "fileCount": 610,
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build44-source-inputs.json",
+      "beforeAfterVerification": "Root build owner reported all 610 inputs unchanged; portable file is the pre-build snapshot, not an independently generated after snapshot."
+    },
+    {
+      "build": 45,
+      "fileCount": 610,
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build45-source-inputs.json",
+      "beforeAfterVerification": "Root build owner reported two authorized Python checker-script edits during compilation; other Swift/Web/project inputs remained frozen. The Python scripts are not Xcode build inputs. Do not claim all 610 entries unchanged.",
+      "authorizedConcurrentEdits": [
+        "Tests/Support/verify-controlled-ui-ledger.py",
+        "Tests/Support/test-verify-controlled-ui-ledger.py"
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "id": "build44",
+      "status": "test-build-succeeded"
+    },
+    {
+      "id": "reading-full44",
+      "uniqueTests": 23,
+      "executed": 23,
+      "passed": 22,
+      "failedTests": 1,
+      "reportedFailures": 2,
+      "reportedUnexpectedFailures": 1,
+      "xctestSeconds": 30.294,
+      "suites": [
+        {
+          "name": "ChatRenderer",
+          "passed": 9,
+          "executed": 10
+        },
+        {
+          "name": "LibraryPagination",
+          "passed": 10,
+          "executed": 10
+        },
+        {
+          "name": "TimelineReading",
+          "passed": 3,
+          "executed": 3
+        }
+      ],
+      "failure": "Cancelled-touch test issued scroll-to-top after only the immediate DOM bottom return, before the first real native scroll/scrollend and bridge settled. It failed before touchstart/touchcancel. Build45 changes only its precondition to require new bridge, native scroll/scrollend and DOM/native position agreement; no product scrolling change."
+    },
+    {
+      "id": "controlled-ui44",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "xctestSeconds": 140.466,
+      "cases": [
+        {
+          "scenario": "interrupted-citation",
+          "seconds": 70.026
+        },
+        {
+          "scenario": "stop-regenerate-retry",
+          "seconds": 70.439
+        }
+      ],
+      "scope": "Actual whole-App UI with controlled URLProtocol and formal Pi/Archive paths; not an external model quality, ASR or acoustic acceptance run."
+    },
+    {
+      "id": "controlled-ui44-original-checker",
+      "status": "failed",
+      "preserved": true,
+      "report": "controlled-ui44-checker-a-original-failure.json",
+      "failedChecks": [
+        "stream_3_ordered_terminal",
+        "ledger_schema_and_identity"
+      ],
+      "cause": "Expected http-503 terminal; actual headers-503 and 40-byte fixture body were followed by client cancellation during HTTP-error handling."
+    },
+    {
+      "id": "controlled-ui44-checker03",
+      "status": "passed",
+      "scenarioAChecks": 35,
+      "scenarioBChecks": 31,
+      "selftests": {
+        "passed": 15,
+        "executed": 15,
+        "scope": "Synthetic checker controls, not extra App journeys. ResourceWarning for unclosed test databases remains in the raw selftest log."
+      },
+      "serverSequence3": {
+        "events": [
+          "request",
+          "headers-503",
+          "body",
+          "cancelled"
+        ],
+        "bodyBytesDeliveredByFixture": 40
+      },
+      "independentPiDiagnostic": {
+        "entryID": 18,
+        "type": "pi.transport_failure.v1",
+        "kind": "http",
+        "httpStatus": 503,
+        "httpAttempts": 2,
+        "receivedBodyBytes": 0,
+        "requestIDs": [
+          "6797F355-F699-40AA-BCFE-05BE12AAE75B"
+        ],
+        "verification": "Read the fixed isolated-evidence pi.sqlite entries id18 using SQLite mode=ro/query_only. Same regeneration operation is bound by the independent checker."
+      },
+      "notes": [
+        "The fixture delivering a 40-byte body does not establish that Pi consumed it; the durable client diagnostic records zero received body bytes.",
+        "The checker accepts one http-503 or cleanup-cancelled terminal only with 503 headers, positive fixture-body delivery, correct event order, no later body and an independent durable typed HTTP503/attempts2 diagnostic tied to the regeneration request.",
+        "Raw immutable user entries remain 3/2 in A/B while each projects to one logical user question; this is not evidence of duplicate visible sends.",
+        "The added cancel-before-body checker controls were synthetic only at this checkpoint; the third App scenario was compiled but not yet accepted."
+      ]
+    },
+    {
+      "id": "375pt-accessibility44",
+      "executed": 6,
+      "passed": 4,
+      "failedTests": 2,
+      "xctestSeconds": 96.921,
+      "watchStatusPassed": 4,
+      "watchStatusExecuted": 4,
+      "failures": [
+        "Settings storage contrast repeated from43.",
+        "Reduce Motion setup could not identify the actual Settings root/back state; iOS27 root uses a large title and the visible Chinese accessibility entry is 无障碍. No app Reduce Motion behavior was accepted."
+      ]
+    },
+    {
+      "id": "build45",
+      "status": "test-build-succeeded"
+    },
+    {
+      "id": "375pt-accessibility45",
+      "executed": 2,
+      "passed": 0,
+      "failedTests": 2,
+      "xctestSeconds": 55.247,
+      "failures": [
+        "Settings storage contrast persists; handler records the full issue and returns false, so no issue is ignored.",
+        "Reduce Motion setup reached the correct Motion page, but the attempted switch toggle did not become enabled. Original disabled state was restored; app playback under Reduce Motion remains unaccepted."
+      ]
+    },
+    {
+      "id": "reading-full45-repeat",
+      "uniqueTests": 23,
+      "repetitions": 3,
+      "executed": 69,
+      "passed": 69,
+      "failed": 0,
+      "xctestSeconds": 40.364,
+      "xcodeReportedElapsedSeconds": 49.576,
+      "suites": [
+        {
+          "name": "ChatRenderer",
+          "uniqueTests": 10,
+          "executed": 30,
+          "passed": 30
+        },
+        {
+          "name": "LibraryPagination",
+          "uniqueTests": 10,
+          "executed": 30,
+          "passed": 30
+        },
+        {
+          "name": "TimelineReading",
+          "uniqueTests": 3,
+          "executed": 9,
+          "passed": 9
+        }
+      ],
+      "scope": "Repeated complete reading-related classes only; not all 220 acceptance cases, all App suites, or final Release."
+    }
+  ],
+  "settingsManualReview": {
+    "scope": "375pt dark static Settings screen only; manual pixel review does not override failed system audits or establish all-App AA conformity.",
+    "observations": {
+      "foregroundRGB": [
+        242,
+        242,
+        242
+      ],
+      "surfaceRGB": [
+        41,
+        41,
+        41
+      ],
+      "foregroundContrast": 12.995325394593413,
+      "chevronRGB": [
+        170,
+        170,
+        170
+      ],
+      "chevronContrast": 6.262345183802636,
+      "canvasRGB": [
+        22,
+        22,
+        22
+      ],
+      "element43And44ByteIdentical": true,
+      "element43And44SHA256": "cdf15afe7cb3a97b3fb38d7baf14ce0056853deee98cb8045b4332ecfc1816b2",
+      "elementSizePixels": [
+        654,
+        116
+      ],
+      "beforeToFailureChangedContentPixels43": 0,
+      "beforeToFailureChangedContentPixels44": 0,
+      "comparisonRegion": "Full image, y >= 200 pixels; excludes status/navigation bar."
+    },
+    "method": "Decoded original exported PNG pixels; computed sRGB relative luminance from opaque glyph/background colors. Compared full pre-audit and failure content regions byte-by-byte. Antialiased edge pixels are not treated as independent foreground tokens.",
+    "sourcePaths": [
+      "Apps/iPhoneApp/Features/Settings/SettingsView.swift:64",
+      "Apps/iPhoneApp/SharedUI/PhonePageSurface.swift:4",
+      "Apps/iPhoneApp/SharedUI/PhoneTypography.swift:8"
+    ],
+    "codeObservations": [
+      "Storage is a plain NavigationLink with a 16pt regular label and hidden-from-AX decorative chevron; no storage-value task, disabled state or opacity modifier.",
+      "Retention loading affects the separate preceding row; both captures already show 7 days.",
+      "Shared surface supplies opaque ink and card surface; no evidence of root canvas under the text.",
+      "Decorative separator contrast is lower, but it is outside the system failure crop and not evidence of the reported StaticText failure."
+    ],
+    "systemIssue45": {
+      "type": "contrast",
+      "element": "StaticText",
+      "label": "储存空间",
+      "framePoints": [
+        24,
+        530,
+        327,
+        58
+      ],
+      "parentType": "Button",
+      "parentIdentifier": "settings.storage"
+    },
+    "conclusion": "No confirmed application low-contrast defect was found in this measured state. System audits43/44/45 remain failed with unexplained discrepancy; not labeled a proven tool false positive.",
+    "originalImages": [
+      {
+        "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-dark-audit43-attachments/04C32456-7FD8-47BB-A9B2-1FD737DA2EE8.png",
+        "bytes": 63877,
+        "sha256": "74b0c4ab1bfcb95cd05800010a115c5d6e3907adb6116d45660e050e66618494"
+      },
+      {
+        "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-dark-audit43-attachments/C887EAB6-427D-4D22-99A4-491755AC6485.png",
+        "bytes": 63879,
+        "sha256": "30791aa2279b9a14c8c31bc684ca5367ab55a4f52efb3f87247fdc625c887509"
+      },
+      {
+        "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-dark-audit43-attachments/D41BDEC5-B277-4F95-B747-0D73D340C9DE.png",
+        "bytes": 6150,
+        "sha256": "cdf15afe7cb3a97b3fb38d7baf14ce0056853deee98cb8045b4332ecfc1816b2"
+      },
+      {
+        "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility44-attachments/A7119F00-B0EA-4AF9-8521-E043AFB9BAA3.png",
+        "bytes": 63964,
+        "sha256": "f5c157426df1a74c3f88eb8fca95743dcbd7ae7eefd30a1f9fab097c78e7c49c"
+      },
+      {
+        "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility44-attachments/18475E46-C605-4888-830B-2EF1AEDA57B0.png",
+        "bytes": 63968,
+        "sha256": "bf9323fea37a5d4db159f9336cf31876b4a04019158643ee6fd58516b156bda0"
+      },
+      {
+        "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility44-attachments/E2FEB75D-CDF4-406A-B7E8-02D49D7563D4.png",
+        "bytes": 6150,
+        "sha256": "cdf15afe7cb3a97b3fb38d7baf14ce0056853deee98cb8045b4332ecfc1816b2"
+      }
+    ]
+  },
+  "portableArtifacts": [
+    {
+      "kind": "source-input-manifest",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build44-source-inputs.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/build44-source-before.json",
+      "bytes": 86117,
+      "sha256": "a7ed0c9c2f8751a8a7a3db4e176cc5f2b2af70681581abec733a0578371fda2f"
+    },
+    {
+      "kind": "source-input-manifest",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build45-source-inputs.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/build45-source-before.json",
+      "bytes": 86117,
+      "sha256": "d200e35997b9fd6566a906b4e500029322a9c90f33bb8c01be92c0b100b1a107"
+    },
+    {
+      "kind": "original-checker-failure",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui44-checker-a-original-failure.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui44-ledger-a.json",
+      "bytes": 5157,
+      "sha256": "263ce9d6d36be96a06476da306497e46614623a8770930bb4c5db762da6c962a"
+    },
+    {
+      "kind": "read-only-persisted-evidence-report",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui44-checker-a-final.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui44-checker-03-035853/ledger-a.json",
+      "bytes": 5249,
+      "sha256": "790b555e508602cfcba05bb0f095aeb720db2181f50d317e32a8409b245100ca"
+    },
+    {
+      "kind": "read-only-persisted-evidence-report",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui44-checker-b-final.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui44-checker-03-035853/ledger-b.json",
+      "bytes": 4708,
+      "sha256": "98a4e31e34c1933108ab100f13e45c4f68f6af9b4b6916b86320a9047b51416f"
+    },
+    {
+      "kind": "checker-summary",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui44-checker-final-summary.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui44-checker-03-035853/summary.json",
+      "bytes": 1845,
+      "sha256": "ddc0990d0dc6ab4e9c73f68fc9b836b900e5405e6c7b88d03d5e5651bab96597"
+    },
+    {
+      "kind": "checker-selftest-log",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/controlled-ui44-checker-selftests15.log",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui44-checker-03-035853/selftests.log",
+      "bytes": 723,
+      "sha256": "6e607a9bec9553c9c4debdaca10fd9685ba8800f35cccabff09fe097c802dc8e"
+    },
+    {
+      "kind": "simulator-screenshot",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/settings-dark-audit44-before.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility44-attachments/A7119F00-B0EA-4AF9-8521-E043AFB9BAA3.png",
+      "bytes": 63964,
+      "sha256": "f5c157426df1a74c3f88eb8fca95743dcbd7ae7eefd30a1f9fab097c78e7c49c"
+    },
+    {
+      "kind": "simulator-failure-screenshot",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/settings-dark-audit44-failed.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility44-attachments/18475E46-C605-4888-830B-2EF1AEDA57B0.png",
+      "bytes": 63968,
+      "sha256": "bf9323fea37a5d4db159f9336cf31876b4a04019158643ee6fd58516b156bda0"
+    },
+    {
+      "kind": "system-audit-element-crop",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/settings-dark-audit44-element.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility44-attachments/E2FEB75D-CDF4-406A-B7E8-02D49D7563D4.png",
+      "bytes": 6150,
+      "sha256": "cdf15afe7cb3a97b3fb38d7baf14ce0056853deee98cb8045b4332ecfc1816b2"
+    },
+    {
+      "kind": "system-audit-full-issue",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/settings-dark-audit45-full-issue.txt",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility45-attachments/78695D45-0E05-49D0-B804-4F5D48D36AAF.txt",
+      "bytes": 1642,
+      "sha256": "fc58ca6c55efcdec01a49d2554449ac391420f01d1f7d5330d307632984c230c"
+    },
+    {
+      "kind": "simulator-failure-screenshot",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/settings-dark-audit45-failed.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility45-attachments/3AD9B145-573C-4BA8-9E21-F9A1CCF17D7A.png",
+      "bytes": 64092,
+      "sha256": "d383dc065b0f8134d64705d9f852d12649da4cc10e357d7b07af76af79a0742b"
+    },
+    {
+      "kind": "system-audit-element-crop",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/settings-dark-audit45-element.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-accessibility45-attachments/D679D71F-7B71-4089-975C-C0782CBA7F09.png",
+      "bytes": 6150,
+      "sha256": "cdf15afe7cb3a97b3fb38d7baf14ce0056853deee98cb8045b4332ecfc1816b2"
+    }
+  ],
+  "remainingAtCheckpoint": [
+    "Full three-scenario controlled App round45 including first-token-before-body cancellation and its actual persisted evidence.",
+    "Successful actual-system Reduce Motion setup and app path.",
+    "Retain unresolved system Settings contrast audit and the bounded manual finding.",
+    "Final current-source Release/install/no-test-parameter launch evidence."
+  ],
+  "privacy": "Reports contain hashes, counts, synthetic run identity and fixed diagnostic fields only. No raw audio, provider credential files, private transcript contents, raw database or response body copied."
+}

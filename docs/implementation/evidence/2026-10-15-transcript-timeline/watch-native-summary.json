@@ -1,0 +1,45 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "84B7054F-7749-4688-B703-896DA4FBA7D3",
+        "deviceName" : "MoMo-Watch-SE3-20261014",
+        "modelName" : "Apple Watch SE 3",
+        "osBuildNumber" : "24R362",
+        "osVersion" : "27.0",
+        "platform" : "watchOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 0,
+      "passedTests" : 1,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "MoMoAgentWatchTests · Built with macOS 26.6.2",
+  "expectedFailures" : 0,
+  "failedTests" : 0,
+  "finishTime" : 1792079626.716,
+  "passedTests" : 1,
+  "result" : "Passed",
+  "runtimeWarnings" : [
+
+  ],
+  "skippedTests" : 0,
+  "startTime" : 1792079549.792,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+
+  ],
+  "title" : "Test - MoMoAgentWatchTests",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 1
+}

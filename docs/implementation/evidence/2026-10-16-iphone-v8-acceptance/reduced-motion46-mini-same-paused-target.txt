@@ -1,0 +1,73 @@
+Attributes: Application, 0x107cbf840, pid: 85995, label: 'MoMoAgent'
+Element subtree:
+ →Application, 0x107cbf840, pid: 85995, label: 'MoMoAgent'
+    Window (Main), 0x107cbf980, {{0.0, 0.0}, {375.0, 667.0}}
+      Other, 0x107cbe6c0, {{0.0, 0.0}, {375.0, 667.0}}
+        Other, 0x107cbf200, {{0.0, 0.0}, {375.0, 667.0}}
+          Other, 0x107cbed00, {{0.0, 0.0}, {375.0, 667.0}}
+            Other, 0x107cbee40, {{0.0, 0.0}, {375.0, 667.0}}
+              Other, 0x107cbe940, {{0.0, 0.0}, {375.0, 667.0}}
+                NavigationBar, 0x107cbea80, {{0.0, 20.0}, {375.0, 54.0}}, identifier: '转录'
+                  Button, 0x107cbf0c0, {{16.0, 20.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Back'
+                  StaticText, 0x107cbef80, {{170.5, 31.5}, {34.0, 21.0}}, label: '转录'
+                  Other, 0x107cbebc0, {{319.0, 24.0}, {36.0, 36.0}}
+                    Other, 0x107cbf340, {{319.0, 24.0}, {36.0, 36.0}}
+                      Button, 0x107cd0b40, {{324.0, 24.0}, {26.5, 36.0}}, identifier: 'library.more', label: '转录更多操作'
+                        Button, 0x1107657c0, {{324.0, 24.0}, {26.5, 36.0}}
+                Other, 0x110765900, {{0.0, 0.0}, {375.0, 667.0}}
+                  Other, 0x110765680, {{0.0, 0.0}, {375.0, 667.0}}
+                    Other, 0x110765540, {{0.0, 0.0}, {375.0, 667.0}}
+                      Other, 0x1107652c0, {{0.0, 0.0}, {375.0, 667.0}}
+                        Other, 0x110765400, {{24.0, 92.0}, {327.0, 187.0}}, identifier: 'library.watchStatus'
+                          Other, 0x110765040, {{44.0, 117.0}, {10.0, 10.0}}
+                          StaticText, 0x110766800, {{66.0, 110.0}, {101.5, 20.5}}, identifier: 'watchStatus.title', label: '等待手表状态'
+                          Image, 0x1107643c0, {{304.0, 113.0}, {23.0, 34.0}}, identifier: 'applewatch', label: 'Apple Watch'
+                          StaticText, 0x110764640, {{66.0, 135.5}, {149.0, 37.5}}, identifier: 'watchStatus.subtitle', label: '在 Apple Watch 上打开 MoMoAgent'
+                          Other, 0x110764500, {{32.0, 181.0}, {311.0, 90.0}}
+                        Button, 0x110764280, {{16.0, 293.0}, {44.0, 44.0}}, identifier: 'timeline.previousDay', label: '前一天'
+                        Button, 0x1107666c0, {{60.0, 293.0}, {211.0, 44.0}}, identifier: 'timeline.datePicker', label: '选择日期，今天 · 10月16日'
+                          StaticText, 0x110767c00, {{109.2, 307.0}, {95.0, 16.0}}, label: '今天 · 10月16日'
+                          Image, 0x110764140, {{211.0, 312.5}, {9.5, 5.5}}, identifier: 'chevron.down', label: 'Go Down'
+                        Button, 0x110767e80, {{271.0, 293.0}, {44.0, 44.0}}, identifier: 'timeline.nextDay', label: '后一天', Disabled
+                        Button, 0x110766300, {{315.0, 293.0}, {44.0, 44.0}}, identifier: 'timeline.search.toggle', label: '搜索全部转录'
+                        ScrollView, 0x110767840, {{0.0, 351.0}, {375.0, 316.0}}, identifier: 'timeline.dayPager'
+                          Other, 0x110767d40, {{-750.0, 351.0}, {1125.0, 212.0}}
+                            Other, 0x110767340, {{-375.0, 351.0}, {750.0, 316.0}}
+                              ScrollView, 0x110766940, {{-375.0, 351.0}, {375.0, 316.0}}
+                                Other, 0x110767700, {{-375.0, 351.0}, {375.0, 60.0}}, label: 'Refreshing content'
+                                  Other, 0x110767200, {{-375.0, 351.0}, {375.0, 60.0}}
+                                    Other, 0x1107670c0, {{-237.5, 331.0}, {100.0, 100.0}}
+                                      Other, 0x110766e40, {{-237.5, 331.0}, {100.0, 100.0}}
+                                        Other, 0x110767480, {{-189.0, 366.0}, {3.5, 10.0}}
+                                    StaticText, 0x110767ac0, {{-365.0, 399.5}, {355.0, 0.0}}
+                                Other, 0x110765f40, {{-375.0, 351.0}, {375.0, 168.0}}
+                              ScrollView, 0x110766440, {{0.0, 351.0}, {375.0, 316.0}}
+                                Other, 0x110765b80, {{0.0, 351.0}, {375.0, 212.0}}
+                                  Other, 0x110765e00, {{24.0, 351.0}, {327.0, 188.0}}
+                                    Button, 0x110765cc0, {{24.0, 351.0}, {327.0, 144.0}}, identifier: 'timeline.window.1792092630-28800', label: '03:30–03:35, 说话约 11 秒, 第一段记录讨论了时间线的设计，应该按时间归组，保留原始录音。  第二段记录接着讨论播放器，点进同一时段就能读文字和回听原音。'
+                                      StaticText, 0x110766080, {{50.0, 361.0}, {91.0, 18.0}}, label: '03:30–03:35'
+                                      Image, 0x110766d00, {{344.5, 365.0}, {6.0, 10.5}}, identifier: 'chevron.right', label: 'Forward'
+                                      Other, 0x1107661c0, {{50.0, 388.0}, {301.0, 8.0}}
+                                      StaticText, 0x110766580, {{50.0, 405.0}, {66.0, 14.5}}, identifier: 'timeline.speechDuration', label: '说话约 11 秒'
+                                      StaticText, 0x110766bc0, {{50.0, 428.5}, {298.0, 40.5}}, label: '第一段记录讨论了时间线的设计，应该按时间归组，保留原始录音。  第二段记录接着讨论播放器，点进同一时段就能读文字和回听原音。'
+                                    Button, 0x110766a80, {{24.0, 495.0}, {160.5, 44.0}}, identifier: 'timeline.scattered.toggle', label: '1 段零散内容已收起, 查看'
+                                      StaticText, 0x1107675c0, {{50.0, 509.8}, {104.5, 14.5}}, label: '1 段零散内容已收起'
+                                      StaticText, 0x110764000, {{160.5, 509.8}, {24.0, 14.5}}, label: '查看'
+                        Other, 0x110767980, {{12.0, 571.0}, {351.0, 88.0}}, identifier: 'playback.mini'
+                          Button, 0x110765180, {{72.0, 581.0}, {231.0, 61.5}}, identifier: 'playback.mini.open', label: '打开正在回听的录音'
+                            StaticText, 0x110764c80, {{72.0, 581.0}, {201.0, 17.0}}, label: '今天 · 10月16日 · 03:30–03:35'
+                            Other, 0x110764b40, {{72.0, 600.0}, {231.0, 26.0}}
+                            Other, 0x110764a00, {{72.0, 628.0}, {231.0, 14.5}}, label: '00:07，共 00:11'
+                              StaticText, 0x1107648c0, {{72.0, 628.0}, {34.0, 14.5}}, label: '00:07'
+                              StaticText, 0x110764780, {{269.0, 628.0}, {34.0, 14.5}}, label: '00:11'
+                          Button, 0x110764dc0, {{20.0, 590.0}, {44.0, 44.0}}, identifier: 'playback.mini.toggle', label: '继续回听'
+                          Button, 0x110764f00, {{311.0, 590.0}, {44.0, 44.0}}, identifier: 'playback.mini.close', label: '结束回听并收起播放器'
+                Toolbar, 0x110763980, {{0.0, 0.0}, {375.0, 667.0}}, identifier: 'Toolbar', label: 'Toolbar'
+                  Other, 0x110763ac0, {{0.0, 0.0}, {375.0, 667.0}}
+Path to element:
+ →Application, 0x107cbf840, pid: 85995, label: 'MoMoAgent'
+Query chain:
+ →Find: Target Application 'com.momoagent.ios'
+  Output: {
+    Application, 0x110763c00, pid: 85995, label: 'MoMoAgent'
+  }

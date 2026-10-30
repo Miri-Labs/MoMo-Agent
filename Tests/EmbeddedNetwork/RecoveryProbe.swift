@@ -1,0 +1,77 @@
+import Foundation
+import Darwin
+import TailscaleKit
+
+/// Uses two real SDK nodes and a synthetic control server; no user account or phone data.
+@main struct RecoveryProbe {
+    enum Check: Error { case failed(String) }
+
+    @MainActor static func main() async throws {
+        signal(SIGPIPE, SIG_IGN)
+        let control = CommandLine.arguments[1]
+        let root = URL(fileURLWithPath: CommandLine.arguments[2])
+        let port = Int32(CommandLine.arguments[3])!
+        let server = try TailscaleNode(config: Configuration(hostName: "recovery-server",
+            path: root.appendingPathComponent("server").path, authKey: nil, controlURL: control), logger: nil)
+        let client = EmbeddedTailnet(directory: root.appendingPathComponent("client"), device: "test", controlURL: control)
+        do {
+            try await server.up()
+            try await server.serveLoopbackHTTP(port: port)
+            let address = try await server.addrs().ip4!
+            let url = URL(string: "http://\(address):8767/")!
+            @Sendable func check(_ passed: Bool, _ message: String) throws {
+                guard passed else { throw Check.failed(message) }
+            }
+            @Sendable func read(_ session: URLSession) async throws {
+                let (_, response) = try await session.data(from: url)
+                try check((response as? HTTPURLResponse)?.statusCode == 200, "Private HTTP failed")
+            }
+            let original = try await client.connectedSession()
+            try await read(original)
+            let generation = client.generation
+            let addressBefore = client.address
+            for _ in 0..<5 {
+                client.prepareForForeground()
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    for _ in 0..<8 {
+                        group.addTask {
+                            let session = try await client.connectedSession()
+                            try check(session === original, "Foreground replaced a healthy session")
+                            try await read(session)
+                        }
+                    }
+                    try await group.waitForAll()
+                }
+                try check(client.generation == generation, "Foreground restarted a healthy node")
+            }
+            for error in [URLError(.timedOut), URLError(.networkConnectionLost), URLError(.cannotConnectToHost)] {
+                client.failedRequest(error, session: original)
+                let session = try await client.connectedSession()
+                try check(session === original && client.generation == generation, "Peer failure restarted a healthy local proxy")
+                try await read(session)
+            }
+
+            // Simulate the local listener disappearing while the app is suspended.
+            try await client.node!.close()
+            client.prepareForForeground()
+            let recovered = try await client.connectedSession()
+            try check(recovered !== original && client.generation != generation, "Dead local proxy was not rebuilt")
+            try check(client.address == addressBefore, "Recovery changed the paired node address")
+            try await read(recovered)
+            let recoveredGeneration = client.generation
+            client.failedRequest(URLError(.timedOut), session: original)
+            let retained = try await client.connectedSession()
+            try check(retained === recovered && client.generation == recoveredGeneration, "Stale session invalidated recovery")
+            try await client.logout()
+            do {
+                _ = try await client.connectedSession()
+                throw Check.failed("Logout was undone by a network request")
+            } catch TailnetError.loginRequired { }
+            print("PASS: 40 concurrent foreground reads reuse the node/session; peer failures preserve it; dead proxy rebuilds with same address; stale failures ignored; logout stays logged out")
+        } catch {
+            await client.close(); try? await server.close()
+            throw error
+        }
+        await client.close(); try await server.close()
+    }
+}

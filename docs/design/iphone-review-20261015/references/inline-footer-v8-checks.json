@@ -1,0 +1,36 @@
+[
+  {
+    "test": "stopped-footer",
+    "modelPicker": 0,
+    "sourceFooter": 0,
+    "visibleStatus": "",
+    "actions": [
+      {
+        "label": "复制回答",
+        "size": "20px",
+        "hit": 44
+      },
+      {
+        "label": "重新生成",
+        "size": "20px",
+        "hit": 44
+      }
+    ],
+    "ariaStatus": "回复已停止，已接收内容保留。"
+  },
+  {
+    "test": "inline-citation",
+    "links": 1,
+    "href": "momoagent://source/00000000-0000-0000-0000-000000000001/00000000-0000-0000-0000-000000000002?version=1&generation=0",
+    "sourceFooter": 0
+  },
+  {
+    "test": "inline-opens-excerpt",
+    "dialogOpen": true,
+    "title": "原文"
+  },
+  {
+    "test": "static-stop-no-redundancy",
+    "text": "9:41\nMoMoAgent\n帮我整理一下今天下午\n的公园散步。\n今天的散步，可以留下这几个片段。\n慢下来的一段路\n走到湖边时，风比来时轻了一些。你没有\n急着拍照，而是沿着树荫继续走，让下午\n留出了一点空白。\n值得记住的小事\n路过咖啡店，点了一杯咖啡。\n湖边有一家人在野餐，孩子把面包屑\n说说你想做的事…"
+  }
+]

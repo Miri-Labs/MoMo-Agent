@@ -1,0 +1,31 @@
+name: MoMoTailnetProbe
+options:
+  deploymentTarget:
+    iOS: "18.0"
+targets:
+  MoMoTailnetProbe:
+    type: application
+    platform: iOS
+    sources:
+      - ProbeApp.swift
+      - ../EmbeddedProbe.swift
+    info:
+      path: Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSAppTransportSecurity:
+          NSExceptionDomains:
+            "100.64.0.0/10":
+              NSExceptionAllowsInsecureHTTPLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.momoagent.tailnet-probe
+        SWIFT_VERSION: "6.0"
+    dependencies:
+      - framework: ../../../Vendor/TailscaleKit/Build/TailscaleKit.xcframework
+        embed: true
+schemes:
+  MoMoTailnetProbe:
+    build:
+      targets:
+        MoMoTailnetProbe: all

@@ -1,0 +1,119 @@
+{
+  "fixtureKind" : "synthetic transcript fixture over real PCM files",
+  "fixtures" : [
+    {
+      "generation" : 0,
+      "sessionID" : "9AFD2656-A7FF-40EE-AD5F-CD4632D7AA6C",
+      "spans" : [
+        {
+          "chunkID" : "DDE455A7-EC15-453C-BD57-4CD9D23D4963",
+          "frames" : {
+            "count" : 160,
+            "start" : 0
+          },
+          "id" : "434E7566-3381-4011-A6E4-A872769A3BCE",
+          "sourceRanges" : [
+            {
+              "chunkID" : "DDE455A7-EC15-453C-BD57-4CD9D23D4963",
+              "frames" : {
+                "count" : 160,
+                "start" : 0
+              }
+            }
+          ],
+          "text" : "【合成测试资料 fixture；非真实生活录音】\n刚才敲定澄海工作坊的安排：2026年10月21日下午三点在白鹭厅开会，材料预算上限1800元。\n会前要整理参会名单并打印需求卡。具体负责人还没有确定，不能替任何人承诺。"
+        }
+      ],
+      "updatedAt" : "2026-10-15T10:52:36Z",
+      "version" : 1
+    }
+  ],
+  "modelFailures" : [
+
+  ],
+  "modelID" : "deepseek/deepseek-v4.1-flash",
+  "networkRoute" : "system",
+  "provider" : "https://openrouter.ai/api/v1",
+  "runID" : "47621069-119A-4511-B039-E9FC3F4A26EE",
+  "scenario" : "recent-recording",
+  "tools" : [
+
+  ],
+  "totalTokens" : 3149,
+  "turns" : [
+    {
+      "assistantMessages" : [
+        "澄海工作坊定在10月21日下午三点，白鹭厅；材料预算上限1800元 [1](momoagent://source/9AFD2656-A7FF-40EE-AD5F-CD4632D7AA6C/434E7566-3381-4011-A6E4-A872769A3BCE?version=1&generation=0)。\n\n会前要准备的是两样：整理参会名单、打印需求卡。负责人还没定，所以这两件事暂时没人认领 [1](momoagent://source/9AFD2656-A7FF-40EE-AD5F-CD4632D7AA6C/434E7566-3381-4011-A6E4-A872769A3BCE?version=1&generation=0)。"
+      ],
+      "contextBeforeSend" : {
+        "generatedAt" : "2026-10-15T10:52:36Z",
+        "omittedRecentPassages" : false,
+        "passages" : [
+          {
+            "characterOffset" : 0,
+            "citationURL" : "momoagent://source/9AFD2656-A7FF-40EE-AD5F-CD4632D7AA6C/434E7566-3381-4011-A6E4-A872769A3BCE?version=1&generation=0",
+            "contextRole" : "automatic_recent",
+            "frameCount" : 160,
+            "recordedAt" : "2026-10-15T10:52:36Z",
+            "source" : {
+              "generation" : 0,
+              "sessionID" : "9AFD2656-A7FF-40EE-AD5F-CD4632D7AA6C",
+              "spanID" : "434E7566-3381-4011-A6E4-A872769A3BCE",
+              "transcriptVersion" : 1
+            },
+            "startFrame" : 0,
+            "text" : "【合成测试资料 fixture；非真实生活录音】\n刚才敲定澄海工作坊的安排：2026年10月21日下午三点在白鹭厅开会，材料预算上限1800元。\n会前要整理参会名单并打印需求卡。具体负责人还没有确定，不能替任何人承诺。",
+            "truncated" : false
+          }
+        ],
+        "recordings" : [
+          {
+            "audioState" : "available",
+            "chunkCount" : 1,
+            "generation" : 0,
+            "keepAudio" : false,
+            "recordedAt" : "2026-10-15T10:52:36Z",
+            "sessionID" : "9AFD2656-A7FF-40EE-AD5F-CD4632D7AA6C",
+            "sourceKind" : "fixture",
+            "transcriptVersion" : 1,
+            "transcriptionState" : "transcribed"
+          }
+        ],
+        "status" : {
+          "latestTranscriptAt" : "2026-10-15T10:52:36Z",
+          "pendingAnalysisCount" : 0,
+          "recordingCount" : 1
+        },
+        "timeScope" : {
+          "archiveDateFilters" : "recording_session_start_not_passage_time",
+          "automaticFrom" : "2026-10-15T08:52:36Z",
+          "before" : "2026-10-15T10:52:36Z",
+          "localDate" : "2026-10-15",
+          "originalRequestTimeKnown" : true,
+          "policyVersion" : 1,
+          "todayFrom" : "2026-10-14T16:00:00Z",
+          "tomorrowFrom" : "2026-10-15T16:00:00Z"
+        },
+        "timezone" : "Asia/Shanghai"
+      },
+      "elapsedSeconds" : 1.459246039390564,
+      "failed" : false,
+      "plans" : [
+
+      ],
+      "projectedPlanHashes" : {
+
+      },
+      "prompt" : "工作坊在哪开、预算多少、还要准备什么？",
+      "sessionID" : "C3020653-6C47-4F8C-A892-4C1613E16820",
+      "sources" : [
+        {
+          "generation" : 0,
+          "sessionID" : "9AFD2656-A7FF-40EE-AD5F-CD4632D7AA6C",
+          "spanID" : "434E7566-3381-4011-A6E4-A872769A3BCE",
+          "transcriptVersion" : 1
+        }
+      ]
+    }
+  ]
+}

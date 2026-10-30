@@ -1,0 +1,32 @@
+{
+  "sourceCommit": "00ceb2582da91fea3211117bf64c1386a55195f1",
+  "device": "AC2B247F-999E-48DA-BC31-A81CF5662EB0",
+  "pid": 88949,
+  "launchArguments": [],
+  "observedProcessCommand": "/Users/syh/Library/Developer/CoreSimulator/Devices/AC2B247F-999E-48DA-BC31-A81CF5662EB0/data/Containers/Bundle/Application/BE7042CC-0DA6-47D0-B873-5248BF3B4B32/MoMoAgent.app/MoMoAgent",
+  "installedFiles": {
+    "Info.plist": {
+      "sourceSHA256": "b1d903b155ba1e83d4b326082049ed0e8d9b2b8ebf010477ac57f07176a71890",
+      "installedSHA256": "b1d903b155ba1e83d4b326082049ed0e8d9b2b8ebf010477ac57f07176a71890",
+      "matched": true
+    },
+    "MoMoAgent": {
+      "sourceSHA256": "059eb80446b94e797cc8051a7416e614bfe4ebd17da6fdad0f8ffcc79e213dcc",
+      "installedSHA256": "059eb80446b94e797cc8051a7416e614bfe4ebd17da6fdad0f8ffcc79e213dcc",
+      "matched": true
+    },
+    "Watch/MoMoAgentWatch.app/Info.plist": {
+      "sourceSHA256": "5fd8a778f4f830d98d20f2e947006ef6629a0bf0c64c5c88f088ac13c6c65175",
+      "installedSHA256": "5fd8a778f4f830d98d20f2e947006ef6629a0bf0c64c5c88f088ac13c6c65175",
+      "matched": true
+    },
+    "Watch/MoMoAgentWatch.app/MoMoAgentWatch": {
+      "sourceSHA256": "dbd7366d1faff29f71764e8c666fb77af0aa7934ccc4e9d94860ea361c221163",
+      "installedSHA256": "dbd7366d1faff29f71764e8c666fb77af0aa7934ccc4e9d94860ea361c221163",
+      "matched": true
+    }
+  },
+  "reviewedScreenshot": "release05-normal-launch.png",
+  "visualReview": "Home has original brand icon, gray Watch status, no App-name title, central Avatar and raised optical composition.",
+  "scope": "iPhone simulator Release installed and normally launched. Does not prove Watch launch, physical pairing or an App Store archive."
+}

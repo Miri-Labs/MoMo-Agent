@@ -1,0 +1,23 @@
+{
+  "defaultsMatchSource": true,
+  "privateDocumentsAbsent": true,
+  "configuration": "Debug hosted-test build, ios-build-12",
+  "files": [
+    {
+      "path": "MoMoAgentKit_MoMoAgent.bundle/SOUL.md",
+      "sha256": "e8ffbf46e657d6b1f7f9def0db4ad7341f4c9cf52c6a534ec106b4f7b26d2a46"
+    },
+    {
+      "path": "PlugIns/MoMoAgentIntegrationTests.xctest/MoMoAgentKit_MoMoAgent.bundle/SOUL.md",
+      "sha256": "e8ffbf46e657d6b1f7f9def0db4ad7341f4c9cf52c6a534ec106b4f7b26d2a46"
+    },
+    {
+      "path": "MoMoAgentKit_MoMoAgent.bundle/hermes-LICENSE.txt",
+      "sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6"
+    },
+    {
+      "path": "PlugIns/MoMoAgentIntegrationTests.xctest/MoMoAgentKit_MoMoAgent.bundle/hermes-LICENSE.txt",
+      "sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6"
+    }
+  ]
+}

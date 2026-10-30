@@ -1,0 +1,404 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-15T19:52:12.161016+00:00",
+  "scope": "Builds 41–43 interim acceptance evidence. No native tests were run while assembling this report. Old results remain unchanged.",
+  "sourceInputManifests": [
+    {
+      "build": 41,
+      "capturedAt": "2026-10-15T19:19:45.829190+00:00",
+      "baseCommit": "5ec8b0f427f8bfd678585fc8c800a59aeb7b6b84",
+      "fileCount": 606,
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build41-source-inputs.json",
+      "scope": "Pre-build input manifest only; this report does not independently claim before/after stability."
+    },
+    {
+      "build": 42,
+      "capturedAt": "2026-10-15T19:21:19.758881+00:00",
+      "baseCommit": "5ec8b0f427f8bfd678585fc8c800a59aeb7b6b84",
+      "fileCount": 606,
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build42-source-inputs.json",
+      "scope": "Pre-build input manifest only; this report does not independently claim before/after stability."
+    },
+    {
+      "build": 43,
+      "capturedAt": "2026-10-15T19:33:29.043955+00:00",
+      "baseCommit": "5ec8b0f427f8bfd678585fc8c800a59aeb7b6b84",
+      "fileCount": 607,
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build43-source-inputs.json",
+      "scope": "Pre-build input manifest only; this report does not independently claim before/after stability."
+    }
+  ],
+  "rawLogs": [
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/ios-build-41.log",
+      "bytes": 411114,
+      "sha256": "6414ff1192811ae57194c6fbe0e9ce9a84dd114a3045b9929c1290cb2d531338"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/ios-build-42.log",
+      "bytes": 138929,
+      "sha256": "718d2fde366d11ec592326a5c9088700e70f2eab983520912d6ad0e685354535"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/ios-build-43.log",
+      "bytes": 240245,
+      "sha256": "1809a76c0e495a90d0046ca4c0bd0ec3f9b0b5d8709cc6d0fa66b148b3af64c1"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/reading-native42.log",
+      "bytes": 24830,
+      "sha256": "818d3761b7d5c4c2ed723bfa669546effca5ee45963a2aab4ae4201d628fe34c"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/reading-native43.log",
+      "bytes": 35356,
+      "sha256": "ff1ac8635e1aa5bac301beef4a6f647121c68e844b4baa8a32803cdc6ad21f5f"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/player-voiceover43.log",
+      "bytes": 11773,
+      "sha256": "7a36660ab6e044a247ee1ff5842c40f2e71bf83391f4d71b9f3ff0f89c203807"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/watch-status42.log",
+      "bytes": 13164,
+      "sha256": "3c18d6ba610f432e5b34910b092a42aafdd762951466be5639e2a3795e23c908"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/controlled-ui42.log",
+      "bytes": 32781,
+      "sha256": "34215729b01db97e9d1ffe6f8fd9e6c40b90fe09b746e4360e8c26dc479fe841"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-dark-audit43.log",
+      "bytes": 11388,
+      "sha256": "6162f7e51e1c51bb2bae84384102ea87f699bfd68b4b289dc6d38c05fd29dea4"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-dark-keyboard40.log",
+      "bytes": 23436,
+      "sha256": "f0c2d30d0bdf6f6d8e88220b656a00009c8c152d536bf8f33735412f9b50f4fe"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/watch-status-scope/tmp_agent_output/watch-status-scope-20261016/package-tests-01.log",
+      "bytes": 7783,
+      "sha256": "fbcb61890e0bd3363cfca932e180710205a29e4fae06eeac0755cf85e635d0a8"
+    }
+  ],
+  "attachmentManifests": [
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/player-voiceover43-attachments/manifest.json",
+      "bytes": 5892,
+      "sha256": "9a25046ed1a8dc635873e4eb8160d41ebdb938c09ef0c4bd2eab73d50dfc289d"
+    },
+    {
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-dark-audit43-attachments/manifest.json",
+      "bytes": 5859,
+      "sha256": "109eeb4bc74074fdb47bcc409cc1f5d5d18690ad2c2b749ea1916e70f00780ea"
+    }
+  ],
+  "rounds": [
+    {
+      "id": "build41",
+      "result": "compile-failed",
+      "cause": "Nested private ReadingNavigationPath inaccessible to generated Observable extension. Changed to fileprivate for build42."
+    },
+    {
+      "id": "build42",
+      "result": "test-build-succeeded"
+    },
+    {
+      "id": "reading-native42",
+      "executed": 9,
+      "passed": 2,
+      "failedIterations": 7,
+      "reportedFailures": 14,
+      "reportedUnexpectedFailures": 7,
+      "xctestSeconds": 82.762,
+      "paths": [
+        {
+          "path": "same NavigationStack pop/push long paragraph",
+          "passed": 1,
+          "executed": 3
+        },
+        {
+          "path": "root controller recreation long paragraph",
+          "passed": 1,
+          "executed": 3
+        },
+        {
+          "path": "short paragraph below pinned player",
+          "passed": 0,
+          "executed": 3
+        }
+      ],
+      "timelineExecuted": 0,
+      "notes": [
+        "Misspelled Timeline selector executed zero tests.",
+        "Long-paragraph failures included actual unmounted targets under both navigation harnesses.",
+        "All three short-paragraph runs restored the anchor but failed an appended-layout contentSize-growth condition; real admitted document version, span frames and visibility were correct despite Lazy estimated height shrinking. Later assertion uses authoritative version/span count; 44pt and ±4pt requirements remain."
+      ]
+    },
+    {
+      "id": "watch-status42",
+      "executed": 9,
+      "passed": 9,
+      "failed": 0,
+      "xctestSeconds": 0.786,
+      "scope": "5 PhoneReceiveStatus + 3 selected-Watch integration + 1 presentation test; no physical paired WatchConnectivity E2E."
+    },
+    {
+      "id": "watch-status-package01",
+      "executed": 9,
+      "passed": 9,
+      "failed": 0,
+      "scope": "Two independently filtered package suites in one log: SelectedWatchContext 2 and ArchiveStatus 7; software identity/freshness/deletion semantics, not real device pairing."
+    },
+    {
+      "id": "controlled-ui42",
+      "executed": 2,
+      "passed": 0,
+      "failed": 2,
+      "xctestSeconds": 85.543,
+      "requestObservation": {
+        "requestsPerRun": [
+          0,
+          0
+        ],
+        "eventsPerRun": [
+          0,
+          0
+        ],
+        "launchesPerRun": [
+          1,
+          1
+        ],
+        "launchRequestCountsPerRun": [
+          [
+            0
+          ],
+          [
+            0
+          ]
+        ],
+        "provenance": "Root and transport agent inspected isolated schema-2 ledgers after the failed run; original container files were not located again during documentation assembly. No ledger source digest is asserted here.",
+        "runIDs": [
+          "7DA49F01-C178-473E-AA4B-9C3EB6661F7C",
+          "D09EA5C9-77CF-480F-9B4E-DAE7BE82C95D"
+        ]
+      },
+      "notes": [
+        "SSE/provider request was not admitted; stop/retry/regeneration/citation behavior is not accepted by this run.",
+        "Recorded send coordinate (365,559.333) became stale after software keyboard reflow; failure AX places the send control at y390.3. Test interaction correction awaits rerun.",
+        "No controlled-ui ledger checker success report exists for these incomplete journeys."
+      ]
+    },
+    {
+      "id": "build43",
+      "result": "test-build-succeeded"
+    },
+    {
+      "id": "reading-native43",
+      "executed": 12,
+      "passed": 12,
+      "failed": 0,
+      "xctestSeconds": 17.388,
+      "paths": [
+        {
+          "path": "same NavigationStack pop/push long paragraph",
+          "passed": 3,
+          "executed": 3
+        },
+        {
+          "path": "root controller recreation long paragraph",
+          "passed": 3,
+          "executed": 3
+        },
+        {
+          "path": "short paragraph below pinned player",
+          "passed": 3,
+          "executed": 3
+        },
+        {
+          "path": "actual WK navigation delegate policy",
+          "passed": 3,
+          "executed": 3
+        }
+      ],
+      "notes": [
+        "Raw detail emits the single restoration command from native scroll geometry after current admission, viewport and anchor are ready.",
+        "WK runtime selector is present; actual HTTP, HTTPS and external file main-frame navigation are denied while the bundled bootstrap reload is allowed.",
+        "This round did not run the Timeline version of the native-scroll-phase change or the final full regression.",
+        "WebKit process-suspension warnings exist in the raw log; no zero-warning claim."
+      ]
+    },
+    {
+      "id": "player-voiceover43",
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "xctestSeconds": 60.202,
+      "deviceID": "AEBF8E53-B90D-4B5B-941B-663E2AD99254",
+      "scope": "iOS 27 simulator real VoiceOverService with actual one-finger up/down gestures on paused formal timeline audio.",
+      "initialVoiceOverEnabled": false,
+      "restoredVoiceOverEnabled": false,
+      "spokenValues": [
+        "00:01，共 00:11",
+        "00:02，共 00:11",
+        "00:01，共 00:11"
+      ],
+      "notes": [
+        "Actual speech text comes from VoiceOverService.currentSpeech; no recorded speech-audio artifact is claimed.",
+        "Playback was paused before adjusting so playback time cannot substitute for seek.",
+        "Formal timeline fixture and encoded audio; no ASR, provider configuration or paid network request.",
+        "This single player path is not all-app VoiceOver or Reduce Motion acceptance."
+      ]
+    },
+    {
+      "id": "375pt-dark-keyboard40",
+      "executed": 4,
+      "passed": 2,
+      "failed": 2,
+      "keyboardPathsPassed": 2,
+      "keyboardPathsExecuted": 2,
+      "notes": [
+        "Two real on-screen-keyboard tests passed at normal and accessibility text sizes.",
+        "The accessibility audit and maximum-text timeline test failed in the same run; do not summarize this round as 4/4."
+      ]
+    },
+    {
+      "id": "375pt-dark-audit43",
+      "executed": 2,
+      "passed": 1,
+      "failed": 1,
+      "xctestSeconds": 38.013,
+      "notes": [
+        "Maximum accessibility text timeline path passed.",
+        "Home and drawer audits completed; the combined audit test failed at Settings storage row contrast.",
+        "The actual system issue remains a failure. No ignore filter, palette change or assertion weakening was applied."
+      ],
+      "settingsPixelObservation": {
+        "foregroundRGB": [
+          242,
+          242,
+          242
+        ],
+        "backgroundRGB": [
+          41,
+          41,
+          41
+        ],
+        "srgbContrast": 12.995325394593413,
+        "scope": "Opaque text/background pixels from exported system element crop; this pixel calculation does not establish that the system audit is incorrect or identify its cause.",
+        "nextStep": "Rerun unchanged audit and preserve issue if it recurs."
+      }
+    }
+  ],
+  "portableArtifacts": [
+    {
+      "kind": "source-input-manifest",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build41-source-inputs.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/build41-source-before.json",
+      "bytes": 86969,
+      "sha256": "4baf96eae887128360f8418f58a94d4fe134f0eea53038098b56a2925bfd4ad1"
+    },
+    {
+      "kind": "source-input-manifest",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build42-source-inputs.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/build42-source-before.json",
+      "bytes": 86969,
+      "sha256": "0a9c84ccb9eb14bee8fd3bd79a3e649c0f90b84ace0b8f0c70c07df61c864af7"
+    },
+    {
+      "kind": "source-input-manifest",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/build43-source-inputs.json",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/build43-source-before.json",
+      "bytes": 87093,
+      "sha256": "2408072a61c691848229097b5227f461967e79d81379f6a929df91f4a7389aeb"
+    },
+    {
+      "kind": "simulator-screenshot",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/player-voiceover43-focused.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/player-voiceover43-attachments/1E21DEFF-E80D-4710-BB97-6E6E41A6F36A.png",
+      "bytes": 117505,
+      "sha256": "12e2baf0a1e3137af77e84aed4389d779a600c1730c6af4433dedabdccc6e1dc"
+    },
+    {
+      "kind": "simulator-screenshot",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/player-voiceover43-incremented.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/player-voiceover43-attachments/B04B1074-F48B-41FF-AEF5-72B47655EF1B.png",
+      "bytes": 117613,
+      "sha256": "c6cd37f191e148f2de7c6919ea5e824eb0446cff89d3b709d23e250162c16f41"
+    },
+    {
+      "kind": "simulator-screenshot",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/player-voiceover43-decremented.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/player-voiceover43-attachments/510409C6-4736-4715-A20C-625A67EFCC7F.png",
+      "bytes": 117505,
+      "sha256": "12e2baf0a1e3137af77e84aed4389d779a600c1730c6af4433dedabdccc6e1dc"
+    },
+    {
+      "kind": "voiceover-service-utterance-text",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/player-voiceover43-utterances.txt",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/player-voiceover43-attachments/D27A0734-CCEF-436F-8F5E-F8405A3438E3.txt",
+      "bytes": 634,
+      "sha256": "ffb3c09916486c71ee67b7c671f8cae038bfcf1a1f4806560b1c207c8258aa51"
+    },
+    {
+      "kind": "test-isolation-note",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/player-voiceover43-isolation.txt",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/player-voiceover43-attachments/226546CE-DA97-482E-8B1C-DECC94FAEF99.txt",
+      "bytes": 199,
+      "sha256": "1f17a4243ed9fd244a7d25f9557b949ea38a25285e0921d2ef1cb816156f725e"
+    },
+    {
+      "kind": "simulator-failure-screenshot",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/settings-dark-audit43-failed.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-dark-audit43-attachments/C887EAB6-427D-4D22-99A4-491755AC6485.png",
+      "bytes": 63879,
+      "sha256": "30791aa2279b9a14c8c31bc684ca5367ab55a4f52efb3f87247fdc625c887509"
+    },
+    {
+      "kind": "system-audit-element-crop",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/settings-dark-audit43-element.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-dark-audit43-attachments/D41BDEC5-B277-4F95-B747-0D73D340C9DE.png",
+      "bytes": 6150,
+      "sha256": "cdf15afe7cb3a97b3fb38d7baf14ce0056853deee98cb8045b4332ecfc1816b2"
+    },
+    {
+      "kind": "system-audit-issue",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/settings-dark-audit43-issue.txt",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-dark-audit43-attachments/889BC9EF-DCDB-434F-8392-045DBE8C670A.txt",
+      "bytes": 45,
+      "sha256": "750caeaf494995db0894f4ca89fc118f4ac317e388ae2f72f09d741e4f5233e3"
+    },
+    {
+      "kind": "simulator-screenshot",
+      "repositoryPath": "docs/implementation/evidence/2026-10-16-iphone-v8-acceptance/timeline-375pt-ax5-build43.png",
+      "copiedWithoutModification": true,
+      "sourcePath": "/Users/syh/Workspace/MoMoAgent-worktrees/iphone-v8-implementation/tmp_agent_output/iphone-v8-acceptance-20261015/375pt-dark-audit43-attachments/060E87A6-939D-43EB-AA6D-0A6558F21125.png",
+      "bytes": 330117,
+      "sha256": "31cd9e173646c6a4d9e733a8eca900ebf5653840e295472f22e9aea50297845d"
+    }
+  ],
+  "remaining": [
+    "Full current-source reading baseline including Timeline native-scroll-phase restoration.",
+    "Controlled whole-App streaming journeys after the send interaction correction.",
+    "Unchanged Settings dark contrast audit rerun.",
+    "Real system Reduce Motion test execution.",
+    "Final source Release, installation and no-test-flags launch verification.",
+    "Physical Watch pairing/synchronization and real-device backlog remain separate from software simulator scope."
+  ],
+  "privacy": "No raw audio, keys, credentials, private model responses or full raw logs copied. Portable screenshots and utterances contain only isolated fixture content. Source input manifests contain filenames and hashes."
+}

@@ -1,0 +1,7 @@
+Build/
+libtailscale*.a
+libtailscale*.so
+libtailscale.h
+libtailscale_ios.h
+libtailscale_ios_sim.h
+swift/build/

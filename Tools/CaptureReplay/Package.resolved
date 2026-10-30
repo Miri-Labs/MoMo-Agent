@@ -1,0 +1,15 @@
+{
+  "originHash": "fe79ed4938569b21183ac73a8079149f7d15efb5a54886e5eadd275b72266b24",
+  "pins": [
+    {
+      "identity": "onnxruntime-libs",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/csukuangfj/onnxruntime-libs",
+      "state": {
+        "revision": "8ebc5ebf92190903c274a7621ba4c96a732335ec",
+        "version": "1.28.2"
+      }
+    }
+  ],
+  "version": 3
+}

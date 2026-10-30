@@ -1,0 +1,1272 @@
+{
+  "date": "2026-10-15",
+  "source": "Claude logged-in web; public frontend assets only",
+  "files": [
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-styles-BeNNKhZb.css",
+      "file": "shared-styles-BeNNKhZb.css",
+      "bytes": 106414,
+      "sha256": "09d5f06382ad1bba4a2f15229c9fbda8155ea7637f49658948b14c4c0e344c9f"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c04631725-bWTVa_xK.js",
+      "file": "c04631725-bWTVa_xK.js",
+      "bytes": 3693,
+      "sha256": "1d20a047c35c9f076e34550490944ba60dfa0422ca165bf19843a8d0dc36e385"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-frame-24yhq5YI.css",
+      "file": "shared-frame-24yhq5YI.css",
+      "bytes": 203,
+      "sha256": "173e04e6f901fddd6ddb7bc830b54b2ce67d73c6860ab9fb5a9bd03434ec4867"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c145fa5ca-K3-ysOku.js",
+      "file": "c145fa5ca-K3-ysOku.js",
+      "bytes": 20029,
+      "sha256": "b1dd3ef3e52a558f42ca8ccecbc60fe54e3fe2c6ce6927442cb7842cd7739ce6"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-Djzwg_0Z.js",
+      "file": "index-Djzwg_0Z.js",
+      "bytes": 7532,
+      "sha256": "c598c15802384292c929122efd98e3c416a62670a128d577443703421e9ff5ed"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c29bb5332-WsY861MZ.js",
+      "file": "c29bb5332-WsY861MZ.js",
+      "bytes": 1139,
+      "sha256": "ed8934caf9db479d63aa94726c089e14a8016388a49224783d2a58534d34b02f"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c611a90a6-C8snPbam.js",
+      "file": "c611a90a6-C8snPbam.js",
+      "bytes": 4221,
+      "sha256": "e97cbc91d9f1875570bb4a849dcf352af51d13b255659c3cb1252a227138844e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ca53fb9b4-qceQtfBt.js",
+      "file": "ca53fb9b4-qceQtfBt.js",
+      "bytes": 25773,
+      "sha256": "113d2ac69595ee8f017080cf8626f4f4fe8c5c05ddfcbe24d36babdd39c3a84b"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cf72774a7-DZGMqfJP.js",
+      "file": "cf72774a7-DZGMqfJP.js",
+      "bytes": 11704,
+      "sha256": "59b7523d7fb46c6dd37a4b2e005e8fff4b103ea33e365e9e2d3a61d02823e101"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cae5cdd4d-zfjLZ1om.js",
+      "file": "cae5cdd4d-zfjLZ1om.js",
+      "bytes": 15458,
+      "sha256": "fac6754c76c39988ca4afe8e1263c9692780b1577f59e003e03381a0bdbb585a"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c6a992d55-DHhQ9nYU.css",
+      "file": "c6a992d55-DHhQ9nYU.css",
+      "bytes": 1792272,
+      "sha256": "3acda222f0adbede1694544c509e905984753f1e13b13fba3613dec26ee6b1df"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/rumEncoder.worker-D8GGzwpc.js",
+      "file": "rumEncoder.worker-D8GGzwpc.js",
+      "bytes": 64947,
+      "sha256": "01bfefe83cd408682df64a84e132da1576ad5e18fbdc7ed0703237af2cab5f59"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cd6cfdc6d-NEdshQAR.js",
+      "file": "cd6cfdc6d-NEdshQAR.js",
+      "bytes": 9751,
+      "sha256": "cc34afa70e53646d0208e5df623b76aa2e497a30578c8816f97af80d80444950"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c2ce25e12-lGKsYrT9.js",
+      "file": "c2ce25e12-lGKsYrT9.js",
+      "bytes": 9455,
+      "sha256": "e41dc0be2eaa31c053af66b8e955b5eac97e01cc91a6503a24f75d297ae94187"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c4e819c83-W3owgf2h.js",
+      "file": "c4e819c83-W3owgf2h.js",
+      "bytes": 3333,
+      "sha256": "1df3aa42660ef526e67bc2ce488214cd1ac816e09d230155403087ece2d64d2c"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cc87dc697-BCNcFuEl.js",
+      "file": "cc87dc697-BCNcFuEl.js",
+      "bytes": 2822,
+      "sha256": "fd9f6035b1d97c9c51054b644ec0f23bd987d6f58058704d31905f3d904eec1a"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cf3d55acc-B-_g8key.js",
+      "file": "cf3d55acc-B-_g8key.js",
+      "bytes": 862,
+      "sha256": "10929d11993ba3dd28d82a069314c7d74e223400674e5c7b581a3605ce0b54f3"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c2065a777-C-juKNXu.js",
+      "file": "c2065a777-C-juKNXu.js",
+      "bytes": 3336,
+      "sha256": "c3b82cc74c1bb88b8f1a2ffb69bcaa227cc28c51a3d7f9e6bdcc44c917821881"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cd85e132d-jrj5rXAh.js",
+      "file": "cd85e132d-jrj5rXAh.js",
+      "bytes": 1777,
+      "sha256": "a17ed9120a1b8f0ced7f2baa59f1635965af33edde58e4cc96bb1432d1e75fc4"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c74d5cf83-DTLREHj6.js",
+      "file": "c74d5cf83-DTLREHj6.js",
+      "bytes": 1772,
+      "sha256": "7c05657a1dc9067108f9d8603b478aa0e4b22835a30a41f792d28e27724cf83e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c11fbfc0a-DmmYymFj.js",
+      "file": "c11fbfc0a-DmmYymFj.js",
+      "bytes": 328,
+      "sha256": "33aa59df4087bff58aab0a6b41c236efc079629d98a32408f69a238d37f602ff"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c20c7f437-DycNwA2d.js",
+      "file": "c20c7f437-DycNwA2d.js",
+      "bytes": 646,
+      "sha256": "321f1dfeadebbcc7305479a131d356b0f0424dd17bd130dd5e6ba6d5646cd74c"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c8cba5cdc-lC7Ik9wX.js",
+      "file": "c8cba5cdc-lC7Ik9wX.js",
+      "bytes": 11759,
+      "sha256": "aa4b796aa1ad009d9d4e9eff27527d26bea798d2fe03fed1e37b4d4c00f60e1f"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c666857b8-CUjJ6dXv.js",
+      "file": "c666857b8-CUjJ6dXv.js",
+      "bytes": 10299,
+      "sha256": "113278d17fc508711207a8da9a6913285871fcacfdf127acbc156fa3af8f5c29"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c54dddf28-C9a0mpwX.js",
+      "file": "c54dddf28-C9a0mpwX.js",
+      "bytes": 1461,
+      "sha256": "f730833ab6f76c073c6bd658fc03633decc31a5f612900c9115d5e148f3fa1ea"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cf1a02a1a-DdTz_5PL.css",
+      "file": "cf1a02a1a-DdTz_5PL.css",
+      "bytes": 26372,
+      "sha256": "0ec8b3d9d8c9f39dface5571fc02e35fb35246b6fb62cd9b36e578c8a4d47f6e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c4b1cf320-DO1lbfIY.js",
+      "file": "c4b1cf320-DO1lbfIY.js",
+      "bytes": 1678,
+      "sha256": "2452435bba928625860e36f4f9da57da2e0c75a05354afdc026944af6c4e14fd"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cba942fef-BIBV0wcn.js",
+      "file": "cba942fef-BIBV0wcn.js",
+      "bytes": 3510,
+      "sha256": "34984050810a729d49d97927a5bb8f1c6da2387f46c7db05f1c45859c6376177"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cd9f08caf-Cdh2R3dK.js",
+      "file": "cd9f08caf-Cdh2R3dK.js",
+      "bytes": 246,
+      "sha256": "4f23b919d6bb204eb3efeb9b53e918ae636190c5a8f517fc9412f11f4795b80e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cbc31a033-D1sEqCUF.js",
+      "file": "cbc31a033-D1sEqCUF.js",
+      "bytes": 834,
+      "sha256": "215e4dfc538f0c17d3a10a03da808f8677ada9cb56443ba777034ed3c27498cb"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c109e6946-0x0zw39S.js",
+      "file": "c109e6946-0x0zw39S.js",
+      "bytes": 14768,
+      "sha256": "ca99f81d6381a36a1a902fb3918583868f04dcb65bce7398e69201761963e677"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ce4cd95be-DT1hS2YI.js",
+      "file": "ce4cd95be-DT1hS2YI.js",
+      "bytes": 1136,
+      "sha256": "418084e3a7913c499190ee59e5ba65048fe8dfb3348ca06fc737aa8ada35dfcd"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c1623566d-B2WfoFKU.js",
+      "file": "c1623566d-B2WfoFKU.js",
+      "bytes": 3665,
+      "sha256": "24f3aa7e2bb0b6bc3fb39fc59633bfee262cbffffa67ecb3dd08df4033381209"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c3afb265a-D0SxR9dc.js",
+      "file": "c3afb265a-D0SxR9dc.js",
+      "bytes": 766,
+      "sha256": "f2ffbf948a7d3bf1774b87304772b897fc1f5775e77f200c2ed389dce9a860f6"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c4557b00b-CWGr8uvf.js",
+      "file": "c4557b00b-CWGr8uvf.js",
+      "bytes": 1570,
+      "sha256": "df8d04d76bf2397524de706d6dd6d813803806bcf80fde131c8c3a7302547701"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c28f9f509-bmsSzJb1.js",
+      "file": "c28f9f509-bmsSzJb1.js",
+      "bytes": 4036,
+      "sha256": "cc0a4433c30a1b3b8baf4546040fd9900ccbac55c1d56c5fe1572e294a1b9946"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c681bf35d-Rkcd57BO.js",
+      "file": "c681bf35d-Rkcd57BO.js",
+      "bytes": 6855,
+      "sha256": "a2616fca9b3d8366c6ce97fbd14aa80933b34d3a39cbaf1cb75b4a7a5513410b"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c6aa8f808-B4Srj3Cj.js",
+      "file": "c6aa8f808-B4Srj3Cj.js",
+      "bytes": 15718,
+      "sha256": "dd542135416563ceff5485d16a51530d97ec68f28cd334b7b72ef98808387749"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ce3616068-BaBuvaEB.js",
+      "file": "ce3616068-BaBuvaEB.js",
+      "bytes": 113,
+      "sha256": "f7e3467555dce9dac8895dc7fb0aac87bf0b7b5124a9d130191a81c1a5c9743c"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c7a185bac-VdRFJn-t.js",
+      "file": "c7a185bac-VdRFJn-t.js",
+      "bytes": 461,
+      "sha256": "c012a25b78acca7cc2d28d06bf3c6b6f2b4c9fed88e1cdab6b8ef3bbca3e2d21"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c89362a96-DuSaDaXI.js",
+      "file": "c89362a96-DuSaDaXI.js",
+      "bytes": 28215,
+      "sha256": "944cffa2de55a4605fbbd1286690fd29c3f60f59be45516aab019765bddc8cf6"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c0ff9653e-B_OuYOr0.js",
+      "file": "c0ff9653e-B_OuYOr0.js",
+      "bytes": 5571,
+      "sha256": "3eec80253e40d421d4ac0671c39955a28052b03dbdcb29c8daf3caada31d4549"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c9f3b4b7b-D70PlRWf.js",
+      "file": "c9f3b4b7b-D70PlRWf.js",
+      "bytes": 41741,
+      "sha256": "6d694d516cf5f27942957aa2ae6b290a80ea33ec0480baa02cdde94e6a2d9e19"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c73a98fd8-Ck5vYTwY.js",
+      "file": "c73a98fd8-Ck5vYTwY.js",
+      "bytes": 1538,
+      "sha256": "d9f4f65e8aa5274c8e8d830ade57e0dc5a5148ef21584959137a2f27ede994c6"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c7569d14d-D7xBeRGc.js",
+      "file": "c7569d14d-D7xBeRGc.js",
+      "bytes": 1126,
+      "sha256": "a49f94887fbce1a4d7fb7deda63209cc24759833c1b21c8291607c7713e6c4a1"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c2e4824d5-XWfz4gIk.js",
+      "file": "c2e4824d5-XWfz4gIk.js",
+      "bytes": 892,
+      "sha256": "aae97a418518da95d7e701b41218e1297a44d0fca4998bb2dfc7b96e5f881ee3"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c7c840480-BvJ4lQ_h.js",
+      "file": "c7c840480-BvJ4lQ_h.js",
+      "bytes": 26950,
+      "sha256": "032c2562424ba1115d114c8799639ca07ab852b416598e4c05dbbd22086fe22e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ca668ec02-BSjR9bFV.js",
+      "file": "ca668ec02-BSjR9bFV.js",
+      "bytes": 66536,
+      "sha256": "678a021a04cd3cd6baddb9cbe54c19301b4f9a5842b443c1b9b4e45df48a33c6"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c7967290f-Cj3JwJqG.js",
+      "file": "c7967290f-Cj3JwJqG.js",
+      "bytes": 17843,
+      "sha256": "3fb9064efbb5ef2ebdf07f0346b4d9372f9fb9572994e83469f55beea7d66824"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cfaac6c14-vp9v_FpK.js",
+      "file": "cfaac6c14-vp9v_FpK.js",
+      "bytes": 23012,
+      "sha256": "f2fc2883a0b5133ba67648299223648d517e61572303af88a4061e5c42111370"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cb7829751-5ZKBqj6_.js",
+      "file": "cb7829751-5ZKBqj6_.js",
+      "bytes": 32218,
+      "sha256": "a7c64b9055ca60e3878c1ae188a821bfe9bab5f38182a5ec0afd34ce85b3bb80"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cf2613ee5-CgpXKaa3.js",
+      "file": "cf2613ee5-CgpXKaa3.js",
+      "bytes": 163154,
+      "sha256": "8367b885f95b1a3b96b47ebec92e66ee1477a22fadf4edd71bf5575a2de7572a"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c00a93a61-D6afbIFz.js",
+      "file": "c00a93a61-D6afbIFz.js",
+      "bytes": 1469,
+      "sha256": "77bddfbbde9aac05585db80ca9ef9ea99a2ff2dd9446103ded3e677657a2ec66"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cbed1e4e8-CwFye717.js",
+      "file": "cbed1e4e8-CwFye717.js",
+      "bytes": 15313,
+      "sha256": "e2a8e23e8c7e9c42677a6c52a7cc7fc1a81f07addb69be4d777f744ae04e48f1"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c20089c17-tqqsPTF4.js",
+      "file": "c20089c17-tqqsPTF4.js",
+      "bytes": 49210,
+      "sha256": "7741423f15431040a08694beb3a27d8773db1691d82eb22a51909c2f89861b6a"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c6c057753-2KfYd0Mz.js",
+      "file": "c6c057753-2KfYd0Mz.js",
+      "bytes": 8288,
+      "sha256": "5b8afdf954a538cb977d1824eb558d01a638d2719e20345571f8bd555c4135ea"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ccd46c29b-DqpX1X8_.js",
+      "file": "ccd46c29b-DqpX1X8_.js",
+      "bytes": 1460,
+      "sha256": "0256477e0310cd54168ce19265e8b49ffeb1addeb97152caa96e496a2524e541"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c2738e478-DVA6P1aI.js",
+      "file": "c2738e478-DVA6P1aI.js",
+      "bytes": 2436,
+      "sha256": "005328e8990897897ceffc4a62f22173aa889ecb3975611d0db0ae165252ac72"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c684c9a21-DTzXdMMy.js",
+      "file": "c684c9a21-DTzXdMMy.js",
+      "bytes": 4674,
+      "sha256": "31e077770666840694bf9bfafbf89649b3a64d5cbbdaf25d659c779b1ac99a0e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c68c4283d-AivaaZCF.js",
+      "file": "c68c4283d-AivaaZCF.js",
+      "bytes": 25875,
+      "sha256": "e84ecfb590ba8744ebac3ff0cde264c47773c056718b2e2e1a8d5d32f55ac2b9"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c8cbf8bfb-BY3flt0-.js",
+      "file": "c8cbf8bfb-BY3flt0-.js",
+      "bytes": 6439,
+      "sha256": "c30939759c0a31bbb27ead5d861f1fc2a648447a10cdb9e94a524c34fcd24430"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cc4d7e150-nXIiVTRR.js",
+      "file": "cc4d7e150-nXIiVTRR.js",
+      "bytes": 1332,
+      "sha256": "ba04efce2000aa45be29361625ccaa256cf09544482b148521ef906fdaccc8ff"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cc011544b-Bw3RaNHa.js",
+      "file": "cc011544b-Bw3RaNHa.js",
+      "bytes": 34199,
+      "sha256": "0c116cd26d0dfc66f6d8be40ad1d0a3c1c08e77845f93250876fbf19efa7640e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ca5811b6a-DdlXwUNo.js",
+      "file": "ca5811b6a-DdlXwUNo.js",
+      "bytes": 8137,
+      "sha256": "ac43d9374117b5aa77177585da6ba6309e600a209652c8a883f9bca14dcd760e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cd9282f83-CCIJK9rX.js",
+      "file": "cd9282f83-CCIJK9rX.js",
+      "bytes": 10572,
+      "sha256": "0b3ff2f756cdcbecdc7f8d5beac565e1d797c1dfea1855d2e4be0b19019cd95d"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ce61eda7b-BDMy5Cb7.js",
+      "file": "ce61eda7b-BDMy5Cb7.js",
+      "bytes": 2090,
+      "sha256": "4bdfa6bcff8a2fcbd332d8740db2bb1012869054e7b7eabb57849f83bec44004"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c4a0274e5-Cvzd57IL.js",
+      "file": "c4a0274e5-Cvzd57IL.js",
+      "bytes": 10044,
+      "sha256": "bbc1719a9c0f2c636f8f0f2a4f500b378b6ed1c7f0aa220bd79b97d01c16004b"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c259d3b84-CGGan0zq.js",
+      "file": "c259d3b84-CGGan0zq.js",
+      "bytes": 9178,
+      "sha256": "0886be784ffb37d341444ae74dd878d35be5c026a660896b21d1c83b0eaab6c2"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c656f52d1-QhHKoCCr.js",
+      "file": "c656f52d1-QhHKoCCr.js",
+      "bytes": 1577,
+      "sha256": "cab44a8d555072b04c24b8c611687e739e3648aa52208711acaf2bfbe5a2daa9"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/completionGzipWorker-Q_JtDKxH.js",
+      "file": "completionGzipWorker-Q_JtDKxH.js",
+      "bytes": 591,
+      "sha256": "ae8faf6861cddd9dcf510dce849db404d56ae67a4b9c73d7214e5de6b1236360"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c4a7d7dbf-C39lUrNe.js",
+      "file": "c4a7d7dbf-C39lUrNe.js",
+      "bytes": 548,
+      "sha256": "e61bd88070aeac928fa99d4a5e80c3287f997f2d48b4eb876423262685fe7e23"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c46e69531-Csg7g8rX.js",
+      "file": "c46e69531-Csg7g8rX.js",
+      "bytes": 5449,
+      "sha256": "599ea787ff801b3cbf99496b4d8bf2f74c0971d1f430e263d6b855cf7614b9e5"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c071fe0f8-CgGAMsAW.js",
+      "file": "c071fe0f8-CgGAMsAW.js",
+      "bytes": 8395,
+      "sha256": "4a69c8ba4e0fa9fc4abb3142b87ebc92411d53d3b22085944e81c765998a83c0"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cb9d75239-By9q3BQy.js",
+      "file": "cb9d75239-By9q3BQy.js",
+      "bytes": 4328,
+      "sha256": "3ab330a685b8c39cb0c0cead78047d71c31585899a7ed961a8f5b0f73fe433e3"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cef6a1a3a-CXrISHOo.js",
+      "file": "cef6a1a3a-CXrISHOo.js",
+      "bytes": 1440,
+      "sha256": "8e476fe33d1f912a79534bcb031d9900788f051b3bf43699e41b22fc09f7e903"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c13348442-BMLnn4Zi.js",
+      "file": "c13348442-BMLnn4Zi.js",
+      "bytes": 5380,
+      "sha256": "b0abdf791eaa1cc09a2b68a367448dfdfb28d4f100c2227f1094bdb1b243ff6f"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c072cabae-CFJ7QgHM.js",
+      "file": "c072cabae-CFJ7QgHM.js",
+      "bytes": 10350,
+      "sha256": "d2a4d281dc31cd3071830e6088dcebcdf6c363014cf4aae00fd5b6b1d8bf7b5e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c87691710-DzhmwQmO.js",
+      "file": "c87691710-DzhmwQmO.js",
+      "bytes": 1444,
+      "sha256": "278dc5c4a155af8e97f19c57831416a5d3ad344a2213fafd10eba86d888bbfc5"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c9c6ffacc-CBpGgiE6.js",
+      "file": "c9c6ffacc-CBpGgiE6.js",
+      "bytes": 1095,
+      "sha256": "61b59ddccf2ee8854af4347417c645bf1d645bf034be93bdac29686549077c75"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cbf7c3a8d-NWyXoH88.js",
+      "file": "cbf7c3a8d-NWyXoH88.js",
+      "bytes": 2373,
+      "sha256": "a0a5801d585ffa8af1794bc7590696975b90fc3e1fbdc802e53151ebd9550018"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c2e144342-CrXJUwwy.js",
+      "file": "c2e144342-CrXJUwwy.js",
+      "bytes": 12186,
+      "sha256": "6302badd48f7223ce2e6915b9bf4e2c020afaa61fba33eefdca4c9edffee1b49"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cc61628a5-Cb_A9ySD.js",
+      "file": "cc61628a5-Cb_A9ySD.js",
+      "bytes": 2135,
+      "sha256": "5ec2897508520a69dd3035a7974dbfb4f1ca0b010e0b09cbb13659de5dee6218"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c75f4c034-e7ijs3zl.js",
+      "file": "c75f4c034-e7ijs3zl.js",
+      "bytes": 8348,
+      "sha256": "36e3a689b968b368b86360fe66e3717a4622044fb406e27b6a659925552756c5"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ca25db325-DYpQYlYL.js",
+      "file": "ca25db325-DYpQYlYL.js",
+      "bytes": 19866,
+      "sha256": "65fc023c28fe3889a4a3e2178107553f76b6b0c10bee03545d84f546c70e13a4"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c8963aace-CbO5RKcF.js",
+      "file": "c8963aace-CbO5RKcF.js",
+      "bytes": 10760,
+      "sha256": "86f23efa762b51c4a9b65ab2eea2002e477a9b9981126cad0bf75f518553a20e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cd08e92dc-DQxq5YQt.js",
+      "file": "cd08e92dc-DQxq5YQt.js",
+      "bytes": 10639,
+      "sha256": "e3dae4a4e279eda0bf36fc69245a84357eb875b309670021d69c4b15a09dccca"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cb4537495-B8UT_gMj.js",
+      "file": "cb4537495-B8UT_gMj.js",
+      "bytes": 2082,
+      "sha256": "486fac6bc37b6022b32ccfa6430710065e507565c08cacc58b791889507d35b9"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cb3b1e48c-5XL7bmA6.js",
+      "file": "cb3b1e48c-5XL7bmA6.js",
+      "bytes": 131,
+      "sha256": "4e3226a004a20bc3b7a300004ba118ae8ec5977f8637246d9b53eb7d440900dd"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cf0e8a0d3-BT9G225Y.js",
+      "file": "cf0e8a0d3-BT9G225Y.js",
+      "bytes": 4076,
+      "sha256": "fb0b4757c58ffd5b27dd5ee9beea59ff7fe000a9c5e70fc2dcd1ee24686c9b91"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c40ce23e5-Bcq5JfRM.js",
+      "file": "c40ce23e5-Bcq5JfRM.js",
+      "bytes": 740,
+      "sha256": "b68419d1649c30daa1cd4ce48bcdbc929b13fc6a2baf3fe5522d886a0e0cd8d5"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c705a8db5-CboDVfKl.js",
+      "file": "c705a8db5-CboDVfKl.js",
+      "bytes": 2259,
+      "sha256": "fe8a8d94cfb0bde381e539d43ea16eac907196c8616af4ce903da96da9189dd7"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c1c9ea8f5-4QRjn4pL.js",
+      "file": "c1c9ea8f5-4QRjn4pL.js",
+      "bytes": 2772,
+      "sha256": "5c31d002f85df4ea19ee5330a0c87e4451b89bcbeb836ed7e5adf86cf3ba8ea8"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cd19fedd2-Dlt5vw1G.js",
+      "file": "cd19fedd2-Dlt5vw1G.js",
+      "bytes": 12704,
+      "sha256": "45baee41376b6de6f9015af71b0bbc008dd0e70c83f74e9144f2341d468e149f"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c45281563-D-vXgADb.js",
+      "file": "c45281563-D-vXgADb.js",
+      "bytes": 8265,
+      "sha256": "7f69f634d6d29a8e59d236497a4b44a182485984772c7ab9c1ef93aa0959d1f3"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c3e08bbd5-CRiY_CED.js",
+      "file": "c3e08bbd5-CRiY_CED.js",
+      "bytes": 251,
+      "sha256": "cc37ee92475892ed411d253e8a3831bb116984664802d7a201c82f80b97d127c"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c3c330885-4S5reiu_.js",
+      "file": "c3c330885-4S5reiu_.js",
+      "bytes": 5571,
+      "sha256": "0eccdbe50e43a23a5b39b0555d3a1453e7baed70313d69662a17bbddf250c3c9"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c3edb1c27-CnaaWcQu.js",
+      "file": "c3edb1c27-CnaaWcQu.js",
+      "bytes": 2435,
+      "sha256": "4147e0a04cdc89d9d11343682ed2f9d9211016b1df2fc712fb145283e151d603"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c145ffce9-r8oahKS_.js",
+      "file": "c145ffce9-r8oahKS_.js",
+      "bytes": 3699,
+      "sha256": "e55379cc694d805bb3e7a9d715429840374b0a80f307db2844b83183886a7c6d"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c06471998-DnpbYw7Z.js",
+      "file": "c06471998-DnpbYw7Z.js",
+      "bytes": 503,
+      "sha256": "ddccd99539d627e8b31b2238217c3634fdffdeaa231751038bbbddbd460b17a1"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c2dbe72d8-Bq2zGcu8.js",
+      "file": "c2dbe72d8-Bq2zGcu8.js",
+      "bytes": 1867,
+      "sha256": "1fae8d171914208f5bb9e289b16b082449ad87222587a4074bf482c46066eff8"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c206d55b2-QCvq2YMG.js",
+      "file": "c206d55b2-QCvq2YMG.js",
+      "bytes": 6757,
+      "sha256": "971c1bf60d6b8c6a793f5c3ed43d19aa3b80936374b56a40824f8a2111020025"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c08f249ae--8iR7Wmy.js",
+      "file": "c08f249ae--8iR7Wmy.js",
+      "bytes": 9734,
+      "sha256": "5b8534da3e97518d4ea91936be63593f9099e8b39e3887cedfc11a938add75d5"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cb4e4d5b7-CKK8rQfw.js",
+      "file": "cb4e4d5b7-CKK8rQfw.js",
+      "bytes": 16167,
+      "sha256": "d5a78fbf8c5cdc289bde379de76ab61230919a49c91d0515e99fd9980084f646"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ce645a5d4-B7-sCB0l.js",
+      "file": "ce645a5d4-B7-sCB0l.js",
+      "bytes": 927,
+      "sha256": "80a7592b71c95966f1db4ca202a7d5351fda1ab556899ffd19b6316ed60e6387"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/caa0fadae-2RMqVF4O.js",
+      "file": "caa0fadae-2RMqVF4O.js",
+      "bytes": 5665,
+      "sha256": "d0c7569f52c031c45b9ebafa4669b91b02fb1b9ce5a0e9dc340c3fd76e7c412b"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ce789fadb-dbYjYk_B.js",
+      "file": "ce789fadb-dbYjYk_B.js",
+      "bytes": 2138,
+      "sha256": "5b6caa8227f9ca62e0f66c3d29f77848ba2857b9f3052d96eb03b1f56e89ad3e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c0ebb27c3-CRlN2pVC.js",
+      "file": "c0ebb27c3-CRlN2pVC.js",
+      "bytes": 5804,
+      "sha256": "696932e85bcf93cc63f23c25ba6289b7f27bd37349392e03361e24607b39ce74"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c4fe8412a-D74d3Vy3.js",
+      "file": "c4fe8412a-D74d3Vy3.js",
+      "bytes": 8484,
+      "sha256": "9565306f3754614e2216127f3f137e552b9d515d849733b747ad31a4e6cf430e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c845b7e54-DP_Ru063.js",
+      "file": "c845b7e54-DP_Ru063.js",
+      "bytes": 4415,
+      "sha256": "b207b4ad9fc87ec84ec275045d7974c2caadd782c368dcefb220754d65fee508"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c2771e1f6-Dkq0nvjA.js",
+      "file": "c2771e1f6-Dkq0nvjA.js",
+      "bytes": 177864,
+      "sha256": "75532a2ebd4859c6bb4c29497b72928a104a30af0c63b710f50cd8d382d88634"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c90d5ac19-CEPuaUGy.js",
+      "file": "c90d5ac19-CEPuaUGy.js",
+      "bytes": 1118,
+      "sha256": "6590cc2f0b467ded167278932be22cdcc21d1fbaa97679d4102baa1f029cabdd"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c1bd89b99-Dk_wkUDV.js",
+      "file": "c1bd89b99-Dk_wkUDV.js",
+      "bytes": 642,
+      "sha256": "670ebbf1bc812d0025fa4828d0ae32a7fbaf750896a04deaad92f94656fca34c"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c2e206bf5-vE0k_RYF.js",
+      "file": "c2e206bf5-vE0k_RYF.js",
+      "bytes": 22436,
+      "sha256": "38855e5c2d1032d3b13c46a00d8941235abd1ec7c9c50ddae4181687dae4b4f2"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c85c3ab64-DIvMODu_.js",
+      "file": "c85c3ab64-DIvMODu_.js",
+      "bytes": 7150,
+      "sha256": "62ef428483de2a336b63a63018bc4641b3eafa0ed252619540f9baad4e2cd87a"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c3a41fcbb-CvhPK4Gx.js",
+      "file": "c3a41fcbb-CvhPK4Gx.js",
+      "bytes": 9288,
+      "sha256": "e3d94835f95a81006fa00c1749891151be756890bba7302c6c5be37b0344a003"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c4d199b75-BN3retqO.js",
+      "file": "c4d199b75-BN3retqO.js",
+      "bytes": 15006,
+      "sha256": "6da144dc1dd9d07db83c34b67975ceda006f3ed6893da0adf64d6dad93f7cab7"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cd2e30834-eZCP2RjD.js",
+      "file": "cd2e30834-eZCP2RjD.js",
+      "bytes": 14065,
+      "sha256": "96043ed82d8392d2850804653dbd326d42033d2acf3e4c39f95a5882b833aa68"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c1ec8a7a7-BSpa802V.js",
+      "file": "c1ec8a7a7-BSpa802V.js",
+      "bytes": 1229,
+      "sha256": "57388639a7535c969242d5badc84706341b405cad8cf986d7fd3ef364e0f805e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c79af6e0e-RWgq42-S.js",
+      "file": "c79af6e0e-RWgq42-S.js",
+      "bytes": 5931,
+      "sha256": "ea7cebe3092c2961bdcdb4b3cf5bb0e80f28175471b6b8a22d2bdccb4fecb0ba"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ca7880640-jH353cP4.js",
+      "file": "ca7880640-jH353cP4.js",
+      "bytes": 8429,
+      "sha256": "33d7b324752b66ba7dd7dbb488ce16b6d15c142345330f91628309e98165e5d9"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c93c3b2e6-DC7HJHTm.js",
+      "file": "c93c3b2e6-DC7HJHTm.js",
+      "bytes": 3750,
+      "sha256": "aaa87a27f57ef9dcd3d7e6d123441cb13758f7a3111cb59a51738409f73f0aaf"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cac4c03e6-DEbXVT5i.js",
+      "file": "cac4c03e6-DEbXVT5i.js",
+      "bytes": 902,
+      "sha256": "ef67f76a9b6c2d64d0a2b8cac39dc07d3648619c93ba5acde053e8d2e407f37a"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ccc334009-Do6AsTHZ.js",
+      "file": "ccc334009-Do6AsTHZ.js",
+      "bytes": 10573,
+      "sha256": "b8cfeb6548e5b24ef313cffd31ccc3aa0bd9e0f2206a40de34a2da5a4badf0dd"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c9081d688-_-1QWipm.js",
+      "file": "c9081d688-_-1QWipm.js",
+      "bytes": 9634,
+      "sha256": "0f2c80d6513c623a5b115715d4ffb3de8e5134415d820f2439e0aa6603cfcc68"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c7407a74b-A_Kc0IZu.js",
+      "file": "c7407a74b-A_Kc0IZu.js",
+      "bytes": 5423,
+      "sha256": "72277664ba887c890fe5ad46f759260a2b7abdcf47d287302e5de0b9ba184f87"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ce38f2fa6-1aACCcO9.js",
+      "file": "ce38f2fa6-1aACCcO9.js",
+      "bytes": 11757,
+      "sha256": "303e7258c66a59a73ae5ab385a3d55d56b44233a965cdcf0b2ae0870e83735ba"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ce8be540f-DUhs0ROe.js",
+      "file": "ce8be540f-DUhs0ROe.js",
+      "bytes": 64485,
+      "sha256": "9eca87e160a4e636dcde2f07d605c0a59add7d58817b3986db66f97d0b0efbd5"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c6f15305a-DKUqOXW1.js",
+      "file": "c6f15305a-DKUqOXW1.js",
+      "bytes": 4028,
+      "sha256": "5ccef763b0e08c24ce0c99293a2341c8323b67490146c131e115889376e9d148"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ccc68ce7f-DoDq5ELU.js",
+      "file": "ccc68ce7f-DoDq5ELU.js",
+      "bytes": 261516,
+      "sha256": "d5eb164cca0eb5b34dc8497eba9c197c5070c86dff801092888cd8fba7fa22da"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c752b32f8-B3hLiVCh.js",
+      "file": "c752b32f8-B3hLiVCh.js",
+      "bytes": 75913,
+      "sha256": "92fb2ee4f5159e75ce525a2dc06dcc754dcbff1e71e495fbae19c32780142810"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cca745a7a-C6kPnvws.js",
+      "file": "cca745a7a-C6kPnvws.js",
+      "bytes": 32104,
+      "sha256": "36f99e918c61a472cb8422343f8c7baaf47889d5527a510990cde3932ba07730"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c9875cb9f-C1fcCm0g.js",
+      "file": "c9875cb9f-C1fcCm0g.js",
+      "bytes": 24000,
+      "sha256": "96dba749c6743889eae7ffbc1f77ef24f7e64497623198f5bcd5e8a699c5a655"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cb6c4b462-RZkg_H63.js",
+      "file": "cb6c4b462-RZkg_H63.js",
+      "bytes": 674,
+      "sha256": "26bdaed5d5151e05875d7a4f2201adbe0e04439e1b926140bbd6cb7c0fc4d799"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cf8ccd7a3-Dz1yRqON.js",
+      "file": "cf8ccd7a3-Dz1yRqON.js",
+      "bytes": 14983,
+      "sha256": "78d43e7a1f2aec405166ca6406ca59416dd431b2fbccb29c5717d86ab7d09909"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c3e5e55a7-CmLd5bS9.js",
+      "file": "c3e5e55a7-CmLd5bS9.js",
+      "bytes": 21644,
+      "sha256": "bb2ce8c8a549ee5bcd43cbdaa4b9d5c4701725c77a8de7306280ab482f8c4bed"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cf61361f2-D1_c-JzW.js",
+      "file": "cf61361f2-D1_c-JzW.js",
+      "bytes": 3107,
+      "sha256": "df4de6afb6321676c74f2be13a82c2f0cc0ff4d16d44ecc19eda56da534e7f5e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cd27cb2c4-kJhVAWqe.js",
+      "file": "cd27cb2c4-kJhVAWqe.js",
+      "bytes": 35753,
+      "sha256": "42f1f8d37dfa18181982ea1ed76e61e7d3ce8f22de44beed485a0c445ade2076"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c93371e43-B8ZAekVG.js",
+      "file": "c93371e43-B8ZAekVG.js",
+      "bytes": 7843,
+      "sha256": "9109eabc7762a79a9d15799a378b944dea1c718bef34afd3eeac018b0ea10fe1"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c0c371a67-SFUpOHv6.js",
+      "file": "c0c371a67-SFUpOHv6.js",
+      "bytes": 35920,
+      "sha256": "d4fd2c6b4cf87aad2765e8139685727f2beea915c7eb598399ebcf5c9763539d"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c9f414608-Bdox5Tg7.js",
+      "file": "c9f414608-Bdox5Tg7.js",
+      "bytes": 1120,
+      "sha256": "6d180e8874010fd6d39626f5b1d55a5bdb8750b535a19e659985299a9ecd725c"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c42ad6d6c-GPgquah2.js",
+      "file": "c42ad6d6c-GPgquah2.js",
+      "bytes": 8806,
+      "sha256": "4b69afb33b2af49e850636a2a97f869b4f899fe6242a55eb1d9fc59bddd8e3e5"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cb264bc23-DT44WWFs.js",
+      "file": "cb264bc23-DT44WWFs.js",
+      "bytes": 8263,
+      "sha256": "891730dd409c496b0261637457212e11909c52321b005c34d6250bb098e5c64f"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c3c7be4f7-DlVHm8gQ.js",
+      "file": "c3c7be4f7-DlVHm8gQ.js",
+      "bytes": 121,
+      "sha256": "574ad3d88136d8ed6d49adae1507f740cc62637e0cbd9fe0fb103606d7408012"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cbaae0d6d-j4MwJsUe.js",
+      "file": "cbaae0d6d-j4MwJsUe.js",
+      "bytes": 50362,
+      "sha256": "b2eabe83918ee36c3c555ffe7d6b142da210bb5dddaff56038d025fcd7c1ce09"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c6f91d293-C4SJgHLt.js",
+      "file": "c6f91d293-C4SJgHLt.js",
+      "bytes": 9759,
+      "sha256": "8eb51e449b5cf65b59119bb71d9014bcb63779b57f1ca745f6bb5fe2c634aff2"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cd668e25e-asS-ZWPK.js",
+      "file": "cd668e25e-asS-ZWPK.js",
+      "bytes": 128685,
+      "sha256": "cc7bc608244f466f5c9bd7b878b00c9dee417adc8dc636eeac3d9aca164b23f7"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c1064f1b0-DwrUKn3J.js",
+      "file": "c1064f1b0-DwrUKn3J.js",
+      "bytes": 1362,
+      "sha256": "9e77ef1bd422d810c1173f710a25db883b286c41b6f3c37efde5b7046800055b"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c79f7d2ef-CNg7noBF.js",
+      "file": "c79f7d2ef-CNg7noBF.js",
+      "bytes": 5367,
+      "sha256": "9b3cf55225ef0da4ca8ff7e1eceb587ef46a7dd6777372a84eefca5479dd92ef"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c8d13a287-uszsys1f.js",
+      "file": "c8d13a287-uszsys1f.js",
+      "bytes": 15126,
+      "sha256": "98d2b269df963638195659bb7adcc934e5016b485f8e85cd2abc3ed3187a9109"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cddc29678-BFXHv-17.js",
+      "file": "cddc29678-BFXHv-17.js",
+      "bytes": 12781,
+      "sha256": "97675566796e32987feee9c5195a6e89efcda6cad96a20983379ad13eba2bc36"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-frame-boot-DrO3Hh6a.js",
+      "file": "shared-frame-boot-DrO3Hh6a.js",
+      "bytes": 5014,
+      "sha256": "99cafef9f3e660b9d2c608b6eaa0a1507d2fcb2d6440e9f2ba1839ecf7a40222"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/rolldown-runtime-BmbMa3VH.js",
+      "file": "rolldown-runtime-BmbMa3VH.js",
+      "bytes": 1163,
+      "sha256": "8de1cbd72f084ef0bccdb398507ed1fe97b748a074401bca9c0c18dab0d7c8af"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-frame-DDjZ-Bmc.js",
+      "file": "vendor-frame-DDjZ-Bmc.js",
+      "bytes": 511729,
+      "sha256": "2e2af7305c62cd53b82344989c978ef6f8792ae16d6804fd050bbeb77e768938"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/preload-helper-B-PsknVJ.js",
+      "file": "preload-helper-B-PsknVJ.js",
+      "bytes": 3693,
+      "sha256": "102895f73a6774e39a9a1173090169bfe6fe26d63a85947557f26a4fe51beff0"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-datadog-BURiVPfB.js",
+      "file": "vendor-datadog-BURiVPfB.js",
+      "bytes": 148783,
+      "sha256": "edaf948142b071b9e761a3a6e3f04fdbc90cf30a52143e615b7584ad228f591f"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-frame-ZLZnovjE.js",
+      "file": "shared-frame-ZLZnovjE.js",
+      "bytes": 462115,
+      "sha256": "3b874a61608caf8bf6113da3411573d7d9d8f5c8b99cdf2eb4824e1b789099a9"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-zod-CPpenJrb.js",
+      "file": "vendor-zod-CPpenJrb.js",
+      "bytes": 101881,
+      "sha256": "51600689b2dbabde4f050be7ad3fbcd7af473ae64e5e6f453b9320f3296ffc84"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-query-B4b449au.js",
+      "file": "vendor-query-B4b449au.js",
+      "bytes": 43514,
+      "sha256": "be6104ca9dc561cc81ff23ab66114a9fe5b2c01931f9a13ecd5a1f85bb9c7312"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-all-l-p-m-0-jIT2LgEh.js",
+      "file": "vendor-all-l-p-m-0-jIT2LgEh.js",
+      "bytes": 30326,
+      "sha256": "eeed1d8ea0dde22bc66b6ed7ad777b181db2a883b4f831c817ef63e84c23fd86"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-router-Qhiu9OH4.js",
+      "file": "vendor-router-Qhiu9OH4.js",
+      "bytes": 85235,
+      "sha256": "85a74774cf55569f2b6c5d4acd1ba783360b8e2baaa2ac211af76f7b7433d50d"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-l-p-m-0-BZYVUDei.js",
+      "file": "shared-l-p-m-0-BZYVUDei.js",
+      "bytes": 428076,
+      "sha256": "d48c4cc00c0f586c0bbea5d8394285c7299950aaa03260795f763815ef68c627"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-growthbook-KdkaOHAB.js",
+      "file": "vendor-growthbook-KdkaOHAB.js",
+      "bytes": 42836,
+      "sha256": "7676c7cb8ff8034745551a1900a2b26708e705dfe4504249e19024d18d68bdc6"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-intl-CuHBm_Eo.js",
+      "file": "vendor-intl-CuHBm_Eo.js",
+      "bytes": 48564,
+      "sha256": "1f95549b9b139c2ee551bbd594fcf998d21b225060dab3e58cc0e37d6ce14453"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-l-p-m-1-eWvlEgxa.js",
+      "file": "shared-l-p-m-1-eWvlEgxa.js",
+      "bytes": 326627,
+      "sha256": "e1ad191574e7b686aba4e3a7dea49bf19fc95d262a8f1afac1055a49c1a48f09"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-l-p-m-3-DCgrg0-9.js",
+      "file": "shared-l-p-m-3-DCgrg0-9.js",
+      "bytes": 316513,
+      "sha256": "4d66d6cef093fbff3c408e832f7da0a971c4578b2599a2c8711e79f1f4a6566a"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-l-p-m-5-BiF4nu4A.js",
+      "file": "shared-l-p-m-5-BiF4nu4A.js",
+      "bytes": 237722,
+      "sha256": "01edcdf13c60bb6fb5d270023cd2407fa2ca824942d0be902bac5d8a3d71f8bc"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-base-ui-DQmghteM.js",
+      "file": "vendor-base-ui-DQmghteM.js",
+      "bytes": 31785,
+      "sha256": "d777c28e3bb8fd67b91f800ae70c8fc0ded4b31c4a7075090ad3982fe1e859a5"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-l-m-0-C27f86yO.js",
+      "file": "shared-l-m-0-C27f86yO.js",
+      "bytes": 520221,
+      "sha256": "c0c4c28688cc595f3e74f3acb45306babb1b64979605199b70e2c234cc8f6bb0"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-l-p-m-6-CkSYAeo3.js",
+      "file": "shared-l-p-m-6-CkSYAeo3.js",
+      "bytes": 296934,
+      "sha256": "eec66b79034cfd7fadf8e259bb28581168f5b123020f86691ec016cd66d1d72e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-l-p-m-2-3k4pJtvW.js",
+      "file": "shared-l-p-m-2-3k4pJtvW.js",
+      "bytes": 372528,
+      "sha256": "84005ac76965cae7ba56e144f9d6f0bf965b2d3cb60e1e9fe7f3a8f5c7a5d532"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-motion-BhBEd9md.js",
+      "file": "vendor-motion-BhBEd9md.js",
+      "bytes": 140296,
+      "sha256": "3c853f309123e7e4943225fafd46a14434e10146b9e1dc9f83510824e4334370"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-l-0-hNsLq4dm.js",
+      "file": "shared-l-0-hNsLq4dm.js",
+      "bytes": 56563,
+      "sha256": "b052bbfeba5e67025c28479e23db569db6d0a1ae1e403955c05e3e07a0b5680b"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-all-m-0-zyYLsw3m.js",
+      "file": "vendor-all-m-0-zyYLsw3m.js",
+      "bytes": 5634,
+      "sha256": "17839810f40e13a50d8f2d256c6ebcf133298b8d15852d83e0b8decd22b2b8e4"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-p-m-0-B0ZIcHhW.js",
+      "file": "shared-p-m-0-B0ZIcHhW.js",
+      "bytes": 214229,
+      "sha256": "56768fd8cea0f307a6855ca3603122e470cecab1e5713fc5926eb4ec31403471"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-prosemirror-BrgooKet.js",
+      "file": "vendor-prosemirror-BrgooKet.js",
+      "bytes": 214007,
+      "sha256": "983d02695740e55727baa5aacc6025c7085bc170b0a23e2d9e34c54069900c50"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-m-0-CwmIMya1.js",
+      "file": "shared-m-0-CwmIMya1.js",
+      "bytes": 522199,
+      "sha256": "6b69750c966376ac0c4c53560cdf280bb354e3eb621f09a0515b05182f6216b5"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-m-2-BA6z7uPR.js",
+      "file": "shared-m-2-BA6z7uPR.js",
+      "bytes": 463638,
+      "sha256": "5b110d5b62babe3a8d3b89af8711814e0e9cb7a15de2a079106367e4dc04281d"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-markdown-UdYjgQAe.js",
+      "file": "vendor-markdown-UdYjgQAe.js",
+      "bytes": 174725,
+      "sha256": "b2443b54cc16fa5862e102cf0e0d411886fe97649cb1b74d57477528b4440691"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-m-1-BXNZ_AWo.js",
+      "file": "shared-m-1-BXNZ_AWo.js",
+      "bytes": 534259,
+      "sha256": "aa27727eaa984e1cad429ebb86416b4232ea2cfe156d996ec4689611b3280b7b"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-p-0-De6YZl5v.js",
+      "file": "shared-p-0-De6YZl5v.js",
+      "bytes": 14985,
+      "sha256": "648fe3e22812cd74cc899a26a8a11981082784c2dfdf8c6d8afb3a401f454d35"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-0-C9Kr7XoG.js",
+      "file": "shared-0-C9Kr7XoG.js",
+      "bytes": 435893,
+      "sha256": "244d83bb936b48b67346445c12964396816a0c3464aef8ae060ab174d87bb1f0"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-all-0-B_yTkrOs.js",
+      "file": "vendor-all-0-B_yTkrOs.js",
+      "bytes": 15236,
+      "sha256": "0c04df30a7a925f64024ec53b02dafc1a87d425ee7abaeba8961d7d3f080530d"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-utils-BpeNdnSc.js",
+      "file": "vendor-utils-BpeNdnSc.js",
+      "bytes": 27485,
+      "sha256": "f384b634e98f27f2a33bd6074a10e6007306b7c06f09dba3c4f28c52f3c2dc83"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-3-Cz_X0iGz.js",
+      "file": "shared-3-Cz_X0iGz.js",
+      "bytes": 346903,
+      "sha256": "1105938044bd450966dac7a2a5c22fb48ca5ec2e158c8a81cd0c445ed8048963"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-1-DPqP40rK.js",
+      "file": "shared-1-DPqP40rK.js",
+      "bytes": 375595,
+      "sha256": "b89b796d8528b20f742f3b13afbc6657379491039b5a1c2398583cdd37677e2d"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-tiptap-BKMAbNk6.js",
+      "file": "vendor-tiptap-BKMAbNk6.js",
+      "bytes": 150443,
+      "sha256": "57f8baf9371118726fe4358906e9c4a9a23db5617971edeff564c20a5f01f586"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-2-DGNnxgW-.js",
+      "file": "shared-2-DGNnxgW-.js",
+      "bytes": 461058,
+      "sha256": "4ceaf07058931dc6865b669c23106219304b5b7997a1f4fb7cf9b34eb22d5512"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-styles-cAgXMI3Z.js",
+      "file": "shared-styles-cAgXMI3Z.js",
+      "bytes": 368,
+      "sha256": "b5eb242705e671e6d7f2e44a64b74deaa9a8a8b36a34a53e9297867198b5ae3c"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-5-CWYXqlOq.js",
+      "file": "shared-5-CWYXqlOq.js",
+      "bytes": 355574,
+      "sha256": "60eb0f4a53bd5f2182afc3232495389df610b5e204ac40853d998201f9bbd9a2"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-28-8vES_TTN.js",
+      "file": "shared-28-8vES_TTN.js",
+      "bytes": 335529,
+      "sha256": "94e645a716d909242fe6ce7ae3a0cb705fe9941d3271bb45611d08a9fd35bb4c"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-6-CB85HlI4.js",
+      "file": "shared-6-CB85HlI4.js",
+      "bytes": 420730,
+      "sha256": "c4432e66c1ec831f4fd36becda45b179f17a5bb9d4a12dfaa2699260f7da1d65"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/vendor-icons-D_5gDv8_.js",
+      "file": "vendor-icons-D_5gDv8_.js",
+      "bytes": 20288,
+      "sha256": "4c1d28ca05cb354223e28e97bd26c625f480385f3c8da4106d61ab310001ff1c"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-7-B2qEgPdL.js",
+      "file": "shared-7-B2qEgPdL.js",
+      "bytes": 380477,
+      "sha256": "13dc37b593702a2042860e339285a9be4a695bf0bfefb751ee66966f5f724c7c"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-8-DN6RJzi5.js",
+      "file": "shared-8-DN6RJzi5.js",
+      "bytes": 427317,
+      "sha256": "c968a9c7fe3c8f112aaeef3f8132b1e04bebd848ceefe892c4a19034cf619516"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-9-CmB7wles.js",
+      "file": "shared-9-CmB7wles.js",
+      "bytes": 359363,
+      "sha256": "ca1c86def472c98279011e0564fde49d3abd2aecb9170eb9e8221a8fb719daac"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-11-IS9x-B9a.js",
+      "file": "shared-11-IS9x-B9a.js",
+      "bytes": 304466,
+      "sha256": "3355e9f360a4f6059d0277c307ee06322c60bac2a5c930957575e671927a3824"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-12-BKD5BeaK.js",
+      "file": "shared-12-BKD5BeaK.js",
+      "bytes": 434617,
+      "sha256": "70200c56cd892617d866d425b23410a11c1802915cd39880a30d95dce412cc63"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-10-DMW1MvVo.js",
+      "file": "shared-10-DMW1MvVo.js",
+      "bytes": 624533,
+      "sha256": "35bf23b98169da24937ebdc7dd1d93eab52cadd9e5d42b2efefd93ecb7c3a118"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-14-CUImPyyN.js",
+      "file": "shared-14-CUImPyyN.js",
+      "bytes": 454416,
+      "sha256": "41b656577996b1e93bbc77e443537a1107ac0d439b0c2bcd3dbee5a0569ba87e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-13-D-w49iCr.js",
+      "file": "shared-13-D-w49iCr.js",
+      "bytes": 441251,
+      "sha256": "e9bec3f85187e90dc2e9746e82e79b686db3006b63b00f8bda461efa4406a2f1"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-4-CRt8VHSU.js",
+      "file": "shared-4-CRt8VHSU.js",
+      "bytes": 358214,
+      "sha256": "d1e4f2c2b03febc1e860600edefc1ca099acca96c387050cd0907f58c317b5ee"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-15-C6erQw5m.js",
+      "file": "shared-15-C6erQw5m.js",
+      "bytes": 417534,
+      "sha256": "6da052a60dd169f8a646556836af3abeb3227c1a2e96738b8c8aac7a572fbe54"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-18-Bb2ffSAv.js",
+      "file": "shared-18-Bb2ffSAv.js",
+      "bytes": 352302,
+      "sha256": "74ceaa73bf168d9a83b817b05eceb4ef08e659f781cfed4f1cf94aeee98e0a06"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-16-CYJb3-PL.js",
+      "file": "shared-16-CYJb3-PL.js",
+      "bytes": 381479,
+      "sha256": "9ee5ee06b82755a1cf1063e9a12fad6971ce13237ee4f36d9752b59984f05778"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-17-BC-jJIQ7.js",
+      "file": "shared-17-BC-jJIQ7.js",
+      "bytes": 440114,
+      "sha256": "c73b4ae7b5fd02992916ac46ce1c2b863626677a9648987922929ffe5a106384"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-20-DXcrOeFk.js",
+      "file": "shared-20-DXcrOeFk.js",
+      "bytes": 493952,
+      "sha256": "607a7082dd7e9d8e98deba5c828319eb59690e63b8d129879b164773863b6829"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-23-BsBbkVuN.js",
+      "file": "shared-23-BsBbkVuN.js",
+      "bytes": 370287,
+      "sha256": "5d5c37d4eb0423c34f343fecfa031ce5c12f0251bb88440a622ccc07ada33807"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-21-BlQODJV3.js",
+      "file": "shared-21-BlQODJV3.js",
+      "bytes": 340067,
+      "sha256": "e08bd377516967e259be955505386415701a71cc66d50a4226c805d1566b286e"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-24-CAwHS4d4.js",
+      "file": "shared-24-CAwHS4d4.js",
+      "bytes": 57899,
+      "sha256": "f8f05aa26f9847c8c198f353f796d1a18d17eca5fdb03609b2b4513aa0ce2d0c"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-22-CucVCPYN.js",
+      "file": "shared-22-CucVCPYN.js",
+      "bytes": 331234,
+      "sha256": "733154ef9445e65b0881a721a6d63d072d4da10d9b5ecd989771f57aa1229682"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/shared-19-IQeA1KpI.js",
+      "file": "shared-19-IQeA1KpI.js",
+      "bytes": 384666,
+      "sha256": "06ce569f78d5ec37cee2125c0e98d77e6a35625f2873eeff3c95db04f85162fc"
+    }
+  ]
+}

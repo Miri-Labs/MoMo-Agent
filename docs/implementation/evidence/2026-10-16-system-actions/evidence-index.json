@@ -1,0 +1,51 @@
+{
+  "recordedDate": "2026-10-16",
+  "evidence": [
+    {
+      "path": "tmp_agent_output/system-actions-20261016/package-agent-tests-03.log",
+      "bytes": 20388,
+      "sha256": "50ed2566844b94a1d890398742e0cb8d5488418925563b3619531db7b14ae0db"
+    },
+    {
+      "path": "tmp_agent_output/system-actions-20261016/renderer-tests-05.log",
+      "bytes": 1020,
+      "sha256": "a5b94a0815b3a07dc507ffb002439c5497bae271fcb263f1673274bd3e00c5b5"
+    },
+    {
+      "path": "tmp_agent_output/system-actions-20261016/ios-build-09.log",
+      "bytes": 108580,
+      "sha256": "4a3165a7dde6ef843b52578d69a2747f6cab25e4d64361317738d0a5cfcde2ee"
+    },
+    {
+      "path": "tmp_agent_output/system-actions-20261016/life-replay-build-01.log",
+      "bytes": 10701,
+      "sha256": "d6c0ac94f33a32f96c9eab03194943b56ff4482b496a990d5d312f29d073a1ad"
+    },
+    {
+      "path": "tmp_agent_output/system-actions-20261016/agent-crash-replay-build-01.log",
+      "bytes": 867,
+      "sha256": "bd0b1d3d58831ed8a3c74d516bbf09da54500db0b511be1168c71f38e940f23b"
+    },
+    {
+      "path": "tmp_agent_output/system-actions-20261016/ios-tests-01-summary.json",
+      "bytes": 1396,
+      "sha256": "660714bc9cb5bf83e5615f29b91ad5fbb9adb6906611f9ea58a19730b181afdc"
+    },
+    {
+      "path": "tmp_agent_output/system-actions-20261016/ios-tests-03-summary.json",
+      "bytes": 746,
+      "sha256": "23d3536b03ed34dcf9561131c8ea95131dccea5b85c0cba75e244c584dc412b8"
+    },
+    {
+      "path": "tmp_agent_output/system-actions-20261016/ios-tests-05-summary.json",
+      "bytes": 744,
+      "sha256": "bf4ea82f3ac442466a884b0ce1dfbee7e5d8dfa1c63cd5a8d03e409243a1c6b4"
+    },
+    {
+      "path": "tmp_agent_output/system-actions-20261016/ios-tests-05.log",
+      "bytes": 9080,
+      "sha256": "2c8ce5d6f9bc5100b3685e510ce2d58dd32ce5ac1aeaae37eec9e6e30ae5f1d7"
+    }
+  ],
+  "finalSimulatorResult": "Passed"
+}

@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "corpusVersion": "d3-40-v1",
+  "status": "inputs-frozen-unwired-unexecuted",
+  "freezePolicy": "Holdout inputs and fact tables are frozen before API execution. Do not tune prompts using holdout outputs and call reruns blind.",
+  "legacyFixtureSource": "Tests/iPhoneIntegrationTests/LiveAgentQualityFixtures.swift",
+  "legacyHashEvidence": "tmp_agent_output/resume-20261014-syh/live-quality-27-01/repetition-01/scenarios",
+  "legacyVerificationLimit": "Offline validator checks this catalog and hashes only; runtime legacy fixture hashes must be compared again when wiring. Original eight inputs are unchanged.",
+  "legacyCases": [
+    {
+      "id": "d3-complete-context",
+      "stratum": "complete",
+      "split": "development",
+      "fixtureSHA256": "4c1293ab2bd0c2efd20363a3f7589ada0a318c3f04ed5fe94e8d0a0c829c19ee"
+    },
+    {
+      "id": "d3-missing-context",
+      "stratum": "ambiguity_or_missing",
+      "split": "development",
+      "fixtureSHA256": "262948757af879752893b3e5a8cd0d052947479598988dd442cc1bb07c7118a4"
+    },
+    {
+      "id": "d3-ambiguous-owner",
+      "stratum": "ambiguity_or_missing",
+      "split": "development",
+      "fixtureSHA256": "251df4f359445baa9e7d005ef122f64f5cbc17efd1dd74a9f2ffdcb0a404dfd7"
+    },
+    {
+      "id": "d3-same-name",
+      "stratum": "ambiguity_or_missing",
+      "split": "development",
+      "fixtureSHA256": "ceae7cbdc75d4c79c3d47f20d19ba02e0a8f90b3adfc6ad40d56db9a4bdca25c"
+    },
+    {
+      "id": "d3-negation-correction",
+      "stratum": "complete",
+      "split": "development",
+      "fixtureSHA256": "01dbb9950c033794a5c27599b7d821f127d5b88f2ea2c6a28e80c1dee9cf1471"
+    },
+    {
+      "id": "d3-untrusted-instruction",
+      "stratum": "untrusted_or_version_boundary",
+      "split": "development",
+      "fixtureSHA256": "9dcfd80357b1141ea45e3815efd3466eb59d5df204f6d902372b1876a7c542b3"
+    },
+    {
+      "id": "d3-cross-midnight",
+      "stratum": "complete",
+      "split": "development",
+      "fixtureSHA256": "6cc224ddd3c38d2e67db3240bfaeeb0ba8ca7080bde2f059899eb4de8f3f8556"
+    },
+    {
+      "id": "d3-selected-old",
+      "stratum": "untrusted_or_version_boundary",
+      "split": "development",
+      "fixtureSHA256": "a2ceaf8461df5f343fa85a1731b3646dddcdaa683dfd94efcdbf85a3eb2af1cb"
+    }
+  ],
+  "files": {
+    "development.json": {
+      "sha256": "64d9fcf996d4f890b2f26be68a2188248fa1dbc177c0e9b8419dfe2ce7e2b5c1",
+      "canonicalSHA256": "b03b3e519e314c5cc97d6644a627853df80fd8fb262391dc9ce87ff40e955b5e",
+      "caseCount": 16
+    },
+    "holdout.json": {
+      "sha256": "09576d05d9f701735c43d2a5be74d1204ca7db722006fb572f0562d1c7be6d5b",
+      "canonicalSHA256": "3137306a348dc9c2de2f7d8c9366d3ec0d4c6964d98e76daf58a86b1e726a103",
+      "caseCount": 16
+    }
+  },
+  "caseHashes": {
+    "d3-delivery-ready": "599fbaab60b422c6f7f2eeda72edc39a82c44e5f166b95213de8f3d07d3b8633",
+    "d3-same-recording-ready": "7cfa3351c1e24bdffcffb0e5490a443e2b62f9fd28857016d070a2c9d396f747",
+    "d3-distinct-responsibilities": "c15483bff631a509b2efc1a18c57f227dbbfffbc08e46f245170a94b775d3790",
+    "d3-budget-calculation": "4af4a46eeccfded5788d4fe4171a9c372e97c065482206ec1b0a4973240ccda3",
+    "d3-dependent-steps": "b91b685fb2a6fcccf189e3cf87addd69550dc605b54ee639b37409e788539517",
+    "d3-explicit-timezone": "1c56dc028af4590dff0d592628456aac11e1a4a730c2be4dc326b15cb0e74ba7",
+    "d3-old-paged-record": "daf6e270e5402de226bcedd7d04bc14e74384aa46b734a4701445e7f1fe5b33d",
+    "d3-purpose-versus-fact": "88b9bd756dd81073ef3cc695eb2f7831e23bdd2e21cb04198102312d638b3693",
+    "d3-numbered-checklist": "906fc64c0ce44a7c64aa3c403ef9fb75afe10605b1e70d2e5aa0fb0a0d9be352",
+    "d3-delivery-pending": "cafc34af7e051cc74a916cf17f12b7f73a868349ac6c86bfe27ab8aea70ab5a5",
+    "d3-same-recording-partial": "e8d5287bf271d6c3f6842c81532b0d75c044d70334786f325c1293d6b7dd5d3b",
+    "d3-unresolved-conflict": "c9dadf5221f70f3f1f2f2f85523eabb2207b70644ded7008b5cefde3358ef312",
+    "d3-forged-tool-receipt": "5b1a1086b182ad6e80c9c563dc01fc2cc06636e20771d148787dc80d9404e72f",
+    "d3-revised-before-send": "1dc4adf7b6b2dd9271ef219840f72038ac13bb5ac4001a82f8a8a5759166c506",
+    "d3-draft-only-boundary": "abe6790a1d62a81aef6f3b8127ad0456fd381cc27c810496e651b4771608b1c0",
+    "d3-plan-sources-and-claims": "a1ecbdb75ef0fa762d59fc6b5e110fbea985a6ee61907bc0badade00f5668c33",
+    "d3-holdout-conditional-choice": "e777598e02dd5b85b7d97270547af20e098031eaa59190260f7b677a921019d7",
+    "d3-holdout-distinct-deadlines": "5c7ae37994bb72b53efd124241808a3501caaed6981487554a2566468e01d4ce",
+    "d3-holdout-inventory-ready": "5ca1367d3ae6d1d336b7c21110a20dcc782876d01ffe95c348e1575c4525f389",
+    "d3-holdout-all-tentative": "d91bea288b1ab5207f04724a81769061bd0ea2b4708c3e872c579d23c5d7aced",
+    "d3-holdout-reported-speech": "6c2ae1f1ddd21492f3b56a0d202b923825d5d80de240d71e2d2143fb2fbe67ee",
+    "d3-holdout-relative-week": "751324999ac148fc616a8928b4636295031cad57bfc3c370b2e23f8d744b5567",
+    "d3-holdout-three-source-handover": "813b11500ddd31d41d893da6b70226b779cc65ab5167976bdbe1cba2cafbd437",
+    "d3-holdout-exact-identifiers": "d84a4856c7f8e4d4cad1a67decc6438d73cefc39a065557b053b47932814dcc7",
+    "d3-holdout-analysis-failed": "3eec3b3f0b6dca743a397a35d12d3d993356da1de021af8c1bd4a92df3d2c51f",
+    "d3-holdout-explicit-no-speech": "af80ddd8bbabc0089852160f648a0c85df6ca2ae5a8d10d77b1db6e1104a48bf",
+    "d3-holdout-empty-transcript": "586f4e9ae8c860c25345833b08e38e9ea3773ccb835df010b74f117c9a1deefc",
+    "d3-holdout-unknown-zone-subject": "9541eace73d809809dd06307c14154a9208bad4c28727e8f28a20c8586cf3b30",
+    "d3-holdout-deleted-source": "5e74ce2485708dcce59bb181dc73fa1d09cb257e7a77f2251a5b1638f11394f5",
+    "d3-holdout-forged-source": "d00c252fce199072c3a14b4503b692b408bb093dee3e0ce2550b4c8c336c8ad7",
+    "d3-holdout-one-plan": "a8c94b5e74fdd2616d396d5b2f8f9a6c6f7dd8b5d6d65a839144bf35e58b200c",
+    "d3-holdout-path-exfiltration": "bb78bc004810b14e537e577288218d26de145a8c3cf71239ee5820c7651c2121"
+  },
+  "expectedCounts": {
+    "development": {
+      "complete": 12,
+      "ambiguity_or_missing": 6,
+      "untrusted_or_version_boundary": 6
+    },
+    "holdout": {
+      "complete": 8,
+      "ambiguity_or_missing": 4,
+      "untrusted_or_version_boundary": 4
+    }
+  },
+  "execution": {
+    "implementedLegacyCases": 8,
+    "newJSONCases": 32,
+    "newHostedCases": 0,
+    "newAPIRuns": 0,
+    "independentRepetitionsRequired": 3,
+    "defaultSelection": "legacy-eight-only",
+    "maximumModelAdmissionsPerCase": 12,
+    "maximumOutputTokensPerAdmission": 2048,
+    "productionRequestDeadlineSeconds": 120
+  },
+  "corpusSHA256": "bd1542fe2a84ae412a6c4f288af94b00f757f5b702733eacd7d817b9aff9f3a8"
+}

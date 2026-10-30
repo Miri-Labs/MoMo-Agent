@@ -1,0 +1,59 @@
+{
+  "name": "Hermes Agent",
+  "repository": "https://github.com/NousResearch/hermes-agent",
+  "commit": "cf4f3a7396814ffcaef69d9af09f7cfdade3ddbe",
+  "tree": "4c2024f7bde00ba92aeeaf8782e3e9ac221a5007",
+  "imported_at": "2026-10-21",
+  "method": "Complete tracked source snapshot via git archive; imported Git tree equals upstream tree (including modes and normalized line endings)",
+  "files": 20680,
+  "license": "MIT",
+  "license_file": "HermesAgent/LICENSE",
+  "upstream_lock_sha256": "97367c6bf21aa3711bae5aa0d0662d9a68585a03a2a9d11cd9b17393435c4f91",
+  "local_patches": [
+    {
+      "file": "pm/client.py, pm/operations.py, pm/environment.py, pm/terminal_progress.py",
+      "reason": "Optional terminal_progress preserves uv byte counters through isolated PM workers for native download progress and speed. Existing dependency pins, hashes, installer ownership and default output behavior are preserved.",
+      "validation": "Real throttled uv download, timeout and failure tests; native byte parser and rate probe; public environment builds with the option enabled and disabled."
+    },
+    {
+      "file": "gateway/platforms/api_server_runs.py",
+      "reason": "Forward interim_assistant_callback for canonical admitted runs, matching the existing direct-run SSE contract. Otherwise a model acknowledgement before tools is lost on the phone.",
+      "validation": "RemoteExecutionTests verifies the actual model reply before completion and restores it after phone termination."
+    },
+    {
+      "file": "gateway/session_execution.py",
+      "reason": "Restrict MoMo transcript, incremental chat-memory and Dream sessions to source reading, native session_search and Hermes memory in the same profile; disable nested background skill review. Separate momo-summary sessions generate derived recording summaries with no tools, memory injection, context files or background review. No second memory engine.",
+      "validation": "Transcript ingestion and durable review regressions cover native write receipts, full Unicode cursors, bounded terminal retry, lost admission, legacy recovery and Dream scheduling. Isolated real Codex model validates memory writes, Dream, new-session recall, and a recording summary whose actual agent has zero tools and performs no memory writes."
+    },
+    {
+      "file": "hermes_cli/auth_codex_browser.py",
+      "reason": "Expose the authorization URL through an optional callback so the native client can reopen/copy browser login without parsing logs; existing PKCE, state checks and credential exchange stay in Hermes.",
+      "validation": "Native model login lifecycle probe and model_setup browser-flow tests, including the real Hermes callback helper with a fake loopback server."
+    },
+    {
+      "file": "gateway/session_api_completion.py, gateway/platforms/api_server.py, gateway/run.py, gateway/run_notifications.py, gateway/session_api_turn.py, gateway/session_authority.py, gateway/session_ingress.py, gateway/platforms/api_server_authority_runs.py, gateway/session_queued_controls.py",
+      "reason": "Optional host-installed product integration: MoMo persists completion receipts before acknowledging producers, then admits only validated private-principal automation through the existing session FIFO and pre-claim gates. Shared native run projection and recovery include these admissions. Explicit generation-bound product messages may use existing ticketed steer transfers. The served product's owned API sessions enable the native per-turn async-delivery capability for terminal completion watchers, while the HTTP adapter stays non-push and unrelated/stateless API sessions retain their original restriction.",
+      "validation": "Real Hermes/local-model/MCP smoke: acknowledgement precedes tool; detached clients do not prevent final report; explicit steering; pending clarify gate and stale generation; receipt/admission/started crash windows; old-session consumption provenance. Real terminal(background=true, notify_on_complete=true) process smoke proves unique receipt/native continuation/result while clients are offline. Canonical runner includes test_api_product_async_delivery.py, test_async_delivery_capability.py and test_background_process_notifications.py plus API/control/unknown/steer regressions. MoMo tests cover native compaction lineage, full cursor paging and notification outbox."
+    },
+    {
+      "file": "hermes_state_runtime.py, gateway/session_queued_controls.py, gateway/session_api_turn.py, gateway/platforms/api_server_authority_runs.py, agent/tool_executor.py, tools/delegate_tool.py, tools/async_delegation.py, tools/process_registry.py",
+      "reason": "MoMo-owned native work sessions retain the public shared-conversation identity while keeping each live claim and approval separate. Strict product steering carries a durable steer-only admission fence: unconsumed, reverted or recovered transfers become not-applied, never a new FIFO turn. The optional product pre-dispatch computer gate runs after native guardrails and before the MCP RPC lock, inherits into delegated children, and binds existing desktop lease epochs to native work claims. Add exact delegation-ID/incarnation interruption and non-consuming process parent/start metadata for precise background tracking/cancellation. Stateless and non-MoMo callers keep native behavior.",
+      "validation": "Real Hermes/local scripted-model scenarios --interactions (independent clarify/approval, role-preserving shared context, stale-steer refusal, exact work cancellation), --background-controls (two simultaneous native processes and two delegations, cancel A while B completes, honest cancellation reports), --computer (production MCP with synthetic private Mac IPC: waiting claim, concurrent chat, human return, stale-coordinate rejection/fresh screenshot, cancelled wait never revives, delegated gate inheritance). Tests/AgentRuntime/test_interaction_work.py verifies native restart/unconsumed steer fences, active generation versus queued steer, durable unknown child and lease epochs. Physical screen/input remains unverified without macOS permissions."
+    },
+    {
+      "file": "gateway/session_api_completion.py",
+      "reason": "Host-owned saved completion reports may use a durable report-attempt suffix on their private native admission identity. The product validates the exact receipt and attempt, keeps prior provenance, and rejects every tool dispatch during a report retry. Original processes/delegations are never replayed; generic HTTP admission remains unchanged.",
+      "validation": "Real Hermes/local model --report-recovery: provider HTTP400 yields failed receipt, stable retry operation admits one new native report, attempted terminal side effect is blocked, original background process executes once, both clients read the same final answer. Canonical native runner covers API projection, admission ownership and product async capability."
+    },
+    {
+      "file": "agent/chat_completion_helpers.py",
+      "reason": "For implicit official Codex requests, lifecycle-only events do not arm the short inter-event idle timeout before substantive progress, including short prompts. Keep explicit operator timeouts and existing total/no-event limits.",
+      "validation": "Native watchdog tests reproduce premature retirement on small requests before the fix; phase-aware retries, first-progress budget, stalled output and explicit overrides pass afterward."
+    },
+    {
+      "file": "gateway/run_shutdown.py",
+      "reason": "Keep the shutdown watchdog armed when teardown raises or is cancelled, so a draining listener cannot survive indefinitely after an interrupted app upgrade.",
+      "validation": "Injected missing-module and cancellation failures leave the watchdog armed; successful shutdown disarms it."
+    }
+  ]
+}

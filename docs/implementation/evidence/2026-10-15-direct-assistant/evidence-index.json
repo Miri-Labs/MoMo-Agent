@@ -1,0 +1,83 @@
+{
+  "rawEvidenceRoot": "tmp_agent_output/assistant-simplify-20261015",
+  "files": {
+    "agent-tests-incremental.log": {
+      "bytes": 11955,
+      "sha256": "0eee3636360b7f1b4098ec8c2e5dc0faba8fe43b4c95d10bba8171ebd2015d18"
+    },
+    "ios-build-03.log": {
+      "bytes": 116352,
+      "sha256": "556af5b5c51bc9b746e6e97279e4f98ada9a0bf95476a132cee0bd4361c3923f"
+    },
+    "ios-build-04.log": {
+      "bytes": 160562,
+      "sha256": "150c15daede54660eab3b41303f61f9ff65e8c42735a5d5ca8ce86ef40022dc9"
+    },
+    "ios-tests-01.log": {
+      "bytes": 65561,
+      "sha256": "abf60a84ffe2b1b95723be6273979d03cd0486444a03855e51dea1627225b467"
+    },
+    "ios-tests-02.log": {
+      "bytes": 54070,
+      "sha256": "278e2cb4f9253775b2fb8cbbc51704ec8e7db7149c1c841d8105092096c8e824"
+    },
+    "ios-tests-03.log": {
+      "bytes": 53846,
+      "sha256": "6f2359f748957bf54cba165f3ad61e4cb22d1583f5bd72db4d3eebd168c6523b"
+    },
+    "ios-tests-04.log": {
+      "bytes": 24549,
+      "sha256": "7bc662018ed55da7de852fbb89d7eababc5ad4fb1d8f09d77b8775b36420f898"
+    },
+    "ui-runner-tests-final.log": {
+      "bytes": 753,
+      "sha256": "bab15a0a720809ee5ab3ecf4f986aec2bf095134c4a46ee06bcd7d36308b0551"
+    },
+    "agent-runner-tests.log": {
+      "bytes": 115,
+      "sha256": "f5faa6d4210668051af1e1aa950c6d1267fd7ba43fadaee830160a2274d7c6b1"
+    },
+    "http-runner-tests.log": {
+      "bytes": 103,
+      "sha256": "d1aaab86fa02d87997171aeb3220b40f5e28046ec4d1674848f9ec5f589f297c"
+    },
+    "http-fixture-tests.log": {
+      "bytes": 118,
+      "sha256": "bd8c0d37d8738725790346ddf1498654e15e875e5e826f1a2a8cf7b7fc5a0603"
+    },
+    "renderer-core-tests.log": {
+      "bytes": 798,
+      "sha256": "242265223016cae7bc09384675d6ab94c2501abbe3c36bc6db8860f43775bbf4"
+    },
+    "life-context-build-02.log": {
+      "bytes": 2022,
+      "sha256": "b2e2bdf58dd2d20af89925a052252acd6777037349db79341aa9a4eaa38c147c"
+    },
+    "crash-replay-build.log": {
+      "bytes": 602,
+      "sha256": "07ad77da08c329bab43890bb1ac2257a764828850a65e91a877b9e6767326a3a"
+    },
+    "source-inputs-final.json": {
+      "bytes": 30999,
+      "sha256": "b22158bdb5e1f0aa9b40bada5a05dfd8a911338e954cd60c0eb9f9104f258e10"
+    }
+  },
+  "results": {
+    "agentPassed": 36,
+    "agentSkipped": 1,
+    "hostTests03Passed": 16,
+    "uiTests04Passed": 4,
+    "paidModelRequests": 0
+  },
+  "limitations": [
+    "Separate runs, not a single full regression.",
+    "No new live model tone evaluation.",
+    "Earlier disk and accessibility failures retained."
+  ],
+  "screenshot": {
+    "path": "large-text-keyboard.png",
+    "bytes": 265674,
+    "sha256": "41106cf5cb70071e661b266befa6fbc82806e6ca7b0b35629a1ef0ccf190f66a",
+    "scope": "Real iPhone 17e simulator; maximum accessibility text; synthetic draft, not a model answer."
+  }
+}

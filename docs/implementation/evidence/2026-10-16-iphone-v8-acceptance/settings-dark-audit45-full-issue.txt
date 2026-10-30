@@ -1,0 +1,30 @@
+Contrast failed
+Contrast failed for SwiftUI.AccessibilityNode
+Attributes: StaticText, 0x10c2dd040, {{24.0, 530.0}, {327.0, 58.0}}, label: '储存空间'
+Element subtree:
+ →StaticText, 0x10c2dd040, {{24.0, 530.0}, {327.0, 58.0}}, label: '储存空间'
+Path to element:
+ →Application, 0x10c15abc0, pid: 84048, label: 'MoMoAgent'
+  ↳Window (Main), 0x10c158c80, {{0.0, 0.0}, {375.0, 667.0}}
+   ↳Other, 0x10c158dc0, {{0.0, 0.0}, {375.0, 667.0}}
+    ↳Other, 0x10c158f00, {{0.0, 0.0}, {375.0, 667.0}}
+     ↳Other, 0x10c15a440, {{0.0, 0.0}, {375.0, 667.0}}
+      ↳Other, 0x10c15a580, {{0.0, 0.0}, {375.0, 667.0}}
+       ↳Other, 0x10c15a6c0, {{0.0, 0.0}, {375.0, 667.0}}
+        ↳Other, 0x10c15af80, {{0.0, 0.0}, {375.0, 667.0}}
+         ↳Other, 0x10c15b0c0, {{0.0, 0.0}, {375.0, 667.0}}
+          ↳Other, 0x10c15b200, {{0.0, 0.0}, {375.0, 667.0}}
+           ↳Other, 0x10c15ae40, {{0.0, 0.0}, {375.0, 667.0}}
+            ↳ScrollView, 0x1073cfd40, {{0.0, 0.0}, {375.0, 667.0}}
+             ↳Other, 0x1073ce080, {{0.0, 74.0}, {375.0, 538.0}}
+              ↳Button, 0x10c2dcf00, {{24.0, 530.0}, {327.0, 58.0}}, identifier: 'settings.storage', label: '储存空间'
+               ↳StaticText, 0x10c2dd040, {{24.0, 530.0}, {327.0, 58.0}}, label: '储存空间'
+Query chain:
+ →Find: Target Application 'com.momoagent.ios'
+  Output: {
+    Application, 0x10c1583c0, pid: 84048, label: 'MoMoAgent'
+  }
+  ↪︎Find: Descendant with identity binding to AX element pid: 84048, elementOrHash.elementID: 5719382592.93
+    Output: {
+      StaticText, 0x10c15b5c0, {{24.0, 530.0}, {327.0, 58.0}}, label: '储存空间'
+    }

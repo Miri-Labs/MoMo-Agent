@@ -1,0 +1,508 @@
+import SwiftUI
+import Observation
+import MoMoArchive
+
+private struct TimelineDestination: Hashable {
+    let windowID: TimelineWindowID
+    var markID: UUID? = nil
+}
+
+struct LibraryView: View {
+    @Bindable var model: LibraryModel
+    let playback: AudioPlaybackController
+    let transcription: TranscriptionSnapshot?
+    let speechFailure: String?
+    let batches: [TranscriptionBatch]
+    let delete: (UUID) async throws -> Void
+    let refresh: () async -> Void
+    let canDiscuss: Bool
+    let discuss: (SourceReference) -> Void
+    var openSettings: (() -> Void)? = nil
+    var retryTranscription: ((UUID, Int64) async throws -> Void)? = nil
+    var discussSources: (([SourceReference]) -> Void)? = nil
+    var retryTimeline: ((TimelineRetryRequest) async throws -> Void)? = nil
+    var continueInBackground: (() async throws -> Void)? = nil
+    var hasBackgroundContinuation = false
+    var requestWatchStatus: (() -> Void)? = nil
+    var onSpeakersChanged: (() async -> Void)? = nil
+    @State private var requestingContinuation = false
+    @State private var continuationFailure: String?
+    @State private var query = ""
+    @State private var searching = false
+    @State private var choosingDate = false
+    @State private var sharingDay: TimelineDay?
+    @State private var dateDraft = Date()
+    @State private var pendingDay: TimelineDay?
+    @State private var page = ScrollPosition(idType: TimelineDay.self)
+    @State private var selectedWindow: TimelineDestination?
+    @State private var recordingID: UUID?
+    @State private var navigationFailure: String?
+    @State private var readingStates = TimelineDayReadingStates()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var timeline: TimelineModel { model.timeline }
+    private var dateRange: TimelineDateRange {
+        TimelineDateRange(earliestDay: timeline.earliestDay, hasLoaded: timeline.hasLoadedDateRange)
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            WatchStatusView(observation: model.watchStatus)
+                .padding(.horizontal, 24).padding(.top, 12)
+            dateBar
+            if !searching, let progress = timeline.processingProgress[timeline.selectedDay], progress.received > 0,
+               progress.processed == nil || (progress.remaining ?? 0) >= 0.01 || progress.awaitingSync > 0 {
+                processingProgress(progress).padding(.horizontal, 24)
+            }
+            if searching { searchField.padding(.horizontal, 24) }
+            if searching && !query.isEmpty { searchResults }
+            else { dayPager }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .phonePageSurface()
+        .watchStatusRefresh(requestWatchStatus)
+        .navigationTitle("转录")
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if playback.activeTarget != nil {
+                AudioMiniPlayer(playback: playback, openRecording: { id in openRecording(id) },
+                    openWindow: { selectedWindow = TimelineDestination(windowID: $0) })
+                    .padding(.horizontal, 12).padding(.vertical, 8).background(MoMoPalette.canvas)
+            }
+        }
+        .navigationDestination(item: $selectedWindow) { destination in
+            TimelineDetailView(id: destination.windowID, library: model, playback: playback,
+                transcription: transcription, speechFailure: speechFailure,
+                retryTimeline: retryTimeline, canDiscuss: canDiscuss, discuss: { sources in
+                    if let discussSources { discussSources(sources) }
+                    else if let first = sources.first { discuss(first) }
+                }, initialMarkID: destination.markID, onSpeakersChanged: onSpeakersChanged)
+        }
+        .navigationDestination(item: $recordingID) { id in
+            RecordingDetailView(sessionID: id, library: model, playback: playback,
+                transcription: transcription, retryTranscription: retryTranscription,
+                delete: delete, canDiscuss: canDiscuss, discuss: discuss,
+                onSpeakersChanged: onSpeakersChanged)
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { sharingDay = timeline.selectedDay } label: {
+                    Label("分享", systemImage: "square.and.arrow.up").labelStyle(.titleAndIcon)
+                }
+                .accessibilityIdentifier("timeline.share")
+            }
+            if let openSettings {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu { Button("设置", systemImage: "gearshape", action: openSettings) }
+                    label: { Image(systemName: "ellipsis") }
+                    .accessibilityLabel("转录更多操作").accessibilityIdentifier("library.more")
+                }
+            }
+        }
+        .sheet(isPresented: $choosingDate) { datePicker }
+        .sheet(item: $sharingDay) { day in
+            TimelineShareView(day: day, archive: model.archive, configurationFingerprint: timeline.configurationFingerprint)
+        }
+        .alert("资料暂不可用", isPresented: Binding(get: { navigationFailure != nil }, set: { if !$0 { navigationFailure = nil } })) {
+            Button("好", role: .cancel) { navigationFailure = nil }
+        } message: { Text(navigationFailure ?? "") }
+        .task { page.scrollTo(id: timeline.selectedDay, anchor: .leading); await refresh() }
+        .task(id: timeline.selectedDay) { await timeline.load(timeline.selectedDay) }
+        .onChange(of: page.viewID(type: TimelineDay.self)) { _, day in
+            if let day { timeline.select(day) }
+        }
+        .onChange(of: dateRange) {
+            if let pendingDay, !dateRange.isUnknown { select(pendingDay) }
+        }
+        .task(id: LibraryTimelineSearch(query: query, revision: model.searchRevision)) {
+            do { if !query.isEmpty { try await Task.sleep(for: .milliseconds(250)) } }
+            catch { return }
+            await model.search(query)
+        }
+    }
+
+    private var dateBar: some View {
+        HStack(spacing: 0) {
+            Button { select(timeline.selectedDay.adding(days: -1)) } label: {
+                Image(systemName: "chevron.left").frame(width: 44, height: 44)
+            }
+            .disabled(!dateRange.canRequest(timeline.selectedDay.adding(days: -1)))
+            .accessibilityLabel("前一天").accessibilityIdentifier("timeline.previousDay")
+            Button {
+                pendingDay = nil
+                dateDraft = timeline.selectedDay.date(); choosingDate = true
+            } label: {
+                HStack(spacing: 5) {
+                    Text(TimelineDate.day(timeline.selectedDay)).phoneText(.metadata)
+                    Image(systemName: "chevron.down").font(.caption2)
+                }.frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .accessibilityLabel("选择日期，\(TimelineDate.day(timeline.selectedDay))")
+            .accessibilityIdentifier("timeline.datePicker")
+            Button { select(timeline.selectedDay.adding(days: 1)) } label: {
+                Image(systemName: "chevron.right").frame(width: 44, height: 44)
+            }
+            .disabled(!dateRange.canRequest(timeline.selectedDay.adding(days: 1)))
+            .accessibilityLabel("后一天").accessibilityIdentifier("timeline.nextDay")
+            Button {
+                searching.toggle()
+                if !searching { query = "" }
+            } label: { Image(systemName: searching ? "xmark" : "magnifyingglass").frame(width: 44, height: 44) }
+                .accessibilityLabel(searching ? String(localized: "关闭搜索") : String(localized: "搜索全部转录"))
+                .accessibilityIdentifier("timeline.search.toggle")
+        }
+        .foregroundStyle(MoMoPalette.ink).padding(.horizontal, 16)
+    }
+
+    private func processingProgress(_ progress: TimelineDayProgress) -> some View {
+        let isToday = timeline.selectedDay == TimelineDay(Date())
+        return VStack(alignment: .leading, spacing: 6) {
+            if let processed = progress.processed, (progress.remaining ?? 0) >= 0.01 {
+                if isToday {
+                    Text("待处理 \(TimelineDate.duration(progress.received - processed))录音")
+                        .phoneText(.metadata).monospacedDigit()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("timeline.todayProcessing")
+                } else {
+                    HStack {
+                        Text("已接收音频的处理进度")
+                        Spacer(minLength: 8)
+                        Text("\(Int(min(1, processed / progress.received) * 100))%").monospacedDigit()
+                    }.phoneText(.metadata)
+                    ProgressView(value: processed, total: progress.received).tint(MoMoPalette.ink)
+                        .accessibilityLabel("录音整理进度")
+                        .accessibilityIdentifier("timeline.processingProgress")
+                }
+                if let processingNotice {
+                    Text(processingNotice).phoneText(.caption).foregroundStyle(MoMoPalette.muted)
+                }
+                if !isToday {
+                    Text("已处理 \(Duration.seconds(processed).formatted(.time(pattern: .minuteSecond))) / 已收到 \(Duration.seconds(progress.received).formatted(.time(pattern: .minuteSecond)))")
+                        .phoneText(.caption).foregroundStyle(MoMoPalette.muted)
+                }
+            } else if progress.processed == nil {
+                Text("已收到 \(TimelineDate.duration(progress.received)) 原音，处理状态尚未就绪")
+                    .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
+            }
+            if progress.awaitingSync > 0 { Text("另有 \(TimelineDate.duration(progress.awaitingSync)) 原音待同步").phoneText(.caption).foregroundStyle(MoMoPalette.muted) }
+            if progress.unavailable > 0, (progress.remaining ?? 0) > 0 { Text("部分原音当前不可用，完整性可在录音信息中查看").phoneText(.caption).foregroundStyle(MoMoPalette.muted) }
+            if (progress.remaining ?? progress.received) >= 0.01, let continueInBackground {
+                Button {
+                    requestingContinuation = true
+                    continuationFailure = nil
+                    Task {
+                        defer { requestingContinuation = false }
+                        do { try await continueInBackground() }
+                        catch let error as BackgroundTranscriptionError { continuationFailure = error.localizedDescription }
+                        catch is TranscriptionExecutionError { continuationFailure = String(localized: "当前整理任务正在切换，请稍后再试。") }
+                        catch { continuationFailure = String(localized: "暂未能申请后台整理，已有原音和进度会保留。") }
+                    }
+                } label: {
+                    Label(requestingContinuation ? String(localized: "正在申请…") : hasBackgroundContinuation ? String(localized: "后台整理已申请") : String(localized: "后台继续整理"),
+                        systemImage: "arrow.down.circle")
+                        .phoneText(.metadata).frame(minHeight: 44)
+                }
+                .disabled(requestingContinuation || hasBackgroundContinuation)
+                .accessibilityIdentifier("timeline.continueInBackground")
+                if let continuationFailure {
+                    Text(continuationFailure).phoneText(.caption).foregroundStyle(MoMoPalette.muted)
+                        .accessibilityIdentifier("timeline.continueInBackground.status")
+                }
+            }
+        }.accessibilityElement(children: .contain)
+    }
+
+    private var processingNotice: String? {
+        if let explanation = TimelinePresentation.resourceExplanation(transcription) { return explanation }
+        return switch transcription?.phase {
+        case .idle, .preparing, .transcribing, .queued, nil: nil
+        case .paused: String(localized: "处理已暂停，已有进度已保存")
+        case .systemSuspended: String(localized: "系统已暂停后台处理，回到 App 后继续")
+        case .failed: String(localized: "处理未完成，已有文字和原音已保留")
+        case .waitingForAudio: String(localized: "正在等待缺失的原音或同步信息")
+        case .waitingForContext: String(localized: "最新片段等待后续音频，前面的内容会先整理")
+        case .waitingForRetry: String(localized: "部分片段稍后自动重试，其余录音已继续处理")
+        case .audioUnavailable: String(localized: "部分原音不可用，可用的录音已继续处理")
+        }
+    }
+
+    private var dayPager: some View {
+        GeometryReader { geometry in
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: 0) {
+                    ForEach(timeline.days) { day in
+                        TimelineDayPage(day: day, timeline: timeline, reading: readingStates.state(for: day),
+                            transcription: transcription, speechFailure: speechFailure, dateRange: dateRange,
+                            refresh: refresh, open: { selectedWindow = $0 })
+                            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+                            .id(day)
+                            .accessibilityHidden(day != timeline.selectedDay)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            // Keep date navigation scoped to this scroll view, outside each day's reading position.
+            .scrollPosition($page, anchor: .leading)
+            .scrollIndicators(.hidden)
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .accessibilityIdentifier("timeline.dayPager")
+            .onScrollGeometryChange(for: TimelinePagerLayout.self) {
+                TimelinePagerLayout(viewportWidth: $0.containerSize.width, contentWidth: $0.contentSize.width)
+            } action: { _, layout in
+                guard layout.viewportWidth > 0, layout.contentWidth >= layout.viewportWidth else { return }
+                page.scrollTo(id: timeline.selectedDay, anchor: .leading)
+            }
+            .onChange(of: timeline.days, initial: true) {
+                // Older dates can be inserted before the current page after the archive loads.
+                page.scrollTo(id: timeline.selectedDay, anchor: .leading)
+            }
+        }
+    }
+
+    private var datePicker: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                switch dateRange {
+                case .unknown:
+                    if let failure = timeline.failures[timeline.selectedDay], !timeline.loading.contains(timeline.selectedDay) {
+                        Text(failure).phoneText(.metadata).foregroundStyle(MoMoPalette.failure)
+                        Button("重试读取日期范围") { Task { await timeline.load(timeline.selectedDay) } }
+                            .frame(minHeight: 44).accessibilityIdentifier("timeline.calendar.retry")
+                    } else {
+                        ProgressView("正在读取日期范围")
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .accessibilityIdentifier("timeline.calendar.loading")
+                    }
+                case .empty:
+                    Text("还没有录音记录").phoneText(.body)
+                        .accessibilityIdentifier("timeline.calendar.empty")
+                    Button("今天") { choose(TimelineDay(Date())) }.frame(minHeight: 44)
+                case .known(let bounds):
+                    let dates = bounds.lowerBound.date()...Date()
+                    DatePicker(String(localized: "选择日期"), selection: Binding(get: {
+                        min(max(dateDraft, dates.lowerBound), dates.upperBound)
+                    }, set: { dateDraft = $0 }), in: dates, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .accessibilityIdentifier("timeline.calendar")
+                    HStack {
+                        Button("今天") { choose(TimelineDay(Date())) }
+                        Spacer()
+                        Button("昨天") { choose(TimelineDay(Date()).adding(days: -1)) }
+                            .disabled(!dateRange.canRequest(TimelineDay(Date()).adding(days: -1)))
+                    }.frame(minHeight: 44)
+                }
+            }
+            .padding(24).navigationTitle("选择日期").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { pendingDay = nil; choosingDate = false } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") {
+                        if case .known(let bounds) = dateRange {
+                            choose(min(max(TimelineDay(dateDraft), bounds.lowerBound), bounds.upperBound))
+                        } else { choose(TimelineDay(Date())) }
+                    }.disabled(dateRange.isUnknown).accessibilityIdentifier("timeline.calendar.done")
+                }
+            }
+        }
+        .task { if !timeline.hasLoadedDateRange { await timeline.load(timeline.selectedDay) } }
+        .presentationDetents([.height(540), .large])
+    }
+
+    private var searchField: some View {
+        TextField("搜索全部转录内容", text: $query).phoneText(.menu).submitLabel(.search)
+            .padding(12).background(MoMoPalette.surface, in: RoundedRectangle(cornerRadius: 16))
+            .accessibilityIdentifier("library.search")
+    }
+
+    private var searchResults: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                ForEach(model.searchResults) { result in
+                    Button {
+                        Task {
+                            do {
+                                if let window = try await model.archive.timelineWindow(containing: result.hit.source,
+                                    configurationFingerprint: model.configurationFingerprint) {
+                                    await timeline.load(window.id.day)
+                                    select(window.id.day); selectedWindow = TimelineDestination(windowID: window.id)
+                                } else { openRecording(result.recording.id) }
+                            } catch { navigationFailure = String(localized: "这条转录已更新或删除，请重新搜索。") }
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(RecordingDatePresentation.title(result.recording.recordedAt)).phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
+                            Text(result.hit.text).phoneText(.body).foregroundStyle(MoMoPalette.ink).lineLimit(3)
+                        }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }.accessibilityIdentifier("library.search.result.\(result.id)")
+                }
+                if let failure = model.searchFailure { Text(failure).phoneText(.metadata).foregroundStyle(MoMoPalette.failure) }
+                else if model.isSearching, !model.searchResults.isEmpty {
+                    ProgressView("正在搜索…").frame(maxWidth: .infinity).padding(.vertical, 12)
+                }
+                else if !model.isSearching, model.searchResults.isEmpty { Text("没有找到相关转录，试试其他关键词。").phoneText(.metadata) }
+                if model.hasMoreSearchResults {
+                    Button("查看更多搜索结果") { Task { await model.search(query, loadMore: true) } }.frame(minHeight: 44)
+                }
+            }.padding(.horizontal, 24)
+        }
+        .overlay {
+            if model.isSearching, model.searchResults.isEmpty, model.searchFailure == nil {
+                ProgressView("正在搜索…")
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("library.search.loading")
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private func select(_ day: TimelineDay) {
+        guard dateRange.canRequest(day) else { pendingDay = nil; return }
+        guard !dateRange.isUnknown else {
+            pendingDay = day
+            Task { await timeline.load(timeline.selectedDay) }
+            return
+        }
+        pendingDay = nil
+        let adjacent = day == timeline.selectedDay.adding(days: 1) || day == timeline.selectedDay.adding(days: -1)
+        timeline.select(day)
+        withAnimation(reduceMotion || !adjacent ? nil : .smooth(duration: 0.25)) {
+            page.scrollTo(id: day, anchor: .leading)
+        }
+    }
+    private func choose(_ day: TimelineDay) { select(day); choosingDate = false }
+    private func openRecording(_ id: UUID) {
+        Task {
+            do { try await model.ensureRecording(id); recordingID = id }
+            catch { navigationFailure = String(localized: "这次录音已不可用，请刷新转录。") }
+        }
+    }
+}
+
+private struct LibraryTimelineSearch: Equatable { let query: String; let revision: UInt64 }
+
+private struct TimelinePagerLayout: Equatable {
+    let viewportWidth: CGFloat
+    let contentWidth: CGFloat
+}
+
+// Each mounted day observes only its own scroll position. The store keeps positions when pages unmount.
+@MainActor private final class TimelineDayReadingStates {
+    private var values: [TimelineDay: TimelineDayReadingState] = [:]
+    func state(for day: TimelineDay) -> TimelineDayReadingState {
+        if let state = values[day] { return state }
+        let state = TimelineDayReadingState()
+        values[day] = state
+        return state
+    }
+}
+
+@MainActor @Observable private final class TimelineDayReadingState {
+    var position = ScrollPosition(idType: TimelineWindowID.self)
+    var positioned = false
+}
+
+private struct TimelineDayPage: View {
+    let day: TimelineDay
+    let timeline: TimelineModel
+    @Bindable var reading: TimelineDayReadingState
+    let transcription: TranscriptionSnapshot?
+    let speechFailure: String?
+    let dateRange: TimelineDateRange
+    let refresh: () async -> Void
+    let open: (TimelineDestination) -> Void
+
+    var body: some View {
+        let windows = timeline.listWindows[day] ?? []
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                let repeatedClockRanges = timeline.repeatedClockRanges[day] ?? []
+                ForEach(windows) { window in
+                    VStack(alignment: .leading, spacing: 0) {
+                        Button { open(TimelineDestination(windowID: window.id)) } label: {
+                            TimelineRow(window: window, summary: timeline.summary(for: window),
+                                status: TimelinePresentation.status(window, transcription: transcription, speechFailure: speechFailure),
+                                connected: window.id != windows.last?.id,
+                                includeUTCOffset: repeatedClockRanges.contains(window.id))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("timeline.window.\(window.id.key)")
+                        if !window.marks.isEmpty {
+                            ScrollView(.horizontal) {
+                                HStack(spacing: 12) {
+                                    ForEach(window.marks) { mark in
+                                        Button {
+                                            open(TimelineDestination(windowID: window.id, markID: mark.id))
+                                        } label: {
+                                            Label(TimelineDate.time(mark.recordedAt, offset: window.id.timezoneOffset, seconds: true), systemImage: "flag.fill")
+                                                .phoneText(.caption).monospacedDigit().frame(minHeight: 44)
+                                        }
+                                        .buttonStyle(.plain).foregroundStyle(MoMoPalette.ink)
+                                        .accessibilityLabel("查看 \(TimelineDate.time(mark.recordedAt, offset: window.id.timezoneOffset, seconds: true)) 的标记")
+                                        .accessibilityIdentifier("timeline.mark.\(mark.id)")
+                                    }
+                                }
+                            }.scrollIndicators(.hidden).padding(.leading, 26).padding(.bottom, 16)
+                        }
+                    }
+                    .id(window.id)
+                }
+                if let failure = timeline.failures[day] {
+                    Text(failure).phoneText(.metadata).foregroundStyle(MoMoPalette.failure)
+                    Button("重试") { Task { await timeline.load(day) } }.frame(minHeight: 44)
+                } else if windows.isEmpty, timeline.snapshots[day] != nil,
+                          !timeline.loading.contains(day), !dateRange.isUnknown {
+                    ContentUnavailableView(timeline.earliestDay == nil ? String(localized: "还没有可读的转录") : String(localized: "这一天没有可读的转录"),
+                        systemImage: "waveform", description: Text(timeline.earliestDay == nil
+                            ? String(localized: "在 Apple Watch 上开始录音，内容会自动出现在这里。")
+                            : String(localized: "有说话的时段会显示在这里，长时间安静不会占据时间线。")))
+                        .accessibilityIdentifier("timeline.day.empty")
+                }
+            }
+            .scrollTargetLayout()
+            .padding(.bottom, 24)
+        }
+        .overlay {
+            if windows.isEmpty, timeline.failures[day] == nil,
+               timeline.snapshots[day] == nil || timeline.loading.contains(day) || dateRange.isUnknown {
+                ProgressView("正在读取记录")
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("timeline.day.loading")
+                    .allowsHitTesting(false)
+            }
+        }
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .defaultScrollAnchor(.top, for: .alignment)
+        .scrollPosition(Binding(get: {
+            reading.position
+        }, set: { position in
+            // Offscreen pages must not replace this day's saved reading position.
+            guard day == timeline.selectedDay else { return }
+            reading.position = position
+        }))
+        .onScrollPhaseChange { _, phase in
+            guard day == timeline.selectedDay, phase == .tracking || phase == .interacting else { return }
+            // A delayed first load must not take control back after the reader starts scrolling.
+            reading.positioned = true
+        }
+        .onChange(of: timeline.currentID(reading.position.viewID(type: TimelineWindowID.self))) { _, replacement in
+            guard let previous = reading.position.viewID(type: TimelineWindowID.self),
+                  let replacement, replacement != previous else { return }
+            reading.position.scrollTo(id: replacement)
+        }
+        .onChange(of: day == timeline.selectedDay ? windows.last?.id : nil, initial: true) {
+            guard day == timeline.selectedDay, !windows.isEmpty,
+                  !reading.positioned else { return }
+            reading.positioned = true
+            var position = ScrollPosition(idType: TimelineWindowID.self)
+            position.scrollTo(edge: .bottom)
+            reading.position = position
+        }
+        .refreshable { await refresh() }
+        // Keep the gutter outside the scrollable coordinate space. When archive
+        // regrouping replaces a row ID, scrollTo(id:) can otherwise align that
+        // inset target horizontally and consume the 24pt page margin.
+        .padding(.horizontal, 24)
+    }
+
+}

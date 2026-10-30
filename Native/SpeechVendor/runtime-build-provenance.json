@@ -1,0 +1,26 @@
+[
+  {
+    "platform": "ios",
+    "source": "11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf",
+    "upstreamArchiveSHA256": "6b8e769cb153343270fdccbe92e3b3db0d1c421d67fa0989ab01fdf5b2fcf2de",
+    "onnxRuntimeArchiveSHA256": "2c2299acbb461d26d4bac4bc85985d40e7c7177ed6072703ae0846d88b0b4599",
+    "builderSHA256": "748485e2f3a5315da64cb3abbb77b3a5e713a676bfc236d85afdf4d8f75dd861",
+    "patchedSourceSHA256": {
+      "session.cc": "96f9b3da65be2b3bfe63d7e2bddc07ab8c6e77e47db9505b930d19c48649e495",
+      "offline-funasr-nano-model.cc": "a3f1438d6c8655d71c263a9367af4bd86ba7cdc167d027130fd660df2dabda42"
+    },
+    "xcode": "Xcode 27.0\nBuild version 27A266a"
+  },
+  {
+    "platform": "macos",
+    "source": "11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf",
+    "upstreamArchiveSHA256": "93f7a064abe99e0d6185a88c5b36ce18c4bff35cd0d5e4e81f81151de8e3e7e5",
+    "onnxRuntimeArchiveSHA256": "cb0b0bec912c77229517c463e28a3fac9674c521f9599919efff1ef2b42f3da0",
+    "builderSHA256": "748485e2f3a5315da64cb3abbb77b3a5e713a676bfc236d85afdf4d8f75dd861",
+    "patchedSourceSHA256": {
+      "session.cc": "96f9b3da65be2b3bfe63d7e2bddc07ab8c6e77e47db9505b930d19c48649e495",
+      "offline-funasr-nano-model.cc": "a3f1438d6c8655d71c263a9367af4bd86ba7cdc167d027130fd660df2dabda42"
+    },
+    "xcode": "Xcode 27.0\nBuild version 27A266a"
+  }
+]

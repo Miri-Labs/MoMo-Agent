@@ -1,0 +1,609 @@
+{
+  "schemaVersion": 1,
+  "rawEvidenceRoot": "/Users/syh/Workspace/MoMoAgent/tmp_agent_output/hermes-prompt-20261015",
+  "finalModel": "deepseek/deepseek-v4.1-flash",
+  "finalBuild": "ios-build-12",
+  "finalPromptInputs": [
+    {
+      "path": "Packages/MoMoAgentKit/Sources/MoMoAgent/Prompts/AgentMemoryEdit.swift",
+      "sha256": "8b00014714d40c339acaedb1ec9b17e8dbc2e4cc6cc383013e25080ae091e831"
+    },
+    {
+      "path": "Packages/MoMoAgentKit/Sources/MoMoAgent/Prompts/AgentPromptDocument.swift",
+      "sha256": "6b7e88e2920797901736d4a7842cb096fd329ee2297c769f91493995637a9c39"
+    },
+    {
+      "path": "Packages/MoMoAgentKit/Sources/MoMoAgent/Prompts/AgentPromptStore.swift",
+      "sha256": "eb50354530ae333dab0b0d6cf11293b84cc91468bc061dfa3218c3dc93f0d21e"
+    },
+    {
+      "path": "Packages/MoMoAgentKit/Sources/MoMoAgent/Prompts/Defaults/SOUL.md",
+      "sha256": "e8ffbf46e657d6b1f7f9def0db4ad7341f4c9cf52c6a534ec106b4f7b26d2a46"
+    },
+    {
+      "path": "Packages/MoMoAgentKit/Sources/MoMoAgent/Prompts/Defaults/hermes-LICENSE.txt",
+      "sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6"
+    },
+    {
+      "path": "Packages/MoMoAgentKit/Sources/MoMoAgent/Runtime/AgentInstructions.swift",
+      "sha256": "eca2fcbf99d80962c6d98c698cd9dbbe352f25310e700e9574262a549c41d389"
+    },
+    {
+      "path": "Packages/MoMoAgentKit/Sources/MoMoAgent/Tools/MemoryTools.swift",
+      "sha256": "351a5bbd9328269f4e3c52db7df4fd20999b2cca8f5fedaf674c9c301097e42a"
+    },
+    {
+      "path": "Tests/iPhoneIntegrationTests/LiveAgentContextTests.swift",
+      "sha256": "d5e1d7fad58231e08f0cb0b9969a28af71992e5f958f9459e404182aa59f82fd"
+    }
+  ],
+  "records": [
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/attachment-export.log",
+      "bytes": 982,
+      "sha256": "b828e0ce97599436e23e025b085c128d76ee9eb235e4719534ac4224d82f9896"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-build-01.log",
+      "bytes": 225285,
+      "sha256": "8431edfdf793139ce4f0d92220ece8fa44e4ce745549efe4d4b40f521180831d"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-build-02.log",
+      "bytes": 216746,
+      "sha256": "b2c4f06236617971075502527295508b9c75c26d2c0d8f557102fe6a5326e7d8"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-build-03.log",
+      "bytes": 956906,
+      "sha256": "aea3d42d081952e0610814a016c78fb3d1a0bb31ff28da3b43de22915843cc80"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-build-04.log",
+      "bytes": 195217,
+      "sha256": "9aa171e8b17ee3bde44ab14ff78af748c2f7a47303450db1d9aa0087201e8188"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-build-05.log",
+      "bytes": 97666,
+      "sha256": "e7cb381f7af06423f1a5aa7afd64dbc7a9b6d39cc7bd4784bc1a243057321e0b"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-build-06.log",
+      "bytes": 160779,
+      "sha256": "53b62b8947a53a4f6d1e17806360f1012972c7382141322474dd3e8bceb2ee66"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-build-07.log",
+      "bytes": 103396,
+      "sha256": "2b3e932d20436b7ce447c10153c4e0431e2b380dcf01150bbe92ea9c9d667081"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-build-08.log",
+      "bytes": 152788,
+      "sha256": "57895cc375a85624eb2a4a92d0bd824fa2b0b2507d440488ff16f5601dd8b701"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-build-09.log",
+      "bytes": 150647,
+      "sha256": "cd27e566a45d798bdd34be7d45ef434519b1ee14903e19abc8692917410630d6"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-build-10.log",
+      "bytes": 156919,
+      "sha256": "dade1ef951f2659005ab2a05c97d7dfeb0bfcc3d29aa579f70203b159e51e190"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-build-11.log",
+      "bytes": 1105303,
+      "sha256": "62d5adaa4cea712860b80506afa40184d0f5d39d25e1146f3ef3192c19e8da77"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-build-12.log",
+      "bytes": 128521,
+      "sha256": "67f4b55a7d197578571b7c88fbd3dc3c5739dd74c25469e6c39f968849f0ed8c"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-tests-01.log",
+      "bytes": 28362,
+      "sha256": "858e51f37bcad3e79bd52a7aa86ac4a276fcb266c6f579ce5b10b1e90188c324"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-tests-02.log",
+      "bytes": 21731,
+      "sha256": "a23075ee09755690995f2c9dcfdd45f533bb1b0cca432a29809e9ffb7b61433b"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-tests-03.log",
+      "bytes": 3444,
+      "sha256": "4590f037c5239169cf9f309fe5f530316be56abced32fad5fc35ffa16a2c2a34"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/ios-tests-04.log",
+      "bytes": 3583,
+      "sha256": "95f44c064eede231c7e950a243bfcad82ab1d72349a704a2644e7deefde02753"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-01/run.json",
+      "bytes": 674,
+      "sha256": "b7daea7c554bfe18c86c045d85b00c58773c346665dac59a8ab8c7e4d2b6d5e3"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-01/scenarios/personal-assistant-memory.json",
+      "bytes": 2097,
+      "sha256": "4ac1e5328280f37a9e901fb969aa503d2166723ea0dd5e2ea747351039c5b0ae"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-01/scenarios/recent-recording.json",
+      "bytes": 4691,
+      "sha256": "9636ecef17d18ee0ddd2f399ad0b32fbbcf24a3433a1c36dc62542d52a3e8f55"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-01/scenarios/untrusted-transcript.json",
+      "bytes": 5092,
+      "sha256": "bcd99b6b84d243d5003ff6cbec6f089d09680f8835775924b08ea0442d53d6fd"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-01/summary.json",
+      "bytes": 2620,
+      "sha256": "f25e00f96ef6cc49f30247324c8f265319e433417d0e4206b4a4dbc433b8b27b"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-01/xcodebuild.log",
+      "bytes": 5324,
+      "sha256": "63b580f5d0d0a8289c863caa54d8623876173e8013b065ed6d9b55f2bdd75443"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-02/run.json",
+      "bytes": 672,
+      "sha256": "66c14a8154a1ac544e3d8ef7d977e2d00a88e283f3bd8e7088d1b17dfde95af4"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-02/scenarios/personal-assistant-memory.json",
+      "bytes": 7331,
+      "sha256": "739d927632ce4c2932ca58098553325483cdc7721c4f6d7485ba9efe34affb28"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-02/scenarios/recent-recording.json",
+      "bytes": 4237,
+      "sha256": "81dd9f20a3c0c0fddfb089353c41d740e5ccd10514765a8ea4dfc8ce793735a8"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-02/scenarios/untrusted-transcript.json",
+      "bytes": 4549,
+      "sha256": "e06d4ab06302780e1ebb4d5f6b98b9368a7d78b1f29a3dede014833caaa40b60"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-02/semantic-review.json",
+      "bytes": 791,
+      "sha256": "efea86560fb6cb56e18e73dd01e9aa84b05184ca4698b00762cb382a8606e75c"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-02/summary.json",
+      "bytes": 957,
+      "sha256": "dc16dd8f6c94def759c7a5bf8aef250a39b82b377323590e92b868dab30d7879"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-02/xcodebuild.log",
+      "bytes": 3932,
+      "sha256": "a085f4baef5541d9522d78325784850d4aaeb30d42b41063b2d085652121eb5c"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-03/run.json",
+      "bytes": 674,
+      "sha256": "badae2e8f72b1cc5d3f19a4350fb9474db8d0a5ee45e29675adff6078ad94420"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-03/scenarios/personal-assistant-memory.json",
+      "bytes": 7235,
+      "sha256": "4c0aa64b569b5e5ef29da33d3279a5d3bcedb6e506e32b90e9fdabeade270dd6"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-03/scenarios/recent-recording.json",
+      "bytes": 4450,
+      "sha256": "83aae862210cfcc86c579589302912aa7935318f1409d45d8c07cddcfee6bbbc"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-03/scenarios/untrusted-transcript.json",
+      "bytes": 4673,
+      "sha256": "3da52e3520b49d203c2a7be9272785c94f70320bb68749681b0ef426d21c39c8"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-03/semantic-review.json",
+      "bytes": 769,
+      "sha256": "5f463039d0bb5281a3b62fa9ffcd2243b5bc41351afe4d304982f189e54b4272"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-03/summary.json",
+      "bytes": 1418,
+      "sha256": "a1d1783ce60af342ed16f765eb8792dfb442a4098cc80925e00b132f10680c33"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-03/xcodebuild.log",
+      "bytes": 4230,
+      "sha256": "6de7561fee7d53ee5ba5ffb2e8e1649c52d16a1787a90e4b10e3de6cd8b0d4d4"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-04/run.json",
+      "bytes": 672,
+      "sha256": "1faeeb48a46ddebd2a89ea93876484e2a30654fdf55d255e7c595e51fe4a4ae9"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-04/scenarios/personal-assistant-memory.json",
+      "bytes": 7223,
+      "sha256": "910b21f8a6828118d6420a056f43fdca8017f9d37e67e6225fafb7e4d62ac706"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-04/scenarios/recent-recording.json",
+      "bytes": 4711,
+      "sha256": "f7dde58c386d6cb4a6551de9b2816268a52a0bb418667fcc042560265cc7cd5c"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-04/scenarios/untrusted-transcript.json",
+      "bytes": 4673,
+      "sha256": "66c30e1f313796db64524679c2443472767de2bd163e8a620be2dc1404870ce8"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-04/semantic-review.json",
+      "bytes": 354,
+      "sha256": "7d53fbf8ee606636741a5b44ead493686eae720735298379fa1f56795efb6817"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-04/summary.json",
+      "bytes": 957,
+      "sha256": "4b87b1a98d113c20c6cc8f731a136124da23e65f2cc12e61e6f6c9d4d7326970"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-04/xcodebuild.log",
+      "bytes": 3932,
+      "sha256": "c214f3ac43587335c0245bdab01c4ee32a6087f3edbc35834429ed152bc76694"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-05/run.json",
+      "bytes": 674,
+      "sha256": "7706f07c8baad811da21bd5568c5cdfffbdfad10034f17ad0edd0fa7c0ed67bf"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-05/scenarios/personal-assistant-memory.json",
+      "bytes": 7322,
+      "sha256": "4f4ebda34607ae829b1620f4852a8f9e84598f0f1b57182573cd85c5c410ae64"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-05/scenarios/recent-recording.json",
+      "bytes": 4449,
+      "sha256": "ac9ce137816cd47c48d8758aebc68f650ac9e5fa3c45bd795fa738b7e455b94c"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-05/scenarios/untrusted-transcript.json",
+      "bytes": 4677,
+      "sha256": "0158a5d1b4ea9a472ac1f36583fb92be819968a33da1382b090f362173398ca2"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-05/semantic-review.json",
+      "bytes": 618,
+      "sha256": "d2f56a425d81098097d3e3f3728236df1e84c82edfd9a9fb5ae42bcdbe6e9ace"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-05/summary.json",
+      "bytes": 1566,
+      "sha256": "c6caeaad3c63709f3e0a53e756764c130e10f333b87b43b7240c1008dde6b157"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-05/xcodebuild.log",
+      "bytes": 5041,
+      "sha256": "870b195c8fe7960ee3c366c52b3af8612342b2e8e415be6c946b18cb48da3877"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-06/run.json",
+      "bytes": 672,
+      "sha256": "2442a5548d3abff001ef1fe2c353e2a9e1edece92023c95aed546d4fdbeaabfc"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-06/scenarios/personal-assistant-memory.json",
+      "bytes": 7313,
+      "sha256": "e78110b7baeda1f0f6f68f65a517c35c694983032d577abd4b3511ab6b10a6a7"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-06/scenarios/recent-recording.json",
+      "bytes": 4528,
+      "sha256": "fb4e94fce238a4ea9e5d1e4fecdf4793f7ccf41d403d02db52004317471bd7f2"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-06/scenarios/untrusted-transcript.json",
+      "bytes": 4676,
+      "sha256": "79a520721adce9a658bfc448f8cae92d4e1394b739deeda58395170b65f103e5"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-06/semantic-review.json",
+      "bytes": 738,
+      "sha256": "012d15c737e56545ff4a7436f41febb204c24c099857eebf95d83d004cd8b6aa"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-06/summary.json",
+      "bytes": 957,
+      "sha256": "8c7d635d77a9e20b1443a5d46ff9e1923c29016d22a8dd9279bc428af50a5dd2"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-06/xcodebuild.log",
+      "bytes": 3932,
+      "sha256": "34d23bb27569ced8b89df88bd3ceba321091bdd707135dbe688458345d1a2736"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-07/run.json",
+      "bytes": 620,
+      "sha256": "20a9e482f3e65928c68d90c4a9a170464e5c3bff03a36f23277c2cc728a982fc"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-07/scenarios/personal-assistant-memory.json",
+      "bytes": 7301,
+      "sha256": "5ef6da611e9213c46c406ce5cb179f24d2dc82573d43a57976d66175767e4c90"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-07/semantic-review.json",
+      "bytes": 568,
+      "sha256": "083782595f1c0b7b92dd51958f200d05c4260d232f628ba6216285b9885033c9"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-07/summary.json",
+      "bytes": 957,
+      "sha256": "007492010dce2e4d631c5c452c3e3c2507a155186a46af6f0c51951f98732278"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-agent-07/xcodebuild.log",
+      "bytes": 3075,
+      "sha256": "347a081ab187ab316d581f3562868bd5f8227e4cabf5120693d736266cfe1179"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-01/run.json",
+      "bytes": 673,
+      "sha256": "493564f3bba4d6c1e4a4385767e1bf07b12055d2f5c74929019321c03deccca9"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-01/scenarios/personal-assistant-memory.json",
+      "bytes": 7469,
+      "sha256": "3bdfa08e12f78ac7406b674b30b2e154d8965557c403bd1b8ccb948d40db82c4"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-01/scenarios/recent-recording.json",
+      "bytes": 4659,
+      "sha256": "214c34b27bc805c9bb5cbe83a53cdfcb1a794461b90aeb80617e85cab2bb302d"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-01/scenarios/untrusted-transcript.json",
+      "bytes": 5167,
+      "sha256": "9d4e1fb25dc248191711e2e7de59815106e0da2d5760008c9f983ca8f4cea03a"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-01/semantic-review.json",
+      "bytes": 789,
+      "sha256": "1bde9bd4732a2ec0fb93d26a7ca31acf663adb663a093c4409bca8dbecfd0d6e"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-01/summary.json",
+      "bytes": 957,
+      "sha256": "b1a6dab0c3b4dbff2d984f7b1d8053f18a4b68aeb7b6d1ed4294e3e4c19a8bd7"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-01/xcodebuild.log",
+      "bytes": 3941,
+      "sha256": "44f256070221b48e90528ac97288e19055cb562282e0090826395556330cc64d"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/execution-plan.json",
+      "bytes": 397,
+      "sha256": "172d0fdf7b5b49103ad97222ebf1da39126090f9ac294727bcbbaaf0956ef30f"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-01/run.json",
+      "bytes": 673,
+      "sha256": "c147da8996441dfc0c25c7e9a160df8c222c37aee07e039e21cb1e8005be201c"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-01/scenarios/personal-assistant-memory.json",
+      "bytes": 7361,
+      "sha256": "002b6e9c26e7ad3166d44f5ba3c302be62b1cabd0322e57ba1e1e2a972e0bc11"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-01/scenarios/recent-recording.json",
+      "bytes": 4431,
+      "sha256": "f02d3eab75c4f91429ac7c480e26cabfc982011b0fc61525c55f096a078774a0"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-01/scenarios/untrusted-transcript.json",
+      "bytes": 6166,
+      "sha256": "76ddcdc09f2e1bfed4eca946036ee0cdebc01fa65bec5ee2b767daff6c16a3a3"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-01/semantic-review.json",
+      "bytes": 789,
+      "sha256": "cce29fe3e92e814c569dffe8b7bd140e6bbefb56a112f8261fd37d1f42a20d1b"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-01/summary.json",
+      "bytes": 957,
+      "sha256": "cfc97b027bf9248024b6cc0b2bf47cf59e0fb389faf16e00d4b9e7114f95784e"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-01/xcodebuild.log",
+      "bytes": 3984,
+      "sha256": "37cfafb1e7f03270f5765cf20c5266b2f2ac165634bdfb35d16ea34cdebb34c6"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-02/run.json",
+      "bytes": 673,
+      "sha256": "ae44e52d4420f2970d25d4be2a0c6134e4b01bd2f6461749572945bc9dcbac6c"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-02/scenarios/personal-assistant-memory.json",
+      "bytes": 7503,
+      "sha256": "2244421517395613cff276348dbe673280261f5dc0a27f5c222133821ec50068"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-02/scenarios/recent-recording.json",
+      "bytes": 4556,
+      "sha256": "2ebbba4affc02a8a798719ca604aebfe8b282c3ac8071bf2a481945d1e5e3a6d"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-02/scenarios/untrusted-transcript.json",
+      "bytes": 4898,
+      "sha256": "4e446712d41f11169d4811f68f2ad7f4ebf4e71ec41c35d2d5fd262deb5e89f7"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-02/semantic-review.json",
+      "bytes": 849,
+      "sha256": "0c2df3555693ebb3da656cd5f617f21051f908759cc7367f1b208dc88fcaa3a0"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-02/summary.json",
+      "bytes": 956,
+      "sha256": "73d1303a2b8446f2c69e35a2478073c2611608c01403c40ad7502715b7171634"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/repetition-02/xcodebuild.log",
+      "bytes": 3983,
+      "sha256": "b49751b2f50e6f85aa3f418ede24f1e52770db58610860b1e56deefd296d7d98"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/run.json",
+      "bytes": 1824,
+      "sha256": "6995e263f495df57dc1b2405c6eef417a8333611fbab6c7ce0537fc1ec52bd3e"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-02/semantic-review.json",
+      "bytes": 518,
+      "sha256": "cfae8d9383800ef02e32b7f412e72240a265376556b9de07da14264318e9c075"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-03/run.json",
+      "bytes": 673,
+      "sha256": "22b383ff0e7c4b459004287047ae266dd102a66e660b4ca82e1d76479b2b3ab9"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-03/scenarios/personal-assistant-memory.json",
+      "bytes": 7924,
+      "sha256": "7ad4d73ec12d9475f92d83a10526bc51be8b56ad1d352e776a221d8d3af1c3e4"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-03/scenarios/recent-recording.json",
+      "bytes": 4376,
+      "sha256": "0dab1a6b0a953bb5fc93d77f0c1ba5e8220e4b9c4ef1b1b6f2bd6a9134c3ca6b"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-03/scenarios/untrusted-transcript.json",
+      "bytes": 4958,
+      "sha256": "c228c2f041f0bad8cef513a586fcf8aaad561f88d0b42c53fa2a36cc4ce587d5"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-03/semantic-review.json",
+      "bytes": 848,
+      "sha256": "67e91f2d6df6921de82d47f46acf01830bfec97bab7dd82293f60bba2600466e"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-03/summary.json",
+      "bytes": 957,
+      "sha256": "9c7a46ccff829e64c13b1f718a00462dd762da91ce62d666291e82112e7d753d"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-03/xcodebuild.log",
+      "bytes": 3940,
+      "sha256": "9e31687f694be296b624b6e7499ac80f0b84ab29d3b11819c3ff1cf4ba80c506"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-04/run.json",
+      "bytes": 621,
+      "sha256": "05b6d9039a9c3ad4a4116c41472a1d0b51f28dff587f08573b52e4b032d6190a"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-04/scenarios/personal-assistant-memory.json",
+      "bytes": 7396,
+      "sha256": "46b1c5b5e6da0e379ab9c55d5ea34b6cbd90da5fdc14d7ae4f3fc6d5a8841a2d"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-04/semantic-review.json",
+      "bytes": 645,
+      "sha256": "935764421e34de035cd02d571fad4b969be701cfa93d8457a4e39f60a04711eb"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-04/summary.json",
+      "bytes": 956,
+      "sha256": "e3946e818a034797614688121b1d84cb7d3e770a28a1c1417e87c6d9d277f0f7"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/live-deepseek-04/xcodebuild.log",
+      "bytes": 3084,
+      "sha256": "552a0990324e01e0ab3fafd50793d15bb1febf7eeab24257d67bc2dbe4f9e083"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/package-tests-01.log",
+      "bytes": 10590,
+      "sha256": "ab592beb9b312d900560306b88fc9244e5623642abc3e4e4ff4c44f957cd9be9"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/package-tests-02.log",
+      "bytes": 11991,
+      "sha256": "fa4b68aa2a947572d15f8974a15c2248882287ea9ac0b09762686f4a3fa25d57"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/package-tests-03.log",
+      "bytes": 10539,
+      "sha256": "2c8d88ab827acdaf743bc467952ee4e5ce5addad092968aeed0dd935908d2467"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/package-tests-04.log",
+      "bytes": 12163,
+      "sha256": "9a5914f4972725527e48039193b234d97ef20b405970090af947d4f3209babd6"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/package-tests-05.log",
+      "bytes": 11692,
+      "sha256": "e4db87d14c531ce48a55411702c562f8b02fb52b858ebc5c21249e7ccaa7e612"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/package-tests-06.log",
+      "bytes": 11563,
+      "sha256": "471ea569f9fc312d5d60dee1b69a174f9bcedebda4639c94af37c7c3d7bafd1b"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/package-tests-07.log",
+      "bytes": 23543,
+      "sha256": "c5dd371b963e0c34636fa6608082f2ce34afb2c7fc5fca5530b7b5c29c5b5107"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/package-tests-08.log",
+      "bytes": 15416,
+      "sha256": "de4e8cdada410cb38454542b6eacda7601b33fc47af74584607d66e8fcf150b4"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/package-tests-09.log",
+      "bytes": 11608,
+      "sha256": "8cd1bf19dc479768d73b4105ee5a586b96c40f11d28da379c2eda0081225cd8a"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/package-tests-10.log",
+      "bytes": 15979,
+      "sha256": "5a473b19e9125dff7aaa4fb9f0e6660afb97fc2239aed35ddf38251e642de00f"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/prompt-bundle-check.json",
+      "bytes": 861,
+      "sha256": "811b065b1c916a45a2c56c450b00441ddefcd5cf5a36f071e7053df03778aaa5"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/renderer-tests.log",
+      "bytes": 703,
+      "sha256": "5be0f7e1f090fca8e6333c8e4c9efd7f3d24f99c92adeaea5156abce3abafead"
+    },
+    {
+      "path": "tmp_agent_output/hermes-prompt-20261015/runner-selftests.log",
+      "bytes": 115,
+      "sha256": "b0a08a295b0eb95350538bdd949c7b42d30e4d0416988b205e6ac6c20a4a26b5"
+    }
+  ],
+  "limitations": [
+    "Results from different builds are separate evidence, not one final full regression.",
+    "Claude runs and DeepSeek01 precede the final two wording changes.",
+    "DeepSeek02 has two independent workspaces and six automated passes; separate manual review remains needs_work.",
+    "Debug hosted test bundle check is not a new Release or full v0.1 acceptance.",
+    "Final Hermes simplification: DeepSeek03 three automated passes with style caveat, DeepSeek04 one memory pass after tool-parameter clarification. Separate builds and suites are not combined into one regression."
+  ]
+}

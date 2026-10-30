@@ -1,0 +1,11 @@
+{
+  "name": "momo-agent-hermes-memory-ui",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "node build.mjs", "test": "node --test src/adapter.test.mjs" },
+  "dependencies": {
+    "react": "19.2.7", "react-dom": "19.2.7", "d3-force": "3.0.0",
+    "nanostores": "1.4.2", "fflate": "0.8.3"
+  },
+  "devDependencies": { "esbuild": "0.28.1", "@tailwindcss/cli": "4.3.3", "tailwindcss": "4.3.3" }
+}

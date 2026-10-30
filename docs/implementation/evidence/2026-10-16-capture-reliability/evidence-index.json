@@ -1,0 +1,102 @@
+{
+  "configured-summary-run.json": {
+    "bytes": 560,
+    "sha256": "e3456520470a857c4411ed4f888b03ccb106c2f3cb01754fd2d602f14f68fe0a"
+  },
+  "configured-summary-tests.json": {
+    "bytes": 972,
+    "sha256": "59adbbb198e0e4d09bceefba91857f643fbd4025f2a075616c26d4b5acbe55a9"
+  },
+  "http-fixture-selftests.log": {
+    "bytes": 121,
+    "sha256": "7ed222a5d8e48702acf262a0c6ac2ae9ea50947cf866b5623b646152abbad38c"
+  },
+  "http-runner-selftests.log": {
+    "bytes": 103,
+    "sha256": "dae97527feaa5f4404b7cf8a367c36b5834935509ab9babacf648b1bb8476a3b"
+  },
+  "ios-final-summary.json": {
+    "bytes": 979,
+    "sha256": "94124240f1b775fb150cb1f314c125f15db91f84e60a28d5e9849dc32056ef88"
+  },
+  "ios-hosted-summary.json": {
+    "bytes": 1211,
+    "sha256": "5622c762e5c88692614e945e24857af84a6a1c248469a9502b67027d837ec727"
+  },
+  "original-swiftui-two-lines.json": {
+    "bytes": 631,
+    "sha256": "66e805608e3cc235c1bcdf46e0c769aab954a8586feb45adad41beaae7267a2d"
+  },
+  "package-tests.log": {
+    "bytes": 8835,
+    "sha256": "55e5683e848dd05f2cce6695d332a4113ffbebfaabaab346ce8772e1ad627768"
+  },
+  "release-bundle.json": {
+    "bytes": 12045,
+    "sha256": "9d1bf14620821e78564484f658501351879112408e956b867f982e8a27e3e608"
+  },
+  "release-home.png": {
+    "bytes": 136992,
+    "sha256": "5c7d6044a65e20b51267e9c4550ef1375153fb80a5aa37265f89c040f4f80ed9"
+  },
+  "release-install.json": {
+    "bytes": 524,
+    "sha256": "6d76a807e96c8aefa5ca01ed053d6d11d4223e960413845c33e63d1f02f414f3"
+  },
+  "release-signature.log": {
+    "bytes": 187,
+    "sha256": "65ac9cf1710bf0f1e5a3a630abf804a6083f33d0e80121c70312cea723540903"
+  },
+  "release-verifier-selftests.log": {
+    "bytes": 116,
+    "sha256": "f3b535bd2782f3206759f572f8e995b512c74ca148c862691ecd261cfd8b0cb7"
+  },
+  "timeline-reading-trace.txt": {
+    "bytes": 16727,
+    "sha256": "6d0038248792feaa817d772ea0e18ba4f07403c64466b23d50201daf0a524470"
+  },
+  "watch-diagnostic-fault.json": {
+    "bytes": 418,
+    "sha256": "1e51d43a8b6e22ec884634979b7932247af812526c272412c046544b456ec057"
+  },
+  "watch-input-feed.json": {
+    "bytes": 527,
+    "sha256": "18b2cee31162bffa048d5ffcae8d8a4cdae21ed8a279b34b1f9b2353a3a09dd1"
+  },
+  "watch-input-route.json": {
+    "bytes": 213,
+    "sha256": "ca46f0a1fbd99e6f64b04ea177f310ef1efa5067ba815228c9cab649ccb29b20"
+  },
+  "watch-media-reset.json": {
+    "bytes": 418,
+    "sha256": "7473435c9e41b9f583061b1a1ba813c415aaf084f3a8701eaa4d969e5af50e66"
+  },
+  "watch-native-capacity.json": {
+    "bytes": 402,
+    "sha256": "d792cdc61ff77578064adccb5a5e0b5f8e57451b66f85e034ae892d8a7461356"
+  },
+  "watch-native-ledger.json": {
+    "bytes": 1220,
+    "sha256": "fe625d9564318dd712055e39f09e1fb996065c334bd8a3d7c2a21ae3c5187995"
+  },
+  "watch-paused.png": {
+    "bytes": 26967,
+    "sha256": "8a47998504f5365dc9667687069563a8ec8777cad40bef7b642ae54b2109027b"
+  },
+  "watch-preflight-capacity.json": {
+    "bytes": 407,
+    "sha256": "7b63b3c332da8c8e9eac7c8a2c2f5c679c6bc0eaa29e1fb6899f38374e9af608"
+  },
+  "watch-recording.png": {
+    "bytes": 38610,
+    "sha256": "7a2cf3c85b0f90cd9d1f8b20b4dfa615330a6b996357f3435e00b70ae0566ff6"
+  },
+  "watch-start.png": {
+    "bytes": 27490,
+    "sha256": "7dcbade87841df7948728fbd24815f1649a5db95df4794a767a496a3e1937e7b"
+  },
+  "watch-tests-summary.json": {
+    "bytes": 1235,
+    "sha256": "1bdc7f4e53c3c2f809c22feb9da4612e18301a0ad26849245eb9439f36d67dd2"
+  }
+}
