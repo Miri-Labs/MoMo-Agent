@@ -1071,10 +1071,10 @@ public actor TranscriptionCoordinator {
             // A model batch failure is retried as individual windows, so one bad
             // input cannot hold its healthy neighbour or cause endless batch retries.
             let splitBatch = !resultCommitted && tickets.count > 1
-                && shouldLocateFailure(error) && localFailureCode(error) != nil
+                && shouldLocateFailure(error) && windowFailureCode(error) != nil
             if splitBatch { batchDecodeFailed = true }
             let isolated = !resultCommitted && !splitBatch && shouldLocateFailure(error)
-                && retryScope == nil ? localFailureCode(error) : nil
+                && retryScope == nil ? windowFailureCode(error) : nil
             for current in tickets where !committedIDs.contains(current.window.id) {
                 if let isolated { try await archive.deferTranscriptionWindow(ticket: current, code: isolated) }
                 else { try await archive.cancelTranscriptionWindow(ticket: current) }
@@ -1158,6 +1158,13 @@ public actor TranscriptionCoordinator {
         if let error = error as? ArchiveError, case .missingRecording = error { return .audioUnavailable }
         if let error = error as? CocoaError, [.fileReadCorruptFile, .fileReadNoSuchFile, .fileReadNoPermission].contains(error.code) { return .audioRead }
         return nil
+    }
+
+    /// A window the planner cannot rebuild fails the same way on every attempt. Defer only that
+    /// window, so it cannot end the drain for the healthy windows behind it.
+    private func windowFailureCode(_ error: any Error) -> ProcessingFailureCode? {
+        if (error as? SpeechError) == .incompatibleWindow { return .recognition }
+        return localFailureCode(error)
     }
 
     private func shouldLocateFailure(_ error: any Error) -> Bool {
