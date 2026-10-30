@@ -1,6 +1,6 @@
 # iPhone 蓝牙耳机录音 · 实施记录 · 2026-10-29
 
-方案见 [iPhone 蓝牙耳机录音方案](../plan/iphone-earphone-capture-20261028.md)，路由实验见[耳机切换实验](earphone-route-spike-20261027.md)。功能面向所有提供 HFP 麦克风的蓝牙耳机（含 AirPods），目前只在 Shokz OpenMove 上真机测试，后续在 AirPods 等耳机上补测。功能先在迁移前仓库实现并试用，2026-10-29 移植到本仓库 `0.0.1` 首发树（模块名 `WML*` → `MoMo*`）。
+方案见 [iPhone 蓝牙耳机录音方案](../plan/iphone-earphone-capture-20261028.md)，路由实验见[耳机切换实验](earphone-route-spike-20261027.md)。功能面向所有提供 HFP 麦克风的蓝牙耳机（含 AirPods），目前只在 Shokz OpenMove 上真机测试，后续在 AirPods 等耳机上补测。功能先在迁移前仓库实现并试用，2026-10-29 移植到本仓库 `0.0.1` 首发树（模块名 `WML*` → `MoMo*`）。2026-10-30 首发树被重写为 `d879285e` 后再次移植：录音模块和资料库的接口未变，只在 `PhoneRuntime`、根视图和设置页合并了少量冲突（保留新增的传输延迟激活、说话人更新回调和续跑批次核对），README 同步改为“蓝牙耳机录音（测试版）”。
 
 ## 实现
 
