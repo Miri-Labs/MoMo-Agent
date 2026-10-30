@@ -18,8 +18,11 @@ final class EarphoneCaptureRuntime {
     private static let latePoll: TimeInterval = 0.5
     /// Pauses shorter than this, such as a track change, do not switch the earphone to HFP.
     private static let quietDelay: TimeInterval = 1
-    /// A failed switch retries after 3 s, doubling up to a minute, so a stuck route is not churned.
-    private static let retryDelays: [TimeInterval] = [3, 6, 12, 24, 48, 60]
+    /// A failed switch retries after 1 s, then backs off up to a minute, so a stuck route is not churned.
+    private static let retryDelays: [TimeInterval] = [1, 3, 6, 12, 24, 48, 60]
+    /// A switch can fail once while the earphone is still changing profile, for example when playback
+    /// starts right after HFP comes up. Only repeated failures are shown as an error.
+    private static let failuresBeforeError = 3
 
     private enum Target: Equatable { case headset, standby(EarphoneCaptureStatus) }
 
@@ -263,7 +266,7 @@ final class EarphoneCaptureRuntime {
                 stopEngine()
                 scheduleRetry(after: error, to: desired)
                 standbyStatus = error as? EarphoneRouteError == .headsetUnavailable
-                    ? .headsetUnavailable : .failed(Self.describe(error))
+                    ? .headsetUnavailable : failureStatus(error, pending: .starting)
             }
         }
         // Standby, or a failed headset switch: keep an unsaved input alive so the app is not suspended.
@@ -279,8 +282,13 @@ final class EarphoneCaptureRuntime {
             await ending?.value
             stopEngine()
             scheduleRetry(after: error, to: .standby(standbyStatus))
-            status = .failed(Self.describe(error))
+            status = failureStatus(error, pending: standbyStatus)
         }
+    }
+
+    /// Keeps showing the state being switched to until the failure has repeated.
+    private func failureStatus(_ error: any Error, pending: EarphoneCaptureStatus) -> EarphoneCaptureStatus {
+        consecutiveFailures < Self.failuresBeforeError ? pending : .failed(Self.describe(error))
     }
 
     private func switched(to target: Target, since began: TimeInterval) {

@@ -39,7 +39,7 @@ It continuously captures your day from your wrist on **Apple Watch** or through 
 - **Embedded Tailscale Private Mesh**: Built-in user-space `tsnet` (`TailscaleKit`) establishes a direct encrypted peer-to-peer tunnel between your iPhone and Mac from anywhere—no public IP, no port forwarding.
 - **24/7 Wearable Capture**:
   - **Apple Watch (Available Now)**: Continuous background recording, automatic chunking, wrist bookmarks, and background `WCSession` delivery to iPhone.
-  - **Bluetooth Earphones (Beta 🧪)**: No Apple Watch? Your iPhone records through any earphone with a Bluetooth hands-free (HFP) microphone. Recording pauses while other audio plays, because iOS cannot record from a third-party earphone and play hi-fi audio at the same time, and resumes automatically when it stops. Tested so far on Shokz OpenMove; AirPods and other earphones are next.
+  - **Bluetooth Earphones (Beta 🧪)**: No Apple Watch? Your iPhone records through any earphone with a Bluetooth hands-free (HFP) microphone. Recording pauses while other audio plays, because iOS cannot record from a third-party earphone and play hi-fi audio at the same time, and resumes automatically when it stops. Tested so far on Shokz OpenMove and Sony XM6; AirPods and other earphones are next.
 
 ---
 
@@ -180,7 +180,7 @@ MoMo-Agent/
 ### Roadmap
 
 - [x] **v0.0.1** — Apple Watch 24/7 continuous capture, iPhone free offline SenseVoice + speaker diarization, embedded Tailscale private mesh, Mac self-hosted agent powered by Codex / Claude subscription, full English & Simplified Chinese UI, and WebRTC remote desktop.
-- [ ] **Bluetooth Earphone & AirPods Capture** *(Beta)* — All-day iPhone capture through a Bluetooth earphone, tested so far on Shokz OpenMove. Next: AirPods and other earphones, and hands-free triggered voice memos.
+- [ ] **Bluetooth Earphone & AirPods Capture** *(Beta)* — All-day iPhone capture through a Bluetooth earphone, tested so far on Shokz OpenMove and Sony XM6. Next: AirPods and other earphones, and hands-free triggered voice memos.
 - [ ] **Proactive Agent** — Proactively anticipates needs and solves problems based on your real-world life context.
 - [ ] **Plugin & Skill SDK** — Custom local tools for Apple Notes, Things 3, Obsidian, and local git repositories.
 
