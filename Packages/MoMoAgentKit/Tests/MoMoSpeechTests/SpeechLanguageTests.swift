@@ -6,6 +6,7 @@ import Testing
 func languageSelectionMatchesModelCapabilities(language: SpeechLanguage) throws {
     #expect(SpeechModelChoice.senseVoice.supports(language))
     #expect(SpeechModelChoice.funASRNano.supports(language) == (language != .korean))
+    #expect(SpeechModelChoice.xASR.supports(language) == [.automatic, .mandarin, .english].contains(language))
     #expect(SherpaRuntime.nanoLanguage(.automatic).isEmpty)
     if language != .automatic { #expect(!SherpaRuntime.nanoLanguage(language).isEmpty) }
 }
@@ -30,4 +31,21 @@ func languageSelectionMatchesModelCapabilities(language: SpeechLanguage) throws 
     #expect(restarted.configurationFingerprint == fingerprint)
     #expect(throws: SpeechError.invalidConfiguration) { try SpeechConfiguration(language: "fr") }
     #expect(Set(SpeechLanguage.allCases.map(\.rawValue)) == ["auto", "zh", "yue", "en", "ja", "ko"])
+}
+
+@Test func xASRDownloadLimitsEngineLanguagesToChineseAndEnglish() throws {
+    let manifest = try SpeechModelManifest(asrSHA256: String(repeating: "a", count: 64),
+        tokensSHA256: String(repeating: "b", count: 64), vadSHA256: String(repeating: "c", count: 64))
+    let bundle = SpeechModelBundle(directory: URL(fileURLWithPath: "/unused"), manifest: manifest)
+    let download = DownloadedSpeechModel(directory: URL(fileURLWithPath: "/unused"), catalog: try .xASR())
+    #expect(throws: SpeechModelSelectionError.unsupportedLanguage) {
+        try SpeechEngine(bundle: bundle, configuration: SpeechConfiguration().withLanguage(.cantonese),
+            downloadedModel: download)
+    }
+    let engine = try SpeechEngine(bundle: bundle, configuration: SpeechConfiguration(), downloadedModel: download)
+    #expect(engine.recognitionModel == .xASR)
+    #expect(engine.archiveBatchSize == 1)
+    try engine.setRecognitionLanguage(.english)
+    #expect(throws: SpeechModelSelectionError.unsupportedLanguage) { try engine.setRecognitionLanguage(.japanese) }
+    #expect(engine.recognitionLanguage == .english)
 }

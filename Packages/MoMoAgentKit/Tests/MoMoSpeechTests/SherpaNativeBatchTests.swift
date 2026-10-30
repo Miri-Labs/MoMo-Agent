@@ -105,3 +105,41 @@ struct NanoNativeTests {
         }
     }
 }
+
+@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["MOMO_XASR_MODEL_DIRECTORY"] != nil))
+struct XASRNativeTests {
+    @Test func publishedXASRDecodesWithTokensThatArchiveOwnershipCanAlign() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let directory = URL(fileURLWithPath: try #require(environment["MOMO_XASR_MODEL_DIRECTORY"]))
+        let bundle = try SpeechModelBundle.load(from: URL(fileURLWithPath: try #require(environment["MOMO_SPEECH_MODEL_DIRECTORY"])))
+        let attempt = SpeechAttempt()
+        let recorder = SpeechDiagnosticRecorder(operation: .transcribe, attemptID: attempt.id,
+            windowID: nil, fingerprint: "xasr-native")
+        let runtime = try SherpaRuntime(bundle: bundle, configuration: SpeechConfiguration(),
+            backend: .sherpaCoreML, download: .init(directory: directory, catalog: try .xASR()),
+            cacheRoot: nil, attempt: attempt, recorder: recorder)
+        defer { runtime.close() }
+        try runtime.warmUp(attempt: attempt, recorder: recorder)
+        #expect(recorder.value.modelLoadSeconds < 10)
+        // The public fixture is Chinese; an English clip, when present, also exercises casing.
+        let english = bundle.directory.appendingPathComponent("test_wavs/en.wav")
+        let clips = [("zh", "早上九点至下午五点")]
+            + (FileManager.default.fileExists(atPath: english.path) ? [("en", "fifty pieces of gold")] : [])
+        for (name, expected) in clips {
+            let wav = bundle.directory.appendingPathComponent("test_wavs/\(name).wav")
+            let wave = try #require(wav.path.withCString { SherpaOnnxReadWave($0) })
+            defer { SherpaOnnxFreeWave(wave) }
+            let samples = Array(UnsafeBufferPointer(start: wave.pointee.samples, count: Int(wave.pointee.num_samples)))
+            let result = try runtime.recognize(samples: samples, windowID: name,
+                fingerprint: "xasr-native", attempt: attempt, onEvent: { _ in }, recorder: recorder)
+            print("X-ASR native result (\(name)): \(result.text)")
+            #expect(result.text.contains(expected))
+            // Archive ownership matches token spellings against the text; casing and punctuation must keep that intact.
+            #expect(result.tokens.count == result.timestamps.count)
+            #expect(result.tokens.joined().replacingOccurrences(of: "▁", with: " ").filter { !$0.isWhitespace }
+                .lowercased() == result.text.filter { !$0.isWhitespace }.lowercased())
+        }
+        #expect(try runtime.updateLanguage(.english))
+        #expect(throws: SpeechModelSelectionError.unsupportedLanguage) { try runtime.updateLanguage(.japanese) }
+    }
+}

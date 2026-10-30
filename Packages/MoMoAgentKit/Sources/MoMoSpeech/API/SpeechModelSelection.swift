@@ -3,9 +3,24 @@ import Foundation
 public enum SpeechModelChoice: String, CaseIterable, Sendable {
     case senseVoice
     case funASRNano
+    case xASR
 
     public func supports(_ language: SpeechLanguage) -> Bool {
-        self == .senseVoice || language != .korean
+        switch self {
+        case .senseVoice: true
+        case .funASRNano: language != .korean
+        // The X-ASR checkpoint is trained on Mandarin, English and code-switched speech only.
+        case .xASR: [SpeechLanguage.automatic, .mandarin, .english].contains(language)
+        }
+    }
+
+    /// The app-pinned download catalog. SenseVoice ships in the app bundle.
+    public func catalog() throws -> DownloadableSpeechModel? {
+        switch self {
+        case .senseVoice: nil
+        case .funASRNano: try .funASRNano()
+        case .xASR: try .xASR()
+        }
     }
 }
 
@@ -17,6 +32,11 @@ public struct DownloadedSpeechModel: Equatable, Sendable {
     public init(directory: URL, catalog: DownloadableSpeechModel) {
         self.directory = directory
         self.catalog = catalog
+    }
+
+    /// Runtime construction still compares the whole catalog; the identifier only names the model.
+    public var model: SpeechModelChoice {
+        catalog.identifier == DownloadableSpeechModel.xASRIdentifier ? .xASR : .funASRNano
     }
 }
 

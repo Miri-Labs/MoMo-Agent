@@ -13,6 +13,20 @@ import MoMoSherpaBridge
     #expect(catalog.files.allSatisfy { !$0.path.contains(".mlmodel") })
 }
 
+@Test func xASRCatalogPinsUpstreamFilesWithoutRequantization() throws {
+    let catalog = try DownloadableSpeechModel.xASR()
+    #expect(catalog.files.map(\.path).sorted() == ["decoder-epoch-99-avg-1.onnx", "encoder-epoch-99-avg-1.int8.onnx",
+                                                   "joiner-epoch-99-avg-1.int8.onnx", "tokens.txt"])
+    #expect(catalog.files.contains { $0.path == "encoder-epoch-99-avg-1.int8.onnx" && $0.byteCount == 161_744_450 })
+    #expect(catalog.baseURL.absoluteString.contains("ce812cc05d858539a68dd42e86f4fd7a9ce1acf0"))
+    #expect(try SpeechModelChoice.xASR.catalog() == catalog)
+    #expect(try SpeechModelChoice.senseVoice.catalog() == nil)
+    #expect(try catalog.revision != DownloadableSpeechModel.funASRNano().revision)
+    let unused = URL(fileURLWithPath: "/unused")
+    #expect(DownloadedSpeechModel(directory: unused, catalog: catalog).model == .xASR)
+    #expect(DownloadedSpeechModel(directory: unused, catalog: try .funASRNano()).model == .funASRNano)
+}
+
 @Test func downloadedModelReceiptDetectsSameSizeContentReplacement() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -64,6 +78,9 @@ import MoMoSherpaBridge
     let nanoConfig = try String(contentsOf: URL(fileURLWithPath: String(nanoProvider.dropFirst("cpu:".count))), encoding: .utf8)
     #expect(!nanoConfig.contains("ModelFormat=MLProgram"))
     #expect(nanoConfig.contains("session.intra_op.allow_spinning=0"))
+
+    let xASRProvider = try SherpaRuntime.provider(backend: .sherpaCoreML, revision: rev, model: .xASR, cacheRoot: root)
+    #expect(xASRProvider.hasPrefix("cpu:"))
 
     let senseProvider = try SherpaRuntime.provider(backend: .sherpaCoreML, revision: rev, model: .senseVoice, cacheRoot: root)
     #expect(senseProvider.hasPrefix("coreml:"))

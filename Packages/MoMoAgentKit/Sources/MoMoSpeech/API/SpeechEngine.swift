@@ -67,8 +67,8 @@ public final class SpeechEngine: @unchecked Sendable {
                 onDiagnostics: @escaping @Sendable (SpeechDiagnostics) -> Void,
                 onEvent: @escaping @Sendable (SpeechExecutionEvent) -> Void) throws {
         try configuration.validate()
-        if downloadedModel != nil,
-           !SpeechModelChoice.funASRNano.supports(SpeechLanguage(rawValue: configuration.language)!) {
+        if let downloadedModel,
+           !downloadedModel.model.supports(SpeechLanguage(rawValue: configuration.language)!) {
             throw SpeechModelSelectionError.unsupportedLanguage
         }
         self.bundle = bundle; self.configuration = configuration
@@ -104,8 +104,8 @@ public final class SpeechEngine: @unchecked Sendable {
     }
 
     public var recognitionLanguage: SpeechLanguage { selection.withLock { $0.language } }
-    public var recognitionModel: SpeechModelChoice { selection.withLock { $0.download == nil ? .senseVoice : .funASRNano } }
-    /// Bounds peak encoder memory. Nano's unchanged encoder accepts batch=1.
+    public var recognitionModel: SpeechModelChoice { selection.withLock { $0.download?.model ?? .senseVoice } }
+    /// Bounds peak encoder memory. Nano's unchanged encoder accepts batch=1; X-ASR decodes one window at a time on CPU.
     public var archiveBatchSize: Int { recognitionModel == .senseVoice ? 2 : 1 }
 
     public func archiveText(_ result: SpeechRecognition, window: SpeechWindow,
@@ -118,7 +118,7 @@ public final class SpeechEngine: @unchecked Sendable {
         try await perform(operation: .warmUp, attempt: attempt, checkAfterOperation: false) { [self] recorder in
             let previous = selection.withLock { $0.download }
             guard previous != download else { return }
-            if download != nil, !SpeechModelChoice.funASRNano.supports(recognitionLanguage) {
+            if let download, !download.model.supports(recognitionLanguage) {
                 throw SpeechModelSelectionError.unsupportedLanguage
             }
             clearRuntime()
@@ -128,7 +128,7 @@ public final class SpeechEngine: @unchecked Sendable {
                 try candidate.warmUp(attempt: attempt, recorder: recorder)
                 try attempt.checkCancellation()
                 try selection.withLock {
-                    if download != nil, !SpeechModelChoice.funASRNano.supports($0.language) {
+                    if let download, !download.model.supports($0.language) {
                         throw SpeechModelSelectionError.unsupportedLanguage
                     }
                     $0.download = download
@@ -145,7 +145,7 @@ public final class SpeechEngine: @unchecked Sendable {
     /// Each recognition request snapshots this value; analysis checkpoints keep their existing identity.
     public func setRecognitionLanguage(_ language: SpeechLanguage) throws {
         try selection.withLock {
-            if $0.download != nil, !SpeechModelChoice.funASRNano.supports(language) {
+            if let download = $0.download, !download.model.supports(language) {
                 throw SpeechModelSelectionError.unsupportedLanguage
             }
             $0.language = language

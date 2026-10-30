@@ -15,8 +15,18 @@ public struct DownloadableSpeechModel: Codable, Equatable, Sendable {
     public let files: [File]
     public var downloadBytes: Int64 { files.reduce(0) { $0 + $1.byteCount } }
 
-    public static func funASRNano() throws -> Self {
-        guard let url = Bundle.module.url(forResource: "funasr-nano-onnx-v1", withExtension: "json") else {
+    static let xASRIdentifier = "sherpa-x-asr-zipformer-transducer-zh-en-punct-int8-2026-06-03"
+
+    public static func funASRNano() throws -> Self { try bundled("funasr-nano-onnx-v1") }
+
+    public static func xASR() throws -> Self {
+        let value = try bundled("x-asr-zh-en-onnx-v1")
+        guard value.identifier == xASRIdentifier else { throw SpeechModelInstallationError.invalidCatalog }
+        return value
+    }
+
+    private static func bundled(_ name: String) throws -> Self {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "json") else {
             throw SpeechModelInstallationError.invalidCatalog
         }
         let value = try WireJSON.decode(Self.self, from: Data(contentsOf: url))

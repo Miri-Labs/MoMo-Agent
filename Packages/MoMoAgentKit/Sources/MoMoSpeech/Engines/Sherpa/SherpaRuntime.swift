@@ -42,13 +42,13 @@ final class SherpaRuntime: @unchecked Sendable {
         let started = DispatchTime.now().uptimeNanoseconds
         defer { recorder.value.modelLoadSeconds += SpeechDiagnosticRecorder.seconds(since: started) }
         self.configuration = configuration
-        model = download == nil ? .senseVoice : .funASRNano
+        model = download?.model ?? .senseVoice
         guard model.supports(SpeechLanguage(rawValue: configuration.language)!) else {
             throw SpeechModelSelectionError.unsupportedLanguage
         }
         let revision: String
         if let download {
-            guard download.catalog == (try DownloadableSpeechModel.funASRNano()) else {
+            guard download.catalog == (try download.model.catalog()) else {
                 throw SpeechModelInstallationError.invalidCatalog
             }
             try download.catalog.validateFiles(at: download.directory, attempt: attempt, recorder: recorder)
@@ -62,9 +62,11 @@ final class SherpaRuntime: @unchecked Sendable {
             revision = bundle.manifest.asrSHA256
         }
         self.revision = revision
-        let runtimeTag = model == .senseVoice
-            ? "sherpa-1.13.8-coreml-v1"
-            : "funasr-nano-ort-cpu-naud-v2"
+        let runtimeTag = switch model {
+        case .senseVoice: "sherpa-1.13.8-coreml-v1"
+        case .funASRNano: "funasr-nano-ort-cpu-naud-v2"
+        case .xASR: "sherpa-1.13.8-transducer-cpu-v1"
+        }
         self.runtimeTag = runtimeTag
         fingerprint = ContentHash.sha256(Data(
             "\(revision):\(runtimeTag):\(configuration.language):\(configuration.useITN)".utf8))
@@ -84,6 +86,35 @@ final class SherpaRuntime: @unchecked Sendable {
             guard nanoRuntime != nil else {
                 throw SpeechNativeFailure(stage: .load,
                     detail: error.withUnsafeBufferPointer { String(cString: $0.baseAddress!) })
+            }
+            return
+        }
+
+        if model == .xASR {
+            // Offline Zipformer transducer with punctuation and casing; no language or ITN input.
+            let strings = [
+                provider, "greedy_search",
+                directory.appendingPathComponent("encoder-epoch-99-avg-1.int8.onnx").path,
+                directory.appendingPathComponent("decoder-epoch-99-avg-1.onnx").path,
+                directory.appendingPathComponent("joiner-epoch-99-avg-1.int8.onnx").path,
+                directory.appendingPathComponent("tokens.txt").path
+            ].map { strdup($0) }
+            defer { strings.forEach { free($0) } }
+            guard strings.allSatisfy({ $0 != nil }) else { throw SpeechError.nativeInitialization }
+            func pointer(_ index: Int) -> UnsafePointer<CChar>? { strings[index].map { UnsafePointer($0) } }
+            var config = SherpaOnnxOfflineRecognizerConfig()
+            config.feat_config.sample_rate = 16_000
+            config.feat_config.feature_dim = 80
+            config.model_config.num_threads = Int32(cpuThreads)
+            config.model_config.provider = pointer(0)
+            config.decoding_method = pointer(1)
+            config.model_config.transducer.encoder = pointer(2)
+            config.model_config.transducer.decoder = pointer(3)
+            config.model_config.transducer.joiner = pointer(4)
+            config.model_config.tokens = pointer(5)
+            recognizer = MoMoCreateOfflineRecognizer(&config, &error, error.count)
+            guard recognizer != nil else {
+                throw SpeechNativeFailure(stage: .load, detail: error.withUnsafeBufferPointer { String(cString: $0.baseAddress!) })
             }
             return
         }
@@ -122,7 +153,8 @@ final class SherpaRuntime: @unchecked Sendable {
     }
 
     func updateLanguage(_ language: SpeechLanguage) throws -> Bool {
-        guard model == .funASRNano, nanoRuntime != nil else { return false }
+        // Nano takes the language as a prompt; X-ASR ignores it, so neither needs a reload.
+        guard (model == .funASRNano && nanoRuntime != nil) || (model == .xASR && recognizer != nil) else { return false }
         guard model.supports(language) else { throw SpeechModelSelectionError.unsupportedLanguage }
         let updated = try configuration.withLanguage(language)
         configuration = updated
@@ -279,7 +311,7 @@ final class SherpaRuntime: @unchecked Sendable {
         var lines = ["SessionConfig.session.intra_op.allow_spinning=0", "SessionConfig.session.inter_op.allow_spinning=0"]
         // FunASR-Nano uses DynamicQuantizeLinear + MatMulInteger across encoder_adaptor and llm;
         // CoreML EP fractures its graph into 362 partitions with FP16 overflow and 36 s ANE compile stalls.
-        // Only SenseVoice offloads static subgraphs to CoreML.
+        // X-ASR's INT8 encoder uses the same operators. Only SenseVoice offloads static subgraphs to CoreML.
         let useCoreML = backend == .sherpaCoreML && model == .senseVoice
         if useCoreML {
             lines += ["ModelFormat=MLProgram", "MLComputeUnits=CPUAndNeuralEngine",
