@@ -79,3 +79,43 @@ import MoMoSpeech
         #expect(PhoneSpeechSettings(speech: nil, defaults: defaults).vadThreshold == 0.25)
     }
 }
+
+@MainActor
+@Test func xASRLimitsLanguagesAndRestoresOnlyAVerifiedDownload() throws {
+    let suite = "MoMoAgent.speech-model-test.\(UUID())"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manifest = try SpeechModelManifest(asrSHA256: String(repeating: "a", count: 64),
+        tokensSHA256: String(repeating: "b", count: 64), vadSHA256: String(repeating: "c", count: 64))
+    let bundle = SpeechModelBundle(directory: URL(fileURLWithPath: "/unused"), manifest: manifest)
+    let catalog = try DownloadableSpeechModel.xASR()
+    let engine = try SpeechEngine(bundle: bundle, configuration: SpeechConfiguration(),
+        downloadedModel: DownloadedSpeechModel(directory: root, catalog: catalog))
+    let settings = PhoneSpeechSettings(speech: engine, defaults: defaults, modelDirectory: root)
+    #expect(settings.models.choice == .xASR)
+    #expect(settings.models.catalogs[.xASR] == catalog)
+    settings.select(.japanese)
+    #expect(settings.language == .automatic)
+    #expect(settings.failure != nil)
+    settings.select(.english)
+    #expect(engine.recognitionLanguage == .english)
+
+    // Restore needs the selection, a supported language and a complete receipt with every file at its pinned size.
+    defaults.set(SpeechModelChoice.xASR.rawValue, forKey: PhoneSpeechModelSettings.selectionKey)
+    #expect(PhoneSpeechModelSettings.restoredDownload(at: root, defaults: defaults) == nil)
+    let directory = root.appendingPathComponent(try catalog.revision, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    for file in catalog.files {
+        let url = directory.appendingPathComponent(file.path)
+        #expect(FileManager.default.createFile(atPath: url.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: UInt64(file.byteCount))
+        try handle.close()
+    }
+    try JSONEncoder().encode(catalog).write(to: directory.appendingPathComponent("complete.json"))
+    #expect(PhoneSpeechModelSettings.restoredDownload(at: root, defaults: defaults)?.model == .xASR)
+    defaults.set(SpeechLanguage.korean.rawValue, forKey: PhoneSpeechSettings.languageKey)
+    #expect(PhoneSpeechModelSettings.restoredDownload(at: root, defaults: defaults) == nil)
+}

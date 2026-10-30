@@ -8,43 +8,53 @@ import MoMoSpeech
 @MainActor @Observable
 final class PhoneSpeechModelSettings {
     static let selectionKey = "speech.recognitionModel"
+    static let downloadable: [SpeechModelChoice] = [.funASRNano, .xASR]
     private(set) var choice: SpeechModelChoice
-    private(set) var installed = false
+    private(set) var installed: Set<SpeechModelChoice> = []
     private(set) var checking = false
-    private(set) var downloading = false
+    private(set) var downloading: SpeechModelChoice?
     private(set) var switching = false
-    private(set) var progress: SpeechModelInstaller.Progress?
+    private(set) var progress: [SpeechModelChoice: SpeechModelInstaller.Progress] = [:]
     private(set) var failure: String?
-    let catalog: DownloadableSpeechModel?
+    let catalogs: [SpeechModelChoice: DownloadableSpeechModel]
     @ObservationIgnored private let speech: SpeechEngine?
     @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let installer: SpeechModelInstaller?
+    @ObservationIgnored private let installers: [SpeechModelChoice: SpeechModelInstaller]
     @ObservationIgnored private var task: Task<Void, Never>?
 
     init(speech: SpeechEngine?, directory: URL, defaults: UserDefaults = .standard) {
         self.speech = speech
         self.defaults = defaults
         choice = speech?.recognitionModel ?? .senseVoice
-        do {
-            let catalog = try DownloadableSpeechModel.funASRNano()
-            let installer = try SpeechModelInstaller(catalog: catalog, directory: directory)
-            self.catalog = catalog
-            self.installer = installer
-        } catch {
-            catalog = nil
-            installer = nil
-            failure = String(localized: "模型下载信息不可用，请更新 App。")
+        var catalogs: [SpeechModelChoice: DownloadableSpeechModel] = [:]
+        var installers: [SpeechModelChoice: SpeechModelInstaller] = [:]
+        var unavailable = false
+        for model in Self.downloadable {
+            do {
+                guard let catalog = try model.catalog() else { continue }
+                installers[model] = try SpeechModelInstaller(catalog: catalog, directory: directory)
+                catalogs[model] = catalog
+            } catch { unavailable = true }
         }
-        if defaults.string(forKey: Self.selectionKey) == SpeechModelChoice.funASRNano.rawValue, choice != .funASRNano {
-            failure = String(localized: "FunASR 文件未就绪，当前使用 SenseVoice。请重新下载后启用。")
+        self.catalogs = catalogs
+        self.installers = installers
+        if unavailable { failure = String(localized: "模型下载信息不可用，请更新 App。") }
+        if let saved = defaults.string(forKey: Self.selectionKey).flatMap(SpeechModelChoice.init(rawValue:)),
+           saved != .senseVoice, choice != saved {
+            failure = switch saved {
+            case .xASR: String(localized: "X-ASR 文件未就绪，当前使用 SenseVoice。请重新下载后启用。")
+            default: String(localized: "FunASR 文件未就绪，当前使用 SenseVoice。请重新下载后启用。")
+            }
         }
     }
 
     /// Startup only checks the small receipt. Weight validation runs later on the recognition queue.
     static func restoredDownload(at root: URL, defaults: UserDefaults = .standard) -> DownloadedSpeechModel? {
-        guard defaults.string(forKey: selectionKey) == SpeechModelChoice.funASRNano.rawValue,
-              defaults.string(forKey: PhoneSpeechSettings.languageKey) != SpeechLanguage.korean.rawValue,
-              let catalog = try? DownloadableSpeechModel.funASRNano(),
+        let language = defaults.string(forKey: PhoneSpeechSettings.languageKey)
+            .flatMap(SpeechLanguage.init(rawValue:)) ?? .automatic
+        guard let model = defaults.string(forKey: selectionKey).flatMap(SpeechModelChoice.init(rawValue:)),
+              model.supports(language),
+              let catalog = try? model.catalog(),
               let revision = try? catalog.revision else { return nil }
         let directory = root.appendingPathComponent(revision)
         let receipt = directory.appendingPathComponent("complete.json")
@@ -62,16 +72,21 @@ final class PhoneSpeechModelSettings {
     }
 
     func refresh() async {
-        guard !checking, !downloading, !switching, let installer else { return }
+        guard !checking, downloading == nil, !switching, !installers.isEmpty else { return }
         checking = true
         defer { checking = false }
-        do { installed = try await installer.installedDirectory() != nil }
-        catch { installed = false; failure = Self.message(error) }
+        for (model, installer) in installers {
+            do {
+                if try await installer.installedDirectory() != nil { installed.insert(model) }
+                else { installed.remove(model) }
+            } catch { installed.remove(model); failure = Self.message(error, model: model) }
+        }
     }
 
-    func downloadAndSelect() {
-        guard !downloading, !switching, !checking, let installer, let catalog else { return }
-        downloading = true
+    func downloadAndSelect(_ model: SpeechModelChoice) {
+        guard downloading == nil, !switching, !checking,
+              let installer = installers[model], let catalog = catalogs[model] else { return }
+        downloading = model
         failure = nil
         task = Task { [self] in
             #if canImport(UIKit)
@@ -83,20 +98,20 @@ final class PhoneSpeechModelSettings {
                 #if canImport(UIKit)
                 if grant != .invalid { UIApplication.shared.endBackgroundTask(grant) }
                 #endif
-                downloading = false
+                downloading = nil
                 task = nil
             }
             do {
                 let directory = try await installer.install { [weak self] value in
-                    Task { @MainActor in self?.progress = value }
+                    Task { @MainActor in self?.progress[model] = value }
                 }
                 try Task.checkCancellation()
-                installed = true
+                installed.insert(model)
                 try await activate(DownloadedSpeechModel(directory: directory, catalog: catalog))
             } catch is CancellationError {
                 // Completed ranges remain available to the next explicit download.
             } catch {
-                if !Task.isCancelled { failure = Self.message(error) }
+                if !Task.isCancelled { failure = Self.message(error, model: model) }
             }
         }
     }
@@ -104,34 +119,38 @@ final class PhoneSpeechModelSettings {
     func pause() { task?.cancel() }
 
     func select(_ model: SpeechModelChoice) {
-        guard !downloading, !checking, !switching, choice != model else { return }
+        guard downloading == nil, !checking, !switching, choice != model else { return }
         failure = nil
         switching = true
         task = Task { [self] in
             defer { switching = false; task = nil }
             do {
                 if model == .senseVoice { try await activate(nil) }
-                else if let installer, let catalog, let directory = try await installer.installedDirectory() {
+                else if let installer = installers[model], let catalog = catalogs[model],
+                        let directory = try await installer.installedDirectory() {
                     try await activate(DownloadedSpeechModel(directory: directory, catalog: catalog))
                 } else {
-                    installed = false
-                    failure = String(localized: "请先下载 FunASR 模型。")
+                    installed.remove(model)
+                    failure = switch model {
+                    case .xASR: String(localized: "请先下载 X-ASR 模型。")
+                    default: String(localized: "请先下载 FunASR 模型。")
+                    }
                 }
-            } catch { failure = Self.message(error) }
+            } catch { failure = Self.message(error, model: model) }
         }
     }
 
-    func removeDownload() {
-        guard choice != .funASRNano, !downloading, !switching, !checking, let installer else { return }
+    func removeDownload(_ model: SpeechModelChoice) {
+        guard choice != model, downloading == nil, !switching, !checking, let installer = installers[model] else { return }
         checking = true
         task = Task { [self] in
             defer { checking = false; task = nil }
             do {
                 try await installer.remove()
-                installed = false
-                progress = nil
+                installed.remove(model)
+                progress[model] = nil
                 failure = nil
-            } catch { failure = Self.message(error) }
+            } catch { failure = Self.message(error, model: model) }
         }
     }
 
@@ -144,12 +163,15 @@ final class PhoneSpeechModelSettings {
         defaults.set(choice.rawValue, forKey: Self.selectionKey)
     }
 
-    private static func message(_ error: Error) -> String {
+    private static func message(_ error: Error, model: SpeechModelChoice) -> String {
         if case SpeechModelInstallationError.insufficientSpace(let required) = error {
             return String(localized: "可用空间不足，下载还需要 \(ByteCountFormatter.string(fromByteCount: required, countStyle: .file))。")
         }
         if case SpeechModelSelectionError.unsupportedLanguage = error {
-            return String(localized: "FunASR 不支持韩语。请先将识别语言改为自动、中文、英文或日文。")
+            return switch model {
+            case .xASR: String(localized: "X-ASR 只支持中文和英文。请先将识别语言改为自动、中文或英文。")
+            default: String(localized: "FunASR 不支持韩语。请先将识别语言改为自动、中文、英文或日文。")
+            }
         }
         if case SpeechModelInstallationError.fileMismatch = error {
             return String(localized: "模型文件校验失败，请重试下载。")

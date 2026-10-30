@@ -54712,6 +54712,230 @@
           }
         }
       }
+    },
+    "X-ASR 文件未就绪，当前使用 SenseVoice。请重新下载后启用。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR files are not ready. SenseVoice is active. Download X-ASR again to enable it."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR のファイルが未準備のため、SenseVoice を使用中です。再ダウンロードして有効にしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR 파일이 준비되지 않아 SenseVoice를 사용 중입니다. X-ASR을 다시 다운로드한 후 활성화하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR 文件未就绪，当前使用 SenseVoice。请重新下载后启用。"
+          }
+        }
+      }
+    },
+    "请先下载 X-ASR 模型。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download the X-ASR model first."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先に X-ASR モデルをダウンロードしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "먼저 X-ASR 모델을 다운로드하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先下载 X-ASR 模型。"
+          }
+        }
+      }
+    },
+    "X-ASR 只支持中文和英文。请先将识别语言改为自动、中文或英文。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR supports only Chinese and English. Select Auto, Chinese, or English first."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR は中国語と英語のみに対応しています。先に自動、中国語、英語のいずれかを選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR은 중국어와 영어만 지원합니다. 먼저 자동, 중국어 또는 영어를 선택하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR 只支持中文和英文。请先将识别语言改为自动、中文或英文。"
+          }
+        }
+      }
+    },
+    "X-ASR 只支持中文和英文，请先切换到 SenseVoice。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR supports only Chinese and English. Switch to SenseVoice first."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR は中国語と英語のみに対応しています。先に SenseVoice に切り替えてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR은 중국어와 영어만 지원합니다. 먼저 SenseVoice로 전환하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR 只支持中文和英文，请先切换到 SenseVoice。"
+          }
+        }
+      }
+    },
+    "X-ASR 只识别中文和英文；需要粤语、日语或韩语时，请使用 SenseVoice。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR recognizes only Chinese and English. Use SenseVoice for Cantonese, Japanese, or Korean."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR は中国語と英語のみを認識します。広東語、日本語、韓国語には SenseVoice を使用してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR은 중국어와 영어만 인식합니다. 광둥어, 일본어 또는 한국어에는 SenseVoice를 사용하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR 只识别中文和英文；需要粤语、日语或韩语时，请使用 SenseVoice。"
+          }
+        }
+      }
+    },
+    "中英混说更准、体积小": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More accurate for mixed Chinese and English, small download"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中国語と英語の混在に強く、サイズが小さい"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중국어·영어 혼용에 더 정확하고 용량이 작음"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中英混说更准、体积小"
+          }
+        }
+      }
+    },
+    "离线识别普通话、英文及中英混说，带标点。不支持粤语、日语和韩语。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline recognition for Mandarin, English, and mixed speech, with punctuation. Does not support Cantonese, Japanese, or Korean."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準中国語、英語、その混在をオフラインで認識し、句読点を付けます。広東語、日本語、韓国語には対応していません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표준 중국어, 영어 및 혼용 음성을 오프라인으로 인식하고 문장 부호를 넣습니다. 광둥어, 일본어, 한국어는 지원하지 않습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "离线识别普通话、英文及中英混说，带标点。不支持粤语、日语和韩语。"
+          }
+        }
+      }
+    },
+    "使用 X-ASR": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use X-ASR"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR を使用"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X-ASR 사용"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 X-ASR"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

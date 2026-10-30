@@ -13,29 +13,15 @@ struct SpeechModelSettingsView: View {
                             .disabled(busy)
                     }
                 }
+                modelCard(.xASR, subtitle: "中英混说更准、体积小") {
+                    Text("离线识别普通话、英文及中英混说，带标点。不支持粤语、日语和韩语。")
+                        .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
+                    download(.xASR, use: "使用 X-ASR")
+                }
                 modelCard(.funASRNano, subtitle: "实验性") {
                     Text("离线识别中文及方言、英文、日文，耗时与耗电可能更高。")
                         .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
-                    if let catalog = settings.catalog {
-                        Text("下载：\(ByteCountFormatter.string(fromByteCount: catalog.downloadBytes, countStyle: .file))")
-                            .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
-                    }
-                    if settings.downloading {
-                        if let progress = settings.progress {
-                            ProgressView(value: Double(progress.receivedBytes), total: Double(progress.totalBytes))
-                            Text(progress.validating ? "正在校验模型…" : "正在下载…")
-                                .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
-                        } else { ProgressView("正在准备下载…") }
-                        if !settings.switching { Button("暂停下载") { settings.pause() } }
-                    } else if settings.installed {
-                        if settings.choice != .funASRNano {
-                            Button("使用 FunASR Nano") { settings.select(.funASRNano) }.disabled(busy)
-                            Button("删除下载", role: .destructive) { settings.removeDownload() }.disabled(busy)
-                        }
-                    } else {
-                        Button(settings.progress == nil ? "下载并启用" : "继续下载并启用") { settings.downloadAndSelect() }
-                            .disabled(busy || settings.catalog == nil)
-                    }
+                    download(.funASRNano, use: "使用 FunASR Nano")
                 }
                 if settings.switching { ProgressView("正在切换模型…") }
                 else if settings.checking { ProgressView("正在检查模型…") }
@@ -53,7 +39,31 @@ struct SpeechModelSettingsView: View {
         .task { await settings.refresh() }
     }
 
-    private var busy: Bool { settings.downloading || settings.switching || settings.checking }
+    private var busy: Bool { settings.downloading != nil || settings.switching || settings.checking }
+
+    @ViewBuilder
+    private func download(_ model: SpeechModelChoice, use: LocalizedStringKey) -> some View {
+        if let catalog = settings.catalogs[model] {
+            Text("下载：\(ByteCountFormatter.string(fromByteCount: catalog.downloadBytes, countStyle: .file))")
+                .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
+        }
+        if settings.downloading == model {
+            if let progress = settings.progress[model] {
+                ProgressView(value: Double(progress.receivedBytes), total: Double(progress.totalBytes))
+                Text(progress.validating ? "正在校验模型…" : "正在下载…")
+                    .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
+            } else { ProgressView("正在准备下载…") }
+            if !settings.switching { Button("暂停下载") { settings.pause() } }
+        } else if settings.installed.contains(model) {
+            if settings.choice != model {
+                Button(use) { settings.select(model) }.disabled(busy)
+                Button("删除下载", role: .destructive) { settings.removeDownload(model) }.disabled(busy)
+            }
+        } else {
+            Button(settings.progress[model] == nil ? "下载并启用" : "继续下载并启用") { settings.downloadAndSelect(model) }
+                .disabled(busy || settings.catalogs[model] == nil)
+        }
+    }
 
     private func modelCard<Content: View>(_ model: SpeechModelChoice, subtitle: LocalizedStringKey,
                                           @ViewBuilder content: () -> Content) -> some View {
@@ -81,6 +91,7 @@ extension SpeechModelChoice {
         switch self {
         case .senseVoice: "SenseVoice"
         case .funASRNano: "FunASR Nano"
+        case .xASR: "X-ASR"
         }
     }
 }

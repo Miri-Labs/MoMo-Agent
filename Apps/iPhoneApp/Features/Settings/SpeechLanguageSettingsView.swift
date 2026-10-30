@@ -37,6 +37,9 @@ struct SpeechLanguageSettingsView: View {
                 if settings.models.choice == .funASRNano {
                     Text("FunASR 不支持韩语；需要识别韩语时，请使用 SenseVoice。")
                         .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
+                } else if settings.models.choice == .xASR {
+                    Text("X-ASR 只识别中文和英文；需要粤语、日语或韩语时，请使用 SenseVoice。")
+                        .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
                 }
                 if let failure = settings.failure {
                     Text(failure).phoneText(.metadata).foregroundStyle(.red)
