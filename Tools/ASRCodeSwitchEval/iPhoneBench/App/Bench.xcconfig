@@ -1,0 +1,5 @@
+// Signing and bundle ID come from the ignored Config/Local.xcconfig (DEVELOPMENT_TEAM, MOMO_PHONE_BUNDLE_ID),
+// as for the app. bench.py derives the same ID: $(MOMO_PHONE_BUNDLE_ID).asrbench.
+MOMO_PHONE_BUNDLE_ID = com.momoagent.ios
+#include? "../../../../Config/Local.xcconfig"
+BENCH_BUNDLE_ID = $(MOMO_PHONE_BUNDLE_ID).asrbench
