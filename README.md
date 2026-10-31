@@ -88,7 +88,8 @@ flowchart LR
 
     subgraph Mac["Mac (Self-Hosted Agent Runtime)"]
         M_Host["MoMoAgentMac\nHTTP/SSE + WebRTC Host"]
-        M_Mem["Hermes Memory Engine\n& Memory Radar Graph"]
+        M_Brain["Pluggable Agent Runtime\nDeepSeek SuperAgent (Default) / Hermes"]
+        M_Mem["Memory Engine\n& Memory Radar Graph"]
         M_AI["Local AI Subscription\nCodex CLI / Claude CLI"]
     end
 
@@ -98,8 +99,9 @@ flowchart LR
     P_ASR --> P_UI
     P_UI <-->|"Transcripts, Tasks & WebRTC"| TS
     TS <--> M_Host
-    M_Host <--> M_Mem
-    M_Host <--> M_AI
+    M_Host <--> M_Brain
+    M_Brain <--> M_Mem
+    M_Brain <--> M_AI
 ```
 
 | Layer | Component | Key Capabilities | Cost |
@@ -108,7 +110,7 @@ flowchart LR
 | **On-Device ASR** | `MoMoSpeech` (`iOS 17+` / `macOS 15+`) | Offline SenseVoice (zh/en/ja/ko/yue), dual-stage VAD (libfvad + Silero), speaker embedding & diarization | **$0** |
 | **Archive** | `MoMoArchive` (`SQLite + FTS5`) | Append-only event store, crash-safe recovery, millisecond full-text search, silence-skipping playback | **$0** |
 | **Private Mesh** | `EmbeddedTailnet` (`TailscaleKit`) | User-space WireGuard / Tailscale mesh embedded inside the app; QR-code pairing with 6-digit verification | **$0** (Tailscale Free Plan) |
-| **Agent Brain** | `MoMoAgentMac` + `Vendor/HermesAgent` | Autonomous tool use, citation-backed Q&A, background recording summaries, long-term Memory Radar, WebRTC remote desktop | **Included in your existing Codex / Claude subscription** |
+| **Agent Brain** | `MoMoAgentMac` + `Vendor/SuperAgent` (Default) / `Vendor/HermesAgent` | Proactive life-context ticket admission & worker orchestration (DeepSeek SuperAgent default, switchable with Hermes Agent), citation-backed Q&A, live sub-agent task monitor, Memory Radar, WebRTC remote desktop | **Included in your existing Codex / Claude subscription** |
 
 ---
 
@@ -168,7 +170,8 @@ MoMo-Agent/
 ├── Packages/
 │   └── MoMoAgentKit/      # Core Swift package (MoMoCapture, MoMoSpeech, MoMoArchive, MoMoAgentClient, MoMoAgentRTC)
 ├── Vendor/
-│   ├── HermesAgent/       # Self-hosted agent runtime & StarMap memory engine
+│   ├── SuperAgent/        # Default proactive agent runtime (DeepSeek SuperAgent + MoMo source)
+│   ├── HermesAgent/       # Switchable agent runtime & StarMap memory engine
 │   ├── SherpaOnnx/        # Offline speech recognition & speaker diarization XCFramework
 │   └── TailscaleKit/      # Embedded user-space Tailscale (tsnet) XCFramework
 ├── Config/                # Signing & version configuration (v0.0.1)
@@ -181,8 +184,8 @@ MoMo-Agent/
 
 - [x] **v0.0.1** — Apple Watch 24/7 continuous capture, iPhone free offline SenseVoice + speaker diarization, embedded Tailscale private mesh, Mac self-hosted agent powered by Codex / Claude subscription, full English & Simplified Chinese UI, and WebRTC remote desktop.
 - [x] **Bluetooth Earphone Capture** — Supported on iPhone; verified on Shokz OpenMove and Sony WH-1000XM6.
+- [x] **Proactive Agent & Pluggable Runtime** — Default DeepSeek SuperAgent proactive orchestration driven by synced recordings (mutually switchable with Hermes Agent) + live sub-agent task monitor on iPhone and Mac.
 - [ ] **AirPods Validation** — Verify recording and audio-route switching on AirPods.
-- [ ] **Proactive Agent** — Proactively anticipates needs and solves problems based on your real-world life context.
 - [ ] **Plugin & Skill SDK** — Custom local tools for Apple Notes, Things 3, Obsidian, and local git repositories.
 
 ---
@@ -190,10 +193,11 @@ MoMo-Agent/
 ### Acknowledgments & Open-Source Credits
 
 MoMo Agent stands on the shoulders of extraordinary open-source projects:
+- [DeepSeek SuperAgent](https://github.com/deepseek-ai/dsh-superagent-prototype) (`dsh-superagent-prototype`) for proactive ticket admission, worker orchestration, and harness runtime.
 - [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) & [SenseVoice](https://github.com/FunAudioLLM/SenseVoice) for blazing-fast offline speech recognition and speaker diarization.
 - [Silero VAD](https://github.com/snakers4/silero-vad) & [libfvad](https://github.com/dpirch/libfvad) for low-power voice activity detection.
 - [Tailscale](https://github.com/tailscale/tailscale) (`tsnet`) for zero-config private mesh networking.
-- [Hermes Agent](https://github.com/NousResearch) for agent orchestration and the StarMap memory graph visualization.
+- [Hermes Agent](https://github.com/NousResearch) for switchable agent orchestration and the StarMap memory graph visualization.
 
 ---
 

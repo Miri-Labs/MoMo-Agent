@@ -231,6 +231,7 @@ struct DesktopChat: View {
     @Bindable var model: DesktopModel
     @State private var composeRevision = 0
     @State private var previewAttachment: AgentAttachment?
+    @State private var showingActiveTasks = false
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
         VStack(spacing: 0) {
@@ -274,8 +275,52 @@ struct DesktopChat: View {
                     .buttonStyle(DesktopSetupButton(minimumHeight: 48, fontSize: 14)).frame(width: 240).padding(); Spacer()
             }
         }.frame(maxWidth: .infinity).background(MoMoPalette.canvas)
+            .overlay(alignment: .topTrailing) {
+                desktopActiveTasksButton(store: model.taskStore)
+                    .padding(.top, 14)
+                    .padding(.trailing, 18)
+            }
             .sheet(item: $previewAttachment) { ClientAttachmentPreview(attachment: $0) }
             .animation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.86), value: model.taskStore?.tasks.isEmpty)
+    }
+
+    private func desktopActiveTasksButton(store: RemoteTaskStore?) -> some View {
+        let tasksSnap = AgentActiveTasksSnapshot(store: store)
+        return Button {
+            showingActiveTasks.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "checklist")
+                    .font(.system(size: 13, weight: .medium))
+                    .accessibilityHidden(true)
+                Text("任务")
+                    .font(.system(size: 12, weight: .medium))
+                if let badge = tasksSnap.badgeText {
+                    Text(badge)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(MoMoPalette.canvas)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(MoMoPalette.ink, in: Capsule())
+                        .accessibilityHidden(true)
+                }
+            }
+            .foregroundStyle(MoMoPalette.ink)
+            .padding(.horizontal, 11)
+            .frame(height: 32)
+            .background(MoMoPalette.paper, in: Capsule())
+            .overlay { Capsule().strokeBorder(MoMoPalette.line, lineWidth: 1) }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("查看正在进行的子智能体与后台任务")
+        .accessibilityLabel(tasksSnap.count > 0 ? LocalizedStringKey("正在进行的任务，\(tasksSnap.count) 项") : LocalizedStringKey("正在进行的任务"))
+        .accessibilityIdentifier("desktop.activeTasks")
+        .popover(isPresented: $showingActiveTasks, arrowEdge: .bottom) {
+            AgentActiveTasksSheet(store: store, isPopover: true)
+                .frame(width: 380)
+                .frame(minHeight: 240, maxHeight: 440)
+        }
     }
 }
 

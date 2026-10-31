@@ -9,6 +9,7 @@ MoMo Agent's original application source is licensed under the GNU Affero Genera
 Keep the license and attribution files supplied with each component when redistributing it. In particular:
 
 - [Bible Strong Avatar Lab](Vendor/BibleStrongAvatar/README.md), by Stéphane Montlouis-Calixte: [AGPL-3.0-only](Vendor/BibleStrongAvatar/upstream/LICENSE). MoMo integrates the procedural avatar engine; its source and build instructions are included.
+- SuperAgent (`dsh-superagent-prototype`), by DeepSeek Harness Team and contributors: [MIT](Vendor/SuperAgent/LICENSE).
 - Hermes Agent, by Nous Research and contributors: [MIT](Vendor/HermesAgent/LICENSE).
 - TailscaleKit, by Tailscale and contributors: [BSD-3-Clause](Vendor/TailscaleKit/LICENSE).
 - Speech libraries and downloaded model weights have their own licenses. See [speech dependencies](Native/SpeechVendor/README.md), their manifests, and the license notices bundled with the distributions. The project license does not relicense model weights.

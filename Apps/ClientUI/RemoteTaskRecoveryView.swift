@@ -258,3 +258,321 @@ private struct RemoteControlCard: View {
         Task { await store.respond(run: run, control: control, answer: value); answerBeingSent = nil }
     }
 }
+
+struct AgentActiveTasksSnapshot: Equatable {
+    enum Backing: Equatable {
+        case work(ConversationWork)
+        case run(AgentRun)
+        case pendingSubmission(UUID)
+    }
+
+    struct Item: Identifiable, Equatable {
+        let id: String
+        let title: String
+        let sourceLabel: String
+        let icon: String
+        let statusLabel: String
+        let isUrgent: Bool
+        let isStopping: Bool
+        let canStop: Bool
+        let backing: Backing
+    }
+
+    let items: [Item]
+    var count: Int { items.count }
+    var badgeText: String? {
+        guard count > 0 else { return nil }
+        return count > 9 ? "9+" : "\(count)"
+    }
+
+    @MainActor
+    init(store: RemoteTaskStore?) {
+        guard let store else {
+            self.items = []
+            return
+        }
+        var collected: [Item] = []
+        let activeWorks = store.backgroundWork.filter { work in
+            work.isPending && !(work.state == "cancelled" && work.reportState == "cancelled")
+        }
+
+        for work in activeWorks {
+            let parent = store.sharedRuns.first {
+                (work.workID != nil && $0.workID == work.workID) || $0.runID == work.originRunID
+            }
+            let rawTitle = (work.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let fallbackTitle = (parent?.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedTitle = !rawTitle.isEmpty ? rawTitle : (!fallbackTitle.isEmpty ? fallbackTitle : String(localized: "子智能体任务"))
+
+            let isSuperAgent = work.id.hasPrefix("superagent:")
+            let isProactive = (work.workID ?? "").hasPrefix("proactive-") || (work.nativeState ?? "").hasPrefix("proactive:")
+            let sourceLabel: String
+            let icon: String
+            if isSuperAgent {
+                sourceLabel = isProactive ? String(localized: "SuperAgent · 主动子智能体") : String(localized: "SuperAgent · 子智能体工单")
+                icon = isProactive ? "sparkles" : "person.2"
+            } else if work.kind == "process" {
+                sourceLabel = String(localized: "Hermes · 后台终端任务")
+                icon = "terminal"
+            } else {
+                sourceLabel = String(localized: "Hermes · 子智能体任务")
+                icon = "person.2"
+            }
+
+            let terminalWork = ["completed", "failed", "cancelled", "unknown"].contains(work.state)
+            let stopping = store.isControlInFlight(work.id) || (work.cancelRequested == true && !terminalWork)
+            let urgent = work.waitReason == "computer_human" || work.waitReason == "clarify" || work.state == "failed" || work.reportState == "failed"
+            let statusLabel: String
+            if stopping {
+                statusLabel = String(localized: "正在停止")
+            } else if work.waitReason == "computer_human" {
+                statusLabel = String(localized: "等待交还电脑")
+            } else if work.waitReason == "clarify" {
+                statusLabel = String(localized: "等待确认")
+            } else if work.state == "queued" || work.waitReason == "computer_task" {
+                statusLabel = String(localized: "排队中")
+            } else if work.state == "finalizing" {
+                statusLabel = String(localized: "正在整理结果")
+            } else if work.state == "failed" || work.reportState == "failed" {
+                statusLabel = String(localized: "待核对结果")
+            } else {
+                statusLabel = String(localized: "正在执行")
+            }
+
+            let canStop = work.cancellable == true && !stopping && !terminalWork
+            collected.append(
+                Item(
+                    id: "work:\(work.id)",
+                    title: resolvedTitle,
+                    sourceLabel: sourceLabel,
+                    icon: icon,
+                    statusLabel: statusLabel,
+                    isUrgent: urgent,
+                    isStopping: stopping,
+                    canStop: canStop,
+                    backing: .work(work)
+                )
+            )
+        }
+
+        for run in store.sharedRuns where !run.isTerminal {
+            let coveredBySubAgent = activeWorks.contains { work in
+                (work.workID != nil && work.workID == run.workID) || work.originRunID == run.runID
+            }
+            if coveredBySubAgent { continue }
+            let stopping = store.isControlInFlight(run.runID) || run.cancelRequested == true
+            let waiting = run.pendingControls?.isEmpty == false || ["computer", "computer_human", "clarify"].contains(run.waitReason ?? "")
+            let statusLabel: String
+            if stopping {
+                statusLabel = String(localized: "正在停止")
+            } else if waiting {
+                statusLabel = String(localized: "等待确认")
+            } else if run.status == "queued" || run.waitReason == "computer_task" {
+                statusLabel = String(localized: "排队中")
+            } else {
+                statusLabel = String(localized: "正在处理")
+            }
+            collected.append(
+                Item(
+                    id: "run:\(run.runID)",
+                    title: store.title(for: run),
+                    sourceLabel: String(localized: "当前对话任务"),
+                    icon: "bubble.left.and.text.bubble.right",
+                    statusLabel: statusLabel,
+                    isUrgent: waiting,
+                    isStopping: stopping,
+                    canStop: run.cancellable == true && !stopping,
+                    backing: .run(run)
+                )
+            )
+        }
+
+        for task in store.tasks where task.isPending && task.run == nil && !task.needsReview && task.lastError == nil {
+            let trimmed = task.input.trimmingCharacters(in: .whitespacesAndNewlines)
+            collected.append(
+                Item(
+                    id: "pending:\(task.id.uuidString)",
+                    title: trimmed.isEmpty ? String(localized: "新消息") : trimmed,
+                    sourceLabel: String(localized: "发送队列"),
+                    icon: "arrow.up.circle",
+                    statusLabel: String(localized: "排队发送中"),
+                    isUrgent: false,
+                    isStopping: false,
+                    canStop: false,
+                    backing: .pendingSubmission(task.id)
+                )
+            )
+        }
+
+        self.items = collected
+    }
+}
+
+struct AgentActiveTasksSheet: View {
+    let store: RemoteTaskStore?
+    var isPopover = false
+    @Environment(\.dismiss) private var dismiss
+
+    private var snapshot: AgentActiveTasksSnapshot {
+        AgentActiveTasksSnapshot(store: store)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            headerBar
+            Divider().overlay(MoMoPalette.line)
+            if snapshot.items.isEmpty {
+                emptyState
+            } else {
+                ScrollView {
+                    VStack(spacing: 10) {
+                        ForEach(snapshot.items) { item in
+                            ActiveTaskItemRow(store: store, item: item)
+                        }
+                    }
+                    .padding(16)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+            }
+        }
+        .phonePageSurface()
+        .accessibilityIdentifier("activeTasks.panel")
+        .task {
+            await store?.refresh(userInitiated: true)
+        }
+    }
+
+    private var headerBar: some View {
+        HStack(spacing: 10) {
+            Text("正在进行的任务")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(MoMoPalette.ink)
+                .accessibilityAddTraits(.isHeader)
+            if snapshot.count > 0 {
+                Text("\(snapshot.count)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(MoMoPalette.canvas)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(MoMoPalette.ink, in: Capsule())
+                    .accessibilityLabel("共 \(snapshot.count) 项")
+            }
+            Spacer()
+            if !isPopover {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(MoMoPalette.muted)
+                        .frame(width: 30, height: 30)
+                        .background(MoMoPalette.ink.opacity(0.06), in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("关闭")
+                .accessibilityIdentifier("activeTasks.close")
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "checklist")
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(MoMoPalette.muted)
+                .accessibilityHidden(true)
+            Text("当前没有正在进行的任务")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(MoMoPalette.ink)
+            Text("SuperAgent 派发的子智能体任务与 Hermes 后台委派任务会实时显示在这里。")
+                .font(.system(size: 13))
+                .foregroundStyle(MoMoPalette.muted)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 280)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(28)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("activeTasks.empty")
+    }
+}
+
+private struct ActiveTaskItemRow: View {
+    let store: RemoteTaskStore?
+    let item: AgentActiveTasksSnapshot.Item
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: item.icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(MoMoPalette.muted)
+                    .accessibilityHidden(true)
+                Text(item.sourceLabel)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(MoMoPalette.muted)
+                Spacer(minLength: 8)
+                HStack(spacing: 5) {
+                    if item.isStopping {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Circle()
+                            .fill(item.isUrgent ? Color.orange : Color.green)
+                            .frame(width: 6, height: 6)
+                            .accessibilityHidden(true)
+                    }
+                    Text(item.statusLabel)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(item.isUrgent ? Color.orange : MoMoPalette.muted)
+                }
+            }
+
+            HStack(alignment: .center, spacing: 12) {
+                Text(item.title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(MoMoPalette.ink)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if item.canStop, let store {
+                    Button {
+                        Task {
+                            switch item.backing {
+                            case .work(let work):
+                                await store.cancelBackgroundWork(work)
+                            case .run(let run):
+                                await store.stopSharedRun(run)
+                            case .pendingSubmission:
+                                break
+                            }
+                        }
+                    } label: {
+                        Text("停止")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(MoMoPalette.ink)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(MoMoPalette.ink.opacity(0.08), in: Capsule())
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!store.canContactServer || item.isStopping)
+                    .accessibilityLabel("停止任务：\(item.title)")
+                    .accessibilityIdentifier("activeTasks.stop.\(item.id)")
+                }
+            }
+        }
+        .padding(14)
+        .background(MoMoPalette.paper, in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(MoMoPalette.line, lineWidth: 1)
+                .allowsHitTesting(false)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("activeTasks.item.\(item.id)")
+    }
+}

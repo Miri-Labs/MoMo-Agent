@@ -13,8 +13,13 @@ struct PhoneRemoteView: View {
     var stopPlayback: () async -> Void = {}
     var chatIsVisible = true
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @State private var showingTasks = false
     @State private var showingDesktop = false
     @State private var reconnecting = false
+
+    private var activeTasksSnapshot: AgentActiveTasksSnapshot {
+        AgentActiveTasksSnapshot(store: agent.store)
+    }
 
     var body: some View {
         Group {
@@ -22,7 +27,7 @@ struct PhoneRemoteView: View {
                 RemoteConversationView(store: store, agent: agent, watchStatus: watchStatus,
                     requestWatchStatus: requestWatchStatus, openLibrary: openLibrary, reconnect: { reconnecting = true },
                     openDesktop: { showingDesktop = true }, speech: speech, stopPlayback: stopPlayback,
-                    voiceInputEnabled: chatIsVisible && !showingDesktop && !reconnecting)
+                    voiceInputEnabled: chatIsVisible && !showingDesktop && !showingTasks && !reconnecting)
             } else {
                 VStack(spacing: 24) {
                     RemoteAvatar(size: 120, active: false, watchStatus: watchStatus,
@@ -48,17 +53,47 @@ struct PhoneRemoteView: View {
             }
         }
         .onChange(of: showingDesktop) { _, value in agent.notifications.desktopVisible = value }
-        .onChange(of: agent.notifications.navigationRevision) { _, _ in showingDesktop = false }
+        .onChange(of: agent.notifications.navigationRevision) { _, _ in showingDesktop = false; showingTasks = false }
+        .sheet(isPresented: $showingTasks) {
+            AgentActiveTasksSheet(store: agent.store)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .fullScreenCover(isPresented: $reconnecting) { PhoneConnectionFlow(agent: agent, reconnecting: true, finish: { reconnecting = false }) }
         .fullScreenCover(isPresented: $showingDesktop) { PhoneDesktopView(agent: agent) }
     }
 
     private var headerActions: some View {
-        HStack {
+        HStack(spacing: 10) {
             headerButton("设置", icon: "gearshape", id: "remote.settings", action: openSettings)
             Spacer()
+            tasksHeaderButton
             headerButton("电脑桌面", icon: "desktopcomputer", id: "remote.desktop") { showingDesktop = true }
         }.padding(.horizontal, 16).frame(height: 72)
+    }
+
+    private var tasksHeaderButton: some View {
+        let badge = activeTasksSnapshot.badgeText
+        return Button {
+            showingTasks = true
+        } label: {
+            headerSymbol("checklist")
+                .overlay(alignment: .topTrailing) {
+                    if let badge {
+                        Text(badge)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(MoMoPalette.canvas)
+                            .padding(.horizontal, 5)
+                            .frame(minWidth: 16, minHeight: 16)
+                            .background(MoMoPalette.ink, in: Capsule())
+                            .offset(x: 3, y: -2)
+                            .accessibilityHidden(true)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(activeTasksSnapshot.count > 0 ? LocalizedStringKey("正在进行的任务，\(activeTasksSnapshot.count) 项") : LocalizedStringKey("正在进行的任务"))
+        .accessibilityIdentifier("remote.tasks")
     }
 
     private func headerButton(_ title: String, icon: String, id: String, action: @escaping () -> Void) -> some View {
