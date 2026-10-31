@@ -18,6 +18,7 @@ import urllib.request
 import uuid
 from collections.abc import Callable
 
+RUNTIME_DIR = Path(__file__).resolve().parent
 REPOSITORY = Path(__file__).resolve().parents[3]
 SOURCE = REPOSITORY / "Vendor" / "HermesAgent"
 UPSTREAM = REPOSITORY / "Vendor" / "HermesAgent.UPSTREAM.json"
@@ -176,6 +177,19 @@ def dependency_identity(record: dict) -> dict:
 
 
 def prepare(data: Path, progress: Callable[[str], None] = lambda phase: None) -> None:
+    if str(RUNTIME_DIR) not in sys.path:
+        sys.path.insert(0, str(RUNTIME_DIR))
+    from runtime_engine import read_engine_config
+    from superagent_runtime import prepare_superagent
+
+    engine = read_engine_config(data)["engine"]
+    base_progress = progress if engine == "hermes" else (lambda phase: progress(phase) if phase != "ready" else None)
+    _prepare_base_python(data, base_progress)
+    if engine == "superagent":
+        prepare_superagent(data, child_environment(data), progress=progress)
+
+
+def _prepare_base_python(data: Path, progress: Callable[[str], None] = lambda phase: None) -> None:
     read_connection(data)
     if bundled_python() is not None:
         progress("ready")
@@ -266,6 +280,21 @@ def gateway(data: Path) -> None:
 
 
 def run_gateway(data: Path) -> None:
+    if str(RUNTIME_DIR) not in sys.path:
+        sys.path.insert(0, str(RUNTIME_DIR))
+    from runtime_engine import read_engine_config
+
+    if read_engine_config(data)["engine"] == "superagent":
+        from superagent_gateway import run_superagent_gateway
+
+        run_superagent_gateway(
+            data,
+            read_connection(data),
+            python_executable=Path(sys.executable),
+            base_env=child_environment(data),
+        )
+        return
+
     sys.path.insert(0, str(SOURCE))
     import hermes_yaml
 
@@ -280,7 +309,8 @@ def run_gateway(data: Path) -> None:
     from context_server import ContextService
     context = ContextService(data, read_connection(data))
     import gateway.run
-    sys.path.insert(0, str(REPOSITORY / "Apps/MacApp/Runtime"))
+    if str(RUNTIME_DIR) not in sys.path:
+        sys.path.insert(0, str(RUNTIME_DIR))
     from personal_agent import install
     install(data, read_connection(data))
 
@@ -387,6 +417,10 @@ def atomic_private(path: Path, text: str) -> None:
 
 
 def status(data: Path) -> None:
+    if str(RUNTIME_DIR) not in sys.path:
+        sys.path.insert(0, str(RUNTIME_DIR))
+    from runtime_engine import read_engine_config
+
     connection = read_connection(data)
     token = (data / "api-key").read_text(encoding="utf-8").strip()
     request = urllib.request.Request(connection["base_url"] + "/v1/capabilities",
@@ -394,24 +428,64 @@ def status(data: Path) -> None:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     with opener.open(request, timeout=5) as response:
         capabilities = json.load(response)
-    print(json.dumps({"connection": connection, "capabilities": capabilities}, ensure_ascii=False, indent=2))
+    print(json.dumps({"connection": connection, "engine_config": read_engine_config(data),
+                      "capabilities": capabilities}, ensure_ascii=False, indent=2))
+
+
+def engine_command(data: Path, *, set_engine: str | None = None, proactive: str | None = None) -> None:
+    if str(RUNTIME_DIR) not in sys.path:
+        sys.path.insert(0, str(RUNTIME_DIR))
+    from runtime_engine import read_engine_config, write_engine_config
+    from superagent_runtime import prepared_dsh_binary
+
+    read_connection(data)
+    cfg = write_engine_config(data, engine=set_engine, proactive_mode=proactive) if (set_engine or proactive) else read_engine_config(data)
+    hermes_ok = False
+    superagent_ok = False
+    try:
+        prepared_python(data)
+        hermes_ok = True
+    except Exception:
+        hermes_ok = False
+    try:
+        prepared_dsh_binary(data)
+        superagent_ok = True
+    except Exception:
+        superagent_ok = False
+    print(json.dumps({**cfg, "hermes_prepared": hermes_ok, "superagent_prepared": superagent_ok},
+                     ensure_ascii=False, indent=2))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="MoMo Agent embedded Agent runtime")
-    parser.add_argument("command", choices=["init", "prepare", "serve", "status", "_gateway"])
+    parser.add_argument("command", choices=["init", "prepare", "serve", "status", "engine", "_gateway"])
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA)
     parser.add_argument("--port", type=int, default=8765, help="Local API port for init")
     parser.add_argument("--progress", action="store_true", help="Emit preparation phase events for the desktop app")
+    parser.add_argument("--engine", choices=["hermes", "superagent"], default=None, help="Select active agent engine")
+    parser.add_argument("--proactive", choices=["auto", "observe", "off"], default=None, help="SuperAgent proactive mode")
     args = parser.parse_args()
     data = args.data_dir.expanduser().resolve()
     try:
         if args.command == "init":
             print(json.dumps(initialize(data, args.port), ensure_ascii=False, indent=2))
-        elif args.command == "prepare" and args.progress:
-            prepare(data, progress=lambda phase: print("MOMO_PREPARE " + phase, flush=True))
+            if args.engine or args.proactive:
+                if str(RUNTIME_DIR) not in sys.path:
+                    sys.path.insert(0, str(RUNTIME_DIR))
+                from runtime_engine import write_engine_config
+                write_engine_config(data, engine=args.engine, proactive_mode=args.proactive)
+        elif args.command == "engine":
+            engine_command(data, set_engine=args.engine, proactive=args.proactive)
         else:
-            {"prepare": prepare, "serve": serve, "status": status, "_gateway": gateway}[args.command](data)
+            if args.engine or args.proactive:
+                if str(RUNTIME_DIR) not in sys.path:
+                    sys.path.insert(0, str(RUNTIME_DIR))
+                from runtime_engine import write_engine_config
+                write_engine_config(data, engine=args.engine, proactive_mode=args.proactive)
+            if args.command == "prepare" and args.progress:
+                prepare(data, progress=lambda phase: print("MOMO_PREPARE " + phase, flush=True))
+            else:
+                {"prepare": prepare, "serve": serve, "status": status, "_gateway": gateway}[args.command](data)
     except (OSError, ValueError, KeyError) as error:
         parser.exit(1, f"MoMo runtime: {error}\n")
 

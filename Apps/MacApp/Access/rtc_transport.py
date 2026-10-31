@@ -50,6 +50,10 @@ def permitted_route(method, path):
                 query.get('offset', ['0'])[0].isdigit()):
             return path, False, False
         return None
+    if not context and parts.path in ('/momo/v1/proactive', '/momo/v1/proactive/ingest') and not parts.query:
+        if method in ('GET', 'POST') and (method == 'POST' or parts.path == '/momo/v1/proactive'):
+            return parts.path, False, False
+        return None
     if not context and target.startswith('/momo/v1/conversation'):
         suffix = target[len('/momo/v1/conversation'):]
         if method == 'POST' and re.fullmatch(r'/work/[A-Za-z0-9_:-]+/(cancel|report-retry)', suffix) and not parts.query: return path, False, False
