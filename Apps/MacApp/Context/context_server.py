@@ -62,6 +62,7 @@ class ContextService:
                         body = json.loads(self.rfile.read(size))
                         if url.path == "/v1/sources":
                             result = store.sync_source(body)
+                            service.notify_proactive_ingest()
                         elif url.path == "/v1/health":
                             result = sync_health(store, body)
                         elif url.path == "/v1/phone-sources":
@@ -90,8 +91,11 @@ class ContextService:
                         source_limit = min(int(query.get("limit", ["12000"])[0]), 24_000)
                         result = store.read_source(query["source_id"][0], query["revision"][0], int(query.get("offset", ["0"])[0]), source_limit)
                     elif url.path == "/v1/status":
+                        engine = service.active_engine()
                         result = {"application": "MoMoAgent", "workspace_id": connection["workspace_id"],
-                                  "revision": store.revision, "source_sync": True, "memory_writer": "Hermes",
+                                  "engine": engine,
+                                  "revision": store.revision, "source_sync": True,
+                                  "memory_writer": "SuperAgent" if engine == "superagent" else "Hermes",
                                   "memory_pending": store.db.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('pending','running')").fetchone()[0],
                                   "memory_needs_review": store.db.execute("SELECT COUNT(*) FROM jobs WHERE state='needs_review'").fetchone()[0]}
                         result['memory_review'] = memory_review.status(store)
@@ -139,9 +143,33 @@ class ContextService:
         with opener.open(request, timeout=5) as response:
             return json.load(response)
 
+    def active_engine(self) -> str:
+        path = self.data / "runtime/engine.json"
+        if not path.is_file():
+            return "superagent"
+        try:
+            value = json.loads(path.read_text(encoding="utf-8")).get("engine")
+            return "hermes" if value == "hermes" else "superagent"
+        except Exception:
+            return "superagent"
+
+    def notify_proactive_ingest(self) -> None:
+        if self.active_engine() != "superagent":
+            return
+
+        def _ping() -> None:
+            try:
+                self.request("/momo/v1/proactive/ingest", {"origin": "source_sync"})
+            except Exception:
+                pass
+
+        threading.Thread(target=_ping, daemon=True).start()
+
     def dispatch(self):
         # Only durable admission/reconciliation. Hermes owns model calls, tools and execution.
         while not self.stopped.wait(2):
+            if self.active_engine() == "superagent":
+                continue
             store = ContextStore(self.directory)
             try:
                 review = store.db.execute("SELECT * FROM memory_reviews WHERE state='running' OR (state='pending' AND first_attempt IS NOT NULL) ORDER BY rowid LIMIT 1").fetchone()

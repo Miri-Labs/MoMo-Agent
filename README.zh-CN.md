@@ -88,7 +88,8 @@ flowchart LR
 
     subgraph Mac["Mac 端 (Self-Hosted Agent 中枢)"]
         M_Host["MoMoAgentMac\nHTTP/SSE + WebRTC 宿主"]
-        M_Mem["Hermes 记忆引擎\n与长期记忆星图"]
+        M_Brain["可插拔 Agent Runtime\nDeepSeek SuperAgent (默认) / Hermes"]
+        M_Mem["长期记忆引擎\n与记忆雷达星图"]
         M_AI["复用本机 AI 订阅\nCodex CLI / Claude CLI"]
     end
 
@@ -98,8 +99,9 @@ flowchart LR
     P_ASR --> P_UI
     P_UI <-->|"同步转录原稿 / 任务指令 / 桌面画面"| TS
     TS <--> M_Host
-    M_Host <--> M_Mem
-    M_Host <--> M_AI
+    M_Host <--> M_Brain
+    M_Brain <--> M_Mem
+    M_Brain <--> M_AI
 ```
 
 | 模块 | 对应组件 | 核心能力 | 运行成本 |
@@ -108,7 +110,7 @@ flowchart LR
 | **本地转录** | `MoMoSpeech` (`iOS 17+` / `macOS 15+`) | 离线 SenseVoice（中/英/日/韩/粤）、libfvad + Silero 双级 VAD、说话人声纹提取与分离 | **免费 ($0)** |
 | **本地归档** | `MoMoArchive` (`SQLite + FTS5`) | 事件溯源存储、崩溃恢复、毫秒级全文检索、跳过静音片段连续回放 | **免费 ($0)** |
 | **私网互联** | `EmbeddedTailnet` (`TailscaleKit`) | 应用内嵌用户态 Tailscale 节点；支持扫码配对与 6 位数字双向核验 | **免费**（Tailscale 个人免费版） |
-| **Agent 核心** | `MoMoAgentMac` + `Vendor/HermesAgent` | 工具调用、带录音引用的问答、录音自动摘要、记忆雷达星图、WebRTC 远程桌面控制 | **仅需已有 Codex 或 Claude 订阅** |
+| **Agent 核心** | `MoMoAgentMac` + `Vendor/SuperAgent`（默认）/ `Vendor/HermesAgent` | 基于同步录音的主动准入与子智能体派发执行（默认 DeepSeek SuperAgent，可随时与 Hermes Agent 互换）、带录音引用的问答、双端实时子任务列表、记忆雷达星图、WebRTC 远程桌面控制 | **仅需已有 Codex 或 Claude 订阅** |
 
 ---
 
@@ -163,8 +165,8 @@ xcodebuild -project MoMoAgent.xcodeproj -scheme MoMoAgentMac -configuration Debu
 
 - [x] **v0.0.1 初始开源版本**：Apple Watch 全天候分片录音、iPhone 本地免费 SenseVoice 转录与声纹分离、内置 Tailscale 私网穿透、Mac 端复用 Codex / Claude 订阅驱动 Agent 与记忆雷达、中英双语界面支持、WebRTC 远程桌面接管。
 - [x] **蓝牙耳机录音**：已支持 iPhone 通过蓝牙耳机持续录音，并实测 Shokz OpenMove 和 Sony WH-1000XM6。
+- [x] **Proactive Agent 与可插拔运行时**：默认集成 DeepSeek SuperAgent 主动式编排引擎（支持与 Hermes Agent 互换），根据同步录音自主准入并派发子智能体闭环处理本机任务，并在 iPhone 与 Mac 双端提供实时子任务监控。
 - [ ] **AirPods 验证**：待验证 AirPods 录音及音频路由切换。
-- [ ] **Proactive Agent（主动式智能体）**：根据你的真实生活上下文，主动发现并替你解决问题。
 - [ ] **本地扩展技能生态**：深度打通 Apple 备忘录、提醒事项、Obsidian 与本地代码仓库自动化。
 
 ---

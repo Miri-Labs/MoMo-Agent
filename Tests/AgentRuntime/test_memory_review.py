@@ -19,6 +19,7 @@ class MemoryReviewTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.data = Path(self.tmp.name)
         for name in ['hermes/memories', 'runtime']: (self.data/name).mkdir(parents=True)
+        (self.data/'runtime/engine.json').write_text('{"engine":"hermes","proactive_mode":"auto"}\n')
         self.store = ContextStore(self.data/'context'); self.addCleanup(self.store.close)
         self.chat = sqlite3.connect(self.data/'runtime/conversation.sqlite'); self.addCleanup(self.chat.close)
         self.chat.executescript('CREATE TABLE messages(seq INTEGER PRIMARY KEY,role TEXT,content TEXT,created_at REAL,operation_id TEXT); CREATE TABLE inputs(operation_id TEXT,intent TEXT,delivery_state TEXT);')

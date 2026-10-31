@@ -1,0 +1,28 @@
+{
+  "name": "DeepSeek SuperAgent Prototype",
+  "repository": "https://github.com/deepseek-ai/dsh-superagent-prototype",
+  "commit": "6337fc823ce20251c8de8085948165c81aaa701e",
+  "tree": "3efbb036e5a56183c6bf642e2e1856a1f64e7be3",
+  "imported_at": "2026-10-31",
+  "method": "Complete tracked source snapshot from upstream HEAD plus compiled ESM/CJS bundle in lib/ so MoMo Agent runs dsh-superagent without shipping TypeScript build tools",
+  "host_harness": {
+    "package": "@deepseek-ai/dsh",
+    "version": "0.2.1-rc.5",
+    "repository": "https://github.com/deepseek-ai/deepseek-harness"
+  },
+  "license": "MIT",
+  "license_file": "SuperAgent/LICENSE",
+  "upstream_lock_sha256": "ba6b997c448984a04b28eeb5b620c14c7cfeff5eb170e1abd6e0734007405c39",
+  "local_patches": [
+    {
+      "file": "src/app/setup.ts, src/infra/environment.ts, src/app/runtime.ts, src/app/assessment.ts",
+      "reason": "Allow Personal Agent deployments where sources.github.enabled is false to complete setup without a target GitHub repository or gh CLI, installing a clear disabled gh shim and skipping GitHub pull-notice polling and repository file reads.",
+      "validation": "tests/momo-source.spec.ts verifies setup.run() succeeds without git/gh when sources.github.enabled is false; upstream deployment, tools, and environment test suites remain green."
+    },
+    {
+      "file": "src/sources/momo.ts, src/kv.ts, src/client/locales.ts, cordis.patch.yml, tsdown.config.ts, package.json, docs/007-architecture.md",
+      "reason": "Add native dsh-superagent-momo Source & Channel plugin connecting MoMo Agent's loopback gateway (chat, voice transcripts, and phone life signals) into dsh-superagent's Policy Gate, MasterAssessor proactive evaluation, Worker execution environment, and Outbox delivery.",
+      "validation": "tests/momo-source.spec.ts, tests/bundle-patch.spec.ts, tests/docs.spec.ts, tests/locales.spec.ts, and live end-to-end MoMo Agent proactive transcript evaluation."
+    }
+  ]
+}

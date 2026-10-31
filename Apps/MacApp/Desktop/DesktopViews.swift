@@ -231,6 +231,7 @@ struct DesktopChat: View {
     @Bindable var model: DesktopModel
     @State private var composeRevision = 0
     @State private var previewAttachment: AgentAttachment?
+    @State private var showingActiveTasks = false
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
         VStack(spacing: 0) {
@@ -274,8 +275,52 @@ struct DesktopChat: View {
                     .buttonStyle(DesktopSetupButton(minimumHeight: 48, fontSize: 14)).frame(width: 240).padding(); Spacer()
             }
         }.frame(maxWidth: .infinity).background(MoMoPalette.canvas)
+            .overlay(alignment: .topTrailing) {
+                desktopActiveTasksButton(store: model.taskStore)
+                    .padding(.top, 14)
+                    .padding(.trailing, 18)
+            }
             .sheet(item: $previewAttachment) { ClientAttachmentPreview(attachment: $0) }
             .animation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.86), value: model.taskStore?.tasks.isEmpty)
+    }
+
+    private func desktopActiveTasksButton(store: RemoteTaskStore?) -> some View {
+        let tasksSnap = AgentActiveTasksSnapshot(store: store)
+        return Button {
+            showingActiveTasks.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "checklist")
+                    .font(.system(size: 13, weight: .medium))
+                    .accessibilityHidden(true)
+                Text("任务")
+                    .font(.system(size: 12, weight: .medium))
+                if let badge = tasksSnap.badgeText {
+                    Text(badge)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(MoMoPalette.canvas)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(MoMoPalette.ink, in: Capsule())
+                        .accessibilityHidden(true)
+                }
+            }
+            .foregroundStyle(MoMoPalette.ink)
+            .padding(.horizontal, 11)
+            .frame(height: 32)
+            .background(MoMoPalette.paper, in: Capsule())
+            .overlay { Capsule().strokeBorder(MoMoPalette.line, lineWidth: 1) }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("查看正在进行的子智能体与后台任务")
+        .accessibilityLabel(tasksSnap.count > 0 ? LocalizedStringKey("正在进行的任务，\(tasksSnap.count) 项") : LocalizedStringKey("正在进行的任务"))
+        .accessibilityIdentifier("desktop.activeTasks")
+        .popover(isPresented: $showingActiveTasks, arrowEdge: .bottom) {
+            AgentActiveTasksSheet(store: store, isPopover: true)
+                .frame(width: 380)
+                .frame(minHeight: 240, maxHeight: 440)
+        }
     }
 }
 
@@ -379,7 +424,7 @@ struct DesktopSettings: View {
         [Page.advanced, .model, .memory, .pairing].filter { destination in
             let terms: [String]
             switch destination {
-            case .advanced: terms = [String(localized: "通用"), String(localized: "网络代理"), String(localized: "电脑控制"), String(localized: "运行环境")]
+            case .advanced: terms = [String(localized: "通用"), String(localized: "网络代理"), String(localized: "电脑控制"), String(localized: "运行环境"), String(localized: "智能体引擎"), "Hermes", "SuperAgent", "Proactive"]
             case .model: terms = [String(localized: "模型"), "API", "Codex", "Claude"]
             case .memory: terms = [String(localized: "记忆")]
             case .pairing: terms = [String(localized: "设备"), String(localized: "配对手机"), String(localized: "远程访问")]
@@ -462,6 +507,39 @@ struct DesktopSettings: View {
                         }
                     }.font(.system(size: 14)).desktopSettingsRow()
                     if let error = model.desktopFailure { Text(error).font(.system(size: 12)).foregroundStyle(MoMoPalette.failure) }
+                }
+                DesktopSettingsGroup("智能体引擎") {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Agent Runtime").font(.system(size: 14))
+                            Text(model.runtimeEngine.summary)
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 16)
+                        Picker("Agent Runtime", selection: Binding(
+                            get: { model.runtimeEngine },
+                            set: { target in Task { await model.switchRuntimeEngine(target) } }
+                        )) {
+                            ForEach(DesktopAgentEngine.allCases) { engine in
+                                Text(engine.title).tag(engine)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 196)
+                        .disabled(model.busy != nil)
+                        .accessibilityIdentifier("settings.runtimeEngine")
+                    }.desktopSettingsRow()
+                    if model.runtimeEngine == .superagent, let snap = model.proactiveSnapshot {
+                        Divider().opacity(0.45)
+                        HStack {
+                            Text("引擎状态").font(.system(size: 14))
+                            Spacer()
+                            Text(snap.dshReady
+                                 ? "已就绪 · 进行中 \(snap.activeTickets) · 已分析 \(snap.totalDecisions)"
+                                 : "正在启动 DeepSeek SuperAgent…")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                        }.desktopSettingsRow()
+                    }
                 }
                 DesktopSettingsGroup("运行环境") {
                     if model.hasBundledRuntime {
