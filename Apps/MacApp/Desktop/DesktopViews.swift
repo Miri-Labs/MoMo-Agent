@@ -379,7 +379,7 @@ struct DesktopSettings: View {
         [Page.advanced, .model, .memory, .pairing].filter { destination in
             let terms: [String]
             switch destination {
-            case .advanced: terms = [String(localized: "通用"), String(localized: "网络代理"), String(localized: "电脑控制"), String(localized: "运行环境")]
+            case .advanced: terms = [String(localized: "通用"), String(localized: "网络代理"), String(localized: "电脑控制"), String(localized: "运行环境"), String(localized: "智能体引擎"), "Hermes", "SuperAgent", "Proactive"]
             case .model: terms = [String(localized: "模型"), "API", "Codex", "Claude"]
             case .memory: terms = [String(localized: "记忆")]
             case .pairing: terms = [String(localized: "设备"), String(localized: "配对手机"), String(localized: "远程访问")]
@@ -462,6 +462,39 @@ struct DesktopSettings: View {
                         }
                     }.font(.system(size: 14)).desktopSettingsRow()
                     if let error = model.desktopFailure { Text(error).font(.system(size: 12)).foregroundStyle(MoMoPalette.failure) }
+                }
+                DesktopSettingsGroup("智能体引擎") {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Agent Runtime").font(.system(size: 14))
+                            Text(model.runtimeEngine.summary)
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 16)
+                        Picker("Agent Runtime", selection: Binding(
+                            get: { model.runtimeEngine },
+                            set: { target in Task { await model.switchRuntimeEngine(target) } }
+                        )) {
+                            ForEach(DesktopAgentEngine.allCases) { engine in
+                                Text(engine.title).tag(engine)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 196)
+                        .disabled(model.busy != nil)
+                        .accessibilityIdentifier("settings.runtimeEngine")
+                    }.desktopSettingsRow()
+                    if model.runtimeEngine == .superagent, let snap = model.proactiveSnapshot {
+                        Divider().opacity(0.45)
+                        HStack {
+                            Text("引擎状态").font(.system(size: 14))
+                            Spacer()
+                            Text(snap.dshReady
+                                 ? "已就绪 · 进行中 \(snap.activeTickets) · 已分析 \(snap.totalDecisions)"
+                                 : "正在启动 DeepSeek SuperAgent…")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                        }.desktopSettingsRow()
+                    }
                 }
                 DesktopSettingsGroup("运行环境") {
                     if model.hasBundledRuntime {

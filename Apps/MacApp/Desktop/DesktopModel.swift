@@ -23,6 +23,31 @@ struct AccessStatus: Decodable {
     enum CodingKeys: String, CodingKey { case agentOnline = "agent_online"; case pairedDeviceID = "paired_device_id"; case tunnel, devices, invitation }
 }
 
+enum DesktopAgentEngine: String, CaseIterable, Identifiable {
+    case hermes
+    case superagent
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .hermes: "Hermes Agent"
+        case .superagent: "DeepSeek SuperAgent"
+        }
+    }
+    var summary: String {
+        switch self {
+        case .hermes: String(localized: "原生主会话与后台委派引擎")
+        case .superagent: String(localized: "DeepSeek 开源编排器，自动分析同步录音与个人上下文并主动推进")
+        }
+    }
+}
+
+struct DesktopProactiveSnapshot: Sendable {
+    let dshReady: Bool
+    let activeTickets: Int
+    let totalDecisions: Int
+    let latestSummary: String?
+}
+
 @MainActor @Observable
 final class DesktopModel {
     enum SetupStep: String { case welcome, prepare, model, permissions, pair, ready, completed }
@@ -81,6 +106,8 @@ final class DesktopModel {
     var providerURL = ""
     var modelName = ""
     var providerKey = ""
+    var runtimeEngine = DesktopAgentEngine.hermes
+    var proactiveSnapshot: DesktopProactiveSnapshot?
     var taskStore: RemoteTaskStore?
     var memories: [ContextMemory] = []
     var sources: [ContextSource] = []
@@ -321,6 +348,7 @@ final class DesktopModel {
         connection = try JSONDecoder().decode(AgentConnection.self, from: Data(contentsOf: dataDirectory.appendingPathComponent("connection.json")))
         key = try String(contentsOf: dataDirectory.appendingPathComponent("api-key"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         prepareDesktop()
+        loadEngineConfiguration()
         if let model = Self.readModelConfiguration(from: dataDirectory.appendingPathComponent("hermes/config.yaml")),
            let name = model["default"], !name.isEmpty {
             modelProvider = switch model["provider"] {
@@ -514,7 +542,10 @@ final class DesktopModel {
             ["PATH", "HOME", "USER", "LANG", "TMPDIR", "SHELL", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
              "http_proxy", "https_proxy", "all_proxy", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE"].contains($0.key)
         }
-        process.environment?["PATH"] = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        process.environment?["PATH"] = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path
+            + ":" + FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/pnpm").path
+            + ":" + FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/pnpm").path
+            + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         process.currentDirectoryURL = repository
         let log = dataDirectory.appendingPathComponent("runtime/desktop-" + URL(fileURLWithPath: script).deletingPathExtension().lastPathComponent + ".log")
         try FileManager.default.createDirectory(at: log.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -614,6 +645,11 @@ final class DesktopModel {
             }
             if status?.agentOnline == true, !fetchingContext, Date().timeIntervalSince(lastContextRefreshAt) >= 15 {
                 Task { [weak self] in await self?.loadContext(silent: true) }
+            }
+            if runtimeEngine == .superagent, status?.agentOnline == true {
+                await refreshProactiveSnapshot()
+            } else {
+                proactiveSnapshot = nil
             }
         } catch {
             status = nil
@@ -811,6 +847,93 @@ final class DesktopModel {
         controlSession.finishTasksAndInvalidate()
     }
     func showFiles() { NSWorkspace.shared.open(dataDirectory.appendingPathComponent("workspace")) }
+
+    func loadEngineConfiguration() {
+        let file = dataDirectory.appendingPathComponent("runtime/engine.json")
+        guard let raw = try? Data(contentsOf: file),
+              let parsed = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] else {
+            runtimeEngine = .hermes
+            return
+        }
+        if let eng = parsed["engine"] as? String, let resolved = DesktopAgentEngine(rawValue: eng) {
+            runtimeEngine = resolved
+        }
+    }
+
+    private func writeEngineConfiguration(engine: DesktopAgentEngine) throws {
+        let file = dataDirectory.appendingPathComponent("runtime/engine.json")
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let payload: [String: String] = ["engine": engine.rawValue, "proactive_mode": "auto"]
+        let encoded = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+        try privateWrite(encoded, to: file)
+    }
+
+    func switchRuntimeEngine(_ target: DesktopAgentEngine) async {
+        guard busy == nil, target != runtimeEngine else { return }
+        let wasRunning = status?.agentOnline == true || agentProcess?.isRunning == true
+        busy = String(localized: "正在切换智能体引擎…")
+        failure = nil
+        preparationPhase = .agent
+        defer { busy = nil; preparationPhase = nil; preparationDownload = nil }
+        do {
+            if wasRunning {
+                agentProcess?.terminate()
+                for _ in 0..<80 {
+                    if agentProcess == nil { break }
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
+            try writeEngineConfiguration(engine: target)
+            runtimeEngine = target
+            proactiveSnapshot = nil
+            try await prepareRuntime()
+            if wasRunning {
+                try startAccess()
+                try launchAgent()
+                UserDefaults.standard.set(true, forKey: resumeKey)
+            }
+            await refresh()
+        } catch {
+            loadEngineConfiguration()
+            failure = error.localizedDescription
+        }
+    }
+
+    func refreshProactiveSnapshot() async {
+        guard let connection, !key.isEmpty else { return }
+        var request = URLRequest(url: connection.baseURL.appendingPathComponent("momo/v1/proactive"))
+        request.timeoutInterval = 5
+        request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
+        guard let (data, response) = try? await controlSession.data(for: request, delegate: ControlNoRedirects.shared),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+        let ready = (json["dsh_ready"] as? Bool) ?? false
+        let tickets = (json["tickets"] as? [[String: Any]]) ?? []
+        let decisions = (json["decisions"] as? [[String: Any]]) ?? []
+        let activeCount = tickets.filter { item in
+            let state = (item["state"] as? String) ?? (item["outcome"] as? String) ?? ""
+            return !["ended", "completed", "merged", "dropped", "stopped", "canceled"].contains(state)
+        }.count
+        let latest = decisions.first.flatMap { item -> String? in
+            let kind = (item["kind"] as? String) ?? ""
+            if kind.isEmpty { return nil }
+            if let reason = item["reason"] as? String, !reason.isEmpty {
+                return "\(kind): \(reason)"
+            }
+            if let reasons = item["reason"] as? [[String: Any]],
+               let code = reasons.first?["code"] as? String, !code.isEmpty {
+                return "\(kind): \(code)"
+            }
+            return kind
+        }
+        proactiveSnapshot = DesktopProactiveSnapshot(
+            dshReady: ready,
+            activeTickets: activeCount,
+            totalDecisions: decisions.count,
+            latestSummary: latest
+        )
+    }
+
     private func privateWrite(_ data: Data, to url: URL) throws {
         try data.write(to: url, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
