@@ -164,7 +164,7 @@ func label(_ text:String,_ x:Double,_ y:Double,_ size:Double,_ color:NSColor,_ w
  (text as NSString).draw(at:NSPoint(x:x-width/2,y:y),withAttributes:attrs)
 }
 let ink=NSColor(white:0.12,alpha:1),muted=NSColor(white:0.48,alpha:1)
-label("Apple Watch Series 11",402,132,32,ink,.medium)
+label("Apple Watch",402,132,32,ink,.medium)
 label("iPhone",870,132,38,ink,.medium)
 label("Mac mini",1555,132,38,ink,.medium)
 label(language == "en" ? "Capture" : "采集生活",402,81,29,muted,.regular)
