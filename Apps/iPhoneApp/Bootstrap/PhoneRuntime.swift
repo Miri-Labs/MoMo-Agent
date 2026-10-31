@@ -50,6 +50,7 @@ final class PhoneRuntime {
     @ObservationIgnored private var speakerRematchTask: Task<Void, Never>?
     @ObservationIgnored private var speakerRematchPending = false
     @ObservationIgnored private var isForeground = false
+    @ObservationIgnored private var activeSystemTaskRunning = false
     @ObservationIgnored private var pendingForegroundBatchFlush = false
     @ObservationIgnored private let speechFingerprint: String?
     @ObservationIgnored let speech: SpeechEngine?
@@ -137,7 +138,7 @@ final class PhoneRuntime {
                         await self.library.refresh()
                     }
                     if refreshProgress {
-                        self.requestAudioMaintenance(force: becameIdle || (completedNewWindows && !settled))
+                        self.requestAudioMaintenance(force: becameIdle)
                         await self.receiver.publishStatus()
                     }
                 }
@@ -182,10 +183,16 @@ final class PhoneRuntime {
             self?.speech?.releaseIdleResources(dropRecognizer: false)
         }
         backgroundTasks?.onSystemTaskStarting = { [weak self] in
-            await self?.receivedAudioTranscription?.handOffToSystemTask()
+            guard let self else { return }
+            self.activeSystemTaskRunning = true
+            self.speech?.setForegroundPriority(self.isForeground || PhoneBackgroundTasks.resourcesAllowProcessing)
+            await self.receivedAudioTranscription?.handOffToSystemTask()
         }
         backgroundTasks?.onSystemTasksFinished = { [weak self] in
-            self?.receivedAudioTranscription?.systemTaskFinished()
+            guard let self else { return }
+            self.activeSystemTaskRunning = false
+            self.speech?.setForegroundPriority(self.isForeground)
+            self.receivedAudioTranscription?.systemTaskFinished()
         }
         backgroundTasks?.onContinuedBatchFinished = { [weak self] id, _ in
             guard let self, self.requestedTranscriptionBatchID == id else { return }
@@ -378,7 +385,7 @@ final class PhoneRuntime {
         // A queued background callback must not suspend a scene that became active again.
         guard !isForeground else { return }
         libraryPresentationDeferred = true
-        speech?.setForegroundPriority(false)
+        speech?.setForegroundPriority(activeSystemTaskRunning && PhoneBackgroundTasks.resourcesAllowProcessing)
         remoteAgent.background()
         if transcriptionContinuation?.isActive != true && !hasTranscriptionContinuation {
             speechWarmup?.cancel()

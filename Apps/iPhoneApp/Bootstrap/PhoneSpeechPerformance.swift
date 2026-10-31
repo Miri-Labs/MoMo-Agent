@@ -19,6 +19,7 @@ final class PhoneSpeechPerformance: @unchecked Sendable {
         queue.async { [self] in
             document.operationCount += 1
             document.nativeSeconds += diagnostic.nativeDecodeSeconds
+            document.speakerSeconds += diagnostic.speakerAnalyzeSeconds
             if diagnostic.outcome == .completed { document.completedCoreFrames += diagnostic.coreModelFrames }
             document.recent.append(diagnostic)
             if document.recent.count > 16 { document.recent.removeFirst(document.recent.count - 16) }
@@ -66,6 +67,7 @@ final class PhoneSpeechPerformance: @unchecked Sendable {
         var operationCount = 0
         var completedCoreFrames: Int64 = 0
         var nativeSeconds: Double = 0
+        var speakerSeconds: Double = 0
         var failureCode: String?
         var recent: [SpeechDiagnostics] = []
     }

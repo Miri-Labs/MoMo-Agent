@@ -725,7 +725,7 @@ public actor TranscriptionCoordinator {
                 try Task.checkCancellation()
                 if managed?.handle != execution { continue }
                 if let execution, let batch = execution.batchExecution {
-                    let stepSeconds: Double = execution.origin == .continuedProcessing ? 30 : 120
+                    let stepSeconds: Double = 120
                     let epochClaim = Task { [archive, fingerprint = speech.configurationFingerprint] in
                         try await archive.claimTranscriptionBatchAnalysis(
                             execution: batch,
@@ -996,8 +996,7 @@ public actor TranscriptionCoordinator {
             }
             try Task.checkCancellation()
             guard let sequence = readingSequence else { throw SpeechError.incompatibleWindow }
-            if retryScope == nil, !batchDecodeFailed, speech.archiveBatchSize > 1,
-               managed?.handle.origin != .continuedProcessing {
+            if retryScope == nil, !batchDecodeFailed, speech.archiveBatchSize > 1 {
                 let companions = Task { [archive, limit = speech.archiveBatchSize] in
                     try await archive.claimCompanionWindows(after: ticket, inputLease: sequence.lease, maximumCount: limit)
                 }

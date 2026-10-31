@@ -32,6 +32,7 @@ final class PhoneThroughputTests: XCTestCase {
             continuousArchive: true,
             recognitionBackend: .sherpaCoreML,
             coreMLCacheDirectory: root.appendingPathComponent("model-cache"),
+            speakerDirectory: model.appendingPathComponent("Speakers"),
             onDiagnostics: { value in diagnostics.withLock { $0.append(value) } }, onEvent: { _ in })
         // Prevent automatic display sleep only for this foreground benchmark; restore on all exits.
         let wasIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
@@ -78,6 +79,7 @@ final class PhoneThroughputTests: XCTestCase {
                 lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
                 modelLoadSeconds: observations.reduce(0) { $0 + $1.modelLoadSeconds },
                 nativeSeconds: observations.reduce(0) { $0 + $1.nativeDecodeSeconds },
+                speakerSeconds: observations.reduce(0) { $0 + $1.speakerAnalyzeSeconds },
                 audioReadSeconds: observations.reduce(0) { $0 + $1.audioReadSeconds },
                 hashSeconds: observations.reduce(0) { $0 + $1.audioHashSeconds + $1.modelHashSeconds },
                 vadSeconds: Double(observations.reduce(Int64(0)) { $0 + $1.vadModelFrames }) / 16_000,
@@ -144,5 +146,5 @@ private struct HourEvidence: Codable {
     let fixtureCER: Double
     let thermalStart, thermalEnd: Int
     let lowPowerMode: Bool
-    let modelLoadSeconds, nativeSeconds, audioReadSeconds, hashSeconds, vadSeconds, asrCoreSeconds: Double
+    let modelLoadSeconds, nativeSeconds, speakerSeconds, audioReadSeconds, hashSeconds, vadSeconds, asrCoreSeconds: Double
 }
