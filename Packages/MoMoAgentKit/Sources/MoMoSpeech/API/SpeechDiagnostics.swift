@@ -42,6 +42,7 @@ public struct SpeechDiagnostics: Codable, Sendable {
     /// Actual samples submitted to native recognition, including context and excluding digital silence.
     public internal(set) var recognitionInputModelFrames: Int64?
     public internal(set) var nativeDecodeSeconds: Double = 0
+    public internal(set) var speakerAnalyzeSeconds: Double = 0
     public internal(set) var coreMLPhases: CoreMLPhaseTimings?
     public internal(set) var cancellationToOperationEndSeconds: Double?
     /// Present only when cancellation was first requested while the C decode was running.

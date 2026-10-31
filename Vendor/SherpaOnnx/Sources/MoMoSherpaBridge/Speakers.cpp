@@ -74,15 +74,17 @@ void ExtractNormalizedEmbedding(const SherpaOnnxSpeakerEmbeddingExtractor *ext,
 }
 
 // Assemble clean speech spans with 64-sample raised-cosine joins.
-// - For dynamic 192-dim ERes2NetV2: preserves true natural duration (up to 6.0 s)
-//   without artificial 3 s loop-tiling; only crossfade-pads sub-0.60 s fragments
-//   up to 0.60 s (9,600 samples) so attentive pooling has enough frames.
+// - For dynamic 192-dim ERes2NetV2: preserves true natural duration (up to
+//   max_192_samples, default 4.0 s) without artificial 3 s loop-tiling; only
+//   crossfade-pads sub-0.60 s fragments up to 0.60 s (9,600 samples) so
+//   attentive pooling has enough frames.
 // - For legacy fixed-shape 256-dim extractors: normalizes envelope and pads/crops
 //   to 48,000 samples (3.0 s).
 bool BuildCleanSpeechClip(const float *audio,
                           const std::vector<std::pair<int, int>> &spans,
                           int min_samples, int emb_dim,
-                          std::vector<float> &out_clip) {
+                          std::vector<float> &out_clip,
+                          int max_192_samples = 64000) {
   int total_raw = 0;
   for (const auto &[s, e] : spans) {
     if (e > s) total_raw += (e - s);
@@ -170,11 +172,11 @@ bool BuildCleanSpeechClip(const float *audio,
 
   if (emb_dim == 192) {
     constexpr int kMinModelSamples = 9600;   // 0.60 s
-    constexpr int kMaxModelSamples = 96000;  // 6.00 s
-    if (p_len >= kMaxModelSamples) {
-      const int origin = (p_len - kMaxModelSamples) / 2;
+    const int max_model_samples = std::clamp(max_192_samples, kMinModelSamples, 96000);
+    if (p_len >= max_model_samples) {
+      const int origin = (p_len - max_model_samples) / 2;
       out_clip.assign(pooled.begin() + origin,
-                      pooled.begin() + origin + kMaxModelSamples);
+                      pooled.begin() + origin + max_model_samples);
       return true;
     }
     if (p_len >= kMinModelSamples) {
@@ -408,49 +410,52 @@ bool ExtractTurnEmbeddingWithPurity(
   if (total < min_samples) return false;
 
   if (emb_dim == 192) {
-    if (!BuildCleanSpeechClip(raw_audio, spans, min_samples, emb_dim, clip_buf)) {
+    if (total >= 44800) {  // >= 2.8 s: check half-to-half acoustic purity first
+      std::vector<std::pair<int, int>> half_a, half_b;
+      SplitSpansInHalf(spans, half_a, half_b);
+      std::array<float, kMaxEmbDim> emb_a{}, emb_b{};
+      if (BuildCleanSpeechClip(raw_audio, half_a, 14400, emb_dim, clip_buf, 48000) &&
+          [&]() {
+            CheckSpeakerCancel(is_cancelled, cancel_context);
+            ExtractNormalizedEmbedding(ext, emb_dim, clip_buf.data(),
+                                       static_cast<int>(clip_buf.size()),
+                                       emb_a.data());
+            return BuildCleanSpeechClip(raw_audio, half_b, 14400, emb_dim,
+                                        clip_buf, 48000);
+          }()) {
+        CheckSpeakerCancel(is_cancelled, cancel_context);
+        ExtractNormalizedEmbedding(ext, emb_dim, clip_buf.data(),
+                                   static_cast<int>(clip_buf.size()),
+                                   emb_b.data());
+        if (out_emb_a) {
+          std::copy(emb_a.begin(), emb_a.begin() + emb_dim, out_emb_a);
+        }
+        if (out_emb_b) {
+          std::copy(emb_b.begin(), emb_b.begin() + emb_dim, out_emb_b);
+        }
+        if (out_has_halves) *out_has_halves = true;
+        const float purity = DotN(emb_a.data(), emb_b.data(), emb_dim);
+        if (out_purity) *out_purity = purity;
+        if (purity >= 0.42f) {
+          std::array<float, kMaxEmbDim> sum{};
+          for (int d = 0; d < emb_dim; ++d) {
+            sum[static_cast<size_t>(d)] =
+                emb_a[static_cast<size_t>(d)] + emb_b[static_cast<size_t>(d)];
+          }
+          if (NormalizeN(sum.data(), emb_dim)) {
+            std::copy(sum.begin(), sum.end(), out_emb);
+            return true;
+          }
+        }
+      }
+    }
+    if (!BuildCleanSpeechClip(raw_audio, spans, min_samples, emb_dim, clip_buf,
+                              64000)) {
       return false;
     }
     CheckSpeakerCancel(is_cancelled, cancel_context);
     ExtractNormalizedEmbedding(ext, emb_dim, clip_buf.data(),
                                static_cast<int>(clip_buf.size()), out_emb);
-    if (total >= 44800) {  // >= 2.8 s: check half-to-half acoustic purity
-      std::vector<std::pair<int, int>> half_a, half_b;
-      SplitSpansInHalf(spans, half_a, half_b);
-      std::array<float, kMaxEmbDim> emb_a{}, emb_b{};
-      if (BuildCleanSpeechClip(raw_audio, half_a, 14400, emb_dim, clip_buf)) {
-        CheckSpeakerCancel(is_cancelled, cancel_context);
-        ExtractNormalizedEmbedding(ext, emb_dim, clip_buf.data(),
-                                   static_cast<int>(clip_buf.size()),
-                                   emb_a.data());
-        if (BuildCleanSpeechClip(raw_audio, half_b, 14400, emb_dim, clip_buf)) {
-          CheckSpeakerCancel(is_cancelled, cancel_context);
-          ExtractNormalizedEmbedding(ext, emb_dim, clip_buf.data(),
-                                     static_cast<int>(clip_buf.size()),
-                                     emb_b.data());
-          if (out_emb_a) {
-            std::copy(emb_a.begin(), emb_a.begin() + emb_dim, out_emb_a);
-          }
-          if (out_emb_b) {
-            std::copy(emb_b.begin(), emb_b.begin() + emb_dim, out_emb_b);
-          }
-          if (out_has_halves) *out_has_halves = true;
-          const float purity = DotN(emb_a.data(), emb_b.data(), emb_dim);
-          if (out_purity) *out_purity = purity;
-          if (total > 96000 && purity >= 0.42f) {
-            std::array<float, kMaxEmbDim> sum{};
-            for (int d = 0; d < emb_dim; ++d) {
-              sum[static_cast<size_t>(d)] =
-                  out_emb[d] + 0.5f * (emb_a[static_cast<size_t>(d)] +
-                                       emb_b[static_cast<size_t>(d)]);
-            }
-            if (NormalizeN(sum.data(), emb_dim)) {
-              std::copy(sum.begin(), sum.end(), out_emb);
-            }
-          }
-        }
-      }
-    }
     return true;
   }
 
@@ -1016,11 +1021,12 @@ MoMoSpeakerRuntime *MoMoCreateSpeakerRuntimeWithThreads(
     if (!segmentation || !embedding) {
       throw std::runtime_error("Missing speaker model path");
     }
-    const int32_t threads = std::clamp<int32_t>(num_threads, 1, 4);
+    const int32_t threads = std::clamp<int32_t>(num_threads, 1, 6);
     auto runtime = std::make_unique<MoMoSpeakerRuntime>();
     Ort::SessionOptions options;
     options.SetIntraOpNumThreads(threads);
     options.SetInterOpNumThreads(1);
+    options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     options.AddConfigEntry("session.intra_op.allow_spinning", "0");
     options.AddConfigEntry("session.inter_op.allow_spinning", "0");
     runtime->segmentation =
@@ -1402,7 +1408,67 @@ int MoMoAnalyzeSpeakersWithProfiles(
       }
     }
     if (active_track_count == 0) return 0;
-    if (active_track_count == 1 && overlap_frames == 0) {
+    auto partition_clean_spans = [](const std::vector<std::pair<int, int>> &tc,
+                                    int t_clean, int n_parts,
+                                    std::vector<std::vector<std::pair<int, int>>> &out) {
+      if (n_parts <= 1) {
+        out.push_back(tc);
+        return;
+      }
+      const int target_per_part = t_clean / n_parts;
+      std::vector<std::pair<int, int>> cur;
+      int cur_acc = 0;
+      int parts_built = 0;
+      for (const auto &[cs, ce] : tc) {
+        int pos = cs;
+        while (pos < ce) {
+          if (parts_built == n_parts - 1) {
+            cur.emplace_back(pos, ce);
+            pos = ce;
+          } else {
+            const int need = target_per_part - cur_acc;
+            const int take = std::min(ce - pos, need);
+            if (take > 0) {
+              cur.emplace_back(pos, pos + take);
+              pos += take;
+              cur_acc += take;
+            }
+            if (cur_acc >= target_per_part) {
+              out.push_back(std::move(cur));
+              cur.clear();
+              cur_acc = 0;
+              ++parts_built;
+            }
+          }
+        }
+      }
+      if (!cur.empty()) out.push_back(std::move(cur));
+    };
+
+    auto active_rms_step_ratio = [&](int lo, int hi) -> float {
+      constexpr int kBlock = 19200;  // 1.20 s matching disjoint_wing_samples
+      constexpr int kStep = 9600;    // 0.60 s step
+      if (hi - lo < kBlock + kStep) return 1.0f;
+      const float floor_rms = std::max(0.0025f, raw_noise_rms * 2.4f);
+      float min_r = 1e9f, max_r = 0.0f;
+      int active_blocks = 0;
+      for (int p = lo; p + kBlock <= hi; p += kStep) {
+        double sq = 0.0;
+        for (int k = p; k < p + kBlock; ++k) {
+          sq += double(raw_samples[k]) * double(raw_samples[k]);
+        }
+        const float r = static_cast<float>(std::sqrt(sq / kBlock));
+        if (r >= floor_rms) {
+          min_r = std::min(min_r, r);
+          max_r = std::max(max_r, r);
+          ++active_blocks;
+        }
+      }
+      if (active_blocks >= 2 && min_r > 1e-5f) return max_r / min_r;
+      return 1.0f;
+    };
+
+    if (active_track_count == 1 && overlap_frames * runtime->shift <= 4800) {
       std::vector<std::pair<int, int>> mono_turns;
       for (int i = 0; i < total_frames;) {
         const int begin = i;
@@ -1427,13 +1493,12 @@ int MoMoAnalyzeSpeakersWithProfiles(
       bool verified_monologue = true;
       const int split_check_threshold = is_eres2net ? 28800 : 25600;
       const int min_part_samples = is_eres2net ? 11200 : 9600;
-      const float mono_min_sim = is_eres2net ? 0.54f : 0.72f;
+      const float mono_min_sim = is_eres2net ? 0.55f : 0.72f;
       const float two_sided_ceil = is_eres2net ? 0.64f : 0.82f;
 
       if (total_clean >= split_check_threshold || mono_turns.size() > 1) {
-        // Partition clean speech into ~1.5 s non-overlapping parts (up to 8)
-        // and verify ALL pairs match so symmetric turns like A->B->A cannot
-        // cancel out across two halves. Abort immediately on first mismatch.
+        // Partition clean speech into 2-4 non-overlapping parts and verify ALL
+        // pairs match so symmetric turns like A->B->A cannot cancel out.
         std::vector<std::vector<std::pair<int, int>>> part_spans;
         for (const auto &[ts, te] : mono_turns) {
           auto tc = collect_exclusive_spans(single_active_track, ts, te);
@@ -1442,48 +1507,23 @@ int MoMoAnalyzeSpeakersWithProfiles(
           if (t_clean < min_part_samples) continue;
           int n_parts = 1;
           if (te - ts >= split_check_threshold && t_clean >= 2 * min_part_samples) {
-            n_parts = std::clamp(t_clean / 24000, 2, 8);
+            n_parts = std::clamp((t_clean + 15999) / 48000, 2, 4);
           }
-          if (n_parts == 1) {
-            part_spans.push_back(std::move(tc));
-          } else {
-            const int target_per_part = t_clean / n_parts;
-            std::vector<std::pair<int, int>> cur;
-            int cur_acc = 0;
-            int parts_built = 0;
-            for (const auto &[cs, ce] : tc) {
-              int pos = cs;
-              while (pos < ce) {
-                if (parts_built == n_parts - 1) {
-                  cur.emplace_back(pos, ce);
-                  pos = ce;
-                } else {
-                  const int need = target_per_part - cur_acc;
-                  const int take = std::min(ce - pos, need);
-                  if (take > 0) {
-                    cur.emplace_back(pos, pos + take);
-                    pos += take;
-                    cur_acc += take;
-                  }
-                  if (cur_acc >= target_per_part) {
-                    part_spans.push_back(std::move(cur));
-                    cur.clear();
-                    cur_acc = 0;
-                    ++parts_built;
-                  }
-                }
-              }
-            }
-            if (!cur.empty()) part_spans.push_back(std::move(cur));
-          }
+          partition_clean_spans(tc, t_clean, n_parts, part_spans);
         }
 
         if (part_spans.size() >= 2) {
+          const float eff_mono_min =
+              (is_eres2net &&
+               active_rms_step_ratio(mono_turns.front().first,
+                                     mono_turns.back().second) >= 2.5f)
+                  ? 0.60f
+                  : mono_min_sim;
           std::vector<std::array<float, kMaxEmbDim>> part_embs;
           part_embs.reserve(part_spans.size());
           for (const auto &ps : part_spans) {
             if (!BuildCleanSpeechClip(raw_samples, ps, min_part_samples, emb_dim,
-                                      clip_buf)) {
+                                      clip_buf, 40000)) {
               verified_monologue = false;
               break;
             }
@@ -1508,7 +1548,7 @@ int MoMoAnalyzeSpeakersWithProfiles(
                   HasOneSidedEnrolledDropoff(
                       prev.data(), pe.data(), emb_dim, sim, enrolled_embeddings,
                       enrolled_person_ids, enrolled_count);
-              if (enrolled_conflict || sim < mono_min_sim) {
+              if (enrolled_conflict || sim < eff_mono_min) {
                 verified_monologue = false;
                 break;
               }
@@ -1662,7 +1702,95 @@ int MoMoAnalyzeSpeakersWithProfiles(
 
       std::vector<int> boundaries = {start, end};
       std::vector<bool> boundary_strong;
+      bool certified_pure_turn = false;
+      std::array<float, kMaxEmbDim> certified_turn_emb{};
+      std::vector<std::pair<int, int>> certified_clean_spans;
+      int certified_clean_n = 0;
+      float certified_purity = 1.0f;
+
       if (label >= 1 && label <= rescue_track &&
+          end - start >= split_trigger_samples) {
+        const float two_sided_ceil = is_eres2net ? 0.64f : 0.82f;
+        const float probe_min_sim = is_eres2net ? 0.56f : 0.75f;
+        // Fast pre-check: if a segmented turn has stable loudness and 2-4
+        // non-overlapping sub-parts agree acoustically with zero enrolled
+        // speaker dropoff, skip the 0.40 s sliding wing scan AND reuse the
+        // pooled embedding directly.
+        if (active_rms_step_ratio(start, end) < 2.5f) {
+          auto pre_clean = collect_exclusive_spans(label, start, end);
+          int pre_clean_n = 0;
+          for (const auto &[cs, ce] : pre_clean) pre_clean_n += (ce - cs);
+          if (pre_clean_n >= 2 * kMinDirectEmbedSamples &&
+              static_cast<int64_t>(pre_clean_n) * 10 >=
+                  static_cast<int64_t>(end - start) * 7) {
+            const int n_probe =
+                std::clamp((pre_clean_n + 15999) / 36000, 2, 4);
+            std::vector<std::vector<std::pair<int, int>>> probe_parts;
+            probe_parts.reserve(static_cast<size_t>(n_probe));
+            partition_clean_spans(pre_clean, pre_clean_n, n_probe, probe_parts);
+            if (probe_parts.size() >= 2) {
+              std::vector<std::array<float, kMaxEmbDim>> probe_embs;
+              probe_embs.reserve(probe_parts.size());
+              bool all_pure = true;
+              float min_pair_sim = 1.0f;
+              for (const auto &pp : probe_parts) {
+                if (!BuildCleanSpeechClip(raw_samples, pp, kMinDirectEmbedSamples,
+                                          emb_dim, clip_buf, 36000)) {
+                  all_pure = false;
+                  break;
+                }
+                CheckSpeakerCancel(is_cancelled, cancel_context);
+                std::array<float, kMaxEmbDim> pe{};
+                ExtractNormalizedEmbedding(runtime->embedding, emb_dim,
+                                           clip_buf.data(),
+                                           static_cast<int>(clip_buf.size()),
+                                           pe.data());
+                const auto m_cur = MatchEnrolledPerson(
+                    pe.data(), emb_dim, enrolled_embeddings,
+                    enrolled_person_ids, enrolled_count);
+                for (const auto &prev : probe_embs) {
+                  const float sim = DotN(prev.data(), pe.data(), emb_dim);
+                  min_pair_sim = std::min(min_pair_sim, sim);
+                  const auto m_prev = MatchEnrolledPerson(
+                      prev.data(), emb_dim, enrolled_embeddings,
+                      enrolled_person_ids, enrolled_count);
+                  const bool enrolled_conflict =
+                      (m_prev.person_id >= 0 && m_cur.person_id >= 0 &&
+                       m_prev.person_id != m_cur.person_id &&
+                       sim < two_sided_ceil) ||
+                      HasOneSidedEnrolledDropoff(
+                          prev.data(), pe.data(), emb_dim, sim,
+                          enrolled_embeddings, enrolled_person_ids,
+                          enrolled_count);
+                  if (enrolled_conflict || sim < probe_min_sim) {
+                    all_pure = false;
+                    break;
+                  }
+                }
+                if (!all_pure) break;
+                probe_embs.push_back(pe);
+              }
+              if (all_pure && probe_embs.size() == probe_parts.size()) {
+                certified_turn_emb.fill(0.0f);
+                for (const auto &pe : probe_embs) {
+                  for (int d = 0; d < emb_dim; ++d) {
+                    certified_turn_emb[static_cast<size_t>(d)] +=
+                        pe[static_cast<size_t>(d)];
+                  }
+                }
+                if (NormalizeN(certified_turn_emb.data(), emb_dim)) {
+                  certified_pure_turn = true;
+                  certified_clean_spans = std::move(pre_clean);
+                  certified_clean_n = pre_clean_n;
+                  certified_purity = min_pair_sim;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (!certified_pure_turn && label >= 1 && label <= rescue_track &&
           end - start >= split_trigger_samples) {
         struct WingMemo {
           int lo = 0;
@@ -1851,8 +1979,16 @@ int MoMoAnalyzeSpeakersWithProfiles(
         float purity = 1.0f;
         std::array<float, kMaxEmbDim> half_a_emb{}, half_b_emb{};
         bool has_halves = false;
-        populate_raw_turn(rt, &purity, half_a_emb.data(), half_b_emb.data(),
-                          &has_halves);
+        if (certified_pure_turn && !did_split) {
+          rt.clean_spans = std::move(certified_clean_spans);
+          rt.embedding = certified_turn_emb;
+          rt.clean_seconds =
+              std::min(10.0f, float(certified_clean_n) / 16000.0f);
+          purity = certified_purity;
+        } else {
+          populate_raw_turn(rt, &purity, half_a_emb.data(), half_b_emb.data(),
+                            &has_halves);
+        }
 
         if (purity < purity_split_th &&
             rt.end - rt.start >= 2 * kMinSplitPieceSamples) {

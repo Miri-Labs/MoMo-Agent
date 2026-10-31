@@ -34,7 +34,7 @@ final class SpeakerRuntime: @unchecked Sendable {
         guard let handle = MoMoCreateSpeakerRuntimeWithThreads(
             directory.appendingPathComponent(files[1].0).path,
             directory.appendingPathComponent(files[0].0).path,
-            "cpu", Int32(max(1, min(4, threads))), &error, error.count) else {
+            "cpu", Int32(max(1, min(6, threads))), &error, error.count) else {
             throw SpeechNativeFailure(stage: .load, detail: error.withUnsafeBufferPointer { String(cString: $0.baseAddress!) })
         }
         let dim = Int(MoMoGetSpeakerEmbeddingDim(handle))

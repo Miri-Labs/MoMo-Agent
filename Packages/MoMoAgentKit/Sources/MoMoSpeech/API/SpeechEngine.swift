@@ -23,8 +23,10 @@ public final class SpeechEngine: @unchecked Sendable {
     private var speakerEmbeddingValidated = false // Protected by validationLock.
     private var validatedSegmentationModels: Set<SpeakerSegmentationModel> = [] // Protected by validationLock.
     private var runtime: SherpaRuntime?
+    private var runtimeCPUThreads: Int? // Confined to queue.
     private var speakerRuntime: SpeakerRuntime?
     private var runtimeSegmentationModel: SpeakerSegmentationModel? // Confined to queue.
+    private var runtimeSpeakerThreads: Int? // Confined to queue.
     private let speakerDirectory: URL?
     private var runtimeLanguage: SpeechLanguage? // Confined to queue.
     private var runtimeDownload: DownloadedSpeechModel? // Confined to queue.
@@ -137,6 +139,7 @@ public final class SpeechEngine: @unchecked Sendable {
             // Publish the selection only after validation and warmup complete. A
             // cancellation after this commit must not report a failed switch.
             runtime = candidate
+            runtimeCPUThreads = effectiveCPUThreads
             runtimeLanguage = language
             runtimeDownload = download
         }
@@ -199,12 +202,14 @@ public final class SpeechEngine: @unchecked Sendable {
             let pcm = try samples(for: FrameRange(start: 0, count: input.modelFrameCount),
                                   input: input, attempt: attempt, recorder: recorder)
             let segModel = selectedSegmentationModel.withLock { $0 }
-            if speakerRuntime == nil || runtimeSegmentationModel != segModel {
+            let spkThreads = effectiveCPUThreads
+            if speakerRuntime == nil || runtimeSegmentationModel != segModel || runtimeSpeakerThreads != spkThreads {
                 try ensureSpeakerValidated(directory: speakerDirectory, segmentationModel: segModel, attempt: attempt)
                 speakerRuntime = try SpeakerRuntime(directory: speakerDirectory, segmentationModel: segModel,
-                    cacheRoot: coreMLCacheDirectory, attempt: attempt, threads: effectiveCPUThreads,
+                    cacheRoot: coreMLCacheDirectory, attempt: attempt, threads: spkThreads,
                     skipValidation: true)
                 runtimeSegmentationModel = segModel
+                runtimeSpeakerThreads = spkThreads
             }
             guard let extracted = try speakerRuntime?.extractCleanVoiceprint(pcm, attempt: attempt) else { return nil }
             return (extracted.embedding, extracted.cleanSeconds, SpeakerRuntime.revision)
@@ -297,6 +302,7 @@ public final class SpeechEngine: @unchecked Sendable {
         queue.async { [self] in
             speakerRuntime = nil
             runtimeSegmentationModel = nil
+            runtimeSpeakerThreads = nil
             if dropRecognizer { clearRuntime() }
         }
     }
@@ -547,15 +553,47 @@ public final class SpeechEngine: @unchecked Sendable {
             if let speakerDirectory, !aligned.text.isEmpty {
                 do {
                     let segModel = selectedSegmentationModel.withLock { $0 }
-                    if speakerRuntime == nil || runtimeSegmentationModel != segModel {
+                    let spkThreads = effectiveCPUThreads
+                    if speakerRuntime == nil || runtimeSegmentationModel != segModel || runtimeSpeakerThreads != spkThreads {
+                        let loadStart = DispatchTime.now().uptimeNanoseconds
                         try ensureSpeakerValidated(directory: speakerDirectory, segmentationModel: segModel, attempt: attempt)
                         speakerRuntime = try SpeakerRuntime(directory: speakerDirectory, segmentationModel: segModel,
-                            cacheRoot: coreMLCacheDirectory, attempt: attempt, threads: effectiveCPUThreads,
+                            cacheRoot: coreMLCacheDirectory, attempt: attempt, threads: spkThreads,
                             skipValidation: true)
+                        recorder.value.modelLoadSeconds += SpeechDiagnosticRecorder.seconds(since: loadStart)
                         runtimeSegmentationModel = segModel
+                        runtimeSpeakerThreads = spkThreads
                     }
                     let prototypes = enrolledSpeakers.withLock { $0 }
-                    aligned.speakers = try speakerRuntime?.analyze(input.samples, prototypes: prototypes, attempt: attempt)
+                    let speakerRange: Range<Int>
+                    if let coreRange = input.coreRange, coreRange.lowerBound >= 0,
+                       coreRange.upperBound <= input.samples.count, !coreRange.isEmpty,
+                       coreRange.count < input.samples.count {
+                        let maxCollar = 4_000
+                        let budget = coreRange.count <= 256_000
+                            ? min(256_000 - coreRange.count, maxCollar * 2)
+                            : maxCollar * 2
+                        let leftAdd = min(coreRange.lowerBound, budget / 2)
+                        let rightAdd = min(input.samples.count - coreRange.upperBound, budget - leftAdd)
+                        let extraLeft = min(coreRange.lowerBound - leftAdd, max(0, budget - leftAdd - rightAdd))
+                        speakerRange = (coreRange.lowerBound - leftAdd - extraLeft)..<(coreRange.upperBound + rightAdd)
+                    } else {
+                        speakerRange = 0..<input.samples.count
+                    }
+                    let spkStart = DispatchTime.now().uptimeNanoseconds
+                    defer { recorder.value.speakerAnalyzeSeconds += SpeechDiagnosticRecorder.seconds(since: spkStart) }
+                    if speakerRange == 0..<input.samples.count {
+                        aligned.speakers = try speakerRuntime?.analyze(input.samples, prototypes: prototypes, attempt: attempt)
+                    } else {
+                        let speakerOffset = Double(speakerRange.lowerBound) / 16_000
+                        let sliced = Array(input.samples[speakerRange])
+                        aligned.speakers = try speakerRuntime?.analyze(sliced, prototypes: prototypes, attempt: attempt)
+                            .map {
+                                SpeakerEvidence(start: $0.start + speakerOffset, end: $0.end + speakerOffset,
+                                    localSpeaker: $0.localSpeaker, embedding: $0.embedding,
+                                    cleanSeconds: $0.cleanSeconds, modelRevision: $0.modelRevision)
+                            }
+                    }
                 } catch {
                     try attempt.checkCancellation()
                     aligned.speakerFailure = "speaker_inference_failed"
@@ -734,7 +772,9 @@ public final class SpeechEngine: @unchecked Sendable {
         // Read the model and language together at the recognition boundary.
         let selected = selection.withLock { $0 }
         let download = selected.download, language = selected.language
-        if let runtime, runtimeDownload == download {
+        let targetThreads = effectiveCPUThreads
+        let cpuBoundASR = download != nil || recognitionBackend != .sherpaCoreML
+        if let runtime, runtimeDownload == download, (!cpuBoundASR || runtimeCPUThreads == targetThreads) {
             if runtimeLanguage == language { return runtime }
             if download != nil, try runtime.updateLanguage(language) {
                 runtimeLanguage = language
@@ -744,6 +784,7 @@ public final class SpeechEngine: @unchecked Sendable {
         clearRuntime()
         let created = try makeRuntime(download: download, language: language, attempt: attempt, recorder: recorder)
         runtime = created
+        runtimeCPUThreads = targetThreads
         runtimeLanguage = language
         runtimeDownload = download
         try attempt.checkCancellation()
@@ -753,6 +794,7 @@ public final class SpeechEngine: @unchecked Sendable {
     private func clearRuntime() {
         runtime?.close()
         runtime = nil
+        runtimeCPUThreads = nil
         runtimeLanguage = nil
         runtimeDownload = nil
     }
