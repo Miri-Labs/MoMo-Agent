@@ -1070,10 +1070,50 @@ extension ArchiveStore {
             sessionCone: sessCone,
             cleanSeconds: max(0.3, evidence.cleanSeconds),
             prepared: prepared)
+        let encodedEvidence = try WireJSON.encode(evidence)
         try database.execute("INSERT INTO speaker_observations(span_id,session_id,cluster_id,model_revision,evidence,matched_person,updated_at) VALUES(?,?,?,?,?,?,?)",
             [.text(spanID.uuidString), .text(sessionID.uuidString), .text(cluster.uuidString), .text(evidence.modelRevision),
-             .blob(try WireJSON.encode(evidence)), person.map { .text($0.uuidString) } ?? .null, .double(Date().timeIntervalSince1970)])
+             .blob(encodedEvidence), person.map { .text($0.uuidString) } ?? .null, .double(Date().timeIntervalSince1970)])
+        storeDecodedSpeakerEvidence(sessionID: sessionID, spanID: spanID, data: encodedEvidence, evidence: evidence)
         return try speakerLabel(cluster: cluster, personID: person, confirmed: false, learnable: canLearn, people: people)
+    }
+
+    private static func fnv1a64(_ data: Data) -> UInt64 {
+        data.withUnsafeBytes { raw in
+            var hash: UInt64 = 14_695_981_039_346_656_037
+            for byte in raw {
+                hash ^= UInt64(byte)
+                hash &*= 1_099_511_628_211
+            }
+            return hash
+        }
+    }
+
+    private func storeDecodedSpeakerEvidence(sessionID: UUID, spanID: UUID, data: Data, evidence: SpeakerEvidence?) {
+        if speakerObservationEvidenceCache[sessionID] == nil {
+            speakerObservationSessionOrder.removeAll { $0 == sessionID }
+            speakerObservationSessionOrder.append(sessionID)
+            while speakerObservationSessionOrder.count > 16 {
+                let oldest = speakerObservationSessionOrder.removeFirst()
+                speakerObservationEvidenceCache.removeValue(forKey: oldest)
+            }
+        }
+        speakerObservationEvidenceCache[sessionID, default: [:]][spanID] = (
+            byteCount: data.count,
+            checksum: Self.fnv1a64(data),
+            evidence: evidence
+        )
+    }
+
+    private func decodeCachedSpeakerEvidence(sessionID: UUID, spanID: UUID, data: Data) throws -> SpeakerEvidence? {
+        let sum = Self.fnv1a64(data)
+        if let hit = speakerObservationEvidenceCache[sessionID]?[spanID],
+           hit.byteCount == data.count, hit.checksum == sum {
+            return hit.evidence
+        }
+        let decoded = try WireJSON.decode(SpeakerEvidence?.self, from: data)
+        storeDecodedSpeakerEvidence(sessionID: sessionID, spanID: spanID, data: data, evidence: decoded)
+        return decoded
     }
 
     private func speakerLabel(cluster: UUID, personID: UUID?, confirmed: Bool, learnable: Bool,
@@ -1965,9 +2005,10 @@ extension ArchiveStore {
         var items: [ObsItem] = []
         items.reserveCapacity(obsRows.count)
         for row in obsRows {
-            guard let ev = try WireJSON.decode(SpeakerEvidence?.self, from: row.requireData(3)),
-                  ev.hasVoiceprint else { continue }
             let spanID = try row.requireUUID(0)
+            guard let ev = try decodeCachedSpeakerEvidence(
+                sessionID: sessionID, spanID: spanID, data: row.requireData(3)
+            ), ev.hasVoiceprint else { continue }
             items.append(ObsItem(
                 spanID: spanID,
                 clusterID: try row.requireUUID(1),
@@ -2562,7 +2603,7 @@ extension ArchiveStore {
             let spanID = try row.requireUUID(0)
             let clusterID = try row.requireUUID(1)
             let revision = try row.requireString(2)
-            let ev = try WireJSON.decode(SpeakerEvidence?.self, from: row.requireData(3))
+            let ev = try decodeCachedSpeakerEvidence(sessionID: id, spanID: spanID, data: row.requireData(3))
             let confirmed = row.string(4).flatMap(UUID.init(uuidString:))
             let oldMatched = row.string(5).flatMap(UUID.init(uuidString:))
             if let rejs = rejectionsBySpan[spanID] {

@@ -285,6 +285,7 @@ extension ArchiveStore {
         let externalVersion = try database.rows("PRAGMA data_version").first?.requireInt(0) ?? 0
         if externalVersion != transcriptReadDataVersion {
             transcriptReadCache.removeAll(); transcriptReadRecency.removeAll(); transcriptReadCacheCost = 0
+            transcriptBlockPrefixCache.removeAll()
             transcriptReadDataVersion = externalVersion
         }
         let version = try state.requireInt(1), generation = try state.requireInt(2)
@@ -317,6 +318,44 @@ extension ArchiveStore {
         transcriptReadRecency.removeAll { $0 == sessionID }
     }
 
+    func cacheCommittedWindowTranscript(
+        _ document: TranscriptDocument,
+        encodedByteCount: Int,
+        previousCompactedPrefix: (fullSpanCount: Int, blockIDs: [Int64])?
+    ) {
+        guard !database.isInTransaction else { return }
+        if let externalVersion = try? database.rows("PRAGMA data_version").first?.requireInt(0),
+           externalVersion != transcriptReadDataVersion {
+            transcriptReadCache.removeAll(); transcriptReadRecency.removeAll(); transcriptReadCacheCost = 0
+            transcriptBlockPrefixCache.removeAll()
+            transcriptReadDataVersion = externalVersion
+        }
+        removeTranscriptReadCache(document.sessionID)
+        if encodedByteCount <= 8 * 1024 * 1024 {
+            transcriptReadCache[document.sessionID] = (document, encodedByteCount)
+            transcriptReadCacheCost += encodedByteCount
+            transcriptReadRecency.append(document.sessionID)
+            while transcriptReadRecency.count > 8 || transcriptReadCacheCost > 8 * 1024 * 1024 {
+                guard let oldest = transcriptReadRecency.first else { break }
+                removeTranscriptReadCache(oldest)
+            }
+        }
+        if let prefix = previousCompactedPrefix {
+            transcriptBlockPrefixCache[document.sessionID] = (
+                version: document.version,
+                generation: document.generation,
+                fullSpanCount: prefix.fullSpanCount,
+                blockIDs: prefix.blockIDs
+            )
+            if transcriptBlockPrefixCache.count > 16,
+               let evict = transcriptBlockPrefixCache.keys.first(where: { $0 != document.sessionID }) {
+                transcriptBlockPrefixCache.removeValue(forKey: evict)
+            }
+        } else {
+            transcriptBlockPrefixCache.removeValue(forKey: document.sessionID)
+        }
+    }
+
     /// List rows need one short line, not a decoded copy of every transcript.
     public func transcriptPreview(sessionID: UUID, expectedVersion: Int64, expectedGeneration: Int64) throws -> String? {
         let row = try database.rows("""
@@ -326,16 +365,27 @@ extension ArchiveStore {
         return row?.string(0)
     }
 
+    @discardableResult
     func storeDocument(_ document: TranscriptDocument, invalidatesExistingSources: Bool = false,
                        appendingSpans: [TranscriptSpan]? = nil,
-                       knownPrevious: TranscriptDocument?? = nil) throws {
+                       knownPrevious: TranscriptDocument?? = nil,
+                       trustedPreviousBlockPrefix: (fullSpanCount: Int, blockIDs: [Int64])? = nil,
+                       preencodedDocument: Data? = nil) throws -> (encodedBytes: Int, compactedPrefix: (fullSpanCount: Int, blockIDs: [Int64])?) {
         let previous = try knownPrevious ?? currentTranscriptOrNil(sessionID: document.sessionID)
         removeTranscriptReadCache(document.sessionID)
-        verifiedRecordingFilesCache.removeValue(forKey: document.sessionID)
-        if let previous {
-            try compactTranscriptVersion(previous)
+        if appendingSpans == nil {
+            transcriptBlockPrefixCache.removeValue(forKey: document.sessionID)
         }
-        try database.execute("INSERT INTO transcript_versions(session_id,version,document) VALUES(?,?,?)", [.text(document.sessionID.uuidString), .integer(document.version), .blob(try WireJSON.encode(document))])
+        verifiedRecordingFilesCache.removeValue(forKey: document.sessionID)
+        var compactedPrefix: (fullSpanCount: Int, blockIDs: [Int64])?
+        if let previous {
+            compactedPrefix = try compactTranscriptVersion(
+                previous,
+                trustedPrefix: appendingSpans != nil ? trustedPreviousBlockPrefix : nil
+            )
+        }
+        let encoded = try preencodedDocument ?? WireJSON.encode(document)
+        try database.execute("INSERT INTO transcript_versions(session_id,version,document) VALUES(?,?,?)", [.text(document.sessionID.uuidString), .integer(document.version), .blob(encoded)])
         let preview = document.spans.first { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .map { SQLValue.text(String($0.text.prefix(160))) } ?? .null
         try database.execute("UPDATE sessions SET transcript_version=?,transcript_preview=? WHERE id=?",
@@ -361,6 +411,7 @@ extension ArchiveStore {
             try database.execute("UPDATE plans SET state='invalidated',document=X'',files_cleaned=0 WHERE id IN (SELECT plan_id FROM plan_sources WHERE session_id=?)", [.text(document.sessionID.uuidString)])
             hasPendingFileDeletions = true
         }
+        return (encoded.count, appendingSpans != nil ? (compactedPrefix ?? (0, [])) : nil)
     }
 
     func invalidateAgentSources(sessionID: UUID) throws {

@@ -28,9 +28,28 @@ extension ArchiveStore {
                                   spans: spans, updatedAt: header.updatedAt)
     }
 
-    func compactTranscriptVersion(_ document: TranscriptDocument) throws {
+    @discardableResult
+    func compactTranscriptVersion(
+        _ document: TranscriptDocument,
+        trustedPrefix: (fullSpanCount: Int, blockIDs: [Int64])? = nil
+    ) throws -> (fullSpanCount: Int, blockIDs: [Int64]) {
         var ids: [Int64] = []
-        for start in stride(from: 0, to: document.spans.count, by: 16) {
+        var scanStart = 0
+        if let prefix = trustedPrefix,
+           prefix.fullSpanCount > 0,
+           prefix.fullSpanCount % 16 == 0,
+           prefix.fullSpanCount <= document.spans.count,
+           prefix.blockIDs.count == prefix.fullSpanCount / 16 {
+            let existingCount = try database.rows(
+                "SELECT COUNT(*) FROM transcript_blocks WHERE session_id=?",
+                [.text(document.sessionID.uuidString)]
+            ).first?.integer(0) ?? 0
+            if existingCount >= Int64(prefix.blockIDs.count) {
+                ids = prefix.blockIDs
+                scanStart = prefix.fullSpanCount
+            }
+        }
+        for start in stride(from: scanStart, to: document.spans.count, by: 16) {
             let bytes = try WireJSON.encode(Array(document.spans[start..<min(start + 16, document.spans.count)]))
             let hash = ContentHash.sha256(bytes)
             let key: [SQLValue] = [.text(document.sessionID.uuidString), .text(hash)]
@@ -38,6 +57,10 @@ extension ArchiveStore {
                 ids.append(try row.requireInt(0))
             } else {
                 let compressed = try (bytes as NSData).compressed(using: .lzfse) as Data
+                let decompressed = try (compressed as NSData).decompressed(using: .lzfse) as Data
+                guard try WireJSON.encode(WireJSON.decode([TranscriptSpan].self, from: decompressed)) == bytes else {
+                    throw ArchiveError.invalidTranscript
+                }
                 try database.execute("INSERT INTO transcript_blocks(session_id,hash,document) VALUES(?,?,?)", key + [.blob(compressed)])
                 ids.append(try database.rows("SELECT last_insert_rowid()")[0].requireInt(0))
             }
@@ -45,8 +68,13 @@ extension ArchiveStore {
         let header = TranscriptDocument(sessionID: document.sessionID, version: document.version,
                                         generation: document.generation, spans: [], updatedAt: document.updatedAt)
         let data = Self.historyPrefix + (try WireJSON.encode(StoredTranscriptHistory(header: header, blocks: ids)))
-        // Verify the reconstruction before replacing the only complete historical snapshot.
-        guard try WireJSON.encode(decodeStoredTranscript(data)) == WireJSON.encode(document) else {
+        // Verify envelope header and block references before replacing the historical snapshot.
+        let verifiedHeader = try WireJSON.decode(StoredTranscriptHistory.self, from: Data(data.dropFirst(Self.historyPrefix.count)))
+        guard verifiedHeader.header.spans.isEmpty,
+              verifiedHeader.header.sessionID == document.sessionID,
+              verifiedHeader.header.version == document.version,
+              verifiedHeader.header.generation == document.generation,
+              verifiedHeader.blocks == ids else {
             throw ArchiveError.invalidTranscript
         }
         database.compactingTranscriptHistory = true
@@ -55,6 +83,8 @@ extension ArchiveStore {
             [.blob(data), .text(document.sessionID.uuidString), .integer(document.version)])
         try database.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('transcript_history_reclaim','1')")
         compactedBytesPendingVacuum = max(compactedBytesPendingVacuum, 1)
+        let fullBlocks = document.spans.count / 16
+        return (fullBlocks * 16, Array(ids.prefix(fullBlocks)))
     }
 
     /// One small transaction per version permits cancellation and restart without losing references.

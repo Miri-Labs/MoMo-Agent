@@ -420,9 +420,31 @@ extension ArchiveStore {
     public func commitWindowTranscript(ticket: TranscriptionWindowTicket, text: String, rawResult: Data,
                                        speakerParts: [SpeakerTranscriptPart]? = nil) throws -> TranscriptDocument {
         guard text.utf8.count <= 65_536, rawResult.count <= 8 * 1024 * 1024 else { throw ArchiveError.invalidTranscript }
-        let document = try database.transaction {
+        let preloadedPrevious = !database.isInTransaction
+            ? (try? currentTranscriptOrNil(sessionID: ticket.window.sessionID))
+            : nil
+        let preloadedBlockPrefix = !database.isInTransaction
+            ? transcriptBlockPrefixCache[ticket.window.sessionID]
+            : nil
+        let (document, storedMeta) = try database.transaction {
             try validateWindowTicket(ticket)
-            let previous = try currentTranscriptOrNil(sessionID: ticket.window.sessionID)
+            let previous: TranscriptDocument?
+            if let state = try database.rows(
+                "SELECT deleted,transcript_version,generation FROM sessions WHERE id=?",
+                [.text(ticket.window.sessionID.uuidString)]
+            ).first, state.integer(0) == 0,
+               let dbVersion = try? state.requireInt(1),
+               let dbGen = try? state.requireInt(2) {
+                if dbVersion == 0 {
+                    previous = nil
+                } else if let pre = preloadedPrevious, pre.version == dbVersion, pre.generation == dbGen {
+                    previous = pre
+                } else {
+                    previous = try currentTranscriptOrNil(sessionID: ticket.window.sessionID)
+                }
+            } else {
+                previous = try currentTranscriptOrNil(sessionID: ticket.window.sessionID)
+            }
             var spans = previous?.spans ?? []
             var appendedSpans: [TranscriptSpan] = []
             let hasContent = TranscriptText.hasContent(text)
@@ -493,16 +515,32 @@ extension ArchiveStore {
             let updated = TranscriptDocument(sessionID: ticket.window.sessionID, version: (previous?.version ?? 0) + 1,
                                              generation: ticket.expectedGeneration,
                                              spans: try orderedSpans(spans, sessionID: ticket.window.sessionID), updatedAt: Date())
-            try storeDocument(updated, invalidatesExistingSources: regrouped || restoredAnchors,
-                              appendingSpans: (regrouped || restoredAnchors) ? nil : appendedSpans,
-                              knownPrevious: .some(previous))
+            let trustedPrefix: (fullSpanCount: Int, blockIDs: [Int64])? = {
+                guard let prev = previous,
+                      let cached = preloadedBlockPrefix,
+                      cached.version == prev.version,
+                      cached.generation == prev.generation else { return nil }
+                return (cached.fullSpanCount, cached.blockIDs)
+            }()
+            let meta = try storeDocument(
+                updated,
+                invalidatesExistingSources: regrouped || restoredAnchors,
+                appendingSpans: (regrouped || restoredAnchors) ? nil : appendedSpans,
+                knownPrevious: .some(previous),
+                trustedPreviousBlockPrefix: trustedPrefix
+            )
             try database.execute("UPDATE analysis_windows SET state='complete',attempt_id=NULL,raw_result=? WHERE id=?",
                 [.blob(hasContent ? rawResult : TranscriptText.discardedPunctuation), .text(ticket.window.id)])
             try clearProcessingFailures(epochID: ticket.window.epochID, generation: ticket.expectedGeneration,
                 fingerprint: ticket.window.configurationFingerprint, stage: .transcription, frames: ticket.window.coreFrames)
             try updateCompletedChunks(epochID: ticket.window.epochID, configurationFingerprint: ticket.window.configurationFingerprint)
-            return updated
+            return (updated, meta)
         }
+        cacheCommittedWindowTranscript(
+            document,
+            encodedByteCount: storedMeta.encodedBytes,
+            previousCompactedPrefix: storedMeta.compactedPrefix
+        )
         for lease in ticket.leaseIDs { audioLeases.removeValue(forKey: lease) }
         return document
     }

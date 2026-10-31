@@ -24,6 +24,9 @@ public actor ArchiveStore {
     var transcriptReadRecency: [UUID] = []
     var transcriptReadCacheCost = 0
     var transcriptReadDataVersion: Int64 = -1
+    var transcriptBlockPrefixCache: [UUID: (version: Int64, generation: Int64, fullSpanCount: Int, blockIDs: [Int64])] = [:]
+    var speakerObservationEvidenceCache: [UUID: [UUID: (byteCount: Int, checksum: UInt64, evidence: SpeakerEvidence?)]] = [:]
+    var speakerObservationSessionOrder: [UUID] = []
     var lastSyncDiagnosticAt: Date?
     var insightCatalogCache: InsightCatalogCache?
     var hasPendingFileDeletions = false
@@ -489,6 +492,9 @@ public actor ArchiveStore {
             return deletion
         }
         verifiedRecordingFilesCache.removeValue(forKey: id)
+        transcriptBlockPrefixCache.removeValue(forKey: id)
+        speakerObservationEvidenceCache.removeValue(forKey: id)
+        speakerObservationSessionOrder.removeAll { $0 == id }
         hasPendingFileDeletions = true
         try cleanDeletedFiles()
         return deletion
