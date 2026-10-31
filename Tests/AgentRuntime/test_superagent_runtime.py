@@ -54,20 +54,20 @@ from superagent_gateway import SuperAgentGateway
 
 
 class RuntimeEngineConfigTests(unittest.TestCase):
-    def test_defaults_to_hermes_without_creating_files_and_persists_privately(self) -> None:
+    def test_defaults_to_superagent_without_creating_files_and_persists_privately(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             data = Path(tmp) / "Agent"
             momo_agent.initialize(data, 19810)
             self.assertFalse(engine_config_path(data).exists())
-            self.assertEqual(read_engine_config(data), {"engine": "hermes", "proactive_mode": "auto"})
+            self.assertEqual(read_engine_config(data), {"engine": "superagent", "proactive_mode": "auto"})
 
-            updated = write_engine_config(data, engine="superagent", proactive_mode="observe")
-            self.assertEqual(updated, {"engine": "superagent", "proactive_mode": "observe"})
+            updated = write_engine_config(data, engine="hermes", proactive_mode="observe")
+            self.assertEqual(updated, {"engine": "hermes", "proactive_mode": "observe"})
             self.assertEqual(engine_config_path(data).stat().st_mode & 0o777, 0o600)
-            self.assertEqual(read_engine_config(data), {"engine": "superagent", "proactive_mode": "observe"})
+            self.assertEqual(read_engine_config(data), {"engine": "hermes", "proactive_mode": "observe"})
 
-            reverted = write_engine_config(data, engine="hermes")
-            self.assertEqual(reverted, {"engine": "hermes", "proactive_mode": "observe"})
+            reverted = write_engine_config(data, engine="superagent")
+            self.assertEqual(reverted, {"engine": "superagent", "proactive_mode": "observe"})
 
             with self.assertRaises(ValueError):
                 write_engine_config(data, engine="invalid")
@@ -194,7 +194,9 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(chat_ctx["messages"][1]["id"], trig["id"])
 
                 runs_mid = await (await client.get("/momo/v1/conversation/runs", headers=auth)).json()
-                self.assertEqual(runs_mid["data"][0]["status"], "started")
+                self.assertEqual(runs_mid["data"][0]["status"], "running")
+                legacy_run = await (await client.get(f"/v1/runs/{run_id}", headers=auth)).json()
+                self.assertEqual(legacy_run["status"], "started")
 
                 ack_resp = await client.post(
                     "/momo/internal/superagent/outbound",
@@ -297,12 +299,72 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                 cancel_run_id = cancel_receipt["run_id"]
                 gateway._apply_dsh_projections(
                     {"health": {"runtime": {"state": "ready"}}},
-                    [{"id": "t-stop-1", "state": "ended", "ended": {"outcome": "stopped"}}],
+                    [
+                        {"id": "t-stop-1", "state": "ended", "ended": {"outcome": "stopped"}},
+                        {"id": "t-open-proactive", "title": "核对 12 席位年付报价", "state": "open", "stage": "working", "strength": "inferred", "actions": {"stop": True}},
+                        {"id": "t-queued-chat", "title": "检索上周架构纪要", "state": "open", "stage": "working", "action": "queued", "strength": "explicit", "actions": {"stop": True}},
+                    ],
                     [{"id": "d-stop-1", "kind": "accept", "ticketId": "t-stop-1", "triggerIds": [f"momo:user-{op_cancel}"]}],
                 )
                 runs_after_stop = await (await client.get("/momo/v1/conversation/runs", headers=auth)).json()
                 stopped_entry = next(r for r in runs_after_stop["data"] if r["run_id"] == cancel_run_id)
                 self.assertEqual(stopped_entry["status"], "cancelled")
+                bg_items = {w["id"]: w for w in runs_after_stop["background_work"]}
+                self.assertNotIn("superagent:t-stop-1", bg_items)
+                self.assertEqual(bg_items["superagent:t-open-proactive"]["state"], "running")
+                self.assertEqual(bg_items["superagent:t-open-proactive"]["native_state"], "proactive:working")
+                self.assertEqual(bg_items["superagent:t-queued-chat"]["state"], "queued")
+                cancel_bg = await (
+                    await client.post(
+                        "/momo/v1/conversation/work/superagent:t-open-proactive/cancel",
+                        headers=auth,
+                        json={"operation_id": str(uuid.uuid4()), "execution_generation": 1},
+                    )
+                ).json()
+                self.assertEqual(cancel_bg["state"], "cancelled")
+                runs_after_bg_cancel = await (await client.get("/momo/v1/conversation/runs", headers=auth)).json()
+                self.assertEqual([w["id"] for w in runs_after_bg_cancel["background_work"]], ["superagent:t-queued-chat"])
+
+                # 6. Streaming ASR revisions coalesce across settle window until settled or marked ended_at.
+                stream_sess = str(uuid.uuid4())
+                cstore = ContextStore(data / "context")
+                try:
+                    p1 = make_source_payload("计费模块核对", ["咱们看一下 billing.py 里的年付折扣系数"], session_id=stream_sess)
+                    cstore.sync_source(p1)
+                finally:
+                    cstore.close()
+
+                # Fresh streaming ping within settle window holds watermark (0 triggers emitted mid-thought).
+                held = await (
+                    await client.post("/momo/v1/proactive/ingest", headers=auth, json={"origin": "source_sync"})
+                ).json()
+                self.assertEqual(held["count"], 0)
+
+                # Second span arrives and marks ended_at -> flushes both spans together as a single coherent trigger!
+                cstore = ContextStore(data / "context")
+                try:
+                    p2 = make_source_payload(
+                        "计费模块核对",
+                        ["咱们看一下 billing.py 里的年付折扣系数", "定下来统一改成 0.80 并跑通单测"],
+                        session_id=stream_sess,
+                    )
+                    p2["version"] = 2
+                    p2["ended_at"] = 1761897630.0
+                    synced_stream = cstore.sync_source(p2)
+                finally:
+                    cstore.close()
+
+                flushed = await (
+                    await client.post("/momo/v1/proactive/ingest", headers=auth, json={"origin": "source_sync"})
+                ).json()
+                self.assertEqual(flushed["count"], 1)
+                polled3 = await (
+                    await client.get(f"/momo/internal/superagent/triggers?after={polled2['next_cursor']}", headers=bridge_headers)
+                ).json()
+                coalesced_events = [e for e in polled3["events"] if e.get("source_id") == synced_stream["source_id"]]
+                self.assertEqual(len(coalesced_events), 1)
+                self.assertIn("billing.py", coalesced_events[0]["text"])
+                self.assertIn("0.80", coalesced_events[0]["text"])
             finally:
                 await client.close()
 

@@ -186,6 +186,10 @@ describe('momoKind policy and loopback bridge', () => {
       ])
       expect(momoKind.repliesTo!(ingested[1]!)).toBe('momo:m1')
       expect(described.get('momo:transcript:s1')).toBe('晨会录音')
+      const envVars = momoKind.environment!.values({ deployment, config, trigger: ingested[0]! })
+      expect(envVars.DSH_SUPERAGENT_MOMO_CLI).toBe(join(stateDir, 'momo-cli'))
+      expect(envVars.DSH_SUPERAGENT_MOMO_WORKSPACE).toBeTruthy()
+      expect(envVars.DSH_SUPERAGENT_MOMO_SOURCE_ID).toBe('s1')
 
       const contextPage = await momoThreadContext.read(commands, ingested[0]!, 'thread', undefined, config)
       expect(contextPage.messages).toHaveLength(2)

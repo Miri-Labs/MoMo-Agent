@@ -26,6 +26,7 @@ class BundledRuntimeTests(unittest.TestCase):
             (root / "runtime-manifest.json").write_text(json.dumps(manifest))
             data = Path(tmp) / "data"
             runtime.initialize(data, 19000)
+            (data / "runtime/engine.json").write_text('{"engine":"hermes","proactive_mode":"auto"}\n')
             before = {str(p.relative_to(data)): p.read_bytes() for p in data.rglob("*") if p.is_file()}
             with patch.object(runtime, "REPOSITORY", root), patch.object(runtime, "fingerprint", return_value=fingerprint), \
                     patch.object(runtime, "prepare_access") as install, patch.object(runtime.subprocess, "run") as child:
@@ -180,6 +181,7 @@ class RuntimeTests(unittest.TestCase):
 
     def test_network_dependency_upgrade_preserves_agent_fingerprint_and_identity(self):
         connection = runtime.initialize(self.data, 8765)
+        (self.data / 'runtime/engine.json').write_text('{"engine":"hermes","proactive_mode":"auto"}\n')
         executable = self.data / 'runtime/venv/bin/python'; executable.parent.mkdir(parents=True); executable.touch()
         record = runtime.fingerprint(); record.pop('access_lock_sha256')
         marker = self.data / 'runtime/prepared.json'; marker.write_text(json.dumps(record))
@@ -194,6 +196,7 @@ class RuntimeTests(unittest.TestCase):
 
     def prepared_fixture(self):
         runtime.initialize(self.data, 8765)
+        (self.data / 'runtime/engine.json').write_text('{"engine":"hermes","proactive_mode":"auto"}\n')
         executable = self.data / 'runtime/venv/bin/python'
         executable.parent.mkdir(parents=True)
         executable.write_bytes(b'existing interpreter')

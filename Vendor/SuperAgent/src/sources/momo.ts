@@ -1,7 +1,7 @@
 /** MoMo Personal Agent source kind, loopback bridge poller, thread context reader, outbound channel, and Cordis plugin entry. */
 import type { Context } from '@deepseek-ai/cordis'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { threadKey, type OutboundMessage, type Trigger } from '../core/index.ts'
 import { KV } from '../kv.ts'
@@ -328,12 +328,14 @@ export const momoKind: SourceKind<MomoConfig> = {
     variables: [
       { key: 'DSH_SUPERAGENT_MOMO_BRIDGE', description: { zh: 'MoMo 本地桥接地址', en: 'Loopback URL of the local MoMo bridge' } },
       { key: 'DSH_SUPERAGENT_MOMO_CLI', description: { zh: '读取录音、日程与长期记忆的本地 CLI 路径', en: 'Path to the local momo-cli helper for recordings, phone context, and memories' } },
+      { key: 'DSH_SUPERAGENT_MOMO_WORKSPACE', description: { zh: 'MoMo 结果文件夹路径（用于落盘交付脚本、报告与产物）', en: 'Path to the MoMo workspace / results directory for user-facing artifacts and deliverables' } },
       { key: 'DSH_SUPERAGENT_MOMO_THREAD', description: { zh: '触发当前工单的 MoMo 线程 ID；非 MoMo 工单为空', en: 'MoMo thread ID that started this ticket; empty when the ticket did not start on MoMo' } },
       { key: 'DSH_SUPERAGENT_MOMO_SOURCE_ID', description: { zh: '触发当前工单的录音或上下文 source_id；无则为空', en: 'Recording or context source_id that triggered this ticket, or empty' } },
     ],
     values: ({ deployment, config, trigger }) => ({
       DSH_SUPERAGENT_MOMO_BRIDGE: config.bridgeUrl,
       DSH_SUPERAGENT_MOMO_CLI: join(deployment.stateDir, 'momo-cli'),
+      DSH_SUPERAGENT_MOMO_WORKSPACE: resolve(process.env.MOMO_DATA_DIR ? join(process.env.MOMO_DATA_DIR, 'workspace') : join(deployment.stateDir, '..', '..', 'workspace')),
       DSH_SUPERAGENT_MOMO_THREAD: trigger?.source === SOURCE ? (trigger.threads[0]?.id ?? '') : '',
       DSH_SUPERAGENT_MOMO_SOURCE_ID: trigger?.source === SOURCE ? String(trigger.meta.sourceId ?? '') : '',
     }),

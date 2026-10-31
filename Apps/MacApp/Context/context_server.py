@@ -146,12 +146,12 @@ class ContextService:
     def active_engine(self) -> str:
         path = self.data / "runtime/engine.json"
         if not path.is_file():
-            return "hermes"
+            return "superagent"
         try:
             value = json.loads(path.read_text(encoding="utf-8")).get("engine")
-            return "superagent" if value == "superagent" else "hermes"
+            return "hermes" if value == "hermes" else "superagent"
         except Exception:
-            return "hermes"
+            return "superagent"
 
     def notify_proactive_ingest(self) -> None:
         if self.active_engine() != "superagent":
@@ -159,7 +159,7 @@ class ContextService:
 
         def _ping() -> None:
             try:
-                self.request("/momo/v1/proactive/ingest", {})
+                self.request("/momo/v1/proactive/ingest", {"origin": "source_sync"})
             except Exception:
                 pass
 

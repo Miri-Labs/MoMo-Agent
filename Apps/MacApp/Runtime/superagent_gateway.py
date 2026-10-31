@@ -250,6 +250,10 @@ class BridgeStore:
 class SuperAgentGateway:
     """Serves MoMo's local HTTP/SSE protocol while supervising DeepSeek SuperAgent (dsh)."""
 
+    TRANSCRIPT_SETTLE_SECONDS = 5.0
+    TRANSCRIPT_PASSAGE_CHARS = 600
+    TRANSCRIPT_MAX_DEFER_SECONDS = 30.0
+
     def __init__(
         self,
         data: Path,
@@ -398,7 +402,11 @@ class SuperAgentGateway:
                 self.store.db.execute("INSERT INTO push_meta VALUES('baseline', '1')")
 
     def _start_dsh_process(self) -> dict:
-        dsh_bin = prepared_dsh_binary(self.data)
+        try:
+            dsh_bin = prepared_dsh_binary(self.data)
+        except ValueError:
+            prepare_superagent(self.data, self.base_env)
+            dsh_bin = prepared_dsh_binary(self.data)
         instance = prepare_dsh_instance(
             self.data,
             python_executable=self.python_executable,
@@ -597,13 +605,13 @@ class SuperAgentGateway:
     async def _watch_context_loop(self) -> None:
         while not self._stopping:
             with suppress(Exception):
-                created = self.ingest_context_sources()
+                created = self.ingest_context_sources(settle_seconds=self.TRANSCRIPT_SETTLE_SECONDS)
                 if created:
                     self._trigger_wakeup.set()
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(1.5)
 
-    def ingest_context_sources(self) -> list[str]:
-        """Scan ContextStore for newly arrived or extended voice transcripts and enqueue proactive triggers."""
+    def ingest_context_sources(self, *, settle_seconds: float = 0.0) -> list[str]:
+        """Scan ContextStore for newly arrived or extended voice transcripts and enqueue coherent proactive triggers."""
         mode = read_engine_config(self.data)["proactive_mode"]
         if mode == "off":
             return []
@@ -623,7 +631,7 @@ class SuperAgentGateway:
                 sid = src["id"]
                 rev = src["revision"]
                 watermark = self.bridge.db.execute(
-                    "SELECT revision, max_seq FROM source_watermarks WHERE source_id=?",
+                    "SELECT revision, max_seq, updated_at FROM source_watermarks WHERE source_id=?",
                     (sid,),
                 ).fetchone()
                 if watermark and watermark["revision"] == rev:
@@ -647,13 +655,34 @@ class SuperAgentGateway:
                     speaker = f"{span['speaker']}: " if span.get("speaker") else ""
                     transcript_lines.append(f"[{hhmmss}] {speaker}{span.get('text', '')}")
                 body = "\n".join(transcript_lines).strip()
+                if not body:
+                    with self.bridge.db:
+                        self.bridge.db.execute(
+                            "INSERT OR REPLACE INTO source_watermarks VALUES(?,?,?,?)",
+                            (sid, rev, max_seq, now),
+                        )
+                    continue
+                is_final = bool(
+                    payload.get("ended_at")
+                    or payload.get("final")
+                    or payload.get("is_final")
+                    or payload.get("completed")
+                )
+                if settle_seconds > 0 and not is_final:
+                    quiet_elapsed = max(0.0, now - float(src["updated"]))
+                    defer_elapsed = max(0.0, now - float(watermark["updated_at"])) if watermark else quiet_elapsed
+                    if (
+                        quiet_elapsed < settle_seconds
+                        and len(body) < self.TRANSCRIPT_PASSAGE_CHARS
+                        and defer_elapsed < self.TRANSCRIPT_MAX_DEFER_SECONDS
+                    ):
+                        # Hold watermark while streaming ASR spans are actively arriving mid-thought.
+                        continue
                 with self.bridge.db:
                     self.bridge.db.execute(
                         "INSERT OR REPLACE INTO source_watermarks VALUES(?,?,?,?)",
                         (sid, rev, max_seq, now),
                     )
-                if not body:
-                    continue
                 title = payload.get("title") or sid
                 event_id = f"transcript:{sid}:{rev[:24]}"
                 trigger_id = f"momo:{event_id}"
@@ -982,7 +1011,9 @@ class SuperAgentGateway:
         if request.can_read_body:
             with suppress(Exception):
                 payload = await request.json()
-        created = self.ingest_context_sources()
+        is_sync_ping = isinstance(payload, dict) and payload.get("origin") == "source_sync" and not payload.get("flush")
+        settle = self.TRANSCRIPT_SETTLE_SECONDS if is_sync_ping else 0.0
+        created = self.ingest_context_sources(settle_seconds=settle)
         if isinstance(payload, dict) and str(payload.get("text") or "").strip():
             kind = payload.get("kind") if payload.get("kind") in ("transcripts", "life_signals") else "life_signals"
             raw_sig = str(payload.get("id") or f"signal:{uuid.uuid4().hex[:12]}")
@@ -1074,6 +1105,8 @@ class SuperAgentGateway:
 
     def _project_chat_run(self, row: sqlite3.Row | dict) -> dict:
         item = dict(row)
+        raw_status = item["status"]
+        projected_status = "running" if raw_status == "started" else raw_status
         return {
             "run_id": item["run_id"],
             "session_id": item["session_id"],
@@ -1081,10 +1114,10 @@ class SuperAgentGateway:
             "work_id": item["work_id"],
             "title": item["title"],
             "origin_run_id": item["run_id"],
-            "status": item["status"],
+            "status": projected_status,
             "execution_generation": item["execution_generation"],
             "wait_reason": item["wait_reason"],
-            "cancellable": bool(item["cancellable"]) and item["status"] in ("queued", "started", "waiting_for_input"),
+            "cancellable": bool(item["cancellable"]) and raw_status in ("queued", "started", "waiting_for_input"),
             "cancel_requested": bool(item["cancel_requested"]),
             "delivery_state": item["delivery_state"],
             "pending_controls": [],
@@ -1095,14 +1128,36 @@ class SuperAgentGateway:
     def background_work(self) -> list[dict]:
         items: list[dict] = []
         for ticket in self._cached_tickets:
-            t_state = ticket.get("state") or ticket.get("outcome") or ""
-            if t_state in ("completed", "merged", "dropped", "stopped", "canceled"):
+            t_state = str(ticket.get("state") or "")
+            t_stage = str(ticket.get("stage") or "")
+            t_action = str(ticket.get("action") or "")
+            if (
+                ticket.get("ended")
+                or t_state in ("ended", "completed", "merged", "dropped", "stopped", "canceled", "cancelled")
+                or t_stage == "ended"
+            ):
                 continue
-            mapped_state = "running" if t_state in ("open", "working", "person", "review") else "queued"
             tid = str(ticket.get("id") or "")
             if not tid:
                 continue
             linked = self.bridge.db.execute("SELECT run_id, work_id FROM chat_runs WHERE ticket_id=?", (tid,)).fetchone()
+            strength = str(ticket.get("strength") or "")
+            is_proactive = strength == "inferred" or (not linked and strength != "explicit")
+            if is_proactive and t_stage == "person" and t_action in ("blocked", "failed") and not ticket.get("attention"):
+                continue
+            if t_stage == "working" and t_action == "queued":
+                mapped_state = "queued"
+                native_state = "proactive:queued" if is_proactive else "queued"
+            elif t_stage == "person" and t_action in ("blocked", "failed", "delivery"):
+                mapped_state = "running" if t_action == "delivery" else "failed"
+                native_state = f"person:{t_action}"
+            elif t_stage == "person" and t_action == "review":
+                mapped_state = "finalizing"
+                native_state = "proactive:delivering" if is_proactive else "delivering"
+            else:
+                mapped_state = "running"
+                native_state = f"proactive:{t_stage or 'working'}" if is_proactive else (t_stage or "working")
+            actions = ticket.get("actions") if isinstance(ticket.get("actions"), dict) else {}
             items.append(
                 {
                     "id": f"superagent:{tid}",
@@ -1112,12 +1167,16 @@ class SuperAgentGateway:
                     "title": str(ticket.get("title") or tid)[:80],
                     "execution_generation": 1,
                     "state": mapped_state,
-                    "native_state": t_state or "working",
-                    "report_state": "pending",
-                    "wait_reason": "clarify" if ticket.get("attention") else None,
+                    "native_state": native_state,
+                    "report_state": (
+                        "failed"
+                        if t_action == "delivery"
+                        else ("blocked" if t_action == "blocked" else "pending")
+                    ),
+                    "wait_reason": "clarify" if ticket.get("attention") or t_action == "answer" else None,
                     "blocking_work_id": None,
                     "report_retry_available": False,
-                    "cancellable": True,
+                    "cancellable": bool(actions.get("stop", True)),
                     "cancel_requested": False,
                     "cancel_state": None,
                 }
@@ -1438,10 +1497,14 @@ class SuperAgentGateway:
         if set(body) - {"operation_id", "execution_generation", "target_run_id"} or type(body.get("execution_generation")) is not int:
             raise ValueError("Invalid cancellation")
         str(uuid.UUID(body["operation_id"]))
-        ticket_id = ident.removeprefix("superagent:") if ident.startswith("superagent:") else None
+        ticket_id = None
+        if ident.startswith("superagent:"):
+            ticket_id = ident.removeprefix("superagent:")
+        elif ident.startswith("proactive-"):
+            ticket_id = ident.removeprefix("proactive-")
         run_row = self.bridge.db.execute(
-            "SELECT * FROM chat_runs WHERE work_id=? OR run_id=? ORDER BY seq DESC LIMIT 1",
-            (ident, body.get("target_run_id") or ""),
+            "SELECT * FROM chat_runs WHERE work_id=? OR run_id=? OR (ticket_id IS NOT NULL AND ticket_id=?) ORDER BY seq DESC LIMIT 1",
+            (ident, body.get("target_run_id") or "", ticket_id or ""),
         ).fetchone()
         if run_row and run_row["ticket_id"]:
             ticket_id = run_row["ticket_id"]
@@ -1454,6 +1517,13 @@ class SuperAgentGateway:
                     f"/orchestrator/api/tickets/{ticket_id}/stop",
                     {},
                 )
+                fetched = await asyncio.to_thread(self._fetch_dsh_snapshots)
+                self._apply_dsh_projections(*fetched)
+        elif ticket_id:
+            self._cached_tickets = [
+                {**t, "state": "ended", "ended": {"outcome": "stopped"}} if t.get("id") == ticket_id else t
+                for t in self._cached_tickets
+            ]
         if run_row:
             with self.bridge.db:
                 self.bridge.db.execute(

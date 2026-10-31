@@ -58,7 +58,7 @@ struct DesktopCompanionState: Equatable {
             let phase: Phase = run.cancelRequested == true ? .stopping
                 : run.pendingControls?.isEmpty == false || run.waitReason == "computer_human" ? .waiting
                 : run.status == "queued" || run.waitReason == "computer_task" ? .queued
-                : run.status == "running" ? .running : .attention
+                : ["running", "started"].contains(run.status) ? .running : .attention
             insert(id: run.workID ?? run.runID, title: run.title ?? String(localized: "正在处理你的消息"), phase: phase)
         }
         for child in work where child.isPending {

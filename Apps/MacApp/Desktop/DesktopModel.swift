@@ -24,19 +24,19 @@ struct AccessStatus: Decodable {
 }
 
 enum DesktopAgentEngine: String, CaseIterable, Identifiable {
-    case hermes
     case superagent
+    case hermes
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .hermes: "Hermes Agent"
         case .superagent: "DeepSeek SuperAgent"
+        case .hermes: "Hermes Agent"
         }
     }
     var summary: String {
         switch self {
+        case .superagent: String(localized: "默认引擎 · DeepSeek 开源编排器，自动评估同步录音并派发子智能体执行")
         case .hermes: String(localized: "原生主会话与后台委派引擎")
-        case .superagent: String(localized: "DeepSeek 开源编排器，自动分析同步录音与个人上下文并主动推进")
         }
     }
 }
@@ -106,7 +106,7 @@ final class DesktopModel {
     var providerURL = ""
     var modelName = ""
     var providerKey = ""
-    var runtimeEngine = DesktopAgentEngine.hermes
+    var runtimeEngine = DesktopAgentEngine.superagent
     var proactiveSnapshot: DesktopProactiveSnapshot?
     var taskStore: RemoteTaskStore?
     var memories: [ContextMemory] = []
@@ -164,7 +164,9 @@ final class DesktopModel {
                 try await reclaimStaleRuntimeProcesses()
                 try loadConnection()
                 let pythonPath = runtimePython.path
-                if hasBundledRuntime || !FileManager.default.isExecutableFile(atPath: pythonPath) {
+                let needsSuperAgentPrep = runtimeEngine == .superagent
+                    && !FileManager.default.fileExists(atPath: dataDirectory.appendingPathComponent("runtime/superagent/prepared.json").path)
+                if hasBundledRuntime || !FileManager.default.isExecutableFile(atPath: pythonPath) || needsSuperAgentPrep {
                     try await prepareRuntime()
                 }
                 do { try startAccess() } catch { try await prepareRuntime(); try startAccess() }
@@ -852,11 +854,13 @@ final class DesktopModel {
         let file = dataDirectory.appendingPathComponent("runtime/engine.json")
         guard let raw = try? Data(contentsOf: file),
               let parsed = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] else {
-            runtimeEngine = .hermes
+            runtimeEngine = .superagent
             return
         }
         if let eng = parsed["engine"] as? String, let resolved = DesktopAgentEngine(rawValue: eng) {
             runtimeEngine = resolved
+        } else {
+            runtimeEngine = .superagent
         }
     }
 

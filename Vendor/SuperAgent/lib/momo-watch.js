@@ -1,5 +1,5 @@
 import { n as health, r as sourceContext, t as KV, v as threadKey } from "./kv-BKzBGVb4.js";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { z } from "zod";
 import { readFile } from "node:fs/promises";
 //#region src/sources/momo.ts
@@ -555,6 +555,13 @@ const momoKind = {
 				}
 			},
 			{
+				key: "DSH_SUPERAGENT_MOMO_WORKSPACE",
+				description: {
+					zh: "MoMo 结果文件夹路径（用于落盘交付脚本、报告与产物）",
+					en: "Path to the MoMo workspace / results directory for user-facing artifacts and deliverables"
+				}
+			},
+			{
 				key: "DSH_SUPERAGENT_MOMO_THREAD",
 				description: {
 					zh: "触发当前工单的 MoMo 线程 ID；非 MoMo 工单为空",
@@ -572,6 +579,7 @@ const momoKind = {
 		values: ({ deployment, config, trigger }) => ({
 			DSH_SUPERAGENT_MOMO_BRIDGE: config.bridgeUrl,
 			DSH_SUPERAGENT_MOMO_CLI: join(deployment.stateDir, "momo-cli"),
+			DSH_SUPERAGENT_MOMO_WORKSPACE: resolve(process.env.MOMO_DATA_DIR ? join(process.env.MOMO_DATA_DIR, "workspace") : join(deployment.stateDir, "..", "..", "workspace")),
 			DSH_SUPERAGENT_MOMO_THREAD: trigger?.source === "momo" ? trigger.threads[0]?.id ?? "" : "",
 			DSH_SUPERAGENT_MOMO_SOURCE_ID: trigger?.source === "momo" ? String(trigger.meta.sourceId ?? "") : ""
 		})

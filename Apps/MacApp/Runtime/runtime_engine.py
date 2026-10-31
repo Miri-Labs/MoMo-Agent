@@ -7,7 +7,7 @@ from pathlib import Path
 
 ENGINES = ("hermes", "superagent")
 PROACTIVE_MODES = ("auto", "observe", "off")
-DEFAULT_ENGINE = "hermes"
+DEFAULT_ENGINE = "superagent"
 DEFAULT_PROACTIVE_MODE = "auto"
 
 
