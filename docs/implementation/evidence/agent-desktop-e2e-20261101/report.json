@@ -1,0 +1,28 @@
+{
+  "kind": "local-native-gui-e2e",
+  "model": "none",
+  "checks": [
+    "Hermes ComputerGate → MCP stdio → Unix IPC → signed native FFI snapshot",
+    "Actual AppKit text replacement, checkbox and save; UI + independent fixture state agree",
+    "Human takeover waits; return refuses old action; fresh snapshot permits exactly one action",
+    "SuperAgent TypeScript tool → authenticated HTTP gateway → live ticket-read HTTP fixture → native GUI; saved exactly once",
+    "SuperAgent bridge refuses missing credentials, human takeover and ended ticket"
+  ],
+  "status": "passed",
+  "application": {
+    "bundle_id": "com.momoagent.mac.dev",
+    "version": "0.0.1",
+    "executable_sha256": "3ae36fdb715e873b460d046a2036dfe4f9580d048939966bfcd50e1171e9c19c"
+  },
+  "runner_commit": "30b49f039a22b4f5108cff265e286f894b25fca3",
+  "permissions": {
+    "screen": true,
+    "input": true
+  },
+  "fixture_state": {
+    "checked": true,
+    "saves": 3,
+    "text": "SuperAgent 原生电脑工具 E2E 通过"
+  },
+  "ticket_authority": "Isolated test ticket/assignment; no LLM or external service"
+}
