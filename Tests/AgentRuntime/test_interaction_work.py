@@ -276,4 +276,33 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('cancelled',await asyncio.wait_for(pending,2));lease.release('phone',human['session'])
         self.assertEqual(1,len(calls))
 
+    async def test_agent_desktop_refs_wait_reobserve_and_cancel(self):
+        accepted=self.store.accept(str(uuid.uuid4()),'control task','scope')
+        work=self.store.db.execute('SELECT * FROM works WHERE id=?',(accepted['work_id'],)).fetchone();sid=work['native_root']
+        self.admit(sid,accepted['run_id']);claimed=claim_session_input(self.db,epoch=self.epoch,session_id=sid)
+        product=PersonalAgent.__new__(PersonalAgent);product.store=self.store;product.data=self.data;product.loop=asyncio.get_running_loop()
+        authority=SimpleNamespace(db=self.db,logical_owner=lambda value:value)
+        product.authority=lambda:authority
+        agent=SimpleNamespace(_interrupt_requested=False)
+        product.bind_computer_gate(agent,(authority,sid,claimed['generation']))
+        lease=DesktopLease(self.data);human=lease.acquire('phone',str(uuid.uuid4()));calls=[]
+        execute=lambda args:calls.append(args) or 'ok'
+        pending=asyncio.create_task(asyncio.to_thread(agent._product_computer_gate,'mcp__momo_computer__computer_action',{},'click-1',execute))
+        await asyncio.sleep(.2);self.assertFalse(pending.done());self.assertEqual([],calls)
+        lease.release('phone',human['session'])
+        result=await asyncio.wait_for(pending,2);self.assertIn('desktop_changed',result);self.assertEqual([],calls)
+        # A screenshot confirms only the exact current epoch before the next input.
+        def screenshot(args):
+            with lease.locked():
+                current=lease.read();current['observed_epoch']=args['momo_control']['epoch'];lease.write(current)
+            return 'image'
+        await asyncio.to_thread(agent._product_computer_gate,'mcp__momo_computer__computer_snapshot',{},'shot',screenshot)
+        await asyncio.to_thread(agent._product_computer_gate,'mcp__momo_computer__computer_action',{},'click-2',execute)
+        self.assertEqual(1,len(calls))
+        human=lease.acquire('phone',str(uuid.uuid4()))
+        pending=asyncio.create_task(asyncio.to_thread(agent._product_computer_gate,'mcp__momo_computer__computer_action',{},'click-3',execute))
+        await asyncio.sleep(.15);agent._interrupt_requested=True
+        self.assertIn('cancelled',await asyncio.wait_for(pending,2));lease.release('phone',human['session'])
+        self.assertEqual(1,len(calls))
+
 if __name__=='__main__':unittest.main()

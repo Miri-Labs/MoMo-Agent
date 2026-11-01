@@ -55,6 +55,7 @@
 		21948208EA0608217B6F1DB1 /* PlaybackPCMReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEDF461E79AB3941C2618DB8 /* PlaybackPCMReader.swift */; };
 		228312BAD974998C731712AA /* ChatRendererView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7842E2DCC6348BA6F7CE499D /* ChatRendererView.swift */; };
 		234C9EA5C723DFFCCF835DDD /* PhoneSpeechModelSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59F168E04C142BBDE1F0412B /* PhoneSpeechModelSettings.swift */; };
+		24FC81F957815916537BFC90 /* AgentDesktopDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 322FE2C94C3FEDFC361A7254 /* AgentDesktopDriver.swift */; };
 		25662632574A03E89E5F7EFF /* ControlInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4F0CD832C0F480FDDB640BE /* ControlInbox.swift */; };
 		25B1E10AA34770B4129F3C5F /* TimelineModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 036F26E1E1B622C98210E99B /* TimelineModel.swift */; };
 		25F8D7E68A25DDFCB6578CE8 /* NetworkSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE7184AF74701BC6CF9D64F /* NetworkSettingsTests.swift */; };
@@ -525,8 +526,10 @@
 		2EFA9B6C55AC7D5D08FF37D7 /* MoMoAgentWatchWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MoMoAgentWatchWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3075E0FF873CDCA2F6D54D30 /* PhoneBackgroundTasks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneBackgroundTasks.swift; sourceTree = "<group>"; };
 		31B5DFBA90206AC9E35BCE83 /* sherpa-onnx-APACHE-2.0.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "sherpa-onnx-APACHE-2.0.txt"; sourceTree = "<group>"; };
+		322FE2C94C3FEDFC361A7254 /* AgentDesktopDriver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopDriver.swift; sourceTree = "<group>"; };
 		32FD907E9CAC46F1F28652CE /* WebSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSettingsView.swift; sourceTree = "<group>"; };
 		3381ED36A496B9625B2046B7 /* WatchComposition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchComposition.swift; sourceTree = "<group>"; };
+		34552E8C91D67D82C7B0C528 /* AgentDesktop-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "AgentDesktop-Bridging-Header.h"; sourceTree = "<group>"; };
 		3544289A83F15E332E42EE54 /* PhoneTimelineJourneyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneTimelineJourneyTests.swift; sourceTree = "<group>"; };
 		35D18A94D4172F890038F6CA /* MoMoAgentIntegrationTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MoMoAgentIntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		35F5CFA88027304605679E1A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -839,6 +842,8 @@
 		1454B8A901CB71A582959A8F /* Desktop */ = {
 			isa = PBXGroup;
 			children = (
+				34552E8C91D67D82C7B0C528 /* AgentDesktop-Bridging-Header.h */,
+				322FE2C94C3FEDFC361A7254 /* AgentDesktopDriver.swift */,
 				26F7141C1586E92C11D68FD0 /* Assets.xcassets */,
 				9BB43E74E5348DF5339AFA00 /* DesktopCompanionController.swift */,
 				C3EC6738F46C706323D53A34 /* DesktopCompanionMenuBar.swift */,
@@ -1718,6 +1723,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 8121209F228F61938E36000D /* Build configuration list for PBXNativeTarget "MoMoAgentMac" */;
 			buildPhases = (
+				EB3A301A89F2DA8FAB0E89AE /* Bundle agent-desktop */,
 				3BE49835EAD8038E4551FBB1 /* Sources */,
 				A0AE4AD45BE19D4DCBFCB135 /* Resources */,
 				EFC3C9858D4B30427F42C1F4 /* CopyFiles */,
@@ -1917,6 +1923,25 @@
 			shellPath = /bin/bash;
 			shellScript = "set -euo pipefail\n: \"${TARGET_BUILD_DIR:?}\" \"${UNLOCALIZED_RESOURCES_FOLDER_PATH:?}\" \"${SRCROOT:?}\"\nfixture_output=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/TestFixtures\"\nrm -rf \"${fixture_output}\"\nif [[ \"${CONFIGURATION}\" == \"Debug\" ]]; then\n  mkdir -p \"${fixture_output}\"\n  cp \"${SRCROOT}/Models/TestFixtures/zh.wav\" \"${fixture_output}/zh.wav\"\n  cp \"${SRCROOT}/Models/TestFixtures/fixture.json\" \"${fixture_output}/fixture.json\"\nfi\n";
 		};
+		EB3A301A89F2DA8FAB0E89AE /* Bundle agent-desktop */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle agent-desktop";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"\nuv run --no-project --python 3.14 python \"$SRCROOT/Scripts/bundle-agent-desktop.py\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -2071,6 +2096,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				24FC81F957815916537BFC90 /* AgentDesktopDriver.swift in Sources */,
 				7A4EA733C6124F55EA512890 /* AttachmentPresentation.swift in Sources */,
 				405849E51054EBA3961A03CF /* BrandPalette.swift in Sources */,
 				465FF4CD2001C163A94C8B77 /* ChatReadingPosition.swift in Sources */,
@@ -2470,6 +2496,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "$(MOMO_MAC_BUNDLE_ID)";
 				PRODUCT_NAME = "$(MOMO_APP_DISPLAY_NAME)";
 				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "Apps/MacApp/Desktop/AgentDesktop-Bridging-Header.h";
 			};
 			name = Beta;
 		};
@@ -2637,6 +2664,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "$(MOMO_MAC_BUNDLE_ID)";
 				PRODUCT_NAME = "$(MOMO_APP_DISPLAY_NAME)";
 				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "Apps/MacApp/Desktop/AgentDesktop-Bridging-Header.h";
 			};
 			name = Release;
 		};
@@ -2777,6 +2805,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "$(MOMO_MAC_BUNDLE_ID)";
 				PRODUCT_NAME = "$(MOMO_APP_DISPLAY_NAME)";
 				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "Apps/MacApp/Desktop/AgentDesktop-Bridging-Header.h";
 			};
 			name = Debug;
 		};

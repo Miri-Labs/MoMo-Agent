@@ -1,5 +1,6 @@
 /** Executor Session tools for reading ticket context, acknowledging requests, managing threads, handing back out-of-scope triggers, and reporting status. */
 import { z } from 'zod'
+import { momoComputerTools } from './momo-computer.ts'
 import { liveTicket, type EngineForExecutor, type Ticket } from '../../core/index.ts'
 import { IM_WORDS } from '../../infra/text.ts'
 import { claimPull, readPull } from '../../sources/github-pull.ts'
@@ -23,6 +24,7 @@ export interface ExecutorToolsHost {
 export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
   const ticketId = ticket.id
   return [
+    ...momoComputerTools(host, ticketId),
     readTool('Read one page of a resource of this ticket that the resource parameter lists. Follow next_offset, and next_resource where a page names one.',
       true, (resource, offset, limit, signal) => readResource(host.resources, resource, offset, limit, ticketId, signal)),
     tool({

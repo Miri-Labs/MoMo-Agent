@@ -79,6 +79,7 @@ MOMO_PROMPT_CONFIG = {
         "momo": (
             "# MoMo Personal Context, Workspace & Memory Skill\n\n"
             "Worker 环境已注入 `$DSH_SUPERAGENT_MOMO_CLI` 与结果目录 `$DSH_SUPERAGENT_MOMO_WORKSPACE`（与 Hermes 引擎完全共享同一套录音库、手机快照、会话历史、长期记忆与结果文件夹）：\n\n"
+            "- 操作 Mac：内置 computer_snapshot / computer_action 使用 agent-desktop 读取真实控件并点击、填表、按键。优先专用服务工具；没有时读取目标应用的快照，使用完整控件 ref，操作后重新读取验证；用户接管、权限缺失或任务停止时不能绕过。\n"
             "- 列出同步录音：`\"$DSH_SUPERAGENT_MOMO_CLI\" recordings --limit 25`\n"
             "- 读取完整录音转写：`\"$DSH_SUPERAGENT_MOMO_CLI\" recording <source_id> --offset 0 --limit 12000`（跟进 `next_offset` 直至 `null`）\n"
             "- 搜索全部录音内容：`\"$DSH_SUPERAGENT_MOMO_CLI\" search \"关键词\" --limit 20`\n"

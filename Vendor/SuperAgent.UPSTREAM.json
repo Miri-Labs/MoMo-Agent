@@ -23,6 +23,11 @@
       "file": "src/sources/momo.ts, src/kv.ts, src/client/locales.ts, cordis.patch.yml, tsdown.config.ts, package.json, docs/007-architecture.md",
       "reason": "Add native dsh-superagent-momo Source & Channel plugin connecting MoMo Agent's loopback gateway (chat, voice transcripts, and phone life signals) into dsh-superagent's Policy Gate, MasterAssessor proactive evaluation, Worker execution environment, and Outbox delivery.",
       "validation": "tests/momo-source.spec.ts, tests/bundle-patch.spec.ts, tests/docs.spec.ts, tests/locales.spec.ts, and live end-to-end MoMo Agent proactive transcript evaluation."
+    },
+    {
+      "file": "src/app/tools/momo-computer.ts, src/app/tools/executor.ts",
+      "reason": "Expose built-in agent-desktop snapshot and ref-action tools to MoMo worker sessions through the authenticated native desktop bridge; bind calls to live ticket assignments and preserve human takeover.",
+      "validation": "tests/momo-computer.spec.ts and Tests/AgentRuntime/test_agent_desktop.py"
     }
   ]
 }

@@ -11,6 +11,7 @@ final class DesktopControlHost {
     private let directory: URL
     private let key: String
     private let inputDriver = DesktopInputDriver()
+    private let accessibilityDriver = AgentDesktopDriver()
     private let screenStream = DesktopScreenStream()
     private let videoHost: DesktopVideoHost
     private var inputOwner: String?
@@ -134,6 +135,16 @@ final class DesktopControlHost {
         if op == "video-offer" {
             guard request["actor"] as? String == "human", CGPreflightScreenCaptureAccess() else { throw DesktopError.message("请先在 Mac 开启屏幕录制权限。") }
             return try await videoHost.offer(request)
+        }
+        if op == "accessibility-snapshot" || op == "accessibility-action" {
+            guard request["actor"] as? String == "agent", AXIsProcessTrusted() else {
+                throw DesktopError.message("请先在 Mac 的「屏幕与控制权限」中开启辅助功能。")
+            }
+            let payload = try JSONSerialization.data(withJSONObject: request)
+            let driver = accessibilityDriver, directory = directory
+            let response = try await Task.detached { try driver.perform(payload, directory: directory) }.value
+            guard try admit(request) == epoch else { throw DesktopError.message("电脑控制权已变化，请重新读取界面。") }
+            return ["result": try JSONSerialization.jsonObject(with: response)]
         }
         if op == "frame" {
             guard CGPreflightScreenCaptureAccess() else { throw DesktopError.message("Mac 的屏幕录制权限尚未生效，请在 Mac 的「屏幕与控制权限」中检查。") }
