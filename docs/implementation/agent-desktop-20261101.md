@@ -33,4 +33,4 @@ Xcode Mac target 的 `Bundle agent-desktop` 阶段通过 `Scripts/bundle-agent-d
 - Python：新增组件/双引擎控制权用例；原桌面工具、交互工作、SuperAgent gateway 回归。
 - SuperAgent：TypeScript typecheck、工具注册/权限绑定/取消/原始错误保留测试、bundle 编译通过。
 - `tests/tools.spec.ts` 的 “saves a settings block by name” 在改动前基线也失败（仅管理面板可修改 Source account 配置），与本接入无关；没有改动这条策略。
-- 尚未以已安装并获辅助功能授权的 MoMo App 完成真实应用填表/点击验收；不把 mock、错误路径 smoke 或编译成功当作真实桌面任务成功。
+- 后续已使用签名 MoMo App 与独立 AppKit 窗口完成两引擎真实 GUI 填表、点击及接管验收，见 [本地 E2E 记录](agent-desktop-e2e-20261101.md)。没有覆盖已安装版本或调用外部模型。
