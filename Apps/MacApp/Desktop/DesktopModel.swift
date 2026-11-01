@@ -9,7 +9,8 @@ struct AccessStatus: Decodable {
     struct Tunnel: Decodable {
         let state: String; let endpoint: String?; let mode: String; let provider: String?; let error: String?
         let setupCommand: String?
-        enum CodingKeys: String, CodingKey { case state, endpoint, mode, provider, error; case setupCommand = "setup_command" }
+        let configuredEndpoint: String?
+        enum CodingKeys: String, CodingKey { case state, endpoint, mode, provider, error; case setupCommand = "setup_command"; case configuredEndpoint = "configured_endpoint" }
     }
     struct Device: Decodable, Identifiable { let id: String; let name: String; let code: String; let state: String; let expires: Double; let lastSeen: Double?; let endpoint: String?
         enum CodingKeys: String, CodingKey { case id, name, code, state, expires, endpoint; case lastSeen = "last_seen" }

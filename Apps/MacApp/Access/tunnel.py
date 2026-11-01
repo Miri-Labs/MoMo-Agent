@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from pairing_store import endpoint, is_tailnet_endpoint
 from tailscale_access import TailscaleTunnel
+from relay_access import RelayTunnel
 
 
 class EmbeddedTailscale:
@@ -48,23 +49,32 @@ class TunnelLifecycle:
         self.file = self.directory / 'provider.json'
         saved = json.loads(self.file.read_text()) if self.file.exists() else {}
         mode = saved.get('provider', 'embedded')
-        self.provider = ExistingHTTPSTunnel(saved['endpoint']) if mode == 'external' else TailscaleTunnel(port) if mode == 'tailscale' else EmbeddedTailscale()
-        self.enabled = saved.get('enabled') is True and mode in ('tailscale', 'external', 'embedded')
+        self.provider = self.make_provider(mode, saved.get('endpoint'), saved.get('registration_key', ''))
+        self.enabled = saved.get('enabled') is True and mode in ('tailscale', 'external', 'embedded', 'relay')
         if self.enabled and isinstance(self.provider, EmbeddedTailscale): self.provider.state['state'] = 'needs_setup'
-        if mode not in ('tailscale', 'external', 'embedded'):
+        if mode not in ('tailscale', 'external', 'embedded', 'relay'):
             # Keep the notice across restarts until the user explicitly selects or starts a supported provider.
             self.provider.state['error'] = '原连接方式已停用。请选择 Tailscale 或自建服务器并重新扫码；已有任务和资料保留。'
         self.lock = asyncio.Lock(); self.unhealthy_since = None; self.retry_at = 0
 
+    def make_provider(self, mode, url=None, registration_key=''):
+        if mode == 'relay': return RelayTunnel(self.directory, self.port, url, registration_key)
+        if mode == 'external': return ExistingHTTPSTunnel(url)
+        if mode == 'tailscale': return TailscaleTunnel(self.port)
+        return EmbeddedTailscale()
+
     def persist(self):
         value = {'provider': self.provider.state['mode'], 'endpoint': getattr(self.provider, 'url', None), 'enabled': self.enabled}
+        if isinstance(self.provider, RelayTunnel): value['registration_key'] = self.provider.registration_key
         temporary = self.file.with_suffix('.tmp')
         temporary.touch(mode=0o600, exist_ok=True); temporary.chmod(0o600)
         temporary.write_text(json.dumps(value)); temporary.replace(self.file)
 
-    async def configure(self, mode, url=None):
-        if mode not in ('external', 'tailscale', 'embedded'): raise ValueError('Unsupported connection provider')
-        provider = ExistingHTTPSTunnel(url) if mode == 'external' else TailscaleTunnel(self.port) if mode == 'tailscale' else EmbeddedTailscale()
+    async def configure(self, mode, url=None, registration_key=''):
+        if mode not in ('external', 'tailscale', 'embedded', 'relay'): raise ValueError('Unsupported connection provider')
+        if mode == 'relay' and isinstance(self.provider, RelayTunnel) and self.provider.url == url and not registration_key:
+            registration_key = self.provider.registration_key
+        provider = self.make_provider(mode, url, registration_key)
         async with self.lock:
             await self.provider.stop(); self.provider = provider
             self.enabled = False; self.persist(); self.reset_retry()
@@ -85,6 +95,9 @@ class TunnelLifecycle:
     async def tick(self, probe):
         async with self.lock:
             if not self.enabled or self.now() < self.retry_at: return
+            if isinstance(self.provider, RelayTunnel):
+                if self.provider.state['state'] == 'stopped': await self.provider.start()
+                return
             if isinstance(self.provider, EmbeddedTailscale):
                 if self.now() - self.provider.reported_at > 15:
                     self.provider.state.update(state='needs_setup', endpoint=None, error='请在 App 中连接 Tailscale。')

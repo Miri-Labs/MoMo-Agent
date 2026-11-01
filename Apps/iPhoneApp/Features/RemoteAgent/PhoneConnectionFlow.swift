@@ -19,6 +19,8 @@ struct PhoneConnectionFlow: View {
                 Spacer()
                 Menu {
                     Button("连接帮助") { showingHelp = true }
+                    Button("加密中继") { login.cancel(); networkPrepared = true }
+                        .accessibilityIdentifier("onboarding.relay")
                     Button("自建服务器") { login.cancel(); networkPrepared = true }
                         .accessibilityIdentifier("onboarding.otherNetwork")
                     if agent.tailnet.state == "Running" {

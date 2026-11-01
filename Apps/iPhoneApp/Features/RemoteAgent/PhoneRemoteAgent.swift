@@ -239,6 +239,10 @@ final class PhoneRemoteAgent {
     }
 
     private func transport(for connection: AgentConnection) throws -> (any AgentTransport)? {
+        if connection.network == "relay" {
+            guard let code = connection.relayCode else { throw ConnectionError.unsupported }
+            return try RelayTransport(endpoint: connection.baseURL, code: code)
+        }
         guard connection.network == nil || connection.network == "tailscale" else { throw ConnectionError.unsupported }
         return connection.network == "tailscale" ? EmbeddedTailnetTransport(network: tailnet, endpoint: connection.baseURL) : nil
     }

@@ -7,6 +7,9 @@ struct DesktopConnectionSetup: View {
     var inSettings = false
     var onSaved: () -> Void = {}
     @State private var customAddress = false
+    @State private var relaySelected = false
+    @State private var relayAddress = ""
+    @State private var relayRegistrationKey = ""
     @State private var showingHelp = false
     @State private var showingTailnetHelp = false
     @State private var checkingConnection = false
@@ -19,7 +22,9 @@ struct DesktopConnectionSetup: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if inSettings {
+            if relaySelected {
+                relaySettings
+            } else if inSettings {
                 settings
             } else if !customAddress {
                 VStack(alignment: .leading, spacing: 16) {
@@ -29,6 +34,8 @@ struct DesktopConnectionSetup: View {
                         Spacer()
                         Menu {
                             Button("连接帮助") { showingTailnetHelp = true }
+                            Button("加密中继") { relaySelected = true }
+                                .accessibilityIdentifier("connection.relay")
                             Button("自建服务器") { customAddress = true }
                                 .accessibilityIdentifier("connection.stableGuide")
                             if model.tailnet.state == "Running" {
@@ -45,7 +52,7 @@ struct DesktopConnectionSetup: View {
                         Text("手机与 Mac 登录同一 Tailscale 账号")
                             .font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
-                    if model.tailnet.state != "Running" {
+                    if model.tailnet.state != "Running" || model.status?.tunnel.mode != "embedded" {
                         Button {
                             connectTailnet()
                         } label: {
@@ -114,6 +121,10 @@ struct DesktopConnectionSetup: View {
         }
         .onDisappear { connectionTask?.cancel(); login.cancel() }
         .onAppear {
+            if model.status?.tunnel.mode == "relay" {
+                relaySelected = true
+                relayAddress = model.status?.tunnel.configuredEndpoint ?? model.status?.tunnel.endpoint ?? ""
+            }
             if model.status?.tunnel.mode == "external" {
                 customAddress = true
                 if model.endpoint.isEmpty { model.endpoint = model.status?.tunnel.endpoint ?? "" }
@@ -155,12 +166,12 @@ struct DesktopConnectionSetup: View {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Tailscale 私网").font(.system(size: 14, weight: .medium))
-                        if model.tailnet.state != "Running" {
+                        if model.tailnet.state != "Running" || model.status?.tunnel.mode != "embedded" {
                             Text("手机与 Mac 登录同一账号").font(.system(size: 12)).foregroundStyle(.secondary)
                         }
                     }
                     Spacer(minLength: 16)
-                    if model.tailnet.state != "Running" {
+                    if model.tailnet.state != "Running" || model.status?.tunnel.mode != "embedded" {
                         Button("登录", action: connectTailnet)
                             .buttonStyle(DesktopSetupButton(minimumHeight: 36, fontSize: 13, isLoading: loginLoading)).frame(width: 112)
                             .disabled(loginLoading).accessibilityIdentifier("connection.checkTailscale")
@@ -180,6 +191,13 @@ struct DesktopConnectionSetup: View {
                         Button("重试") { Task { await model.refresh() } }.buttonStyle(.plain).font(.system(size: 13))
                     }.desktopSettingsRow()
                 }
+                Button { relaySelected = true } label: {
+                    HStack {
+                        Text("加密中继").font(.system(size: 14, weight: .medium))
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(.secondary).accessibilityHidden(true)
+                    }.desktopSettingsRow().contentShape(Rectangle())
+                }.buttonStyle(.plain).disabled(loginLoading).accessibilityIdentifier("connection.relay")
                 Button { customAddress = true } label: {
                     HStack {
                         Text("自建服务器").font(.system(size: 14, weight: .medium))
@@ -196,6 +214,52 @@ struct DesktopConnectionSetup: View {
                 }.buttonStyle(.plain).popover(isPresented: $showingTailnetHelp) { TailnetHelp() }
             }
         }
+    }
+
+    private var relayChecking: Bool {
+        model.busy != nil || checkingConnection && model.status?.tunnel.mode == "relay" &&
+            model.status?.tunnel.state == "starting"
+    }
+
+    private var relaySettings: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("加密中继").font(.system(size: 14, weight: .medium))
+            Text("支持 Alma Relay 与 relay-kit，手机无需登录 Tailscale。")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+            TextField("https://relay.example.com", text: $relayAddress)
+                .textFieldStyle(.roundedBorder).accessibilityLabel("中继 HTTPS 地址")
+                .accessibilityIdentifier("connection.relayEndpoint")
+            SecureField("注册密钥（可选）", text: $relayRegistrationKey)
+                .textFieldStyle(.roundedBorder).accessibilityIdentifier("connection.relayKey")
+            HStack {
+                Button("返回 Tailscale") { relaySelected = false; checkingConnection = false }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                Spacer()
+                Button(relayChecking ? "正在连接" : "保存并连接") {
+                    connectionTask = Task {
+                        checkingConnection = true
+                        guard await model.control("tunnel/configure", body: [
+                            "provider": "relay", "endpoint": relayAddress.trimmingCharacters(in: .whitespacesAndNewlines),
+                            "registration_key": relayRegistrationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                        ]) else { checkingConnection = false; return }
+                        guard !Task.isCancelled else { return }
+                        relayRegistrationKey = ""
+                        if !(await model.control("tunnel/start")) { checkingConnection = false }
+                    }
+                }.buttonStyle(DesktopSetupButton(minimumHeight: 36, fontSize: 13, isLoading: relayChecking))
+                    .frame(width: 112).disabled(relayAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || relayChecking)
+                    .accessibilityIdentifier("connection.useRelay")
+            }.font(.system(size: 13))
+            if model.status?.tunnel.mode == "relay", let error = model.status?.tunnel.error {
+                Text(error).font(.system(size: 12)).foregroundStyle(MoMoPalette.failure)
+            }
+            Text("切换后重新扫码。单次请求上限 512 KB；较大附件请使用 Tailscale。")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+            HStack {
+                Link("部署 Alma Relay", destination: URL(string: "https://github.com/yetone/alma-relay")!)
+                Link("部署 relay-kit", destination: URL(string: "https://github.com/nanami-0713/relay-kit")!)
+            }.font(.system(size: 12))
+        }.disabled(model.busy != nil)
     }
 
     private var serverHelp: some View {

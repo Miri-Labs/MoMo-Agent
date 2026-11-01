@@ -11,6 +11,7 @@ import time
 from aiohttp import ClientError, ClientSession, ClientTimeout, web
 from pairing_store import PairingStore, is_tailnet_endpoint
 from tunnel import TunnelLifecycle, EmbeddedTailscale
+from relay_access import RelayTunnel
 from rtc_transport import RTCTransport, permitted_route
 from desktop_control import DesktopBridge, DesktopFrameFeed
 
@@ -50,7 +51,8 @@ class AccessService:
     def public_connection(self, url):
         return {**{k: self.connection[k] for k in ('workspace_id', 'assistant_id', 'instance_id')},
                 'base_url': url, 'data_url': url + '/context', 'event_transport': 'sse',
-                **({'network': 'tailscale'} if isinstance(self.provider, EmbeddedTailscale) and is_tailnet_endpoint(url) else {})}
+                **({'network': 'tailscale'} if isinstance(self.provider, EmbeddedTailscale) and is_tailnet_endpoint(url) else
+                   {'network': 'relay', 'relay_code': self.provider.code} if isinstance(self.provider, RelayTunnel) and url == self.provider.url else {})}
 
     async def upstream(self, method, path, body=None, context=False, headers=None, streaming=False):
         url = self.connection['data_url' if context else 'base_url'] + path
@@ -183,7 +185,7 @@ class AccessService:
         if path == '/tunnel/start':
             await self.tunnel.start()
         elif path == '/tunnel/configure':
-            await self.tunnel.configure(body.get('provider', 'embedded'), body.get('endpoint'))
+            await self.tunnel.configure(body.get('provider', 'embedded'), body.get('endpoint'), body.get('registration_key', ''))
             self.store.invalidate_invitations()
             self.invitation = None; self.paired_device_id = None
         elif path == '/tunnel/stop':
@@ -204,7 +206,7 @@ class AccessService:
             self.paired_device_id = None
             self.invitation['payload'] = json.dumps({'version': 1, 'application': 'MoMoAgent', 'invitation_id': self.invitation['id'], 'endpoint': url, 'instance_id': self.connection['instance_id'], 'expires': self.invitation['expires']}, separators=(',', ':'))
             if 'network' in self.public_connection(url):
-                payload = json.loads(self.invitation['payload']); payload['network'] = 'tailscale'
+                payload = json.loads(self.invitation['payload']); payload.update({key: value for key, value in self.public_connection(url).items() if key in ('network', 'relay_code')})
                 self.invitation['payload'] = json.dumps(payload, separators=(',', ':'))
         elif path == '/pair/decide':
             self.store.decide(body['id'], body['allow'] is True)
