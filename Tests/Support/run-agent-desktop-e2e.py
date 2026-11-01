@@ -69,6 +69,23 @@ def prepare(args):
     (output/'fixture-state.json').unlink(missing_ok=True)
 
 
+async def stop_access_child(data):
+    record_path = data/'runtime/desktop-access_server.pid'
+    if not record_path.exists(): return
+    record=json.loads(record_path.read_text())
+    require(record['repository'] == str(ROOT.resolve()), 'Access child belongs to another checkout')
+    pid=int(record['pid'])
+    def owned():
+        command=subprocess.run(['ps','-p',str(pid),'-o','args='],capture_output=True,text=True).stdout.strip()
+        return str(ROOT/'Apps/MacApp/Access/access_server.py') in command and command.endswith('--data-dir '+str(data))
+    if not owned(): return
+    os.kill(pid,signal.SIGTERM)
+    for _ in range(50):
+        if not owned(): return
+        await asyncio.sleep(.1)
+    if owned(): os.kill(pid,signal.SIGKILL)
+
+
 async def run(args):
     from mcp import ClientSession
     from mcp.client.stdio import StdioServerParameters, stdio_client
@@ -89,8 +106,8 @@ async def run(args):
     logs = []
     info=plistlib.loads((args.app/'Contents/Info.plist').read_bytes())
     report['application']={'bundle_id':info['CFBundleIdentifier'],'version':info['CFBundleShortVersionString'],
-        'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
         'executable_sha256':hashlib.sha256((args.app/'Contents/MacOS/MoMoAgentMac').read_bytes()).hexdigest()}
+    report['runner_commit']=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     try:
         for label, command in [
             ('host', [str(args.app / 'Contents/MacOS/MoMoAgentMac'), '--data-dir', str(data), '--repository', str(ROOT)]),
@@ -235,6 +252,7 @@ async def run(args):
                 os.killpg(process.pid, signal.SIGTERM)
                 try: process.wait(timeout=5)
                 except subprocess.TimeoutExpired: os.killpg(process.pid, signal.SIGKILL); process.wait()
+        await stop_access_child(data)
         for log in logs: log.close()
         (output/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
         print(json.dumps(report,ensure_ascii=False,indent=2))

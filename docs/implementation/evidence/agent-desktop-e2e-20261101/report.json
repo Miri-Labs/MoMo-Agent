@@ -12,9 +12,9 @@
   "application": {
     "bundle_id": "com.momoagent.mac.dev",
     "version": "0.0.1",
-    "source_commit": "822377e233a61d690d411a0873fdbc7c12ff587b",
     "executable_sha256": "3ae36fdb715e873b460d046a2036dfe4f9580d048939966bfcd50e1171e9c19c"
   },
+  "runner_commit": "30b49f039a22b4f5108cff265e286f894b25fca3",
   "permissions": {
     "screen": true,
     "input": true
