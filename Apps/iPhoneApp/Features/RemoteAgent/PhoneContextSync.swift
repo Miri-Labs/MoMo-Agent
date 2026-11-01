@@ -168,7 +168,8 @@ final class PhoneContextSync {
     }
     private func synchronizeArchive() async throws {
         let status = try await client.contextStatus()
-        guard status.workspaceId == state.connection.workspaceID, status.sourceSync, status.memoryWriter == "Hermes" else { throw SyncError.identity }
+        guard status.workspaceId == state.connection.workspaceID, status.sourceSync,
+              ["Hermes", "SuperAgent"].contains(status.memoryWriter) else { throw SyncError.identity }
         memoryPending = status.memoryPending ?? 0; memoryNeedsReview = status.memoryNeedsReview ?? 0
         var uploadError: Error?
         do { try await uploadSources() }

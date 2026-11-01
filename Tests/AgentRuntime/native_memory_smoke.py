@@ -40,7 +40,7 @@ def main(data):
                   generation=0,version=1,deleted=False,recorded_at=time.time(),
                   spans=[dict(id=str(uuid.uuid4()),text=text,recorded_at=time.time())],
                   text_sha256=hashlib.sha256(text.encode()).hexdigest())
-    check('Memory owner is Hermes',call('/v1/status',context=True)['memory_writer']=='Hermes')
+    check('Memory owner is Hermes or SuperAgent',call('/v1/status',context=True)['memory_writer'] in ('Hermes', 'SuperAgent'))
     receipt = call('/v1/sources',source,context=True)
     check('Source retry returns the original receipt',call('/v1/sources',source,context=True)==receipt)
     page = until(lambda: (p if (p:=call('/v1/memories',context=True))['items'] else None))

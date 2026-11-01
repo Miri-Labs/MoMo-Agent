@@ -103,7 +103,8 @@ final class PhoneRemoteAgent {
             guard let dataURL = proposed.dataURL else { throw ConnectionError.unsupported }
             let contextClient = try AgentClient(baseURL: dataURL, credential: key, assistantID: proposed.assistantID, transport: route)
             let status = try await contextClient.contextStatus()
-            guard status.workspaceId == proposed.workspaceID, status.sourceSync, status.memoryWriter == "Hermes" else { throw ConnectionError.identityChanged }
+            guard status.workspaceId == proposed.workspaceID, status.sourceSync,
+                  ["Hermes", "SuperAgent"].contains(status.memoryWriter) else { throw ConnectionError.identityChanged }
             let restored = try makeStore(proposed, key: key)
             let previousKey = try? Self.readKey(proposed.instanceID)
             try Self.writeKey(key, id: proposed.instanceID)

@@ -77,23 +77,42 @@ struct PhoneRemoteView: View {
         return Button {
             showingTasks = true
         } label: {
-            headerSymbol("checklist")
-                .overlay(alignment: .topTrailing) {
-                    if let badge {
-                        Text(badge)
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(MoMoPalette.canvas)
-                            .padding(.horizontal, 5)
-                            .frame(minWidth: 16, minHeight: 16)
-                            .background(MoMoPalette.ink, in: Capsule())
-                            .offset(x: 3, y: -2)
-                            .accessibilityHidden(true)
-                    }
-                }
+            if let badge {
+                tasksBadgeCapsule(badge)
+            } else {
+                headerSymbol("checklist")
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(activeTasksSnapshot.count > 0 ? LocalizedStringKey("正在进行的任务，\(activeTasksSnapshot.count) 项") : LocalizedStringKey("正在进行的任务"))
         .accessibilityIdentifier("remote.tasks")
+    }
+
+    @ViewBuilder private func tasksBadgeCapsule(_ badge: String) -> some View {
+        let content = HStack(spacing: 6) {
+            Image(systemName: "checklist")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(MoMoPalette.ink)
+            Text(badge)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(MoMoPalette.canvas)
+                .padding(.horizontal, 6)
+                .frame(minWidth: 18, minHeight: 18)
+                .background(MoMoPalette.ink, in: Capsule())
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 44)
+        .contentShape(Capsule())
+        if reduceTransparency {
+            content
+                .background(MoMoPalette.paper, in: Capsule())
+                .overlay { Capsule().strokeBorder(MoMoPalette.line, lineWidth: 0.5) }
+        } else if #available(iOS 26, *) {
+            content.glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            content.background(.regularMaterial, in: Capsule())
+                .overlay { Capsule().strokeBorder(MoMoPalette.line, lineWidth: 0.5) }
+        }
     }
 
     private func headerButton(_ title: String, icon: String, id: String, action: @escaping () -> Void) -> some View {
