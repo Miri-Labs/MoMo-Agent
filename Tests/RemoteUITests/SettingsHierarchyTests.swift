@@ -114,6 +114,7 @@ final class MemoryReadingTests: XCTestCase {
         app.launchEnvironment["MOMO_UI_TEST_RUN_ID"] = "5F12C378-A804-4E20-A46D-213FE37495AB"
         app.launchEnvironment["MOMO_UI_TEST_TIMELINE_FIXTURE"] = "chat"
         app.launchEnvironment["MOMO_UI_TEST_AVATAR_UNAVAILABLE"] = "1"
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
         defer { app.terminate() }
         if app.buttons["welcome.skip"].waitForExistence(timeout: 5) { app.buttons["welcome.skip"].tap() }
@@ -121,6 +122,8 @@ final class MemoryReadingTests: XCTestCase {
         if app.buttons["onboarding.finish"].waitForExistence(timeout: 10) { app.buttons["onboarding.finish"].tap() }
         XCTAssertTrue(app.buttons["remote.settings"].waitForExistence(timeout: 30))
         app.buttons["remote.settings"].tap()
+        XCTAssertTrue(app.buttons["settings.mac"].waitForExistence(timeout: 10))
+        capture(app, "settings-overview")
         app.buttons["settings.memories"].tap()
         let row = app.buttons["remote.memoryRow.memory-layout-1"]
         XCTAssertTrue(row.waitForExistence(timeout: 15), app.debugDescription)

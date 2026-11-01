@@ -1,0 +1,6 @@
+Test Case '-[MoMoAgentRemoteUITests.MemoryReadingTests testPreviewFullTextAndReversibleActions]' started.
+Test Case '-[MoMoAgentRemoteUITests.MemoryReadingTests testPreviewFullTextAndReversibleActions]' passed (62.085 seconds).
+	 Executed 1 test, with 0 failures (0 unexpected) in 62.085 (62.106) seconds
+	 Executed 1 test, with 0 failures (0 unexpected) in 62.085 (62.117) seconds
+	 Executed 1 test, with 0 failures (0 unexpected) in 62.085 (62.132) seconds
+** TEST EXECUTE SUCCEEDED **
