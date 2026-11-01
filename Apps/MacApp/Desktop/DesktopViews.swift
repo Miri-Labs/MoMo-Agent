@@ -183,7 +183,7 @@ struct DesktopDevices: View {
             Button { showingMethod = true } label: {
                 HStack {
                     Text("连接方式").fontWeight(.medium); Spacer()
-                    Text(["tailscale", "embedded"].contains(model.status?.tunnel.mode ?? "") ? "Tailscale 私网" : model.status?.tunnel.mode == "external" ? "自建服务器" : "待选择").foregroundStyle(.secondary)
+                    Text(["tailscale", "embedded"].contains(model.status?.tunnel.mode ?? "") ? "Tailscale 私网" : model.status?.tunnel.mode == "external" ? "自建服务器" : model.status?.tunnel.mode == "relay" ? "加密中继" : "待选择").foregroundStyle(.secondary)
                     Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(.secondary).accessibilityHidden(true)
                 }.desktopSettingsRow().contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(model.busy != nil).accessibilityIdentifier("desktop.connectionMethod")

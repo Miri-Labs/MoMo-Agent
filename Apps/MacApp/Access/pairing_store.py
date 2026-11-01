@@ -19,6 +19,9 @@ def is_tailnet_endpoint(value):
 
 
 def endpoint(value, network=None):
+    if network == 'relay':
+        if not isinstance(value, str) or not value.startswith('https://'): raise ValueError('Relay requires HTTPS')
+        return endpoint(value)
     if network is not None:
         if network != 'tailscale' or not is_tailnet_endpoint(value): raise ValueError('Invalid embedded endpoint')
         return value.rstrip('/')

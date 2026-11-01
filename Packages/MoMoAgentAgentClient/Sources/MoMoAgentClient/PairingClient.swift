@@ -8,12 +8,14 @@ public struct PairingInvitation: Codable, Sendable {
     public let instanceID: UUID
     public let expires: Double
     public let network: String?
+    public let relayCode: String?
     enum CodingKeys: String, CodingKey {
         case version, application, endpoint, expires, network
+        case relayCode = "relay_code"
         case invitationID = "invitation_id", instanceID = "instance_id"
     }
     public func canReuseCredential(from connection: AgentConnection) -> Bool {
-        instanceID == connection.instanceID && endpoint == connection.baseURL && network == connection.network
+        instanceID == connection.instanceID && endpoint == connection.baseURL && network == connection.network && relayCode == connection.relayCode
     }
     public static func parse(_ text: String, now: Date = Date()) throws -> Self {
         guard text.utf8.count <= 4096 else { throw PairingError.invalidCode }
@@ -24,9 +26,12 @@ public struct PairingInvitation: Codable, Sendable {
               value.expires <= now.timeIntervalSince1970 + 600,
               url.path.isEmpty || url.path == "/" else { throw PairingError.invalidCode }
         if value.network == "tailscale" {
-            guard TailnetEndpoint.isOrigin(url) else { throw PairingError.invalidCode }
+            guard value.relayCode == nil, TailnetEndpoint.isOrigin(url) else { throw PairingError.invalidCode }
+        } else if value.network == "relay" {
+            guard let code = value.relayCode else { throw PairingError.invalidCode }
+            _ = try RelayTransport(endpoint: url, code: code)
         } else {
-            guard value.network == nil else { throw PairingError.invalidCode }
+            guard value.network == nil, value.relayCode == nil else { throw PairingError.invalidCode }
             _ = try AgentClient(baseURL: url, credential: "validation", assistantID: value.instanceID)
         }
         return value
@@ -65,14 +70,20 @@ public struct PairingClient: Sendable {
             guard connection.instanceID == invitation.instanceID,
                   connection.baseURL == invitation.endpoint,
                   connection.network == invitation.network,
+                  connection.relayCode == invitation.relayCode,
                   connection.dataURL == invitation.endpoint.appendingPathComponent("context") else { throw PairingError.identityChanged }
         }
         return value
     }
     private func send(path: String, body: [String: String]? = nil) async throws -> PairingReceipt {
         if invitation.network != nil {
-            guard invitation.network == "tailscale", TailnetEndpoint.isOrigin(invitation.endpoint),
-                  transport?.requiresExclusiveRouting == true else { throw PairingError.invalidCode }
+            guard transport?.requiresExclusiveRouting == true else { throw PairingError.invalidCode }
+            if invitation.network == "relay" {
+                guard let code = invitation.relayCode else { throw PairingError.invalidCode }
+                _ = try RelayTransport(endpoint: invitation.endpoint, code: code)
+            } else {
+                guard invitation.network == "tailscale", TailnetEndpoint.isOrigin(invitation.endpoint) else { throw PairingError.invalidCode }
+            }
         }
         var request = URLRequest(url: invitation.endpoint.appendingPathComponent(path))
         request.timeoutInterval = 12

@@ -12,7 +12,7 @@ let package = Package(
     ],
     dependencies: [.package(url: "https://github.com/stasel/WebRTC.git", exact: "155.0.0")],
     targets: [
-        .target(name: "MoMoAgentClient"),
+        .target(name: "MoMoAgentClient", resources: [.copy("Resources/RelayKit-LICENSE")]),
         .target(name: "MoMoAgentRTC", dependencies: ["MoMoAgentClient", .product(name: "WebRTC", package: "WebRTC")]),
         .executableTarget(name: "MoMoAgentProbe", dependencies: ["MoMoAgentClient"]),
         .executableTarget(name: "MoMoRTCProbe", dependencies: ["MoMoAgentClient", "MoMoAgentRTC"]),

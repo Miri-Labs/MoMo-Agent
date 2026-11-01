@@ -302,6 +302,9 @@ struct PhoneMacConnectionView: View {
                             if let network = agent.network {
                                 PhoneSettingsLinkRow(title: "传输方式", value: network.routeLabel, disclosure: false)
                                     .accessibilityIdentifier("remote.networkRoute")
+                            } else if agent.connection?.network == "relay" {
+                                PhoneSettingsLinkRow(title: "加密中继", value: "端到端加密", disclosure: false)
+                                    .accessibilityIdentifier("remote.networkRoute")
                             } else if agent.connection?.network == "tailscale" {
                                 PhoneSettingsLinkRow(title: "Tailscale", value: agent.tailnet.state == "Running" ? "已连接私网" : "等待连接", disclosure: false)
                                     .accessibilityIdentifier("remote.networkRoute")

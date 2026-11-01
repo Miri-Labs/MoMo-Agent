@@ -14,6 +14,12 @@ from aiohttp.test_utils import TestClient, TestServer
 
 class EmbeddedTests(unittest.IsolatedAsyncioTestCase):
     async def test_private_invitation_approval_and_receipt_keep_network_and_identity(self):
+        await self.approval('tailscale')
+
+    async def test_relay_invitation_approval_binds_encryption_code_and_identity(self):
+        await self.approval('relay')
+
+    async def approval(self, network):
         with tempfile.TemporaryDirectory() as directory:
             data = Path(directory)
             identity = dict(workspace_id='workspace', assistant_id='assistant', instance_id='instance')
@@ -22,8 +28,13 @@ class EmbeddedTests(unittest.IsolatedAsyncioTestCase):
             service = AccessService(data)
             self.addCleanup(service.store.db.close)
             service.status = AsyncMock(return_value={})
-            await service.tunnel.start()
-            service.provider.report({'state': 'connected', 'endpoint': 'http://100.64.0.1:8767'}, 1)
+            if network == 'relay':
+                await service.tunnel.configure('relay', 'https://relay.example')
+                service.tunnel.enabled = True
+                service.provider.state.update(state='connected', endpoint='https://relay.example')
+            else:
+                await service.tunnel.start()
+                service.provider.report({'state': 'connected', 'endpoint': 'http://100.64.0.1:8767'}, 1)
             control = web.Application(middlewares=[errors]); control.router.add_route('*', '/{tail:.*}', service.control)
             public = web.Application(middlewares=[errors]); public.router.add_route('*', '/{tail:.*}', service.public)
             admin = {'Authorization': 'Bearer fixture-admin'}
@@ -32,8 +43,8 @@ class EmbeddedTests(unittest.IsolatedAsyncioTestCase):
                 response = await local.post('/pair/invite', json={}, headers=admin)
                 self.assertEqual(200, response.status)
                 qr = json.loads(service.invitation['payload'])
-                self.assertEqual('tailscale', qr['network'])
-                self.assertEqual('http://100.64.0.1:8767', qr['endpoint'])
+                self.assertEqual(network, qr['network'])
+                self.assertEqual(service.provider.state['endpoint'], qr['endpoint'])
                 response = await remote.get('/v1/capabilities', headers=phone)
                 self.assertEqual(401, response.status)
                 response = await remote.post('/pair/requests', json={'invitation_id': qr['invitation_id'], 'name': 'Fixture'}, headers=phone)
@@ -44,11 +55,13 @@ class EmbeddedTests(unittest.IsolatedAsyncioTestCase):
                 response = await remote.get('/pair/requests/' + request['id'], headers=phone)
                 receipt = await response.json()
                 self.assertEqual('approved', receipt['state'])
-                self.assertEqual('tailscale', receipt['connection']['network'])
+                self.assertEqual(network, receipt['connection']['network'])
+                if network == 'relay': self.assertEqual(qr['relay_code'], receipt['connection']['relay_code'])
                 self.assertEqual(qr['endpoint'], receipt['connection']['base_url'])
                 self.assertEqual(qr['endpoint'] + '/context', receipt['connection']['data_url'])
                 self.assertEqual(identity, {key: receipt['connection'][key] for key in identity})
                 self.assertNotIn('network', service.public_connection('http://127.0.0.1:18887'))
+                self.assertNotIn('relay_code', service.public_connection('http://127.0.0.1:18887'))
 
     async def test_default_does_not_connect_or_probe_and_report_lease_expires(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -127,7 +127,7 @@ class AccessBoundaryTests(unittest.IsolatedAsyncioTestCase):
                     async with client.post('/v1/runs', json={'input': 'keep working', 'session_id': run['session_id']}, headers=headers) as response:
                         self.assertEqual(200, response.status)
                         self.assertEqual(run, await response.json())
-                    for mode, url in [('external', 'https://second.example'), ('tailscale', None)]:
+                    for mode, url in [('external', 'https://second.example'), ('tailscale', None), ('relay', 'https://relay.example')]:
                         await service.tunnel.configure(mode, url)
                         service.tunnel.enabled = True
                         self.assertTrue(service.store.authorized(token))

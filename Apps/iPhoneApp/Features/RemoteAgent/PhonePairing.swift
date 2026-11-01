@@ -28,7 +28,7 @@ final class PhonePairing {
             if pending?.invitation.invitationID != invitation.invitationID {
                 let previous = pending.flatMap { value in
                     value.invitation.instanceID == invitation.instanceID && value.invitation.endpoint == invitation.endpoint &&
-                    value.invitation.network == invitation.network ? value.credential : nil
+                    value.invitation.network == invitation.network && value.invitation.relayCode == invitation.relayCode ? value.credential : nil
                 }
                 let client = PairingClient(invitation: invitation, credential: previous)
                 let value = Pending(invitation: invitation, credential: client.credential)
@@ -41,8 +41,13 @@ final class PhonePairing {
     func resume(agent: PhoneRemoteAgent, name: String) async {
         guard var value = pending else { return }
         failure = nil
-        let transport = value.invitation.network == "tailscale" ? EmbeddedTailnetTransport(network: agent.tailnet, endpoint: value.invitation.endpoint) : nil
         do {
+            let transport: (any AgentTransport)?
+            if value.invitation.network == "relay", let code = value.invitation.relayCode {
+                transport = try RelayTransport(endpoint: value.invitation.endpoint, code: code)
+            } else {
+                transport = value.invitation.network == "tailscale" ? EmbeddedTailnetTransport(network: agent.tailnet, endpoint: value.invitation.endpoint) : nil
+            }
             if value.requestID == nil, let credential = try agent.pairingCredential(for: value.invitation) {
                 value = Pending(invitation: value.invitation, credential: credential)
                 try save(value); pending = value

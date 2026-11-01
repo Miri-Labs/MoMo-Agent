@@ -1,2 +1,4 @@
 # Network adapter only; no model-provider SDK or Agent implementation.
 aiortc==1.15.0
+# relay-e2e/v1 uses the already bundled cryptography runtime directly.
+cryptography==50.0.1
