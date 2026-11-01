@@ -63,10 +63,17 @@ targets:
         EXECUTABLE_NAME: MoMoAgentMac
         ASSETCATALOG_COMPILER_APPICON_NAME: MacAppIcon
         ENABLE_APP_SANDBOX: NO
+        SWIFT_OBJC_BRIDGING_HEADER: Apps/MacApp/Desktop/AgentDesktop-Bridging-Header.h
         CODE_SIGN_IDENTITY: "$(MOMO_MAC_CODE_SIGN_IDENTITY)"
       configs:
         Beta:
           CODE_SIGN_IDENTITY: Apple Development
+    preBuildScripts:
+      - name: Bundle agent-desktop
+        script: |
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+          uv run --no-project --python 3.14 python "$SRCROOT/Scripts/bundle-agent-desktop.py"
+        basedOnDependencyAnalysis: false
     info:
       path: Apps/MacApp/Desktop/Info.plist
       properties:

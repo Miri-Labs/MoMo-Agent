@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'Access'))
 from desktop_control import DesktopLease
 
-COMPUTER_TOOLS={'mcp__momo_computer__computer_screenshot','mcp__momo_computer__computer_input'}
+COMPUTER_TOOLS={'mcp__momo_computer__computer_screenshot','mcp__momo_computer__computer_input','mcp__momo_computer__computer_snapshot','mcp__momo_computer__computer_action'}
 
 
 class ComputerGate:
@@ -79,8 +79,8 @@ class ComputerGate:
                     time.sleep(.1)
                 else:return json.dumps({'error':'cancelled'})
                 if agent._interrupt_requested:return json.dumps({'error':'cancelled'})
-                if name.endswith('computer_input') and observed!=epoch:
-                    return json.dumps({'error':'desktop_changed','message':'Read computer_screenshot before deciding the next action. No old input was replayed.'})
+                if name.endswith(('computer_input','computer_action')) and observed!=epoch:
+                    return json.dumps({'error':'desktop_changed','message':'Read computer_snapshot or computer_screenshot before deciding the next action. No old input was replayed.'})
                 return execute({**args,'momo_control':{**token,'epoch':epoch}})
             finally:call(call_id,True)
         agent._product_computer_gate=gate

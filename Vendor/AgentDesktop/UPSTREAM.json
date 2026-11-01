@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/vercel-labs/agent-desktop",
+  "version": "v1.0.2",
+  "abi_major": 6,
+  "license": "Apache-2.0",
+  "archives": {
+    "arm64": {"target": "aarch64-apple-darwin", "sha256": "495a76b557650af4191d3d23bdf1313489bd42eb622c52b7bf0c1ea6de7e69b4"},
+    "x86_64": {"target": "x86_64-apple-darwin", "sha256": "182c984d03d919580a554f3d449adf21ae8a473bdee511cb70729b8c03a8cfb0"}
+  }
+}

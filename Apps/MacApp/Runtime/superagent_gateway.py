@@ -32,6 +32,7 @@ if str(REPOSITORY / "Vendor/HermesAgent") not in sys.path:
     sys.path.insert(0, str(REPOSITORY / "Vendor/HermesAgent"))
 
 from conversation_store import ProductStore
+from superagent_computer import SuperAgentComputer
 from push_notifications import PushOutbox, load_provider
 from runtime_engine import PROACTIVE_MODES, read_engine_config, write_engine_config
 from superagent_runtime import (
@@ -298,6 +299,7 @@ class SuperAgentGateway:
         self._cached_decisions: list[dict] = []
         self._cached_state: dict = {}
         self._stopping = False
+        self.computer = SuperAgentComputer(self.data, self._computer_ticket)
 
     def create_app(self) -> web.Application:
         app = web.Application(client_max_size=8 * 1024 * 1024)
@@ -314,6 +316,7 @@ class SuperAgentGateway:
         app.router.add_get("/momo/internal/superagent/triggers", self.handle_internal_triggers)
         app.router.add_get("/momo/internal/superagent/context", self.handle_internal_context)
         app.router.add_post("/momo/internal/superagent/outbound", self.handle_internal_outbound)
+        app.router.add_post("/momo/internal/superagent/computer", self.handle_internal_computer)
         app.on_startup.append(self.on_startup)
         app.on_cleanup.append(self.on_cleanup)
         return app
@@ -420,6 +423,7 @@ class SuperAgentGateway:
         env.update(instance["llm_env"])
         env["DSH_HOME"] = str(instance["dsh_home"])
         env["MOMO_DATA_DIR"] = str(self.data)
+        env["MOMO_COMPUTER_BRIDGE"] = f"http://127.0.0.1:{self.connection['port']}"
         log_path = self.data / "superagent/dsh.log"
         log_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
@@ -1566,6 +1570,25 @@ class SuperAgentGateway:
                     )
             self.publish_live_state()
         return web.json_response({"events": items, "next_cursor": cursor})
+
+    async def _computer_ticket(self, ticket_id: str) -> dict:
+        from urllib.parse import quote
+        return await asyncio.to_thread(dsh_api_request, self.dsh_port, "GET", "/orchestrator/api/tickets/" + quote(ticket_id, safe=""))
+
+    async def handle_internal_computer(self, request: web.Request) -> web.Response:
+        if refused := self._check_bridge_secret(request):
+            return refused
+        try:
+            payload = await request.read()
+            if len(payload) > 16384: raise ValueError("Computer request is too large")
+            body = json.loads(payload)
+            if not isinstance(body, dict) or not isinstance(body.get("args"), dict): raise ValueError("Invalid computer request")
+            result = await self.computer.call(body.get("ticket_id"), body.get("assignment_id"), body.get("op"), body["args"])
+            return web.json_response(result)
+        except PermissionError as error:
+            return web.json_response({"error": str(error)}, status=409)
+        except (ValueError, RuntimeError, OSError, TimeoutError) as error:
+            return web.json_response({"error": str(error)}, status=400)
 
     async def handle_internal_context(self, request: web.Request) -> web.Response:
         if refused := self._check_bridge_secret(request):

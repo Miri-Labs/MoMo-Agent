@@ -11,3 +11,4 @@ Models/
 __pycache__/
 *.pyc
 node_modules/
+Vendor/AgentDesktop/Cache/
