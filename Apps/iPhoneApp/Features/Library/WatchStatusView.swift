@@ -94,8 +94,8 @@ struct WatchStatusView: View {
             Button { showingDetails = true } label: {
                 ClientRecordingStatusCard(title: status.compactTitle,
                     subtitle: status.indicator == .red ? status.subtitle : observation.map {
-                        "上次报告 \($0.snapshot.sampledAt.formatted(.dateTime.hour().minute()))"
-                    } ?? "点按查看手表状态", indicator: status.indicatorColor)
+                        String(localized: "上次报告 \($0.snapshot.sampledAt.formatted(.dateTime.hour().minute()))")
+                    } ?? String(localized: "点按查看手表状态"), indicator: status.indicatorColor)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(status.compactTitle)

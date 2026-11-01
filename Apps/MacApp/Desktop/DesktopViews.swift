@@ -535,8 +535,8 @@ struct DesktopSettings: View {
                             Text("引擎状态").font(.system(size: 14))
                             Spacer()
                             Text(snap.dshReady
-                                 ? "已就绪 · 进行中 \(snap.activeTickets) · 已分析 \(snap.totalDecisions)"
-                                 : "正在启动 DeepSeek SuperAgent…")
+                                 ? String(localized: "已就绪 · 进行中 \(snap.activeTickets) · 已分析 \(snap.totalDecisions)")
+                                 : String(localized: "正在启动 DeepSeek SuperAgent…"))
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                         }.desktopSettingsRow()
                     }
