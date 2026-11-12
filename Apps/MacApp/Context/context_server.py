@@ -11,6 +11,7 @@ import urllib.parse
 import urllib.request
 from context_store import ContextStore, Conflict
 from momo_memory import MoMoMemory
+import daily_review
 import transcript_ingestion
 import memory_review
 import recording_summary
@@ -244,32 +245,13 @@ class ContextService:
                     self.advance_review(store, manual)
                     continue
                 if time.monotonic() >= self.next_dispatch and memory_review.chat_idle(self.data, now):
-                    # Keep the admission interval and queue rotation across service restarts.
-                    latest = store.db.execute("""
-                        SELECT first_attempt, queue FROM (
-                            SELECT MAX(first_attempt) AS first_attempt, 'transcript' AS queue FROM jobs
-                            UNION ALL
-                            SELECT MAX(first_attempt), 'review' FROM memory_reviews
-                        ) ORDER BY first_attempt DESC LIMIT 1
-                    """).fetchone()
-                    if latest['first_attempt'] is not None:
-                        remaining = latest['first_attempt'] + memory_review.AUTOMATIC_INTERVAL - now
-                        if remaining > 0:
-                            self.next_dispatch = time.monotonic() + remaining
-                            continue
                     self.next_dispatch = time.monotonic() + 60
                     if self.background_quota_exhausted(now):
                         continue
                     memory_review.recover_empty_legacy(store, self.data / 'hermes')
-                    job = transcript_ingestion.next_job(store, now, True)
-                    if not job or latest['queue'] != 'review' or latest['first_attempt'] is None:
-                        review = memory_review.next_review(store, self.data, now)
-                        if review:
-                            self.next_dispatch = time.monotonic() + memory_review.AUTOMATIC_INTERVAL
-                            self.advance_review(store, review)
-                            continue
-                if job:
-                    self.advance_job(store, job)
+                    review = memory_review.next_review(store, self.data, now)
+                    if review:
+                        self.advance_review(store, review)
             except Exception as error:
                 logging.error("MoMo memory dispatch transaction failed: %s", type(error).__name__)
             finally:
@@ -381,7 +363,8 @@ class ContextService:
                     store.db.execute("UPDATE memory_reviews SET first_attempt=?,replay_before=? WHERE id=?", (first,deadline,job['id']))
                 if time.time() >= deadline:
                     raise Conflict('Memory review admission receipt expired; inspect the original run')
-                snapshot = self.request('/v1/runs', {'input': memory_review.prompt(job), 'session_id': session}, job['id'])
+                prompt = daily_review.prompt(store, job) if json.loads(job['input']).get('daily') else memory_review.prompt(job)
+                snapshot = self.request('/v1/runs', {'input': prompt, 'session_id': session}, job['id'])
                 store.db.execute("UPDATE memory_reviews SET run_id=?,state='running',error=NULL WHERE id=?", (snapshot['run_id'],job['id']))
                 snapshot = self.request('/v1/runs/' + urllib.parse.quote(snapshot['run_id'], safe=''))
             if snapshot.get('session_id') != session or not snapshot.get('run_id') or (job['run_id'] and snapshot['run_id'] != job['run_id']):

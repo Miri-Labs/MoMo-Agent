@@ -110,6 +110,10 @@ class ContextStore:
                     id TEXT PRIMARY KEY, kind TEXT NOT NULL, input TEXT NOT NULL,
                     state TEXT NOT NULL DEFAULT 'pending', run_id TEXT, first_attempt REAL,
                     replay_before REAL, error TEXT, result TEXT, finished REAL);
+                CREATE TABLE IF NOT EXISTS daily_review_pages (
+                    review_id TEXT NOT NULL REFERENCES memory_reviews(id), page INTEGER NOT NULL,
+                    job_id TEXT, evidence TEXT NOT NULL, seen INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(review_id,page));
                 CREATE TABLE IF NOT EXISTS memory_review_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS recording_summaries (
                     id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, input TEXT NOT NULL,

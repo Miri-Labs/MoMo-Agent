@@ -40,8 +40,9 @@ class MemoryReviewTests(unittest.TestCase):
         self.message(1,'请记住，我喜欢先结论后说明。',at=100)
         self.assertFalse(review.chat_idle(self.data,699));self.assertTrue(review.chat_idle(self.data,700))
         job=review.next_review(self.store,self.data,160)
-        self.assertEqual('chat',job['kind'])
-        self.assertEqual([2,0],json.loads(job['input'])['cursor'])
+        self.assertEqual('dream', job['kind'])
+        evidence = self.store.db.execute("SELECT evidence FROM daily_review_pages WHERE review_id=?", (job['id'],)).fetchone()
+        self.assertEqual([2, 0], json.loads(evidence[0])['cursor'])
         self.native.execute("INSERT INTO session_admissions VALUES('momo-work-live','queued')");self.native.commit()
         self.assertFalse(review.chat_idle(self.data,800))
 
@@ -121,33 +122,93 @@ class MemoryReviewTests(unittest.TestCase):
         self.message(2, "这条需要纠正", operation="real-turn")
         self.assertEqual([2], [m["seq"] for m in review.chat_batch(self.store, self.data)["messages"]])
 
-    def test_overnight_automatic_admissions_share_a_persisted_interval(self):
+    def test_daily_run_consolidates_all_pages_and_keeps_new_arrivals_for_tomorrow(self):
+        import daily_review
+        from superagent_gateway import SuperAgentGateway
         from unittest.mock import Mock
-        self.source()
-        self.message(1, "需要记住的内容")
+        self.source("示例记录" * 45000)
+        self.source("另一场录音")
+        self.message(1, "chat evidence")
         review.set_state(self.store, "v2_migrated", True)
         admissions = []
+        start = 100000
         def wake(now):
-            # Recreate the service at every tick to rule out in-memory throttling.
             service = ContextService.__new__(ContextService)
             service.data, service.directory, service.next_dispatch = self.data, self.data / "context", 0
             service.stopped = Mock()
             service.stopped.wait.side_effect = [False, True]
-            def admit(table, row):
-                admissions.append((table, row["kind"] if table == "memory_reviews" else "transcript", now))
-                self.store.db.execute(f"UPDATE {table} SET state='done', first_attempt=? WHERE id=?", (now, row["id"]))
-            service.advance_review = lambda _, row: admit("memory_reviews", row)
-            service.advance_job = lambda _, row: admit("jobs", row)
+            service.advance_job = Mock(side_effect=AssertionError("separate transcript run"))
+            def admit(_, row):
+                admissions.append(row)
+                self.store.db.execute("UPDATE memory_reviews SET state='running', first_attempt=? WHERE id=?", (now, row["id"]))
+            service.advance_review = admit
             with patch("context_server.time.time", return_value=now):
                 service.dispatch()
-        start = 100000
+
         wake(start)
-        for minute in range(1, review.AUTOMATIC_INTERVAL // 60):
-            wake(start + 60 * minute)
-        self.assertEqual([("memory_reviews", "dream", start)], admissions)
-        wake(start + review.AUTOMATIC_INTERVAL)
-        wake(start + 2 * review.AUTOMATIC_INTERVAL)
-        self.assertEqual(["dream", "transcript", "chat"], [kind for _, kind, _ in admissions])
+        job = admissions[0]
+        self.assertEqual("dream", job["kind"])
+        session = "momo-review-" + job["id"]
+        gateway = SuperAgentGateway.__new__(SuperAgentGateway)
+        gateway.data = self.data
+        _, _, call = gateway._build_memory_review_session(session)
+        first = json.loads(daily_review.prompt(self.store, job).split("DAILY_EVIDENCE=")[-1])
+        self.assertEqual(first["evidence"]["messages"][0]["text"], "chat evidence")
+        self.assertGreater(first["total_pages"], 20)
+        page = first["next_page"]
+        sources = set()
+        while page is not None:
+            item = json.loads(call("read_daily_evidence", {"review_id": job["id"], "page": page}))
+            sources.add(item["evidence"]["source_id"])
+            page = item["next_page"]
+        self.assertEqual(len(sources), 2)
+        self.source("later arrival")
+        self.message(2, "later chat")
+        with patch.object(review.time, "time", return_value=start):
+            review.finish(self.store, job, {"outcome": "no_change"}, self.data / "hermes")
+        self.assertEqual(review.state(self.store, "chat_cursor"), [2, 0])
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM jobs WHERE state='pending'").fetchone()[0], 1)
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM daily_review_pages").fetchone()[0], 0)
+        for minutes in (1, 60, 120, 720, 1439):
+            wake(start + 60 * minutes)
+        self.assertEqual(len(admissions), 1)
+        wake(start + 86400)
+        self.assertEqual(len(admissions), 2)
+
+    def test_daily_partial_review_preserves_unread_pages(self):
+        import daily_review
+        self.message(1, "checked")
+        self.source("待处理的录音")
+        job = review.next_review(self.store, self.data, 10000)
+        self.store.db.execute("UPDATE memory_reviews SET state='running',first_attempt=10000 WHERE id=?", (job["id"],))
+        daily_review.prompt(self.store, job)
+        review.finish(self.store, job, {"outcome": "no_change"}, self.data/"hermes")
+        self.assertEqual(review.state(self.store, "chat_cursor"), [2, 0])
+        self.assertEqual(self.store.db.execute("SELECT state FROM jobs").fetchone()[0], "pending")
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM memory_reviews").fetchone()[0], 1)
+
+    def test_daily_retry_reuses_frozen_pages_and_skips_a_revised_source(self):
+        import daily_review
+        source = self.source("old recording")
+        self.message(1, "first chat")
+        job = review.next_review(self.store, self.data, 100)
+        self.store.db.execute("UPDATE memory_reviews SET state='running', first_attempt=100 WHERE id=?", (job["id"],))
+        daily_review.prompt(self.store, job)
+        self.assertTrue(review.retry_completed(self.store, "memory_reviews", job, "gateway restarted"))
+        self.assertIsNone(review.next_review(self.store, self.data, 101))
+        retry = review.next_review(self.store, self.data, 100 + review.DREAM_INTERVAL)
+        self.assertEqual(retry["attempt"], 1)
+        self.store.db.execute("UPDATE memory_reviews SET state='running', first_attempt=86500 WHERE id=?", (retry["id"],))
+        daily_review.prompt(self.store, retry)
+        payload = json.loads(self.store.source(source["source_id"])["payload"])
+        payload["version"] += 1
+        payload["spans"][0]["text"] = "revised recording"
+        payload["text_sha256"] = digest("revised recording")
+        self.store.sync_source(payload)
+        self.assertEqual(daily_review.read_page(self.store, retry["id"], 2)["evidence"], {"superseded": True})
+        review.finish(self.store, retry, {"outcome": "no_change"}, self.data/"hermes")
+        self.assertEqual(self.store.db.execute("SELECT count(*) FROM jobs WHERE state='done'").fetchone()[0], 0)
+        self.assertEqual(self.store.db.execute("SELECT count(*) FROM jobs WHERE state='pending'").fetchone()[0], 1)
 
     def test_repeated_recording_page_stops_but_twenty_distinct_pages_complete(self):
         from superagent_gateway import RepeatedToolRead, SuperAgentGateway
@@ -289,7 +350,7 @@ class MemoryReviewTests(unittest.TestCase):
         service.stopped=Mock();service.stopped.wait.side_effect=[False,True]
         service.advance_review=Mock();service.advance_job=Mock()
         service.dispatch()
-        self.assertEqual('chat',service.advance_review.call_args.args[1]['kind'])
+        self.assertEqual('dream',service.advance_review.call_args.args[1]['kind'])
 
     def test_superagent_memory_review_session_writes_hermes_memory_and_verifies_receipt(self):
         from superagent_gateway import SuperAgentGateway
@@ -299,7 +360,7 @@ class MemoryReviewTests(unittest.TestCase):
         system_prompt,tool_specs,execute_tool=gateway._build_memory_review_session(session)
         self.assertIn('empty',system_prompt)
         self.assertEqual(
-            {'memory','notebook','relabel_speakers','list_recordings','read_recording','search_recordings','phone_context','session_search'},
+            {'memory','notebook','relabel_speakers','list_recordings','read_recording','search_recordings','phone_context','session_search','read_daily_evidence'},
             {t['name'] for t in tool_specs},
         )
 

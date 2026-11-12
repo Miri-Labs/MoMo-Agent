@@ -10,8 +10,8 @@ import uuid
 from context_store import Conflict, canonical, digest
 
 CHAT_IDLE_SECONDS = 10 * 60
-AUTOMATIC_INTERVAL = 2 * 60 * 60
 DREAM_INTERVAL = 24 * 60 * 60
+AUTOMATIC_INTERVAL = DREAM_INTERVAL
 CURATION_POLICY_VERSION = "v4-free-hierarchy"
 MAX_BYTES = 32_000
 MAX_PARTS = 48
@@ -212,11 +212,11 @@ def chat_idle(data, now, idle_seconds=CHAT_IDLE_SECONDS):
     return True
 
 
-def chat_batch(store, data):
+def chat_batch(store, data, cursor=None, through=None):
     path = Path(data) / "runtime/conversation.sqlite"
     if not path.exists():
         return None
-    cursor = state(store, "chat_cursor", [0, 0])
+    cursor = cursor if cursor is not None else state(store, "chat_cursor", [0, 0])
     parts, end = [], list(cursor)
     with closing(readonly(path)) as db:
         # A delivered Dream briefing is already an output of curation. Only a
@@ -225,9 +225,9 @@ def chat_batch(store, data):
         briefing_key = "COALESCE(m.source_key, m.operation_id, '')" if "source_key" in columns else "COALESCE(m.operation_id, '')"
         rows = db.execute(f"""SELECT m.seq,m.role,m.content,m.created_at FROM messages m
             LEFT JOIN inputs i ON i.operation_id=m.operation_id
-            WHERE m.seq>=? AND m.role IN ('user','assistant')
+            WHERE m.seq>=? AND m.seq<=? AND m.role IN ('user','assistant')
               AND {briefing_key} NOT LIKE 'dream-briefing:%'
-              AND (i.intent IS NULL OR i.intent!='steer' OR i.delivery_state='applied') ORDER BY m.seq""", (cursor[0],))
+              AND (i.intent IS NULL OR i.intent!='steer' OR i.delivery_state='applied') ORDER BY m.seq""", (cursor[0], through if through is not None else 2**63 - 1))
         for row in rows:
             offset = cursor[1] if row["seq"] == cursor[0] else 0
             text = row["content"]
@@ -275,68 +275,20 @@ def enqueue(store, kind, payload):
 
 
 def enqueue_manual_dream(store, data, now=None):
-    now = time.time() if now is None else now
-    with store.write():
-        existing = store.db.execute(
-            "SELECT * FROM memory_reviews WHERE state IN ('running','pending') AND kind='dream' ORDER BY rowid LIMIT 1"
-        ).fetchone()
-        if existing:
-            # Promote an unadmitted automatic Dream when the user requests it now.
-            if existing["state"] == "pending" and existing["first_attempt"] is None:
-                store.db.execute("UPDATE memory_reviews SET input=json_set(input,'$.manual_requested_at',?) WHERE id=?",
-                                 (round(now, 3), existing["id"]))
-            return dict(existing), False
-        cursor = state(store, "chat_cursor", [0, 0])
-        stamp = signature(Path(data) / "hermes", cursor, store.revision)
-        payload = {
-            "signature": stamp,
-            "source_revision": store.revision,
-            "chat_cursor": cursor,
-            "manual_requested_at": round(now, 3),
-        }
-        job = enqueue(store, "dream", payload)
-    return dict(job), True
+    import daily_review
+    return daily_review.enqueue(store, data, time.time() if now is None else now, manual=True)
 
 
 def next_review(store, data, now):
-    # Give a due deep review a turn even when chat evidence keeps arriving.
-    dream = next_dream(store, data, now)
-    if dream:
-        return dream
-    pending = store.db.execute("SELECT * FROM memory_reviews WHERE state IN ('running','pending') AND kind='chat' ORDER BY rowid LIMIT 1").fetchone()
-    if pending:
-        return pending
-    # Do not advance beyond an unverified chat batch or silently skip its messages.
-    if not store.db.execute("SELECT 1 FROM memory_reviews WHERE kind='chat' AND state='needs_review'").fetchone():
-        batch = chat_batch(store, data)
-        if batch:
-            return enqueue(store, "chat", batch)
-
-
-def next_dream(store, data, now):
-    last = state(store, "dream", {})
-    hermes_dir = Path(data) / "hermes"
-    last_attempt = store.db.execute("SELECT MAX(first_attempt) FROM memory_reviews WHERE kind='dream'").fetchone()[0]
-    last_run = max(last.get("at", 0), last_attempt or 0)
-    if last_run and now - last_run < DREAM_INTERVAL:
+    import daily_review
+    # The latest admission survives restarts and includes previous-version jobs.
+    latest = store.db.execute("""SELECT MAX(at) FROM (
+        SELECT MAX(first_attempt) AS at FROM jobs UNION ALL SELECT MAX(first_attempt) FROM memory_reviews
+    )""").fetchone()[0]
+    last = state(store, "dream", {}).get("at", 0)
+    if (latest is not None or last) and now < max(latest or 0, last) + DREAM_INTERVAL:
         return None
-    pending = store.db.execute("SELECT * FROM memory_reviews WHERE state IN ('running','pending') AND kind='dream' ORDER BY rowid LIMIT 1").fetchone()
-    if pending:
-        return pending
-    # Dream can revisit connections, but never runs a fresh empty profile just for the clock.
-    if (
-        not state(store, "chat_cursor")
-        and not store.db.execute("SELECT 1 FROM jobs WHERE state='done' AND result IS NOT NULL").fetchone()
-        and not store.db.execute("SELECT 1 FROM sources WHERE deleted=0").fetchone()
-    ):
-        return None
-    cursor = state(store, "chat_cursor", [0, 0])
-    stamp = signature(hermes_dir, cursor, store.revision)
-    if last.get("signature") == stamp:
-        return None
-    payload = {"signature": stamp, "source_revision": store.revision, "chat_cursor": cursor}
-    job = enqueue(store, "dream", payload)
-    return job if job['state'] in {'pending', 'running'} else None
+    return daily_review.enqueue(store, data, now)[0]
 
 
 DREAM_INSTRUCTION = """执行闲时深度 Dream（五阶段认知循环：后验纠错 + 自主断舍离重整 + 时空对账 + 项目治理 + 管家简报，产出物全部使用纯 Markdown `.md`）：
@@ -575,9 +527,14 @@ def finish(store, job, receipt, home):
         else:
             # A source arriving during this run has not necessarily been reviewed.
             reviewed = json.loads(job["input"])
+            cursor = None
+            if reviewed.get("daily"):
+                import daily_review
+                cursor = daily_review.finish_in_transaction(store, job, receipt)
+                store.db.execute("UPDATE memory_reviews SET result=? WHERE id=?", (canonical(receipt), job["id"]))
             stamp = reviewed["signature"]
-            if receipt.get("native_writes") and "chat_cursor" in reviewed and "source_revision" in reviewed:
-                stamp = signature(home, reviewed["chat_cursor"], reviewed["source_revision"])
+            if (cursor or receipt.get("native_writes")) and "chat_cursor" in reviewed and "source_revision" in reviewed:
+                stamp = signature(home, cursor or reviewed["chat_cursor"], reviewed["source_revision"])
             set_state(store, "dream", {"at": time.time(), "signature": stamp})
     if job["kind"] != "chat":
         deliver_briefing_to_conversation(Path(home).parent)
@@ -634,4 +591,5 @@ def retry_completed(store, table, job, error):
             store.db.execute("INSERT OR IGNORE INTO jobs(id,source_id,source_revision,state,input,attempt) VALUES(?,?,?,'pending',?,?)",(identity,job['source_id'],job['source_revision'],job['input'],job['attempt']+1))
         else:
             store.db.execute("INSERT OR IGNORE INTO memory_reviews(id,kind,input,attempt) VALUES(?,?,json_remove(?,'$.manual_requested_at'),?)",(identity,job['kind'],job['input'],job['attempt']+1))
+            store.db.execute("UPDATE daily_review_pages SET review_id=?,seen=0 WHERE review_id=?", (identity, job["id"]))
     return True

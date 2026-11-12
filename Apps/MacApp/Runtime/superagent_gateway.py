@@ -82,7 +82,7 @@ class RepeatedToolRead(RuntimeError):
 
 _EVIDENCE_READS = frozenset({
     "read_recording", "list_recordings", "search_recordings", "phone_context",
-    "session_search", "read_memory_notebook", "list_memory_notebooks",
+    "session_search", "read_memory_notebook", "list_memory_notebooks", "read_daily_evidence",
 })
 
 
@@ -2081,7 +2081,7 @@ class SuperAgentGateway:
     def _build_memory_review_session(self, session_id: str) -> tuple[str, list[dict], object]:
         import copy
         from contextlib import closing
-        from context_store import ContextStore, logical_local_date, read_day_start_hour
+        from context_store import Conflict, ContextStore, logical_local_date, read_day_start_hour
         from health_store import read_health
         from momo_memory import MEMORY_SCHEMA, MoMoMemory, execute_memory_tool
         import memory_review
@@ -2316,6 +2316,14 @@ class SuperAgentGateway:
             },
         ]
 
+        if session_id.startswith("momo-review-"):
+            tool_specs.append({
+                "name": "read_daily_evidence",
+                "description": "Read the next page of this daily Dream's frozen chat and recording evidence.",
+                "parameters": {"type": "object", "properties": {"review_id": {"type": "string"}, "page": {"type": "integer"}},
+                               "required": ["review_id", "page"], "additionalProperties": False},
+            })
+
         def execute_tool(name: str, raw_args: str | dict) -> str:
             try:
                 args = raw_args if isinstance(raw_args, dict) else json.loads(raw_args or "{}")
@@ -2325,6 +2333,17 @@ class SuperAgentGateway:
                 return json.dumps({"success": False, "error": f"Invalid tool JSON arguments: {exc}"}, ensure_ascii=False)
 
             clean_name = name[5:] if name.startswith("mcp__") else name
+            if clean_name == "read_daily_evidence":
+                import daily_review
+                if session_id != "momo-review-" + str(args.get("review_id", "")):
+                    return json.dumps({"error": "Page belongs to another review"})
+                store = ContextStore(self.data / "context")
+                try:
+                    return json.dumps(daily_review.read_page(store, args["review_id"], args.get("page")), ensure_ascii=False)
+                except (ValueError, Conflict) as exc:
+                    return json.dumps({"error": str(exc)})
+                finally:
+                    store.close()
             if clean_name == "memory":
                 result_json = execute_memory_tool(
                     mem_store,
