@@ -38,12 +38,12 @@ class MemoryReviewTests(unittest.TestCase):
 
     def test_short_work_sessions_still_trigger_chat_after_quiet_period(self):
         self.message(1,'请记住，我喜欢先结论后说明。',at=100)
-        self.assertFalse(review.chat_idle(self.data,159));self.assertTrue(review.chat_idle(self.data,160))
+        self.assertFalse(review.chat_idle(self.data,699));self.assertTrue(review.chat_idle(self.data,700))
         job=review.next_review(self.store,self.data,160)
         self.assertEqual('chat',job['kind'])
         self.assertEqual([2,0],json.loads(job['input'])['cursor'])
         self.native.execute("INSERT INTO session_admissions VALUES('momo-work-live','queued')");self.native.commit()
-        self.assertFalse(review.chat_idle(self.data,200))
+        self.assertFalse(review.chat_idle(self.data,800))
 
     def test_long_unicode_chat_drains_exactly_and_restart_retains_cursor(self):
         text='偏好与背景' * 14000;self.message(1,text)
@@ -109,6 +109,124 @@ class MemoryReviewTests(unittest.TestCase):
         self.store.db.execute("UPDATE memory_reviews SET state='needs_review' WHERE id=?",(job['id'],))
         self.assertIsNone(review.next_review(self.store,self.data,100))
 
+    def test_daily_dream_does_not_reingest_its_own_notes_or_briefing(self):
+        review.set_state(self.store, "chat_cursor", [1, 0])
+        job = review.next_review(self.store, self.data, 1000)
+        for i in range(10):
+            (self.data / f"hermes/memories/project-{i}.md").write_text(f"# project {i}")
+        (self.data / "hermes/memories/BRIEFING.md").write_text("# 2026-11-11 日报")
+        with patch.object(review.time, "time", return_value=1000):
+            review.finish(self.store, job, {"outcome": "updated", "native_writes": 11}, self.data / "hermes")
+        self.assertIsNone(review.next_review(self.store, self.data, 1000 + 2 * review.DREAM_INTERVAL))
+        self.message(2, "这条需要纠正", operation="real-turn")
+        self.assertEqual([2], [m["seq"] for m in review.chat_batch(self.store, self.data)["messages"]])
+
+    def test_overnight_automatic_admissions_share_a_persisted_interval(self):
+        from unittest.mock import Mock
+        self.source()
+        self.message(1, "需要记住的内容")
+        review.set_state(self.store, "v2_migrated", True)
+        admissions = []
+        def wake(now):
+            # Recreate the service at every tick to rule out in-memory throttling.
+            service = ContextService.__new__(ContextService)
+            service.data, service.directory, service.next_dispatch = self.data, self.data / "context", 0
+            service.stopped = Mock()
+            service.stopped.wait.side_effect = [False, True]
+            def admit(table, row):
+                admissions.append((table, row["kind"] if table == "memory_reviews" else "transcript", now))
+                self.store.db.execute(f"UPDATE {table} SET state='done', first_attempt=? WHERE id=?", (now, row["id"]))
+            service.advance_review = lambda _, row: admit("memory_reviews", row)
+            service.advance_job = lambda _, row: admit("jobs", row)
+            with patch("context_server.time.time", return_value=now):
+                service.dispatch()
+        start = 100000
+        wake(start)
+        for minute in range(1, review.AUTOMATIC_INTERVAL // 60):
+            wake(start + 60 * minute)
+        self.assertEqual([("memory_reviews", "dream", start)], admissions)
+        wake(start + review.AUTOMATIC_INTERVAL)
+        wake(start + 2 * review.AUTOMATIC_INTERVAL)
+        self.assertEqual(["dream", "transcript", "chat"], [kind for _, kind, _ in admissions])
+
+    def test_repeated_recording_page_stops_but_twenty_distinct_pages_complete(self):
+        from superagent_gateway import RepeatedToolRead, SuperAgentGateway
+        from unittest.mock import Mock
+        gateway = SuperAgentGateway.__new__(SuperAgentGateway)
+        gateway.data = self.data
+        session = "momo-review-pagination"
+        source_id = self.source("示例转录" * 100)["source_id"]
+
+        def page(i, offset):
+            fn = {"name": "read_recording", "arguments": json.dumps({"source_id": source_id, "limit": 5, "offset": offset})}
+            return {"choices": [{"message": {"tool_calls": [{"id": str(i), "function": fn}]}}]}
+
+        receipt = json.dumps({"memory_review": {"outcome": "no_change", "reason": "已核对各页"}})
+        finish = {"choices": [{"message": {"content": receipt}}]}
+        with patch("superagent_gateway.resolve_superagent_llm", return_value={"dsh_provider": "antigravity", "model_id": "mock"}):
+            with patch("antigravity_bridge.run_antigravity_completion", side_effect=[page(i, 0) for i in range(14)]) as model:
+                with self.assertRaises(RepeatedToolRead):
+                    gateway._call_configured_llm_memory_review(session, "review")
+                self.assertEqual(model.call_count, 3)
+            progress = Mock()
+            with patch("antigravity_bridge.run_antigravity_completion", side_effect=[page(i, i*5) for i in range(20)] + [finish]) as model:
+                output = gateway._call_configured_llm_memory_review(session, "review", heartbeat=progress)
+                self.assertEqual(review.outcome(self.data / "hermes", session, output)["outcome"], "no_change")
+                self.assertEqual(model.call_count, 21)
+                self.assertEqual(progress.call_count, 21)
+        self.assertFalse(ContextService.review_timed_out({"first_attempt": 10, "replay_before": 400}, {"updated_at": 3999}, 4000))
+
+    def test_stalled_or_unverified_batch_keeps_evidence_and_creates_no_retry(self):
+        self.source()
+        service = ContextService.__new__(ContextService)
+        service.data = self.data
+        for table, advance, prefix, status in (
+            ("jobs", service.advance_job, "momo-transcript-", "failed"),
+            ("memory_reviews", service.advance_review, "momo-review-", "completed"),
+        ):
+            if table == "memory_reviews":
+                review.enqueue_manual_dream(self.store, self.data)
+            self.store.db.execute(f"UPDATE {table} SET state='running', run_id='r'")
+            job = self.store.db.execute(f"SELECT * FROM {table}").fetchone()
+            service.request = lambda *_: {
+                "run_id": "r", "session_id": prefix + job["id"], "status": status, "error": review.STALLED_REVIEW,
+                "output": json.dumps({"memory_review": {"outcome": "updated", "reason": "已写入"}}),
+            }
+            advance(self.store, job)
+            self.assertEqual(["needs_review"], [r[0] for r in self.store.db.execute(f"SELECT state FROM {table}")])
+        self.assertIsNone(review.state(self.store, "dream"))
+
+    def test_quota_gate_and_manual_dream_during_cooldown(self):
+        from provider_notice import record_provider_issue, clear_provider_notice
+        from unittest.mock import Mock
+        now = 30000
+        (self.data/"hermes/config.yaml").write_text('{"model":{"provider":"antigravity"}}')
+        self.source()
+        record_provider_issue(self.data, "insufficient_quota", provider="antigravity", now=now)
+        service = ContextService.__new__(ContextService)
+        service.data = self.data
+        service.directory = self.data/"context"
+        service.next_dispatch = 0
+        service.stopped, service.advance_review, service.advance_job = Mock(), Mock(), Mock()
+        with patch("context_server.time.time", return_value=now):
+            service.stopped.wait.side_effect = [False, True]
+            service.dispatch()
+            service.advance_review.assert_not_called()
+            service.advance_job.assert_not_called()
+            auto = review.next_review(self.store, self.data, now)
+            manual, created = review.enqueue_manual_dream(self.store, self.data, now)
+            self.assertFalse(created)
+            self.assertEqual(manual["id"], auto["id"])
+            service.stopped.wait.side_effect = [False, True]
+            service.dispatch()
+            self.assertEqual(service.advance_review.call_args.args[1]["id"], manual["id"])
+        clear_provider_notice(self.data)
+        self.assertFalse(service.background_quota_exhausted(now))
+        self.store.db.execute("UPDATE memory_reviews SET state='needs_review', first_attempt=?", (now,))
+        self.source("新增")
+        self.assertIsNone(review.next_review(self.store, self.data, now + 1800))
+        self.assertIsNotNone(review.next_review(self.store, self.data, now + review.DREAM_INTERVAL))
+
     def test_due_dream_runs_despite_continuous_transcript_backlog(self):
         self.source()
         review.set_state(self.store,'chat_cursor',[2,0])
@@ -152,8 +270,7 @@ class MemoryReviewTests(unittest.TestCase):
         self.assertIsNotNone(row['first_attempt']);self.assertEqual('pending',row['state'])
         service.advance_review(self.store,row)
         self.assertEqual([job['id'],job['id']],[op for p,op in calls if p=='/v1/runs'])
-        self.assertEqual('retrying',self.store.db.execute('SELECT state FROM memory_reviews ORDER BY rowid').fetchone()[0])
-        self.assertEqual(1,self.store.db.execute("SELECT attempt FROM memory_reviews WHERE state='pending'").fetchone()[0])
+        self.assertEqual(['needs_review'], [r[0] for r in self.store.db.execute('SELECT state FROM memory_reviews')])
         self.assertIsNone(review.state(self.store,'chat_cursor'))
 
     def test_superagent_engine_dispatches_reviews_and_respects_bridge_chat_activity(self):
@@ -161,9 +278,9 @@ class MemoryReviewTests(unittest.TestCase):
         self.message(1,'记住我每天早上八点开始新的一天。',at=100)
         bridge=sqlite3.connect(self.data/'runtime/superagent_bridge.sqlite');self.addCleanup(bridge.close)
         bridge.executescript("CREATE TABLE chat_runs(run_id TEXT PRIMARY KEY,status TEXT); INSERT INTO chat_runs VALUES('r1','started');")
-        self.assertFalse(review.chat_idle(self.data,200))
+        self.assertFalse(review.chat_idle(self.data,800))
         bridge.execute("UPDATE chat_runs SET status='completed'");bridge.commit()
-        self.assertTrue(review.chat_idle(self.data,200))
+        self.assertTrue(review.chat_idle(self.data,800))
 
         review.set_state(self.store,'v2_migrated',True)
         service=ContextService.__new__(ContextService)

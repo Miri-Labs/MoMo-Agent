@@ -3,20 +3,19 @@ import json
 import time
 import uuid
 from context_store import canonical, digest
-from memory_review import POLICY, RECEIPT
+from memory_review import AUTOMATIC_INTERVAL, POLICY, RECEIPT
 
-INTERVAL = 60
 MAX_PART_BYTES = 4096
 MAX_BATCH_BYTES = 32_000
 MAX_PARTS = 96  # Keep adjacent short ASR spans together, within the same byte budget.
 
 
 def next_job(store, now, admit):
-    running = store.db.execute("SELECT * FROM jobs WHERE state='running' ORDER BY rowid LIMIT 1").fetchone()
+    running = store.db.execute("SELECT * FROM jobs WHERE state='running' OR (state='pending' AND first_attempt IS NOT NULL) ORDER BY rowid LIMIT 1").fetchone()
     if running or not admit:
         return running
-    latest = store.db.execute("SELECT MAX(first_attempt) FROM jobs").fetchone()[0] or 0
-    if now >= latest + INTERVAL:
+    latest = store.db.execute("SELECT MAX(first_attempt) FROM jobs").fetchone()[0]
+    if latest is None or now >= latest + AUTOMATIC_INTERVAL:
         return store.db.execute("SELECT * FROM jobs WHERE state='pending' ORDER BY rowid LIMIT 1").fetchone()
 
 

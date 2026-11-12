@@ -9,9 +9,9 @@ import uuid
 
 from context_store import Conflict, canonical, digest
 
-CHAT_IDLE_SECONDS = 60
-DREAM_INTERVAL = 1800
-MAINTENANCE_INTERVAL = 43200
+CHAT_IDLE_SECONDS = 10 * 60
+AUTOMATIC_INTERVAL = 2 * 60 * 60
+DREAM_INTERVAL = 24 * 60 * 60
 CURATION_POLICY_VERSION = "v4-free-hierarchy"
 MAX_BYTES = 32_000
 MAX_PARTS = 48
@@ -168,11 +168,9 @@ def outcome(home, session, output):
         try:
             last_obj = json.loads(last_content)
             succeeded = isinstance(last_obj, dict) and last_obj.get('success') is True
-            exhausted_cap = isinstance(last_obj, dict) and last_obj.get('done') is True
         except (ValueError, TypeError, AttributeError):
             succeeded = False
-            exhausted_cap = False
-        if not succeeded and writes == 0 and not exhausted_cap:
+        if not succeeded:
             raise Conflict('Memory review ended with an unresolved native write failure')
     if kind == "updated" and not writes:
         raise Conflict("Memory review claimed an update without a successful native write")
@@ -180,14 +178,14 @@ def outcome(home, session, output):
             "native_writes": writes, "completed_at": time.time()}
 
 
-def chat_idle(data, now):
+def chat_idle(data, now, idle_seconds=CHAT_IDLE_SECONDS):
     """Use the product conversation, not each short-lived native work session's counter."""
     conversation = Path(data) / "runtime/conversation.sqlite"
     if not conversation.exists():
         return True
     with closing(readonly(conversation)) as db:
         last = db.execute("SELECT MAX(created_at) FROM messages").fetchone()[0] or 0
-        if now - last < CHAT_IDLE_SECONDS:
+        if now - last < idle_seconds:
             return False
     for rel in ("superagent/bridge.sqlite", "runtime/superagent_bridge.sqlite"):
         bridge = Path(data) / rel
@@ -221,9 +219,14 @@ def chat_batch(store, data):
     cursor = state(store, "chat_cursor", [0, 0])
     parts, end = [], list(cursor)
     with closing(readonly(path)) as db:
-        rows = db.execute("""SELECT m.seq,m.role,m.content,m.created_at FROM messages m
+        # A delivered Dream briefing is already an output of curation. Only a
+        # person's subsequent reply belongs in the next chat review.
+        columns = {r[1] for r in db.execute("PRAGMA table_info(messages)")}
+        briefing_key = "COALESCE(m.source_key, m.operation_id, '')" if "source_key" in columns else "COALESCE(m.operation_id, '')"
+        rows = db.execute(f"""SELECT m.seq,m.role,m.content,m.created_at FROM messages m
             LEFT JOIN inputs i ON i.operation_id=m.operation_id
             WHERE m.seq>=? AND m.role IN ('user','assistant')
+              AND {briefing_key} NOT LIKE 'dream-briefing:%'
               AND (i.intent IS NULL OR i.intent!='steer' OR i.delivery_state='applied') ORDER BY m.seq""", (cursor[0],))
         for row in rows:
             offset = cursor[1] if row["seq"] == cursor[0] else 0
@@ -257,10 +260,10 @@ def _iter_vault_markdown_files(mem_dir: Path) -> list[Path]:
     return out
 
 
-def signature(store, home):
+def signature(home, chat_cursor, source_revision):
     mem_dir = Path(home) / "memories"
     files = _iter_vault_markdown_files(mem_dir)
-    return digest(canonical([CURATION_POLICY_VERSION, state(store, "chat_cursor", [0, 0]), store.revision,
+    return digest(canonical([CURATION_POLICY_VERSION, chat_cursor, source_revision,
                             [f"{p.relative_to(mem_dir).as_posix()}\n{p.read_text(encoding='utf-8', errors='ignore')}" for p in files]]))
 
 
@@ -273,24 +276,33 @@ def enqueue(store, kind, payload):
 
 def enqueue_manual_dream(store, data, now=None):
     now = time.time() if now is None else now
-    existing = store.db.execute(
-        "SELECT * FROM memory_reviews WHERE state IN ('running','pending') AND kind='dream' ORDER BY rowid LIMIT 1"
-    ).fetchone()
-    if existing:
-        return dict(existing), False
-    stamp = signature(store, Path(data) / "hermes")
-    payload = {
-        "signature": stamp,
-        "source_revision": store.revision,
-        "chat_cursor": state(store, "chat_cursor", [0, 0]),
-        "manual_requested_at": round(now, 3),
-    }
     with store.write():
+        existing = store.db.execute(
+            "SELECT * FROM memory_reviews WHERE state IN ('running','pending') AND kind='dream' ORDER BY rowid LIMIT 1"
+        ).fetchone()
+        if existing:
+            # Promote an unadmitted automatic Dream when the user requests it now.
+            if existing["state"] == "pending" and existing["first_attempt"] is None:
+                store.db.execute("UPDATE memory_reviews SET input=json_set(input,'$.manual_requested_at',?) WHERE id=?",
+                                 (round(now, 3), existing["id"]))
+            return dict(existing), False
+        cursor = state(store, "chat_cursor", [0, 0])
+        stamp = signature(Path(data) / "hermes", cursor, store.revision)
+        payload = {
+            "signature": stamp,
+            "source_revision": store.revision,
+            "chat_cursor": cursor,
+            "manual_requested_at": round(now, 3),
+        }
         job = enqueue(store, "dream", payload)
     return dict(job), True
 
 
 def next_review(store, data, now):
+    # Give a due deep review a turn even when chat evidence keeps arriving.
+    dream = next_dream(store, data, now)
+    if dream:
+        return dream
     pending = store.db.execute("SELECT * FROM memory_reviews WHERE state IN ('running','pending') AND kind='chat' ORDER BY rowid LIMIT 1").fetchone()
     if pending:
         return pending
@@ -299,22 +311,18 @@ def next_review(store, data, now):
         batch = chat_batch(store, data)
         if batch:
             return enqueue(store, "chat", batch)
+
+
+def next_dream(store, data, now):
+    last = state(store, "dream", {})
+    hermes_dir = Path(data) / "hermes"
+    last_attempt = store.db.execute("SELECT MAX(first_attempt) FROM memory_reviews WHERE kind='dream'").fetchone()[0]
+    last_run = max(last.get("at", 0), last_attempt or 0)
+    if last_run and now - last_run < DREAM_INTERVAL:
+        return None
     pending = store.db.execute("SELECT * FROM memory_reviews WHERE state IN ('running','pending') AND kind='dream' ORDER BY rowid LIMIT 1").fetchone()
     if pending:
         return pending
-    last = state(store, "dream", {})
-    hermes_dir = Path(data) / "hermes"
-    stamp = signature(store, hermes_dir)
-    if last and now - last["at"] < DREAM_INTERVAL:
-        return None
-    notebook_count = sum(
-        1
-        for p in _iter_vault_markdown_files(hermes_dir / "memories")
-        if p.name.upper() not in {"MEMORY.MD", "USER.MD", "BRIEFING.MD"}
-    )
-    due_periodic_hygiene = bool(last and notebook_count >= 8 and (now - last["at"] >= MAINTENANCE_INTERVAL))
-    if last.get("signature") == stamp and not due_periodic_hygiene:
-        return None
     # Dream can revisit connections, but never runs a fresh empty profile just for the clock.
     if (
         not state(store, "chat_cursor")
@@ -322,9 +330,11 @@ def next_review(store, data, now):
         and not store.db.execute("SELECT 1 FROM sources WHERE deleted=0").fetchone()
     ):
         return None
-    payload = {"signature": stamp, "source_revision": store.revision, "chat_cursor": state(store, "chat_cursor", [0, 0])}
-    if due_periodic_hygiene and last.get("signature") == stamp:
-        payload["hygiene_epoch"] = int(now // MAINTENANCE_INTERVAL)
+    cursor = state(store, "chat_cursor", [0, 0])
+    stamp = signature(hermes_dir, cursor, store.revision)
+    if last.get("signature") == stamp:
+        return None
+    payload = {"signature": stamp, "source_revision": store.revision, "chat_cursor": cursor}
     job = enqueue(store, "dream", payload)
     return job if job['state'] in {'pending', 'running'} else None
 
@@ -564,7 +574,11 @@ def finish(store, job, receipt, home):
             set_state(store, "chat_cursor", json.loads(job["input"])["cursor"])
         else:
             # A source arriving during this run has not necessarily been reviewed.
-            set_state(store, "dream", {"at": time.time(), "signature": json.loads(job['input'])['signature']})
+            reviewed = json.loads(job["input"])
+            stamp = reviewed["signature"]
+            if receipt.get("native_writes") and "chat_cursor" in reviewed and "source_revision" in reviewed:
+                stamp = signature(home, reviewed["chat_cursor"], reviewed["source_revision"])
+            set_state(store, "dream", {"at": time.time(), "signature": stamp})
     if job["kind"] != "chat":
         deliver_briefing_to_conversation(Path(home).parent)
 
@@ -589,12 +603,21 @@ def recover_empty_legacy(store, home):
 def status(store):
     latest = store.db.execute("SELECT kind,state,result,finished,error FROM memory_reviews ORDER BY rowid DESC LIMIT 1").fetchone()
     updates = store.db.execute("SELECT MAX(json_extract(result,'$.completed_at')) FROM (SELECT result FROM jobs WHERE state='done' UNION ALL SELECT result FROM memory_reviews WHERE state='done') WHERE json_extract(result,'$.outcome')='updated'").fetchone()[0]
-    return {"enabled": True, "dream_interval_seconds": DREAM_INTERVAL, "chat_idle_seconds": CHAT_IDLE_SECONDS,
+    return {"enabled": True, "automatic_interval_seconds": AUTOMATIC_INTERVAL, "dream_interval_seconds": DREAM_INTERVAL, "chat_idle_seconds": CHAT_IDLE_SECONDS,
             "last_updated": updates,
             "running": bool(store.db.execute("SELECT 1 FROM jobs WHERE state='running' UNION ALL SELECT 1 FROM memory_reviews WHERE state='running' LIMIT 1").fetchone()),
             "latest": dict(latest) if latest else None, "dream": state(store, "dream"),
             "pending": store.db.execute("SELECT COUNT(*) FROM memory_reviews WHERE state IN ('pending','running')").fetchone()[0],
             "needs_review": store.db.execute("SELECT COUNT(*) FROM memory_reviews WHERE state='needs_review'").fetchone()[0]}
+
+
+STALLED_REVIEW = "review_read_loop"
+
+
+def handle_failed_run(store, table, job, snapshot):
+    error = snapshot.get("error") or "Native review failed"
+    if error == STALLED_REVIEW or not retry_completed(store, table, job, error):
+        raise Conflict(str(error))
 
 
 def retry_completed(store, table, job, error):
@@ -610,5 +633,5 @@ def retry_completed(store, table, job, error):
         if table == 'jobs':
             store.db.execute("INSERT OR IGNORE INTO jobs(id,source_id,source_revision,state,input,attempt) VALUES(?,?,?,'pending',?,?)",(identity,job['source_id'],job['source_revision'],job['input'],job['attempt']+1))
         else:
-            store.db.execute("INSERT OR IGNORE INTO memory_reviews(id,kind,input,attempt) VALUES(?,?,?,?)",(identity,job['kind'],job['input'],job['attempt']+1))
+            store.db.execute("INSERT OR IGNORE INTO memory_reviews(id,kind,input,attempt) VALUES(?,?,json_remove(?,'$.manual_requested_at'),?)",(identity,job['kind'],job['input'],job['attempt']+1))
     return True
