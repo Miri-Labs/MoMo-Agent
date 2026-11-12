@@ -3,6 +3,7 @@ package com.momoagent.android.data
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,6 +15,7 @@ class PairingCodeTest {
         endpoint: String = "https://momo.tailnet.ts.net",
         network: String? = "tailscale",
         relay: String? = null,
+        tls: String? = null,
         expires: Double = now + 120,
     ): String {
         val fields = buildList {
@@ -25,6 +27,7 @@ class PairingCodeTest {
             add("\"expires\":$expires")
             if (network != null) add("\"network\":\"$network\"")
             if (relay != null) add("\"relay_code\":\"$relay\"")
+            if (tls != null) add("\"tls_sha256\":\"$tls\"")
         }
         return "{" + fields.joinToString(",") + "}"
     }
@@ -113,6 +116,86 @@ class PairingCodeTest {
             relayCode = null,
         )
         assertEquals(false, PairingCode.validateConnection(invitation, connection))
+    }
+
+    @Test
+    fun acceptsLanInvitationWithPinnedCertificate() {
+        val fingerprint = "a".repeat(64)
+        val invitation = PairingCode.parse(
+            code(endpoint = "https://192.168.1.10:8769", network = "lan", tls = fingerprint),
+            now,
+        )
+        assertEquals("lan", invitation.network)
+        assertEquals(fingerprint, invitation.tlsSHA256)
+    }
+
+    @Test
+    fun lanRequiresFingerprint() {
+        val error = assertThrows(PairingCodeException::class.java) {
+            PairingCode.parse(code(endpoint = "https://192.168.1.10:8769", network = "lan"), now)
+        }
+        assertEquals(PairingFailure.InvalidCode, error.failure)
+    }
+
+    @Test
+    fun lanRequiresPrivateAddress() {
+        val error = assertThrows(PairingCodeException::class.java) {
+            PairingCode.parse(
+                code(endpoint = "https://203.0.113.10:8769", network = "lan", tls = "a".repeat(64)),
+                now,
+            )
+        }
+        assertEquals(PairingFailure.HttpsRequired, error.failure)
+    }
+
+    @Test
+    fun lanRejectsCleartext() {
+        val error = assertThrows(PairingCodeException::class.java) {
+            PairingCode.parse(
+                code(endpoint = "http://192.168.1.10:8769", network = "lan", tls = "a".repeat(64)),
+                now,
+            )
+        }
+        assertEquals(PairingFailure.HttpsRequired, error.failure)
+    }
+
+    @Test
+    fun nonLanNetworkRejectsFingerprint() {
+        val error = assertThrows(PairingCodeException::class.java) {
+            PairingCode.parse(code(tls = "a".repeat(64)), now)
+        }
+        assertEquals(PairingFailure.InvalidCode, error.failure)
+    }
+
+    @Test
+    fun lanConnectionMustMatchFingerprint() {
+        val fingerprint = "a".repeat(64)
+        val invitation = PairingCode.parse(
+            code(endpoint = "https://192.168.1.10:8769", network = "lan", tls = fingerprint),
+            now,
+        )
+        val connection = AgentConnection(
+            workspaceID = "w",
+            assistantID = "a",
+            instanceID = invitation.instanceID,
+            baseURL = invitation.endpoint,
+            dataURL = "https://192.168.1.10:8769/context",
+            eventTransport = "sse",
+            network = "lan",
+            tlsSHA256 = "b".repeat(64),
+        )
+        assertFalse(PairingCode.validateConnection(invitation, connection))
+        assertTrue(PairingCode.validateConnection(invitation, connection.copy(tlsSHA256 = fingerprint)))
+    }
+
+    @Test
+    fun privateAddressRangesAreRecognized() {
+        assertTrue(PairingCode.isPrivateIPv4("10.2.3.4"))
+        assertTrue(PairingCode.isPrivateIPv4("172.16.8.4"))
+        assertTrue(PairingCode.isPrivateIPv4("192.168.1.10"))
+        assertFalse(PairingCode.isPrivateIPv4("172.32.0.1"))
+        assertFalse(PairingCode.isPrivateIPv4("8.8.8.8"))
+        assertFalse(PairingCode.isPrivateIPv4("hello"))
     }
 
     @Test

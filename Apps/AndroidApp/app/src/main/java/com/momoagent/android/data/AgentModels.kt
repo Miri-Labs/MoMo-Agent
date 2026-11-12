@@ -13,6 +13,7 @@ data class PairingInvitation(
     val expires: Double,
     val network: String? = null,
     @SerialName("relay_code") val relayCode: String? = null,
+    @SerialName("tls_sha256") val tlsSHA256: String? = null,
 )
 
 @Serializable
@@ -35,6 +36,7 @@ data class AgentConnection(
     @SerialName("event_transport") val eventTransport: String? = null,
     val network: String? = null,
     @SerialName("relay_code") val relayCode: String? = null,
+    @SerialName("tls_sha256") val tlsSHA256: String? = null,
 )
 
 @Serializable

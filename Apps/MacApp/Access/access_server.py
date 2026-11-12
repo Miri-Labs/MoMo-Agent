@@ -13,11 +13,12 @@ from aiohttp import ClientError, ClientSession, ClientTimeout, web
 # Isolated Python omits the script directory; import siblings from this signed bundle.
 if sys.flags.isolated:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-from pairing_store import PairingStore, is_tailnet_endpoint
+from pairing_store import PairingStore, is_lan_endpoint, is_tailnet_endpoint
 from tunnel import TunnelLifecycle, EmbeddedTailscale
 from relay_access import RelayTunnel
 from rtc_transport import RTCTransport, permitted_route
 from desktop_control import DesktopBridge, DesktopFrameFeed
+from lan_access import LanAccess
 
 
 class AccessService:
@@ -26,9 +27,11 @@ class AccessService:
         self.connection = json.loads((self.data / 'connection.json').read_text())
         self.key = (self.data / 'api-key').read_text().strip()
         self.port = self.connection['port'] + 2
-        if self.port + 1 > 65535: raise ValueError('Runtime port must leave three additional local ports')
+        if self.port + 2 > 65535: raise ValueError('Runtime port must leave three additional local ports')
         self.store = PairingStore(self.data / 'access')
         self.tunnel = TunnelLifecycle(self.data / 'access', self.port)
+        self.lan = LanAccess(self.data / 'access/lan', self.port + 2)
+        self.public_app = None
         self.store.invalidate_invitations()
         self.invitation = None
         self.paired_device_id = None
@@ -53,10 +56,17 @@ class AccessService:
             await asyncio.sleep(5)
 
     def public_connection(self, url):
-        return {**{k: self.connection[k] for k in ('workspace_id', 'assistant_id', 'instance_id')},
-                'base_url': url, 'data_url': url + '/context', 'event_transport': 'sse',
-                **({'network': 'tailscale'} if isinstance(self.provider, EmbeddedTailscale) and is_tailnet_endpoint(url) else
-                   {'network': 'relay', 'relay_code': self.provider.code} if isinstance(self.provider, RelayTunnel) and url == self.provider.url else {})}
+        value = {**{k: self.connection[k] for k in ('workspace_id', 'assistant_id', 'instance_id')},
+                 'base_url': url, 'data_url': url + '/context', 'event_transport': 'sse'}
+        lan_endpoint = self.lan.state.get('endpoint')
+        if (self.lan.state['state'] == 'connected' and lan_endpoint and
+                is_lan_endpoint(url) and url.rstrip('/') == lan_endpoint.rstrip('/')):
+            value.update(network='lan', tls_sha256=self.lan.state['fingerprint'])
+        elif isinstance(self.provider, EmbeddedTailscale) and is_tailnet_endpoint(url):
+            value['network'] = 'tailscale'
+        elif isinstance(self.provider, RelayTunnel) and url == self.provider.url:
+            value.update(network='relay', relay_code=self.provider.code)
+        return value
 
     async def upstream(self, method, path, body=None, context=False, headers=None, streaming=False):
         url = self.connection['data_url' if context else 'base_url'] + path
@@ -72,12 +82,18 @@ class AccessService:
             async with await self.upstream('GET', '/v1/capabilities') as r: online = r.status == 200
         except (OSError, ClientError, asyncio.TimeoutError): pass
         url = self.provider.state['endpoint']
-        if self.invitation and (self.invitation['expires'] <= time.time() or
-                self.invitation['endpoint'] != url and not self.invitation['endpoint'].startswith('http://127.0.0.1:')):
-            self.store.invalidate_invitations(); self.invitation = None
+        if self.invitation:
+            lan_invitation = (self.lan.state['state'] == 'connected' and
+                              is_lan_endpoint(self.invitation['endpoint']))
+            stale_endpoint = (self.invitation['endpoint'] != url and
+                              not self.invitation['endpoint'].startswith('http://127.0.0.1:') and
+                              not lan_invitation)
+            if self.invitation['expires'] <= time.time() or stale_endpoint:
+                self.store.invalidate_invitations(); self.invitation = None
         return {'agent_online': online, 'tunnel': self.provider.state, 'devices': self.store.devices(),
                 'invitation': self.invitation, 'paired_device_id': self.paired_device_id,
-                'connection': self.public_connection(f'http://127.0.0.1:{self.port}'), 'webrtc': self.rtc.status()}
+                'connection': self.public_connection(f'http://127.0.0.1:{self.port}'),
+                'lan': self.lan.state, 'webrtc': self.rtc.status()}
 
     def token(self, request):
         auth = request.headers.get('Authorization', '')
@@ -87,7 +103,8 @@ class AccessService:
         path = request.path
         if path == '/pair/identity' and request.method == 'GET':
             return web.json_response({'application': 'MoMoAgent', 'instance_id': self.connection['instance_id']})
-        if not self.tunnel.enabled: raise web.HTTPServiceUnavailable(reason='Remote access is disabled')
+        if not (self.tunnel.enabled or self.lan.state['state'] == 'connected'):
+            raise web.HTTPServiceUnavailable(reason='Remote access is disabled')
         if path == '/pair/requests' and request.method == 'POST':
             if request.content_length is None or request.content_length > 16384: raise web.HTTPRequestEntityTooLarge(max_size=16384, actual_size=request.content_length or 0)
             body = await request.json()
@@ -168,7 +185,8 @@ class AccessService:
             await response.prepare(request)
             try:
                 async for chunk in upstream.content.iter_any():
-                    if not self.tunnel.enabled or not self.store.authorized(self.token(request)): break
+                    if not (self.tunnel.enabled or self.lan.state['state'] == 'connected') or \
+                            not self.store.authorized(self.token(request)): break
                     await response.write(chunk)
             except (OSError, ClientError, asyncio.TimeoutError): pass
             return response
@@ -190,10 +208,12 @@ class AccessService:
         if path == '/tunnel/start':
             await self.tunnel.start()
         elif path == '/tunnel/configure':
+            await self.lan.stop()
             await self.tunnel.configure(body.get('provider', 'embedded'), body.get('endpoint'), body.get('registration_key', ''))
             self.store.invalidate_invitations()
             self.invitation = None; self.paired_device_id = None
         elif path == '/tunnel/stop':
+            await self.lan.stop()
             await self.tunnel.stop()
             await self.rtc.close()
             self.invitation = None
@@ -202,17 +222,27 @@ class AccessService:
             if not isinstance(self.provider, EmbeddedTailscale) or not self.tunnel.enabled: raise ValueError('Embedded access is not enabled')
             self.provider.report(body, self.tunnel.now())
         elif path == '/pair/invite':
-            url = self.provider.state['endpoint'] if self.provider.state['state'] == 'connected' else None
-            if body.get('loopback') is True:
-                url = f'http://127.0.0.1:{self.port}'
-                self.tunnel.enabled = True  # Explicit local POC; never persists a public connector choice.
+            if body.get('lan') is True:
+                if self.public_app is None: raise ValueError('局域网入口尚未就绪')
+                try:
+                    url = await self.lan.start(self.public_app)
+                except ValueError as error:
+                    raise web.HTTPBadRequest(reason=str(error))
+            else:
+                url = self.provider.state['endpoint'] if self.provider.state['state'] == 'connected' else None
+                if body.get('loopback') is True:
+                    url = f'http://127.0.0.1:{self.port}'
+                    self.tunnel.enabled = True  # Explicit local POC; never persists a public connector choice.
             if not url: raise ValueError('异地入口尚未连通，请稍后再试')
-            self.invitation = self.store.invite(url, network=self.public_connection(url).get('network'))
+            connection = self.public_connection(url)
+            self.invitation = self.store.invite(url, network=connection.get('network'))
             self.paired_device_id = None
-            self.invitation['payload'] = json.dumps({'version': 1, 'application': 'MoMoAgent', 'invitation_id': self.invitation['id'], 'endpoint': url, 'instance_id': self.connection['instance_id'], 'expires': self.invitation['expires']}, separators=(',', ':'))
-            if 'network' in self.public_connection(url):
-                payload = json.loads(self.invitation['payload']); payload.update({key: value for key, value in self.public_connection(url).items() if key in ('network', 'relay_code')})
-                self.invitation['payload'] = json.dumps(payload, separators=(',', ':'))
+            payload = {'version': 1, 'application': 'MoMoAgent', 'invitation_id': self.invitation['id'],
+                       'endpoint': url, 'instance_id': self.connection['instance_id'],
+                       'expires': self.invitation['expires']}
+            for key in ('network', 'relay_code', 'tls_sha256'):
+                if key in connection: payload[key] = connection[key]
+            self.invitation['payload'] = json.dumps(payload, separators=(',', ':'))
         elif path == '/pair/decide':
             self.store.decide(body['id'], body['allow'] is True)
             if body['allow'] is True:
@@ -258,6 +288,9 @@ async def serve(data):
         service.session = session
         public = web.Application(middlewares=[errors], client_max_size=8_000_000)
         public.router.add_route('*', '/{tail:.*}', service.public)
+        lan_public = web.Application(middlewares=[errors], client_max_size=8_000_000)
+        lan_public.router.add_route('*', '/{tail:.*}', service.public)
+        service.public_app = lan_public
         local = control_application(service)
         runners = []; maintenance = None
         try:
@@ -273,6 +306,7 @@ async def serve(data):
             if maintenance:
                 maintenance.cancel()
                 await asyncio.gather(maintenance, return_exceptions=True)
+            await service.lan.stop()
             await service.provider.stop()
             await service.rtc.close()
             for runner in runners: await runner.cleanup()

@@ -132,7 +132,7 @@ xcodebuild -project MoMoAgent.xcodeproj -scheme MoMoAgentMac -configuration Rele
 - [x] **v0.5.3 — 多级记忆库、生活插画手账与三大订阅自由切换**：会自主整理的多级双向链接记忆库（支持原音回听与一句话改笔记/声纹）、每日生活插画与足迹地图，以及 **Codex · Claude · Antigravity** 三大订阅随时热切换。
 - [ ] **AirPods 无缝音频路由**：优化佩戴 AirPods 时的通话与媒体路由自动切换体验。
 - [ ] **外部知识库与效率工具双向同步**：支持与本地外部 Obsidian 仓库、Things 3 及 Git 仓库直接双向同步。
-- [ ] **Android 伴生端（预览）**：配对 Mac 中枢并在 Android 上继续同一段对话。`Apps/AndroidApp` 已有配对与流式聊天骨架；录音、记忆与 Relay 传输需另立切片。
+- [ ] **Android 伴生端（预览）**：配对 Mac 中枢并在 Android 上继续同一段对话。`Apps/AndroidApp` 已有安全局域网直连、配对与流式聊天骨架；录音、记忆与 Relay 传输需另立切片。
 
 ---
 

@@ -71,7 +71,9 @@ struct DesktopOnboardingPairing: View {
     }
 
     private var needsNetworkSetup: Bool {
-        ["tailscale", "embedded"].contains(model.status?.tunnel.mode ?? "") && model.status?.tunnel.state != "connected" && pendingDevices.isEmpty
+        model.status?.lan?.state != "connected" &&
+            ["tailscale", "embedded"].contains(model.status?.tunnel.mode ?? "") &&
+            model.status?.tunnel.state != "connected" && pendingDevices.isEmpty
     }
 
     private func finish() {
@@ -79,7 +81,8 @@ struct DesktopOnboardingPairing: View {
     }
 
     @ViewBuilder private var invitation: some View {
-        if model.status?.tunnel.state == "connected", let invitation = model.status?.invitation {
+        if model.status?.tunnel.state == "connected" || model.status?.lan?.state == "connected",
+           let invitation = model.status?.invitation {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 let remaining = max(0, Int(invitation.expires - timeline.date.timeIntervalSince1970))
                 VStack(spacing: 20) {

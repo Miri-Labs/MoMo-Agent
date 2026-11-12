@@ -15,7 +15,10 @@ implemented. See `docs/todos/android-client.md`.
 
 - JDK 17 or newer.
 - Android SDK Platform 35 and Build Tools 35.
-- A Mac running MoMo Agent with remote access enabled.
+- A Mac running MoMo Agent with a LAN or remote pairing entry enabled.
+- For `network: "lan"`, the phone and Mac must be on the same local network.
+  The app pins the self-signed certificate fingerprint from the QR code, so no
+  Tailscale account is needed.
 - For the `tailscale` network invitation, the Android device must be connected
   to the same tailnet through the Tailscale app. Relay invitations are rejected
   in this preview.
@@ -43,12 +46,17 @@ sdk.dir=/path/to/Android/sdk
 
 ## Pairing
 
-1. On the Mac, open MoMo Agent and show the pairing code.
+1. On the Mac, open MoMo Agent, choose **LAN direct** for the same Wi-Fi, or
+   Tailscale/relay, and show the pairing code.
 2. On Android, tap **Scan pairing code** and point the camera at the QR code,
    or paste the JSON payload into the text field.
 3. Confirm the numeric code shown on both devices, then approve on the Mac.
 4. The credential and connection are stored in
    `EncryptedSharedPreferences`, backed by the Android Keystore.
+
+A LAN invitation carries `network: "lan"` and a `tls_sha256` certificate
+fingerprint. The app trusts only that certificate, still validates its dates,
+and rejects plaintext HTTP LAN endpoints.
 
 The client accepts HTTPS endpoints and loopback HTTP for local development.
 Cleartext traffic is disabled by default and allowed only for `localhost` and
@@ -62,7 +70,9 @@ app/src/main/java/com/momoagent/android/
 ├── data/
 │   ├── AgentApi.kt        HTTPS and SSE client
 │   ├── AgentModels.kt     Wire models (mirrors MoMoAgentClient)
-│   └── PairingStore.kt    Keystore-backed credential storage
+│   ├── PairingCode.kt     Invitation and connection validation
+│   ├── PairingStore.kt    Keystore-backed credential storage
+│   └── PinnedTls.kt       LAN certificate pinning for OkHttp
 └── ui/
     ├── AppViewModel.kt    Pairing and conversation state
     ├── ChatScreen.kt      Conversation and composer

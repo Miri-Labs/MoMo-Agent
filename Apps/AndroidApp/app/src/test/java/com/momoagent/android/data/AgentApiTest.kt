@@ -1,11 +1,15 @@
 package com.momoagent.android.data
 
+import java.security.MessageDigest
+import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -28,7 +32,7 @@ class AgentApiTest {
         server.shutdown()
     }
 
-    private fun connection(): AgentConnection {
+    private fun connection(tlsSHA256: String? = null): AgentConnection {
         val base = server.url("/").toString().trimEnd('/')
         return AgentConnection(
             workspaceID = "w",
@@ -37,8 +41,30 @@ class AgentApiTest {
             baseURL = base,
             dataURL = base + "/context",
             eventTransport = "sse",
+            tlsSHA256 = tlsSHA256,
         )
     }
+
+    private fun startHttps(): HeldCertificate {
+        server.shutdown()
+        server = MockWebServer()
+        val held = HeldCertificate.Builder()
+            .commonName("localhost")
+            .addSubjectAlternativeName("localhost")
+            .addSubjectAlternativeName("127.0.0.1")
+            .build()
+        val certificates = HandshakeCertificates.Builder()
+            .heldCertificate(held)
+            .build()
+        server.useHttps(certificates.sslSocketFactory(), false)
+        server.start()
+        return held
+    }
+
+    private fun fingerprint(certificate: X509Certificate): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(certificate.encoded)
+            .joinToString("") { "%02x".format(it) }
 
     @Test
     fun submitMessageParsesSseAndSendsWireBody() = runBlocking {
@@ -91,5 +117,33 @@ class AgentApiTest {
         val request = server.takeRequest(2, TimeUnit.SECONDS)!!
         assertEquals("/momo/v1/conversation/snapshot", request.path)
         assertEquals("momo:a", request.getHeader("X-Hermes-Session-Key"))
+    }
+
+    @Test
+    fun lanSnapshotPinsTheServerCertificate() = runBlocking {
+        val held = startHttps()
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("{\"conversation_id\":\"c\",\"cursor\":1,\"messages\":{\"data\":[]},\"runs\":[]}"),
+        )
+
+        val snapshot = api.snapshot(connection(fingerprint(held.certificate)), "credential")
+
+        assertEquals("c", snapshot.conversationID)
+    }
+
+    @Test
+    fun wrongCertificatePinIsRejected() = runBlocking {
+        startHttps()
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("{\"conversation_id\":\"c\",\"cursor\":1,\"messages\":{\"data\":[]},\"runs\":[]}"),
+        )
+
+        val result = runCatching { api.snapshot(connection("0".repeat(64)), "credential") }
+
+        assertTrue(result.isFailure)
     }
 }

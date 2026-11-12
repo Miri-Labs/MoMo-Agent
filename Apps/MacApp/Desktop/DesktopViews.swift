@@ -181,7 +181,15 @@ struct DesktopDevices: View {
                     }
                 }
                 if showingMethod {
-                    DesktopConnectionSetup(model: model, inSettings: true, onSaved: { showingMethod = false })
+                    DesktopConnectionSetup(model: model, inSettings: true, onSaved: {
+                        showingMethod = false
+                        if model.status?.lan?.state == "connected" {
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(250))
+                                showingPairing = true
+                            }
+                        }
+                    })
                 } else if model.status == nil {
                     DesktopSettingsGroup("设备") {
                     HStack {
@@ -242,6 +250,16 @@ struct DesktopDevices: View {
         }
     }
 
+    private var connectionLabel: String {
+        if model.status?.lan?.state == "connected" { return "局域网直连" }
+        switch model.status?.tunnel.mode {
+        case "tailscale", "embedded": return "Tailscale 私网"
+        case "external": return "自建服务器"
+        case "relay": return "加密中继"
+        default: return "待选择"
+        }
+    }
+
     private var network: some View {
         DesktopSettingsGroup("网络") {
             HStack(spacing: 16) {
@@ -260,7 +278,7 @@ struct DesktopDevices: View {
             Button { showingMethod = true } label: {
                 HStack {
                     Text("连接方式").fontWeight(.medium); Spacer()
-                    Text(["tailscale", "embedded"].contains(model.status?.tunnel.mode ?? "") ? "Tailscale 私网" : model.status?.tunnel.mode == "external" ? "自建服务器" : model.status?.tunnel.mode == "relay" ? "加密中继" : "待选择").foregroundStyle(.secondary)
+                    Text(connectionLabel).foregroundStyle(.secondary)
                     Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(.secondary).accessibilityHidden(true)
                 }.desktopSettingsRow().contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(model.busy != nil).accessibilityIdentifier("desktop.connectionMethod")

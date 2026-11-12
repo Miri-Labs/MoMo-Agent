@@ -1,6 +1,7 @@
 package com.momoagent.android.data
 
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -37,9 +38,7 @@ class AgentApi {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private val streamHttp = http.newBuilder()
-        .readTimeout(0, TimeUnit.MILLISECONDS)
-        .build()
+    private val clients = ConcurrentHashMap<String, OkHttpClient>()
 
     fun pairRequest(invitation: PairingInvitation, name: String, credential: String): PairingReceipt {
         val body = json.encodeToString(PairRequestBody(invitation.invitationID, name))
@@ -49,7 +48,7 @@ class AgentApi {
             .header("Content-Type", "application/json")
             .post(body.toRequestBody(mediaType))
             .build()
-        return execute(request)
+        return execute(request, clientFor(invitation.tlsSHA256))
     }
 
     fun pairStatus(invitation: PairingInvitation, id: String, credential: String): PairingReceipt {
@@ -58,14 +57,14 @@ class AgentApi {
             .header("Authorization", "Bearer $credential")
             .get()
             .build()
-        return execute(request)
+        return execute(request, clientFor(invitation.tlsSHA256))
     }
 
     fun snapshot(connection: AgentConnection, credential: String): ConversationSnapshot {
         val request = authenticated(connection, credential, join(connection.baseURL, "momo/v1/conversation/snapshot"))
             .get()
             .build()
-        return execute(request)
+        return execute(request, clientFor(connection.tlsSHA256))
     }
 
     fun submitMessage(
@@ -79,7 +78,8 @@ class AgentApi {
             .header("Accept", "text/event-stream")
             .post(body.toRequestBody(mediaType))
             .build()
-        return events(request).map { json.decodeFromString<AgentRunEvent>(it) }
+        return events(request, streamClientFor(connection.tlsSHA256))
+            .map { json.decodeFromString<AgentRunEvent>(it) }
     }
 
     private fun authenticated(connection: AgentConnection, credential: String, url: String): Request.Builder =
@@ -89,7 +89,17 @@ class AgentApi {
             .header("X-Hermes-Session-Key", "momo:${connection.assistantID.lowercase()}")
             .header("Content-Type", "application/json")
 
-    private fun events(request: Request): Flow<String> = callbackFlow {
+    private fun clientFor(fingerprint: String?): OkHttpClient {
+        if (fingerprint == null) return http
+        return clients.getOrPut(fingerprint) { pinnedClient(http, fingerprint) }
+    }
+
+    private fun streamClientFor(fingerprint: String?): OkHttpClient =
+        clientFor(fingerprint).newBuilder()
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .build()
+
+    private fun events(request: Request, client: OkHttpClient): Flow<String> = callbackFlow {
         val listener = object : EventSourceListener() {
             override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
                 trySend(data)
@@ -103,12 +113,12 @@ class AgentApi {
                 close()
             }
         }
-        val source = EventSources.createFactory(streamHttp).newEventSource(request, listener)
+        val source = EventSources.createFactory(client).newEventSource(request, listener)
         awaitClose { source.cancel() }
     }
 
-    private inline fun <reified T> execute(request: Request): T {
-        http.newCall(request).execute().use { response ->
+    private inline fun <reified T> execute(request: Request, client: OkHttpClient = http): T {
+        client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
                 throw AgentHttpException(response.code, body.take(512))

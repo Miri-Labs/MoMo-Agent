@@ -76,6 +76,11 @@ struct DesktopConnectionSetup: View {
                             .buttonStyle(DesktopSetupButton(minimumHeight: 44, fontSize: 14, isLoading: true))
                             .disabled(true)
                     }
+                    Rectangle().fill(MoMoPalette.line).frame(height: 1).accessibilityHidden(true)
+                    Button { connectLan() } label: {
+                        Label("同一 Wi-Fi 直连", systemImage: "wifi")
+                    }.buttonStyle(DesktopSetupButton(minimumHeight: 44, fontSize: 14))
+                        .disabled(loginLoading).accessibilityIdentifier("connection.lan")
                 }
                 .padding(24).frame(maxWidth: .infinity, alignment: .leading)
                 .background(MoMoPalette.paper, in: RoundedRectangle(cornerRadius: 20))
@@ -191,6 +196,15 @@ struct DesktopConnectionSetup: View {
                         Button("重试") { Task { await model.refresh() } }.buttonStyle(.plain).font(.system(size: 13))
                     }.desktopSettingsRow()
                 }
+                Button { connectLan() } label: {
+                    HStack {
+                        Text("局域网直连").font(.system(size: 14, weight: .medium))
+                        Spacer(minLength: 16)
+                        Text(model.status?.lan?.state == "connected" ? "已开启" : "同一 Wi-Fi")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(.secondary).accessibilityHidden(true)
+                    }.desktopSettingsRow().contentShape(Rectangle())
+                }.buttonStyle(.plain).disabled(loginLoading).accessibilityIdentifier("connection.lan")
                 Button { relaySelected = true } label: {
                     HStack {
                         Text("加密中继").font(.system(size: 14, weight: .medium))
@@ -272,6 +286,18 @@ struct DesktopConnectionSetup: View {
             Text("转发需支持 SSE，关闭响应缓冲；保留鉴权与事件游标请求头，无需额外网页登录。")
             Link("frp 配置指南", destination: URL(string: "https://gofrp.org/zh-cn/docs/")!)
         }.font(.system(size: 13)).foregroundStyle(.secondary).padding(24).frame(width: 340)
+    }
+
+    private func connectLan() {
+        connectionTask = Task {
+            checkingConnection = true
+            if await model.control("pair/invite", body: ["lan": true]) {
+                checkingConnection = false
+                onSaved()
+            } else {
+                checkingConnection = false
+            }
+        }
     }
 
     private func connectTailnet() {

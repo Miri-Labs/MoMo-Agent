@@ -9,6 +9,25 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
+LAN_NETWORKS = (IPv4Network('10.0.0.0/8'), IPv4Network('172.16.0.0/12'), IPv4Network('192.168.0.0/16'))
+
+
+def is_lan_address(value):
+    try: address = IPv4Address(value)
+    except (ValueError, TypeError): return False
+    return any(address in network for network in LAN_NETWORKS)
+
+
+def is_lan_endpoint(value):
+    if not isinstance(value, str): return False
+    try:
+        u = urlsplit(value)
+        return (u.scheme == 'https' and is_lan_address(u.hostname) and u.port is not None and
+                1024 <= u.port <= 65535 and u.path in ('', '/') and not u.query and not u.fragment and
+                u.username is None and u.password is None)
+    except (ValueError, TypeError): return False
+
+
 def is_tailnet_endpoint(value):
     if not isinstance(value, str): return False
     try:
@@ -19,6 +38,9 @@ def is_tailnet_endpoint(value):
 
 
 def endpoint(value, network=None):
+    if network == 'lan':
+        if not is_lan_endpoint(value): raise ValueError('Invalid LAN endpoint')
+        return value.rstrip('/')
     if network == 'relay':
         if not isinstance(value, str) or not value.startswith('https://'): raise ValueError('Relay requires HTTPS')
         return endpoint(value)

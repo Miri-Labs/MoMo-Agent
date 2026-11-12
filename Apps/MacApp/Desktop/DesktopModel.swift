@@ -17,12 +17,14 @@ struct AccessStatus: Decodable, Equatable, Sendable {
         enum CodingKeys: String, CodingKey { case id, name, code, state, expires, endpoint; case lastSeen = "last_seen" }
     }
     struct Invitation: Decodable, Equatable, Sendable { let id: String; let endpoint: String; let expires: Double; let payload: String }
+    struct Lan: Decodable, Equatable, Sendable { let state: String; let endpoint: String?; let fingerprint: String?; let error: String? }
     let agentOnline: Bool
     let tunnel: Tunnel
     let devices: [Device]
     let invitation: Invitation?
     let pairedDeviceID: String?
-    enum CodingKeys: String, CodingKey { case agentOnline = "agent_online"; case pairedDeviceID = "paired_device_id"; case tunnel, devices, invitation }
+    let lan: Lan?
+    enum CodingKeys: String, CodingKey { case agentOnline = "agent_online"; case pairedDeviceID = "paired_device_id"; case tunnel, devices, invitation, lan }
 }
 
 enum DesktopAgentEngine: String, CaseIterable, Identifiable {

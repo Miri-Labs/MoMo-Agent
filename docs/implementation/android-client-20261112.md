@@ -7,7 +7,7 @@
 | 检查 | 结果 |
 | --- | --- |
 | `gradle :app:assembleDebug` | 通过；`com.momoagent.android`，versionName `0.1.0`，versionCode 1，minSdk 26，targetSdk 35，APK 约 35 MB |
-| APK SHA-256 | `1efa141fda0475168c4e7acd058b71a82d6669391935adaf805fd634e2589c3a` |
+| APK SHA-256 | `1efa141fda0475168c4e7acd058b71a82d6669391935adaf805fd634e2589c3a`（首切片；同路径 APK 已被局域网版本覆盖，当前 SHA 见[局域网直连实施记录](lan-access-20261112.md)） |
 | `gradle :app:testDebugUnitTest` | 12/12 通过：配对码与连接身份 10 项，HTTPS 快照与 SSE 消息流 2 项 |
 | `gradle :app:lintDebug` | 0 error，8 warning（targetSdk/compileSdk 可升级、OkHttp 与协程/序列化有新版本、`allowBackup` 弃用提示） |
 | 真机或模拟器配对 | **未执行** |

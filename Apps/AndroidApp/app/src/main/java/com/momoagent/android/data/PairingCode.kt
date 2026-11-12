@@ -55,9 +55,23 @@ object PairingCode {
             throw PairingCodeException(PairingFailure.HttpsRequired)
         }
         when (invitation.network) {
-            null -> if (invitation.relayCode != null) throw PairingCodeException(PairingFailure.InvalidCode)
-            "tailscale" -> if (invitation.relayCode != null) throw PairingCodeException(PairingFailure.InvalidCode)
-            "relay" -> if (invitation.relayCode.isNullOrEmpty()) throw PairingCodeException(PairingFailure.InvalidCode)
+            null -> if (invitation.relayCode != null || invitation.tlsSHA256 != null) {
+                throw PairingCodeException(PairingFailure.InvalidCode)
+            }
+            "tailscale" -> if (invitation.relayCode != null || invitation.tlsSHA256 != null) {
+                throw PairingCodeException(PairingFailure.InvalidCode)
+            }
+            "relay" -> if (invitation.relayCode.isNullOrEmpty() || invitation.tlsSHA256 != null) {
+                throw PairingCodeException(PairingFailure.InvalidCode)
+            }
+            "lan" -> {
+                if (uri.scheme != "https" || !isPrivateIPv4(uri.host)) {
+                    throw PairingCodeException(PairingFailure.HttpsRequired)
+                }
+                if (invitation.tlsSHA256?.matches(Regex("[0-9a-f]{64}")) != true) {
+                    throw PairingCodeException(PairingFailure.InvalidCode)
+                }
+            }
             else -> throw PairingCodeException(PairingFailure.InvalidCode)
         }
         return invitation
@@ -68,7 +82,16 @@ object PairingCode {
             connection.baseURL == invitation.endpoint &&
             connection.dataURL == invitation.endpoint.trimEnd('/') + "/context" &&
             connection.network == invitation.network &&
-            connection.relayCode == invitation.relayCode
+            connection.relayCode == invitation.relayCode &&
+            connection.tlsSHA256 == invitation.tlsSHA256
+
+    fun isPrivateIPv4(host: String?): Boolean {
+        val octets = host?.split('.')?.map { it.toIntOrNull() ?: return false } ?: return false
+        if (octets.size != 4 || octets.any { it !in 0..255 }) return false
+        return octets[0] == 10 ||
+            (octets[0] == 172 && octets[1] in 16..31) ||
+            (octets[0] == 192 && octets[1] == 168)
+    }
 
     fun isSecureBaseURL(value: String): Boolean {
         val uri = runCatching { URI(value) }.getOrNull() ?: return false
