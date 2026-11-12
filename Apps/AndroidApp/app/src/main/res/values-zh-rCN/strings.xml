@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MoMo Agent</string>
+
+    <string name="pairing_title">连接你的 Mac</string>
+    <string name="pairing_body">扫描 Mac 上 MoMo Agent 显示的配对码。对话只在你自己的设备之间传输。</string>
+    <string name="pairing_scan">扫描配对码</string>
+    <string name="pairing_paste_label">或粘贴配对码</string>
+    <string name="pairing_connect">连接</string>
+    <string name="pairing_reading">正在读取配对码…</string>
+    <string name="pairing_contacting">正在联系你的 Mac…</string>
+    <string name="pairing_approve_code">请在 Mac 上确认数字 %1$s</string>
+    <string name="pairing_waiting">等待 Mac 上确认…</string>
+    <string name="pairing_failed">配对失败</string>
+    <string name="pairing_back">返回</string>
+    <string name="pairing_invalid">这不是有效的 MoMo Agent 配对码，或已经过期。</string>
+    <string name="pairing_https">Mac 必须通过 HTTPS 访问。请在 Mac 的 MoMo Agent 中启用远程访问。</string>
+    <string name="pairing_relay_unsupported">安卓预览版暂不支持中继配对。请使用 Tailscale 或局域网 HTTPS 入口。</string>
+    <string name="pairing_timeout">配对超时。请在 Mac 上批准请求。</string>
+    <string name="pairing_denied">Mac 拒绝了这次配对。</string>
+    <string name="pairing_identity">Mac 身份与配对码不一致。</string>
+    <string name="pairing_unavailable">无法连接你的 Mac。请确认远程访问已开启，且设备在同一网络。</string>
+
+    <string name="chat_title">MoMo</string>
+    <string name="chat_connected">Mac 已连接</string>
+    <string name="chat_offline">无法连接 Mac</string>
+    <string name="chat_empty">问 MoMo 今天发生了什么、资料里有什么，或者接下来该做什么。</string>
+    <string name="chat_placeholder">给 MoMo 发消息</string>
+    <string name="chat_send">发送</string>
+    <string name="chat_thinking">MoMo 正在思考…</string>
+    <string name="chat_unpair">解除配对</string>
+    <string name="chat_unpair_title">解除这台设备的配对？</string>
+    <string name="chat_unpair_body">已保存的凭据会从这台安卓设备上删除。</string>
+    <string name="chat_cancel">取消</string>
+    <string name="chat_retry">重试</string>
+    <string name="chat_load_failed">无法加载对话。</string>
+    <string name="chat_send_failed">无法连接你的 Mac。</string>
+    <string name="chat_dismiss">知道了</string>
+
+    <string name="scanner_permission">扫描配对码需要相机权限。</string>
+    <string name="scanner_grant">允许使用相机</string>
+    <string name="scanner_close">关闭</string>
+    <string name="scanner_hint">将相机对准 Mac 上的配对码。</string>
+    <string name="scanner_unavailable">相机不可用。请关闭扫描并粘贴配对码。</string>
+</resources>

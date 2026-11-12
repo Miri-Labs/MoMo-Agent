@@ -132,6 +132,7 @@ Open `MoMoAgent.xcodeproj` in Xcode, select the **`MoMoAgent`** scheme targeting
 - [x] **v0.5.3 — Self-Organizing Memory Vault, Life Illustrations & 3-Way Subscriptions**: Multi-level Obsidian-style Markdown vault with audio proof and plain-language editing, illustrated daily life stamps & footprint map, plus seamless switching across **Codex**, **Claude**, and **Antigravity**.
 - [ ] **AirPods Seamless Route Switching**: Smooth automatic audio routing when wearing AirPods.
 - [ ] **Two-Way External Vault & Workflow Sync**: Direct two-way sync with external Obsidian vaults, Things 3, and local Git repositories.
+- [ ] **Android Companion (Preview)**: Pair with the Mac hub and continue the same conversation from Android. Pairing and streamed chat are scaffolded in `Apps/AndroidApp`; recording, memory, and relay transport need separate work.
 
 ---
 

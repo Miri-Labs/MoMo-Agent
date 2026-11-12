@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MoMo Agent</string>
+
+    <string name="pairing_title">Connect to your Mac</string>
+    <string name="pairing_body">Scan the pairing code shown in MoMo Agent on your Mac. Your conversation stays on your own devices.</string>
+    <string name="pairing_scan">Scan pairing code</string>
+    <string name="pairing_paste_label">Or paste the pairing code</string>
+    <string name="pairing_connect">Connect</string>
+    <string name="pairing_reading">Reading pairing code…</string>
+    <string name="pairing_contacting">Contacting your Mac…</string>
+    <string name="pairing_approve_code">Confirm code %1$s on your Mac</string>
+    <string name="pairing_waiting">Waiting for approval on your Mac…</string>
+    <string name="pairing_failed">Pairing failed</string>
+    <string name="pairing_back">Back</string>
+    <string name="pairing_invalid">This is not a valid MoMo Agent pairing code, or it has expired.</string>
+    <string name="pairing_https">The Mac must be reachable over HTTPS. Enable remote access in MoMo Agent on your Mac.</string>
+    <string name="pairing_relay_unsupported">Relay pairing is not supported in the Android preview yet. Use Tailscale or a local HTTPS route.</string>
+    <string name="pairing_timeout">Pairing timed out. Approve the request on your Mac.</string>
+    <string name="pairing_denied">Pairing was denied on your Mac.</string>
+    <string name="pairing_identity">The Mac identity does not match the pairing code.</string>
+    <string name="pairing_unavailable">Cannot reach your Mac. Check that remote access is on and the device is on the same network.</string>
+
+    <string name="chat_title">MoMo</string>
+    <string name="chat_connected">Mac connected</string>
+    <string name="chat_offline">Mac unreachable</string>
+    <string name="chat_empty">Ask MoMo about your day, your notes, or what to do next.</string>
+    <string name="chat_placeholder">Message MoMo</string>
+    <string name="chat_send">Send</string>
+    <string name="chat_thinking">MoMo is thinking…</string>
+    <string name="chat_unpair">Unpair</string>
+    <string name="chat_unpair_title">Unpair this device?</string>
+    <string name="chat_unpair_body">The saved credential will be removed from this Android device.</string>
+    <string name="chat_cancel">Cancel</string>
+    <string name="chat_retry">Retry</string>
+    <string name="chat_load_failed">Could not load the conversation.</string>
+    <string name="chat_send_failed">Could not reach your Mac.</string>
+    <string name="chat_dismiss">Dismiss</string>
+
+    <string name="scanner_permission">Camera access is needed to scan the pairing code.</string>
+    <string name="scanner_grant">Allow camera</string>
+    <string name="scanner_close">Close</string>
+    <string name="scanner_hint">Point the camera at the code on your Mac.</string>
+    <string name="scanner_unavailable">Camera is unavailable. Close the scanner and paste the pairing code instead.</string>
+</resources>
