@@ -176,14 +176,13 @@ struct DesktopCompanionAttachment: View {
     let model: DesktopModel
     let companion: DesktopCompanionController
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
     var body: some View {
         CompanionMainWindowReader { companion.mainWindow = $0 }.frame(width: 0, height: 0).onAppear {
             companion.install(model: model, openChat: {
                 model.selection = "chat"
                 if !companion.focusMainWindow() { openWindow(id: "main") }
                 NSApplication.shared.activate(ignoringOtherApps: true)
-            }, openSettings: { openSettings(); NSApplication.shared.activate(ignoringOtherApps: true) })
+            }, openSettings: { openWindow(id: MoMoAgentMacApp.settingsID); NSApplication.shared.activate(ignoringOtherApps: true) })
         }
     }
 }
