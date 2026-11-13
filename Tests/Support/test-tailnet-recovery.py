@@ -113,6 +113,29 @@ import TailscaleKit
 import MoMoAgentClient
 @main struct RecoveryTests {
     @MainActor static func main() async throws {
+        // Use the access service's 15-second deadline and the desktop refresh cadence.
+        let healthURL = URL(string: "http://100.64.0.2:8767")!
+        let start = ContinuousClock.now
+        var health = EmbeddedAccessHealth()
+        precondition(!health.recentlyVerified(healthURL, now: start))
+        var probes = 0
+        for seconds in stride(from: 0, through: 90, by: 3) {
+            let now = start.advanced(by: .seconds(seconds))
+            if let last = health.lastReport { precondition(last.duration(to: now) < .seconds(15)) }
+            if health.needsProbe(healthURL, now: now) {
+                probes += 1
+                health.confirm(healthURL, now: now)
+                health.lastReport = now
+            } else if health.needsReport(now: now) {
+                health.lastReport = now
+            }
+        }
+        precondition(probes == 4)
+        let justAfterFailure = start.advanced(by: .seconds(121))
+        precondition(health.recentlyVerified(healthURL, now: justAfterFailure))
+        precondition(!health.recentlyVerified(URL(string: "http://100.64.0.3:8767")!, now: justAfterFailure))
+        precondition(!health.recentlyVerified(healthURL, now: start.advanced(by: .seconds(150))))
+        print("PASS: verified endpoint lease, periodic identity check and bounded ATS recovery")
         let peer: [String: Any] = ["Active": true, "Online": true, "TailscaleIPs": ["100.64.0.2"],
             "CurAddr": "192.168.1.2:41641", "Relay": "fixture-region", "HostName": "private-name"]
         let direct = TailnetDiagnostics.routeSummary(["Peer": ["private-key": peer]], target: "100.64.0.2")
@@ -387,13 +410,30 @@ import MoMoAgentClient
 
         // Regression 5: Peer warmup triggers disco + TSMP LocalAPI pings and retries cold TSMP once.
         let proxyAddr = ProcessInfo.processInfo.environment["MOMO_TEST_PROXY"]!
-        _ = try await URLSession.shared.data(from: URL(string: "http://\(proxyAddr)/reset-pings?fail_first_tsmp=1")!)
         zombieNet.suspendSessions()
-        _ = try await zombieNet.connectedSession(peer: "100.118.16.18")
-        let (pingRaw, _) = try await URLSession.shared.data(from: URL(string: "http://\(proxyAddr)/pings")!)
-        let pingPayload = try JSONSerialization.jsonObject(with: pingRaw) as! [String: Any]
-        let tsmpCount = pingPayload["tsmp"] as? Int ?? 0
-        let discoCount = pingPayload["disco"] as? Int ?? 0
+        _ = try await URLSession.shared.data(from: URL(string: "http://\(proxyAddr)/reset-pings?fail_first_tsmp=1")!)
+        Probe.setProtocolOverride(TransientPeerProtocol.self)
+        TransientPeerProtocol.reset(failures: 0)
+        let endpoint = URL(string: "http://100.118.16.18:8767")!
+        let session = try await zombieNet.connectedSession(peer: "100.118.16.18", interactive: true)
+        let reply = try await TailnetChunkStream.read(URLRequest(url: endpoint), session: session, network: zombieNet, limit: 1024)
+        precondition(reply.status == 200)
+        func pings() async throws -> [String: Int] {
+            let (data, _) = try await URLSession.shared.data(from: URL(string: "http://\(proxyAddr)/pings")!)
+            return try JSONDecoder().decode([String: Int].self, from: data)
+        }
+        // The fixture holds TSMP until real chat has completed.
+        let pending = try await pings()
+        precondition(pending["expired"] == 0, "Real HTTP waited for peer discovery")
+        _ = try await URLSession.shared.data(from: URL(string: "http://\(proxyAddr)/release-pings")!)
+        let pingDeadline = ContinuousClock.now.advanced(by: .seconds(3))
+        var pingPayload = try await pings()
+        while pingPayload["tsmp"] != 2, ContinuousClock.now < pingDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+            pingPayload = try await pings()
+        }
+        let tsmpCount = pingPayload["tsmp"] ?? 0
+        let discoCount = pingPayload["disco"] ?? 0
         precondition(tsmpCount == 2 && discoCount >= 1, "Cold peer warmup must run disco and retry TSMP once on initial error")
         _ = try await zombieNet.connectedSession(peer: "100.118.16.18")
         let (cachedPingRaw, _) = try await URLSession.shared.data(from: URL(string: "http://\(proxyAddr)/pings")!)
@@ -401,10 +441,8 @@ import MoMoAgentClient
         precondition((cachedPingPayload["tsmp"] as? Int) == 2, "Steady-state session reuse must not re-ping")
 
         // Regression 6: EmbeddedTailnetTransport transparently retries safe pre-header socket failures (-1000 badURL) once.
-        Probe.setProtocolOverride(TransientPeerProtocol.self)
         defer { Probe.setProtocolOverride(nil) }
         zombieNet.suspendSessions()
-        let endpoint = URL(string: "http://100.118.16.18:8767")!
         let transport = EmbeddedTailnetTransport(network: zombieNet, endpoint: endpoint)
         TransientPeerProtocol.reset(failures: 1)
         var getReq = URLRequest(url: endpoint.appendingPathComponent("momo/v1/conversation/works"))
@@ -487,7 +525,9 @@ def run(*args):
 
 class HealthyProxy(BaseHTTPRequestHandler):
     lock = threading.Lock()
-    pings = {"disco": 0, "tsmp": 0}
+    pings = {"disco": 0, "tsmp": 0, "expired": 0}
+    release_ping = threading.Event()
+    release_ping.set()
     fail_first_tsmp = False
 
     def _reply(self, payload):
@@ -506,7 +546,13 @@ class HealthyProxy(BaseHTTPRequestHandler):
                 self.pings["disco"] = 0
                 self.pings["tsmp"] = 0
                 HealthyProxy.fail_first_tsmp = qs.get("fail_first_tsmp") == ["1"]
+                self.pings["expired"] = 0
+                self.release_ping.clear()
             self._reply({"ok": True})
+            return
+        if parsed.path == "/release-pings":
+            self.release_ping.set()
+            self._reply({})
             return
         if parsed.path == "/pings":
             with self.lock:
@@ -521,6 +567,9 @@ class HealthyProxy(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             kind = (qs.get("type") or [""])[0]
             err = ""
+            if kind == "TSMP" and not self.release_ping.wait(timeout=1.5):
+                with self.lock:
+                    self.pings["expired"] += 1
             with self.lock:
                 if kind == "disco":
                     self.pings["disco"] += 1
@@ -547,6 +596,7 @@ with tempfile.TemporaryDirectory(prefix="momo-tailnet-recovery-") as temporary:
         "-emit-module-path", str(root / "MoMoAgentClient.swiftmodule"), "-o", str(root / "libMoMoAgentClient.dylib"))
     run("xcrun", "swiftc", "-swift-version", "6", "-parse-as-library", "-I", str(root), "-L", str(root),
         "-lTailscaleKit", "-lMoMoAgentClient", "-Xlinker", "-rpath", "-Xlinker", str(root),
+        str(ROOT / "Apps/MacApp/Desktop/EmbeddedAccessHealth.swift"),
         str(ROOT / "Apps/ClientUI/Network/TailnetDiagnostics.swift"),
         str(ROOT / "Apps/ClientUI/Network/TailnetProxySettings.swift"),
         str(ROOT / "Apps/ClientUI/Network/EmbeddedTailnet.swift"),

@@ -449,7 +449,8 @@ struct PhoneMacConnectionView: View {
         case .ready: return String(localized: "已连接")
         case .retrying: return String(localized: "正在重连")
         case .authenticationRequired: return String(localized: "需要重新配对")
-        case .unavailable, nil: return String(localized: "暂未连接")
+        case .unavailable: return String(localized: "暂时无法同步")
+        case nil: return String(localized: "暂未连接")
         }
     }
 }

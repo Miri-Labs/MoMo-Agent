@@ -11,8 +11,15 @@ struct RemoteTaskRecoveryView: View {
         if store.connectionState != .ready {
             HStack(spacing: 10) {
                 Image(systemName: store.connectionState == .authenticationRequired ? "link.badge.plus" : "wifi.slash")
-                Text(store.connectionState == .authenticationRequired ? "配对已失效" :
-                        store.connectionState == .retrying ? "连接中断，正在重连" : "无法连接 Mac")
+                if store.connectionState == .authenticationRequired {
+                    Text("配对已失效")
+                } else if store.tasks.contains(where: { $0.run == nil && $0.isPending && !$0.deliveryFailed && !$0.stopRequested }) {
+                    Text("消息已保存，等待送达确认")
+                } else if store.connectionState == .retrying {
+                    Text("正在恢复同步")
+                } else {
+                    Text("暂时无法同步")
+                }
                 Spacer(minLength: 8)
                 if store.connectionState != .authenticationRequired {
                     Button {
