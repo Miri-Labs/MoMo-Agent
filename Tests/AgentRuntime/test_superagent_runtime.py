@@ -601,46 +601,47 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                 runs_after_bg_cancel = await (await client.get("/momo/v1/conversation/runs", headers=auth)).json()
                 self.assertEqual([w["id"] for w in runs_after_bg_cancel["background_work"]], ["superagent:t-queued-chat"])
 
-                # 6. Streaming ASR revisions coalesce across settle window until settled or marked ended_at.
-                stream_sess = str(uuid.uuid4())
+                # Each committed batch wakes its own source, even while other audio awaits ASR.
+                p1 = make_source_payload("计费模块核对", ["咱们看一下 billing.py 里的年付折扣系数"])
+                p1["pending_transcription_ranges"] = [{"start": 1761897610, "end": 1761897640}]
+                other = make_source_payload("另一段录音", ["尚未收到这段录音的完成通知"])
                 cstore = ContextStore(data / "context")
                 try:
-                    p1 = make_source_payload("计费模块核对", ["咱们看一下 billing.py 里的年付折扣系数"], session_id=stream_sess)
-                    cstore.sync_source(p1)
+                    synced_stream = cstore.sync_source(p1)
+                    cstore.sync_source(other)
                 finally:
                     cstore.close()
+                notify = {"origin": "source_sync", "source_id": synced_stream["source_id"]}
+                async def notify_commit():
+                    response = await client.post("/momo/v1/proactive/ingest", headers=auth, json=notify)
+                    return (await response.json())["count"]
+                self.assertEqual(await notify_commit(), 1)
+                self.assertEqual(await notify_commit(), 0)
 
-                # Fresh streaming ping within settle window holds watermark (0 triggers emitted mid-thought).
-                held = await (
-                    await client.post("/momo/v1/proactive/ingest", headers=auth, json={"origin": "source_sync"})
-                ).json()
-                self.assertEqual(held["count"], 0)
-
-                # Second span arrives and marks ended_at -> flushes both spans together as a single coherent trigger!
+                # An older audio window can finish after a newer one. A shared timestamp is also valid.
+                earlier = {"id": str(uuid.uuid4()), "recorded_at": 1761897590, "text": "定下来统一改成 0.80"}
+                same_time = {**p1["spans"][0], "id": str(uuid.uuid4()), "text": "同时核对报价单"}
+                p2 = {**p1, "version": 2, "spans": [earlier, *p1["spans"], same_time]}
+                p2["text_sha256"] = digest("\n".join(span["text"] for span in p2["spans"]))
                 cstore = ContextStore(data / "context")
                 try:
-                    p2 = make_source_payload(
-                        "计费模块核对",
-                        ["咱们看一下 billing.py 里的年付折扣系数", "定下来统一改成 0.80 并跑通单测"],
-                        session_id=stream_sess,
-                    )
-                    p2["version"] = 2
-                    p2["ended_at"] = 1761897630.0
-                    synced_stream = cstore.sync_source(p2)
+                    cstore.sync_source(p2)
                 finally:
                     cstore.close()
-
-                flushed = await (
-                    await client.post("/momo/v1/proactive/ingest", headers=auth, json={"origin": "source_sync"})
-                ).json()
-                self.assertEqual(flushed["count"], 1)
+                self.assertEqual(await notify_commit(), 1)
+                self.assertEqual(await notify_commit(), 0)
                 polled3 = await (
                     await client.get(f"/momo/internal/superagent/triggers?after={polled2['next_cursor']}", headers=bridge_headers)
                 ).json()
-                coalesced_events = [e for e in polled3["events"] if e.get("source_id") == synced_stream["source_id"]]
-                self.assertEqual(len(coalesced_events), 1)
-                self.assertIn("billing.py", coalesced_events[0]["text"])
-                self.assertIn("0.80", coalesced_events[0]["text"])
+                events = [event for event in polled3["events"] if event.get("source_id")]
+                self.assertEqual([event["source_id"] for event in events], [synced_stream["source_id"]] * 2)
+                self.assertIn("billing.py", events[0]["text"])
+                self.assertIn("0.80", events[1]["text"])
+                self.assertIn("同时核对报价单", events[1]["text"])
+                self.assertNotIn("billing.py", events[1]["text"].split("[本次新增转写]")[-1])
+                # Clear the unrelated source separately before subsequent unscoped manual ingests.
+                notify["source_id"] = other["library_id"] + "/" + other["session_id"]
+                self.assertEqual(await notify_commit(), 1)
 
                 # 7. Long recordings (>300 spans) preserve trigger text in thread context without 120-span truncation.
                 long_sess = str(uuid.uuid4())
@@ -1125,6 +1126,54 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                 )
             finally:
                 await client.close()
+
+    async def test_source_upload_drives_ingest_and_retries_a_lost_receipt(self):
+        from context_server import ContextService
+        import threading
+        from aiohttp import ClientSession
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "Agent"
+            conn = momo_agent.initialize(data, 19835)
+            gateway = SuperAgentGateway(data, conn, python_executable=Path(sys.executable), base_env={}, manage_dsh=False)
+            async with TestClient(TestServer(gateway.create_app())) as client, ClientSession() as phone:
+                context = ContextService(data, {**conn, "data_url": "http://127.0.0.1:0",
+                                                "base_url": str(client.make_url("/")).rstrip("/")})
+                server = threading.Thread(target=context.server.serve_forever, daemon=True)
+                server.start()
+                url = f"http://127.0.0.1:{context.server.server_port}/v1/sources"
+                headers = {"Authorization": "Bearer " + context.key}
+                payload = make_source_payload("同步测试", ["短句"])
+                try:
+                    with patch.object(context, "request", side_effect=TimeoutError):
+                        async with phone.post(url, json=payload, headers=headers) as response:
+                            self.assertEqual(response.status, 503)
+                    for _ in range(2):
+                        async with phone.post(url, json=payload, headers=headers) as response:
+                            self.assertEqual(response.status, 200)
+                    events = gateway.bridge.list_triggers(0)[0]
+                    self.assertEqual(len(events), 1)
+                    self.assertIn("短句", events[0]["text"])
+
+                    # Writing a source without a commit notification must not start an idle scan.
+                    source = ContextStore(data / "context")
+                    try:
+                        source.sync_source(make_source_payload("恢复测试", ["服务退出时已提交的内容"]))
+                    finally:
+                        source.close()
+                    with patch.object(gateway, "ingest_context_sources", wraps=gateway.ingest_context_sources) as ingest:
+                        await asyncio.sleep(1.7)
+                        ingest.assert_not_called()
+                finally:
+                    await asyncio.to_thread(context.server.shutdown)
+                    context.server.server_close()
+                    server.join()
+
+            restarted = SuperAgentGateway(data, conn, python_executable=Path(sys.executable), base_env={}, manage_dsh=False)
+            async with TestClient(TestServer(restarted.create_app())):
+                events = restarted.bridge.list_triggers(0)[0]
+                self.assertEqual(len(events), 2)
+                self.assertIn("服务退出时已提交的内容", events[-1]["text"])
 
     async def test_upgrade_reassesses_only_current_recording_day_once(self) -> None:
         import time

@@ -98,7 +98,15 @@ class ContextService:
                         body = json.loads(self.rfile.read(size))
                         if url.path == "/v1/sources":
                             result = store.sync_source(body)
-                            service.notify_proactive_ingest()
+                            if body["spans"]:
+                                try:
+                                    service.request("/momo/v1/proactive/ingest",
+                                                    {"origin": "source_sync", "source_id": result["source_id"]})
+                                except (OSError, ValueError):
+                                    # The phone retries the same committed revision if its wakeup was lost.
+                                    self.respond(503, {"error": {"code": "ingest_unavailable",
+                                                                 "message": "Transcript saved; retry delivery"}})
+                                    return
                         elif url.path == "/v1/health":
                             result = sync_health(store, body)
                         elif url.path == "/v1/phone-sources":
@@ -179,9 +187,12 @@ class ContextService:
 
     def close(self):
         self.stopped.set()
-        self.server.shutdown(); self.server.server_close()
+        if self.threads[0].is_alive():
+            self.server.shutdown()
+        self.server.server_close()
         for thread in self.threads:
-            thread.join(timeout=6)
+            if thread.ident is not None:
+                thread.join(timeout=6)
 
     def request(self, path, body=None, operation=None):
         headers = {"Authorization": "Bearer " + self.key, "Content-Type": "application/json",
@@ -193,15 +204,6 @@ class ContextService:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open(request, timeout=5) as response:
             return json.load(response)
-
-    def notify_proactive_ingest(self) -> None:
-        def _ping() -> None:
-            try:
-                self.request("/momo/v1/proactive/ingest", {"origin": "source_sync"})
-            except Exception:
-                pass
-
-        threading.Thread(target=_ping, daemon=True).start()
 
     def background_quota_exhausted(self, now):
         from provider_notice import canonical_provider, read_provider_notice
