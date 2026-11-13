@@ -738,24 +738,21 @@ def seed_superagent_orchestrator(
         if momo_src and momo_src.get("installed", True):
             break
         time.sleep(0.2)
-    desired_momo = {
-        "enabled": True,
-        "config": {
-            "bridgeUrl": f"http://127.0.0.1:{gateway_port}",
-            "chat": True,
-            "transcripts": "all",
-            "lifeSignals": "all",
-            "waitMs": 5000,
-            "pollIntervalMs": 250,
-        },
-    }
-    if momo_src and momo_src.get("installed", True) and momo_src.get("value") != desired_momo:
-        dsh_api_request(
-            dsh_port,
-            "PUT",
-            "/orchestrator/api/settings/source:momo",
-            {"revision": momo_src["revision"], "value": desired_momo},
-        )
+    if momo_src and momo_src.get("installed", True):
+        # The gateway owns its address. Source settings saved by the owner survive a restart.
+        value = momo_src["value"]
+        config = dict(value["config"])
+        if momo_src["revision"] == 0:
+            config["pollIntervalMs"] = 250
+        config["bridgeUrl"] = f"http://127.0.0.1:{gateway_port}"
+        desired = {**value, "config": config}
+        if value != desired:
+            dsh_api_request(
+                dsh_port,
+                "PUT",
+                "/orchestrator/api/settings/source:momo",
+                {"revision": momo_src["revision"], "value": desired},
+            )
 
     # 2. Ensure momo owner is allowed and Personal Agent proactive rules are seeded (upgrading legacy built-in sets cleanly).
     seed_file = work_dir.parent / "state/momo-seed.json"
@@ -879,12 +876,12 @@ def seed_superagent_orchestrator(
     if seed_meta:
         _atomic_private(seed_file, json.dumps(seed_meta, indent=2) + "\n", 0o600)
 
-    # 5. Disable GitHub source in Personal Agent mode if still enabled (triggers Setup reload cleanly).
+    # 5. Fresh profiles have no GitHub deployment. Keep any source the owner has configured.
     settings = dsh_api_request(dsh_port, "GET", "/orchestrator/api/settings")
     sources = {item["id"]: item for item in settings.get("sources", ())}
     gh = sources.get("github")
     toggled_github = False
-    if gh and gh.get("value", {}).get("enabled", True):
+    if gh and gh["revision"] == 0 and gh["value"]["enabled"] and not gh["value"]["config"].get("repository"):
         dsh_api_request(
             dsh_port,
             "PUT",

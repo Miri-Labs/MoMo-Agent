@@ -20,6 +20,7 @@ import { KV } from '../src/kv.ts'
 import { SettingsSchema, policyVersion, type SettingsOrigin } from '../src/policy.ts'
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { feishuKind } from '../src/sources/feishu.ts'
+import { momoKind, momoTrigger } from '../src/sources/momo.ts'
 import { githubKind, pollRound } from '../src/sources/github.ts'
 import { CliError, Commands } from '../src/infra/commands.ts'
 import { UserError, key, runningAssignment, said, threadKey, waitsForPerson, type Trigger } from '../src/core/index.ts'
@@ -44,6 +45,7 @@ type RegisteredTool = { name: string; output: { render: (args: unknown, result: 
 let tools: Map<string, Map<string, RegisteredTool>>
 type Section = { name: string; text: (context: { signal?: AbortSignal }) => string; interpolate?: boolean }
 let sections: Map<string, Section>
+let skillNames: Map<string, Set<string>>
 type Guard = (execution?: { name: string; arguments: unknown }) => string | undefined
 let guards: Map<string, Guard>
 let restricts: Map<string, unknown[]>
@@ -156,6 +158,7 @@ beforeEach(async () => {
   agents = new Map()
   tools = new Map()
   sections = new Map()
+  skillNames = new Map()
   guards = new Map()
   restricts = new Map()
   deliveries = vi.fn()
@@ -165,7 +168,7 @@ beforeEach(async () => {
       const agentCtx = new Context()
       const preset = {}
       const inherited = ['bash', 'read', 'read_image', 'skill', 'job_output', 'job_list', 'job_kill', 'grep', 'web_search',
-        'ask_user_question', 'plugin_manager', 'schedule_create', 'create_goal', 'session_create', 'session_send_message', 'feishu_doc_edit']
+        'ask_user_question', 'plugin_manager', 'cordis_inspect_list', 'cordis_inspect_query', 'schedule_create', 'create_goal', 'session_create', 'session_send_message', 'feishu_doc_edit']
       const sessionTools = new Map<string, RegisteredTool>()
       tools.set(sessionId, sessionTools)
       agentCtx.reflect.provide('tools', { register: (tool: RegisteredTool) => { sessionTools.set(tool.name,
@@ -180,7 +183,12 @@ beforeEach(async () => {
           restricts.set(sessionId, [...restricts.get(sessionId) ?? [], rule]); return () => {}
         }),
         guard: vi.fn((check: Guard) => { guards.set(sessionId, check); return () => {} }) })
-      agentCtx.reflect.provide('skills', { register: () => () => {} })
+      const names = new Set<string>()
+      skillNames.set(sessionId, names)
+      agentCtx.reflect.provide('skills', { register: ({ name }: { name: string }) => {
+        names.add(name)
+        return () => names.delete(name)
+      } })
       agentCtx.reflect.provide('systemPrompt', { section: (spec: Section) => { sections.set(sessionId, spec); return () => {} } })
       const inbox = { nextTurn: [] as UserMessage[], nextStep: [] as UserMessage[],
         // A pending message taken out, as DSH's inbox does by its id.
@@ -1677,6 +1685,30 @@ it('creates an Executor Session under the bundle\'s worker preset, and the main 
   const created = controller.create.mock.calls.map(([options]) => options as { sessionId: string; agentPreset: string })
   expect(created.find(options => options.sessionId === sessionId)).toMatchObject({ agentPreset: 'dsh-superagent-worker' })
   expect(created.find(options => options.sessionId === runtime.masterId)).toMatchObject({ agentPreset: 'dsh-superagent-router' })
+})
+
+it.each(['standard', 'creator'] as const)('routes owner feedback with the %s mode captured by MoMo', async mode => {
+  runtime.sources.register(momoKind)
+  const settings = runtime.store.settings()
+  runtime.store.saveSettings({ ...settings, policy: { ...settings.policy,
+    sources: { ...settings.policy.sources, momo: { allowed: [{ id: 'owner' }] } } } })
+  const trigger = momoTrigger({ id: 'feedback', cursor: '1', stream: 'chat', thread_id: 'chat:release',
+    chat_mode: mode, actor_id: 'owner', human: true, addressed: 'direct', reply_allowed: false,
+    at: new Date().toISOString(), text: '你总漏掉这个项目的正式发布，以后也留意一下它的公告源。' }, 'http://127.0.0.1:8787')
+  const { sessionId } = await acceptedTicket(trigger)
+  const candidate = relays(runtime.masterId).find(item => item.trigger_id === trigger.id)!
+  const creator = mode === 'creator'
+  expect(String(candidate.next_action).includes('which sources it watches')).toBe(creator)
+  expect(controller.create.mock.calls.find(([opts]) => opts.sessionId === sessionId)?.[0].agentPreset)
+    .toBe(creator ? 'cordis' : 'dsh-superagent-worker')
+  const skill = 'dsh-superagent-momo-creator'
+  expect(sections.get(sessionId)!.text({}).includes(skill)).toBe(creator)
+  expect(skillNames.get(sessionId)!.has(skill)).toBe(creator)
+  expect(skillNames.get(runtime.masterId)!.has(skill)).toBe(false)
+  const { allow } = restricts.get(sessionId)![0] as { allow: string[] }
+  for (const tool of ['plugin_manager', 'cordis_inspect_list', 'cordis_inspect_query']) {
+    expect(allow.includes(tool)).toBe(creator)
+  }
 })
 
 it('selects its own preset again for a main Session or worker a person switched before its first turn, and not after it', async () => {

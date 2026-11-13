@@ -33,6 +33,11 @@
       "file": "src/policy.ts, src/executor/dsh.ts, src/app/sessions.ts, src/client/locales.ts",
       "reason": "Support general Personal Agent dual-track proactive admission: rules marked `exploratory: true` may accept grounded exploratory research, option trade-off synthesis, and workspace deliverables (`target_basis: 'exploratory'`) without prematurely mutating user repositories, while non-exploratory rules preserve strict settled-direction enforcement; keep unaddressed MoMo ambient transcripts/life-signals rule-evaluated (`inferred`) for the owner and non-originating (`not_a_member`) for non-owner speakers even on participating threads.",
       "validation": "tests/policy.spec.ts, tests/momo-source.spec.ts, tests/locales.spec.ts, tests/model-surface.spec.ts, and Tests/AgentRuntime/test_superagent_runtime.py"
+    },
+    {
+      "file": "src/app/links.ts, src/app/sessions.ts, src/app/skill-files.ts, skills/dsh-superagent-momo-creator/SKILL.md",
+      "reason": "Let direct owner feedback in MoMo Creator mode drive verified, persistent improvements using the installed Harness profile, including SuperAgent Sources.",
+      "validation": "tests/runtime.spec.ts exercises routing, the selected preset, worker instructions, skill registration and tool restrictions for the same feedback in both modes."
     }
   ]
 }
