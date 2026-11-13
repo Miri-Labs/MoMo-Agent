@@ -225,7 +225,8 @@ class BridgeStore:
                 revision TEXT NOT NULL,
                 max_seq INTEGER NOT NULL,
                 updated_at REAL NOT NULL,
-                last_recorded_at REAL NOT NULL DEFAULT 0
+                last_recorded_at REAL NOT NULL DEFAULT 0,
+                span_ids TEXT
             );
             CREATE TABLE IF NOT EXISTS api_runs(
                 run_id TEXT PRIMARY KEY,
@@ -246,6 +247,8 @@ class BridgeStore:
             self.db.execute("ALTER TABLE source_watermarks ADD COLUMN last_recorded_at REAL NOT NULL DEFAULT 0")
         with suppress(sqlite3.OperationalError):
             self.db.execute("ALTER TABLE triggers ADD COLUMN chat_mode TEXT")
+        if "span_ids" not in {row[1] for row in self.db.execute("PRAGMA table_info(source_watermarks)")}:
+            self.db.execute("ALTER TABLE source_watermarks ADD COLUMN span_ids TEXT")
         path.chmod(0o600)
 
     def chat_mode(self) -> str:
@@ -430,10 +433,6 @@ class BridgeStore:
 class SuperAgentGateway:
     """Serves MoMo's local HTTP/SSE protocol while supervising DeepSeek SuperAgent (dsh)."""
 
-    TRANSCRIPT_SETTLE_SECONDS = 15.0
-    TRANSCRIPT_MIN_LIVE_CHARS = 120
-    TRANSCRIPT_PASSAGE_CHARS = 600
-    TRANSCRIPT_MAX_DEFER_SECONDS = 75.0
     TRANSCRIPT_SESSION_GAP_SECONDS = 900.0
 
     def __init__(
@@ -655,7 +654,7 @@ class SuperAgentGateway:
                 log.info("Coalesced %d backlogged transcript micro-triggers", merged)
         self._prepare_bridge_secret()
         self._tasks.append(asyncio.create_task(self.push.run()))
-        self._tasks.append(asyncio.create_task(self._watch_context_loop()))
+        self.ingest_context_sources()  # Recover committed sources once after downtime.
         self._tasks.append(asyncio.create_task(self._morning_briefings()))
         if self.manage_dsh:
             self._tasks.append(asyncio.create_task(self._supervise_dsh_loop()))
@@ -708,8 +707,9 @@ class SuperAgentGateway:
                                     default=0.0,
                                 )
                                 self.bridge.db.execute(
-                                    "INSERT OR REPLACE INTO source_watermarks(source_id, revision, max_seq, updated_at, last_recorded_at) VALUES(?,?,?,?,?)",
-                                    (row["id"], row["revision"], len(spans) - 1, now, max_ts),
+                                    "INSERT OR REPLACE INTO source_watermarks(source_id, revision, max_seq, updated_at, last_recorded_at, span_ids) VALUES(?,?,?,?,?,?)",
+                                    (row["id"], row["revision"], len(spans) - 1, now, max_ts,
+                                     json.dumps([span["id"] for span in spans])),
                                 )
                     finally:
                         cstore.close()
@@ -1571,14 +1571,6 @@ class SuperAgentGateway:
                 row = self.store.db.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
                 self.push.emit("terminal:" + key, "final", run_id=None, message=self.store._format_message(row))
 
-    async def _watch_context_loop(self) -> None:
-        while not self._stopping:
-            with suppress(Exception):
-                created = self.ingest_context_sources(settle_seconds=self.TRANSCRIPT_SETTLE_SECONDS)
-                if created:
-                    self._trigger_wakeup.set()
-            await asyncio.sleep(1.5)
-
     def _recent_proactive_ticket_summaries(
         self,
         *,
@@ -1644,7 +1636,15 @@ class SuperAgentGateway:
                 break
         return items
 
-    def ingest_context_sources(self, *, settle_seconds: float = 0.0) -> list[str]:
+    def _checkpoint_transcript(self, source_id: str, revision: str, span_ids: list[str], now: float, last_recorded_at: float) -> None:
+        with self.bridge.db:
+            self.bridge.db.execute(
+                "INSERT OR REPLACE INTO source_watermarks(source_id, revision, max_seq, updated_at, last_recorded_at, span_ids) "
+                "VALUES(?,?,?,?,?,?)",
+                (source_id, revision, len(span_ids) - 1, now, last_recorded_at, json.dumps(span_ids)),
+            )
+
+    def ingest_context_sources(self, source_id: str | None = None) -> list[str]:
         """Scan ContextStore for newly arrived or extended voice transcripts and enqueue coherent proactive triggers."""
         mode = read_engine_config(self.data)["proactive_mode"]
         if mode == "off":
@@ -1657,9 +1657,11 @@ class SuperAgentGateway:
         emitted: list[str] = []
         cstore = ContextStore(context_dir)
         try:
-            sources = cstore.db.execute(
-                "SELECT id, revision, updated FROM sources WHERE deleted = 0 ORDER BY updated ASC"
-            ).fetchall()
+            query = "SELECT id, revision, updated FROM sources WHERE deleted = 0"
+            if source_id is None:
+                sources = cstore.db.execute(query + " ORDER BY updated ASC").fetchall()
+            else:
+                sources = cstore.db.execute(query + " AND id=?", (source_id,)).fetchall()
             now = time.time()
             day_start_hour = read_day_start_hour(self.data)
             today_day = logical_local_date(now, day_start_hour)
@@ -1668,13 +1670,14 @@ class SuperAgentGateway:
                 sid = src["id"]
                 rev = src["revision"]
                 watermark = self.bridge.db.execute(
-                    "SELECT revision, max_seq, updated_at, last_recorded_at FROM source_watermarks WHERE source_id=?",
+                    "SELECT revision, max_seq, last_recorded_at, span_ids FROM source_watermarks WHERE source_id=?",
                     (sid,),
                 ).fetchone()
                 # Older gateways marked entire recordings consumed after filtering by speaker.
                 # Reassess the current recording day once; historical work stays at its checkpoint.
                 catch_up = bool(upgrading and watermark and logical_local_date(src["updated"], day_start_hour) == today_day)
-                if watermark and watermark["revision"] == rev and not catch_up:
+                unchanged = watermark is not None and watermark["revision"] == rev and not catch_up
+                if unchanged and watermark["span_ids"] is not None:
                     continue
                 prev_max = int(watermark["max_seq"]) if watermark else -1
                 prev_last_ts = float(watermark["last_recorded_at"] or 0.0) if watermark else 0.0
@@ -1685,65 +1688,32 @@ class SuperAgentGateway:
                     continue
                 payload = json.loads(source["payload"])
                 spans = cstore._apply_speaker_overrides(sid, payload.get("spans") or [])
-                if not spans:
-                    with self.bridge.db:
-                        self.bridge.db.execute(
-                            "INSERT OR REPLACE INTO source_watermarks(source_id, revision, max_seq, updated_at, last_recorded_at) VALUES(?,?,?,?,?)",
-                            (sid, rev, -1, now, prev_last_ts),
-                        )
-                    continue
-                max_seq = len(spans) - 1
+                span_ids = [span["id"] for span in spans]
                 max_span_ts = max(
                     (float(s.get("recorded_at") or 0.0) for s in spans if isinstance(s, dict)),
                     default=prev_last_ts,
                 )
-                if catch_up:
+                if unchanged:
+                    indexed_new = []  # Seed span IDs at the existing checkpoint on upgrade.
+                elif catch_up:
                     indexed_new = [(i, span) for i, span in enumerate(spans)
                                    if logical_local_date(span["recorded_at"], day_start_hour) == today_day
                                    or (i > prev_max and span["recorded_at"] > prev_last_ts)]
                 elif watermark is None:
                     indexed_new = list(enumerate(spans))
                 else:
-                    indexed_new = [
-                        (idx, span) for idx, span in enumerate(spans)
-                        if idx > prev_max and (prev_last_ts <= 0.0 or float(span.get("recorded_at") or 0.0) > prev_last_ts)
-                    ]
-                new_spans = [s for _, s in indexed_new]
+                    previous_ids = set(json.loads(watermark["span_ids"] or "[]"))
+                    if previous_ids.intersection(span_ids):
+                        # Completed windows can sync out of recording order or share a timestamp.
+                        indexed_new = [(i, span) for i, span in enumerate(spans) if span["id"] not in previous_ids]
+                    else:
+                        # A legacy checkpoint or a fully resegmented snapshot has no common stable IDs.
+                        indexed_new = [(i, span) for i, span in enumerate(spans)
+                                       if span["recorded_at"] > prev_last_ts or prev_max < 0]
 
-                transcript_lines = []
-                for span in new_spans:
-                    ts = float(span.get("recorded_at") or now)
-                    dt_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
-                    formatted_line = format_transcript_span_line(dt_str, span)
-                    if formatted_line:
-                        transcript_lines.append(formatted_line)
-                full_new_body = "\n".join(transcript_lines).strip()
-                if not full_new_body:
-                    with self.bridge.db:
-                        self.bridge.db.execute(
-                            "INSERT OR REPLACE INTO source_watermarks(source_id, revision, max_seq, updated_at, last_recorded_at) VALUES(?,?,?,?,?)",
-                            (sid, rev, max_seq, now, max(prev_last_ts, max_span_ts)),
-                        )
+                if not indexed_new:
+                    self._checkpoint_transcript(sid, rev, span_ids, now, max(prev_last_ts, max_span_ts))
                     continue
-                is_final = bool(
-                    payload.get("ended_at")
-                    or payload.get("final")
-                    or payload.get("is_final")
-                    or payload.get("completed")
-                )
-                if settle_seconds > 0 and not is_final and not catch_up:
-                    quiet_elapsed = max(0.0, now - float(src["updated"]))
-                    defer_elapsed = max(0.0, now - float(watermark["updated_at"])) if watermark else quiet_elapsed
-                    needs_more_settle = quiet_elapsed < settle_seconds or (
-                        len(full_new_body) < self.TRANSCRIPT_MIN_LIVE_CHARS and quiet_elapsed < 45.0
-                    )
-                    if (
-                        needs_more_settle
-                        and len(full_new_body) < self.TRANSCRIPT_PASSAGE_CHARS
-                        and defer_elapsed < self.TRANSCRIPT_MAX_DEFER_SECONDS
-                    ):
-                        # Hold watermark while streaming ASR spans are actively arriving mid-thought.
-                        continue
 
                 # Compute deterministic conversation segments across spans by natural silence gap (>15 min)
                 # so a continuous 20-40 min discussion stays on one thread while multi-hour gaps split cleanly.
@@ -1875,13 +1845,9 @@ class SuperAgentGateway:
                         at_iso=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(latest_span_ts)),
                     )
                     emitted.append(trigger_id)
-                with self.bridge.db:
-                    self.bridge.db.execute(
-                        "INSERT OR REPLACE INTO source_watermarks(source_id, revision, max_seq, updated_at, last_recorded_at) VALUES(?,?,?,?,?)",
-                        (sid, rev, max_seq, now, max(prev_last_ts, max_span_ts)),
-                    )
+                self._checkpoint_transcript(sid, rev, span_ids, now, max(prev_last_ts, max_span_ts))
 
-            if upgrading:
+            if upgrading and source_id is None:
                 with self.bridge.db:
                     self.bridge.db.execute("INSERT OR REPLACE INTO meta VALUES('recording_observations_v1', '1')")
         finally:
@@ -2935,6 +2901,7 @@ class SuperAgentGateway:
         if new_mode is not None:
             if new_mode not in PROACTIVE_MODES:
                 return web.json_response({"error": {"code": "invalid_request", "message": "Invalid proactive_mode"}}, status=400)
+            was_off = read_engine_config(self.data)["proactive_mode"] == "off"
             write_engine_config(self.data, proactive_mode=new_mode)
             if self.dsh_ready and new_mode in ("auto", "observe", "off"):
                 def _apply_mode() -> None:
@@ -2949,6 +2916,8 @@ class SuperAgentGateway:
                         {"revision": eval_block["revision"], "value": val},
                     )
                 await asyncio.to_thread(_apply_mode)
+            if was_off and new_mode != "off" and self.ingest_context_sources():
+                self._trigger_wakeup.set()
         if isinstance(body.get("rules"), list) and self.dsh_ready:
             rules_payload = body["rules"]
             def _apply_rules() -> None:
@@ -2978,10 +2947,12 @@ class SuperAgentGateway:
         if request.can_read_body:
             with suppress(Exception):
                 payload = await request.json()
-        is_sync_ping = isinstance(payload, dict) and payload.get("origin") == "source_sync" and not payload.get("flush")
-        settle = self.TRANSCRIPT_SETTLE_SECONDS if is_sync_ping else 0.0
-        created = self.ingest_context_sources(settle_seconds=settle)
-        if isinstance(payload, dict) and str(payload.get("text") or "").strip():
+        source_id = payload.get("source_id") if isinstance(payload, dict) and payload.get("origin") == "source_sync" else None
+        if source_id is not None and not isinstance(source_id, str):
+            return web.json_response({"error": {"code": "invalid_request", "message": "Invalid source_id"}}, status=400)
+        has_text = isinstance(payload, dict) and bool(str(payload.get("text") or "").strip())
+        created = [] if has_text else self.ingest_context_sources(source_id)
+        if has_text:
             kind = payload.get("kind") if payload.get("kind") in ("transcripts", "life_signals") else "life_signals"
             raw_sig = str(payload.get("id") or f"signal:{uuid.uuid4().hex[:12]}")
             event_id = raw_sig[len("momo:") :] if raw_sig.startswith("momo:") else raw_sig
@@ -4925,7 +4896,10 @@ def run_superagent_gateway(data: Path, connection: dict, *, python_executable: P
         ),
         flush=True,
     )
-    context.start()
+    async def start_context(_: web.Application) -> None:
+        context.start()
+
+    app.on_startup.append(start_context)
     try:
         web.run_app(app, host="127.0.0.1", port=connection["port"], print=None, access_log=None)
     finally:
