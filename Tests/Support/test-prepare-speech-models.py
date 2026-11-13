@@ -2,6 +2,7 @@
 # requires-python = ">=3.12"
 # ///
 """Offline checks for unchanged published speech model artifacts."""
+from contextlib import contextmanager
 import hashlib
 import importlib.util
 import io
@@ -19,6 +20,24 @@ spec.loader.exec_module(prepare)
 
 
 class SpeechPreparationTests(unittest.TestCase):
+    @contextmanager
+    def fixture_vendor(self, vendor, models):
+        pins = json.loads((vendor / "manifest.json").read_text())
+        speakers = json.loads((vendor / "speaker-manifest.json").read_text())["files"]
+        keyed = {}
+        for name, revision in [("model.int8.onnx", pins["asrSHA256"]), *speakers.items()]:
+            if name in speakers:
+                data = ("speaker " + name).encode()
+            elif (models / name).exists():
+                data = (models / name).read_bytes()
+            else:
+                data = b"unavailable"
+            keyed[revision] = hashlib.sha256(data + prepare.coreml_metadata(revision)).hexdigest()
+        path = vendor / "cache-pins.json"
+        path.write_text(json.dumps(keyed))
+        with patch.object(prepare, "ROOT", vendor), patch.object(prepare, "CACHE_PINS", path):
+            yield
+
     @staticmethod
     def _seed_speakers(vendor: Path, models: Path):
         speakers_dir = models / "Speakers"
@@ -55,7 +74,7 @@ class SpeechPreparationTests(unittest.TestCase):
                     self.assertEqual(command[-1], prepare.VAD_URL)
                     destination = Path(command[command.index("--output") + 1])
                     destination.write_bytes(b"corrupt" if corrupt else published)
-                with patch.object(prepare, "ROOT", vendor), patch.object(prepare.subprocess, "run", side_effect=curl):
+                with self.fixture_vendor(vendor, models), patch.object(prepare.subprocess, "run", side_effect=curl):
                     if corrupt:
                         with self.assertRaisesRegex(ValueError, "Checksum mismatch"):
                             prepare.prepare(models, scratch)
@@ -82,8 +101,16 @@ class SpeechPreparationTests(unittest.TestCase):
                 (models / name).write_bytes(data)
                 pins[key] = hashlib.sha256(data).hexdigest()
             (vendor / "manifest.json").write_text(json.dumps(pins))
-            with patch.object(prepare, "ROOT", vendor), patch.object(prepare, "download", side_effect=AssertionError("Unexpected download")):
+            with self.fixture_vendor(vendor, models), patch.object(prepare, "download", side_effect=AssertionError("Unexpected download")):
                 prepare.prepare(models, scratch)
+                model = models / "model.int8.onnx"
+                stamped = model.read_bytes()
+                self.assertTrue(stamped.endswith(prepare.coreml_metadata(pins["asrSHA256"])))
+                self.assertIn(b"COREML_CACHE_KEY", stamped)
+                before = model.stat().st_mtime_ns
+                prepare.prepare(models, scratch)
+                self.assertEqual(model.stat().st_mtime_ns, before)
+                self.assertEqual(model.read_bytes(), stamped)
             self.assertEqual(json.loads((models / "manifest.json").read_text()), pins)
             self.assertFalse(any(models.rglob("*.mlmodelc")))
 
@@ -101,7 +128,7 @@ class SpeechPreparationTests(unittest.TestCase):
                     member = tarfile.TarInfo(prepare.MODEL + "/model.int8.onnx")
                     member.size = len(payload)
                     archive.addfile(member, io.BytesIO(payload))
-            with patch.object(prepare, "ROOT", vendor), patch.object(prepare, "download", side_effect=corrupt_download):
+            with self.fixture_vendor(vendor, models), patch.object(prepare, "download", side_effect=corrupt_download):
                 with self.assertRaisesRegex(ValueError, "Checksum mismatch"):
                     prepare.prepare(models, scratch)
             self.assertFalse((models / "model.int8.onnx").exists())
@@ -126,9 +153,9 @@ class SpeechPreparationTests(unittest.TestCase):
                 self.assertEqual(command[-1], "https://example.invalid/eres2netv2.onnx")
                 destination = Path(command[command.index("--output") + 1])
                 destination.write_bytes(expected_bytes)
-            with patch.object(prepare, "ROOT", vendor), patch.object(prepare.subprocess, "run", side_effect=curl):
+            with self.fixture_vendor(vendor, models), patch.object(prepare.subprocess, "run", side_effect=curl):
                 prepare.prepare(models, scratch)
-            self.assertEqual(missing.read_bytes(), expected_bytes)
+            self.assertEqual(missing.read_bytes(), expected_bytes + prepare.coreml_metadata(hashlib.sha256(expected_bytes).hexdigest()))
 
 
 if __name__ == "__main__":

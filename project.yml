@@ -166,6 +166,11 @@ targets:
           MOMO_TEST_FIXTURES_INPUT: Models/TestFixtures
         Release:
           MOMO_TEST_FIXTURES_INPUT: Tests/Support/SpeechFixtureMetadata.json
+    preBuildScripts:
+      - name: Verify Core ML cache keys
+        basedOnDependencyAnalysis: false
+        script: |
+          /usr/bin/python3 "$SRCROOT/Native/SpeechVendor/prepare-models.py" "$SRCROOT/Models/Speech" --check-cache-keys
     postBuildScripts:
       - name: Copy Debug speech test fixtures
         shell: /bin/bash

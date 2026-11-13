@@ -146,3 +146,48 @@ import MoMoSherpaBridge
     #expect(try clean("/sil") == "")
     #expect(try clean("FFFFFFFFFFFFFFFF") == "")
 }
+
+@Test func cacheCleanupRemovesEarlierFormatsAndRevisionsAndPreservesActiveData() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let current = SpeechModelCache.speaker(.diariZenWavLMBase)
+    let asr = SpeechModelCache.recognizer("current")
+    let old = ["speaker-coreml-v2-ddc29bab8f9331ea", "sherpa-coreml-v2-old", SpeechModelCache.recognizer("old")]
+    let kept = [current, asr, "unrelated"]
+    for name in old + kept {
+        let directory = root.appendingPathComponent(name).appendingPathComponent("partitions")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data([42]).write(to: directory.appendingPathComponent("weights"))
+    }
+    for _ in 0..<2 {
+        try SpeechModelCache.removeObsolete(in: root, retaining: [asr, current])
+        #expect(Set(try FileManager.default.contentsOfDirectory(atPath: root.path)) == Set(kept))
+        for name in kept {
+            #expect(try Data(contentsOf: root.appendingPathComponent(name + "/partitions/weights")) == Data([42]))
+        }
+    }
+}
+
+@Test func systemCacheRotatesOncePerInstallationAndInterruptedCleanupRetries() throws {
+    let caches = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: caches) }
+    let system = caches.appendingPathComponent("com.watchmylife.ios/com.apple.e5rt.e5bundlecache")
+    let models = caches.appendingPathComponent("MoMoAgent/SpeechModels")
+    func seed() throws {
+        try FileManager.default.createDirectory(at: system, withIntermediateDirectories: true)
+        try Data([42]).write(to: system.appendingPathComponent("partition"))
+    }
+    let first = URL(fileURLWithPath: "/A/MoMoAgent.app"), next = URL(fileURLWithPath: "/B/MoMoAgent.app")
+    try seed()
+    for install in [first, next] {
+        try SpeechModelCache.retireSystemCache(in: caches, bundleID: "com.watchmylife.ios", installation: install)
+        #expect(!FileManager.default.fileExists(atPath: system.path))
+        try seed()
+        try SpeechModelCache.retireSystemCache(in: caches, bundleID: "com.watchmylife.ios", installation: install)
+        #expect(try Data(contentsOf: system.appendingPathComponent("partition")) == Data([42]))
+    }
+    #expect(try FileManager.default.contentsOfDirectory(atPath: models.path).count == 2)
+    try SpeechModelCache.removeObsolete(in: models, retaining: [])
+    #expect(try FileManager.default.contentsOfDirectory(atPath: models.path).isEmpty)
+    #expect(try Data(contentsOf: system.appendingPathComponent("partition")) == Data([42]))
+}

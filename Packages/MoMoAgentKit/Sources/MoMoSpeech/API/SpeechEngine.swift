@@ -1488,16 +1488,16 @@ public final class SpeechEngine: @unchecked Sendable {
             try attempt.checkCancellation()
             if !speakerEmbeddingValidated {
                 let file = "eres2netv2.onnx"
-                guard try speechFileHash(directory.appendingPathComponent(file), attempt: attempt,
-                    recorder: nil, model: true) == SpeakerRuntime.revision else {
+                let digest = try speechFileHash(directory.appendingPathComponent(file), attempt: attempt, recorder: nil, model: true)
+                guard BundledModelDigest.matches(digest, revision: SpeakerRuntime.revision) else {
                     throw SpeechError.modelHashMismatch(file)
                 }
                 speakerEmbeddingValidated = true
             }
             if !validatedSegmentationModels.contains(segmentationModel) {
                 let file = segmentationModel.filename
-                guard try speechFileHash(directory.appendingPathComponent(file), attempt: attempt,
-                    recorder: nil, model: true) == segmentationModel.sha256 else {
+                let digest = try speechFileHash(directory.appendingPathComponent(file), attempt: attempt, recorder: nil, model: true)
+                guard BundledModelDigest.matches(digest, revision: segmentationModel.sha256) else {
                     throw SpeechError.modelHashMismatch(file)
                 }
                 validatedSegmentationModels.insert(segmentationModel)

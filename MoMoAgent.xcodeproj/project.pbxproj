@@ -1569,6 +1569,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 5507B7905171329F3CB9F766 /* Build configuration list for PBXNativeTarget "MoMoAgent" */;
 			buildPhases = (
+				4D0B2D2ECE232397EC4D6527 /* Verify Core ML cache keys */,
 				2C6298FB76FE1C3FB37DFAD0 /* Sources */,
 				4658E3A4EA9F7E24223E985B /* Resources */,
 				525D8D5FF5CF5DE24FC8DB99 /* CopyFiles */,
@@ -1943,6 +1944,25 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		4D0B2D2ECE232397EC4D6527 /* Verify Core ML cache keys */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Verify Core ML cache keys";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/usr/bin/python3 \"$SRCROOT/Native/SpeechVendor/prepare-models.py\" \"$SRCROOT/Models/Speech\" --check-cache-keys\n";
+		};
 		AC00F7B05AA1BAC6A1CF68ED /* Copy Debug speech test fixtures */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

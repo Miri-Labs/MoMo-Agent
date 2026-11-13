@@ -25,8 +25,8 @@ final class SpeakerRuntime: @unchecked Sendable {
         if !skipValidation {
             for (file, hash) in files {
                 try attempt.checkCancellation()
-                guard try speechFileHash(directory.appendingPathComponent(file), attempt: attempt,
-                    recorder: nil, model: true) == hash else {
+                let digest = try speechFileHash(directory.appendingPathComponent(file), attempt: attempt, recorder: nil, model: true)
+                guard BundledModelDigest.matches(digest, revision: hash) else {
                     throw SpeechError.modelHashMismatch(file)
                 }
             }
@@ -35,7 +35,7 @@ final class SpeakerRuntime: @unchecked Sendable {
         let effectiveThreads: Int
         if let cacheRoot {
             let cacheDir = cacheRoot.appendingPathComponent(
-                "speaker-coreml-v2-\(segmentationModel.sha256.prefix(16))",
+                SpeechModelCache.speaker(segmentationModel),
                 isDirectory: true)
             for sub in [cacheDir,
                         cacheDir.appendingPathComponent("seg", isDirectory: true),

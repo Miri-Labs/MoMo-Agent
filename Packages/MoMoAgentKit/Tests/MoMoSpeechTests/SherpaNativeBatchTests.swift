@@ -136,7 +136,7 @@ struct XASRNativeTests {
         #expect(runtime.acceleratorMask == 3)
         #expect(recorder.value.modelLoadSeconds < 10)
         let cachedEntries = (try? FileManager.default.contentsOfDirectory(atPath:
-            cacheRoot.appendingPathComponent("sherpa-coreml-v2-\(try download.catalog.revision)").path)) ?? []
+            cacheRoot.appendingPathComponent(SpeechModelCache.recognizer(try download.catalog.revision)).path)) ?? []
         #expect(cachedEntries.contains("sherpa.config"))
         // The public fixture is Chinese; English and code-switched clips, when present, also exercise casing & punctuation.
         let primaryZh = bundle.directory.appendingPathComponent("test_wavs/zh.wav")

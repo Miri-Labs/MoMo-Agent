@@ -12,6 +12,7 @@ struct ArchiveStorageTests {
             ("Library/Application Support/MoMoAgent/SpeechModels/revision.partial/model.download", 101),
             ("Library/Caches/MoMoAgent/SpeechModels/model/weights.bin", 203),
             ("Library/Caches/com.momoagent.ios/com.apple.e5rt.e5bundlecache/model/weights.bin", 307),
+            ("Library/Caches/com.watchmylife.ios/com.apple.e5rt.e5bundlecache/model/weights.bin", 103),
             ("tmp/MoMoThroughput-test/fixture.wav", 401)
         ] {
             let url = store.rootURL.appendingPathComponent(path)
@@ -20,12 +21,12 @@ struct ArchiveStorageTests {
         }
         let usage = try await store.storageUsage(modelDirectory: nil)
         #expect(usage.modelBytes == baseline.modelBytes + 101)
-        #expect(usage.modelCacheBytes == baseline.modelCacheBytes + 510)
+        #expect(usage.modelCacheBytes == baseline.modelCacheBytes + 613)
         #expect(usage.temporaryBytes == baseline.temporaryBytes + 401)
         #expect(usage.databaseBytes > 0)
         #expect(usage.otherArchiveBytes == baseline.otherArchiveBytes)
         #expect(usage.audioBytes == baseline.audioBytes)
-        #expect(usage.totalBytes == baseline.totalBytes + 1012)
+        #expect(usage.totalBytes == baseline.totalBytes + 1115)
     }
     @Test func countsFileLengthsByCategoryWithoutFollowingLinksOrDoubleCountingModels() async throws {
         let fixture = try Fixture()

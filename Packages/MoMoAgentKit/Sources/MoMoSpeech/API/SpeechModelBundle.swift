@@ -23,6 +23,63 @@ public struct SpeechModelManifest: Codable, Equatable, Sendable {
     }
 }
 
+// A cache format change or runtime upgrade gets a cold compile. An app update with
+// identical models and runtime reuses the same Core ML partitions.
+public enum SpeechModelCache {
+    public static func recognizer(_ revision: String) -> String {
+        "sherpa-coreml-v4-\(SpeechModelManifest.ortVersion)-\(revision)"
+    }
+
+    public static func speaker(_ model: SpeakerSegmentationModel) -> String {
+        "speaker-coreml-v4-\(SpeechModelManifest.ortVersion)-\(model.sha256)-\(SpeakerRuntime.revision)"
+    }
+
+    // Apple's private compiler cache can also depend on the absolute installation
+    // path. Detach the previous installation's cache before any model is opened.
+    public static func retireSystemCache(in caches: URL, bundleID: String, installation: URL) throws {
+        let manager = FileManager.default
+        let appCaches = caches.appendingPathComponent("MoMoAgent")
+        let marker = appCaches.appendingPathComponent("coreml-installation")
+        let identity = Data(installation.standardizedFileURL.path.utf8)
+        if (try? Data(contentsOf: marker)) == identity { return }
+
+        try manager.createDirectory(at: appCaches, withIntermediateDirectories: true)
+        let system = caches.appendingPathComponent(bundleID).appendingPathComponent("com.apple.e5rt.e5bundlecache")
+        if manager.fileExists(atPath: system.path) {
+            let retired = appCaches.appendingPathComponent("SpeechModels/retired-system-" + UUID().uuidString)
+            try manager.createDirectory(at: retired.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try manager.moveItem(at: system, to: retired)
+        }
+        try identity.write(to: marker, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    public static func removeObsolete(in root: URL, retaining names: Set<String>) throws {
+        let manager = FileManager.default
+        let entries = try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        for entry in entries {
+            let name = entry.lastPathComponent
+            if (name.hasPrefix("speaker-coreml-") || name.hasPrefix("sherpa-coreml-") || name.hasPrefix("retired-system-")) && !names.contains(name) {
+                try manager.removeItem(at: entry)
+            }
+        }
+    }
+}
+
+// Packaging adds only ONNX metadata. Archive fingerprints and enrolled voice vectors
+// continue to use the upstream revision, independent of the serialized file digest.
+enum BundledModelDigest {
+    private static let keyed: [String: String] = {
+        guard let url = Bundle.module.url(forResource: "coreml-cache-models", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let pins = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return pins
+    }()
+
+    static func matches(_ digest: String, revision: String) -> Bool {
+        digest == revision || keyed[revision] == digest
+    }
+}
+
 public struct SpeechModelBundle: Sendable {
     public let directory: URL
     public let manifest: SpeechModelManifest
@@ -45,7 +102,8 @@ public struct SpeechModelBundle: Sendable {
         try manifest.validate()
         for (name, hash) in [("model.int8.onnx", manifest.asrSHA256), ("tokens.txt", manifest.tokensSHA256),
                              ("silero_vad.onnx", manifest.vadSHA256)] {
-            guard try speechFileHash(directory.appendingPathComponent(name), attempt: attempt, recorder: recorder, model: true) == hash else {
+            let digest = try speechFileHash(directory.appendingPathComponent(name), attempt: attempt, recorder: recorder, model: true)
+            guard BundledModelDigest.matches(digest, revision: hash) else {
                 throw SpeechError.modelHashMismatch(name)
             }
         }
@@ -54,7 +112,8 @@ public struct SpeechModelBundle: Sendable {
     func validateASR(attempt: SpeechAttempt?, recorder: SpeechDiagnosticRecorder?) throws {
         try manifest.validate()
         for (name, hash) in [("model.int8.onnx", manifest.asrSHA256), ("tokens.txt", manifest.tokensSHA256)] {
-            guard try speechFileHash(directory.appendingPathComponent(name), attempt: attempt, recorder: recorder, model: true) == hash else {
+            let digest = try speechFileHash(directory.appendingPathComponent(name), attempt: attempt, recorder: recorder, model: true)
+            guard BundledModelDigest.matches(digest, revision: hash) else {
                 throw SpeechError.modelHashMismatch(name)
             }
         }

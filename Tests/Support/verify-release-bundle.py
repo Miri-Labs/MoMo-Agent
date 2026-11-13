@@ -275,7 +275,8 @@ def audit(app, pinned_models=PINNED_MODELS, version_config=VERSION_CONFIG, varia
             require(all(isinstance(sha, str) and len(sha) == 64 and set(sha) <= set("0123456789abcdef")
                         for sha in speakers["files"].values()), "speaker_pin_invalid")
             hashes.update({"Speakers/" + name: sha for name, sha in speakers["files"].items()})
-            return hashes
+            keyed = json.loads((ROOT / 'Packages/MoMoAgentKit/Sources/MoMoSpeech/Resources/coreml-cache-models.json').read_text())
+            return {name: keyed.get(sha, sha) for name, sha in hashes.items()}
         pins = attempt("model_pins", model_pins)
         if pins is not None:
             def model_inventory():
