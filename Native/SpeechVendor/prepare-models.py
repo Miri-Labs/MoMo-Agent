@@ -53,6 +53,18 @@ def download(url, destination, expected):
         raise ValueError(f'Checksum mismatch: {destination.name}')
 
 
+def check_cache_keys(destination):
+    manifest = json.loads((ROOT / 'manifest.json').read_text())
+    speakers = json.loads((ROOT / 'speaker-manifest.json').read_text())['files']
+    for name, revision in [('model.int8.onnx', manifest['asrSHA256']),
+                           *((f'Speakers/{name}', sha) for name, sha in speakers.items())]:
+        expected = coreml_metadata(revision)
+        with (destination / name).open('rb') as stream:
+            stream.seek(-len(expected), 2)
+            if stream.read() != expected:
+                raise ValueError(f'{name} needs preparation. Run prepare-models.py as described in install.md.')
+
+
 def prepare(destination, scratch_directory):
     manifest = json.loads((ROOT / 'manifest.json').read_text())
     speakers = json.loads((ROOT / 'speaker-manifest.json').read_text())
@@ -113,6 +125,11 @@ def prepare(destination, scratch_directory):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('destination', type=Path, help='Model directory, for example Models/Speech')
-    parser.add_argument('--scratch-directory', required=True, type=Path, help='Task directory under tmp_agent_output')
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--check-cache-keys', action='store_true', help='Check prepared model metadata before Xcode copies resources')
+    mode.add_argument('--scratch-directory', type=Path, help='Task directory under tmp_agent_output')
     args = parser.parse_args()
-    prepare(args.destination.resolve(), args.scratch_directory.resolve())
+    if args.check_cache_keys:
+        check_cache_keys(args.destination.resolve())
+    else:
+        prepare(args.destination.resolve(), args.scratch_directory.resolve())
