@@ -29,7 +29,8 @@ def digest(path):
 # Appending this protobuf field leaves the upstream graph and tensor bytes intact.
 def coreml_metadata(source_hash):
     key = source_hash[:48].encode('ascii')
-    entry = b'\x0a\x09CACHE_KEY\x12' + bytes([len(key)]) + key
+    name = b'COREML_CACHE_KEY'  # kCOREML_CACHE_KEY in the pinned coreml_provider_factory.h
+    entry = b'\x0a' + bytes([len(name)]) + name + b'\x12' + bytes([len(key)]) + key
     return b'\x72' + bytes([len(entry)]) + entry
 
 

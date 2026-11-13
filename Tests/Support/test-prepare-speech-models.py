@@ -106,6 +106,7 @@ class SpeechPreparationTests(unittest.TestCase):
                 model = models / "model.int8.onnx"
                 stamped = model.read_bytes()
                 self.assertTrue(stamped.endswith(prepare.coreml_metadata(pins["asrSHA256"])))
+                self.assertIn(b"COREML_CACHE_KEY", stamped)
                 before = model.stat().st_mtime_ns
                 prepare.prepare(models, scratch)
                 self.assertEqual(model.stat().st_mtime_ns, before)

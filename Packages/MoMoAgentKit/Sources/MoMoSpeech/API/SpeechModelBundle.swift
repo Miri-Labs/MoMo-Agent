@@ -27,11 +27,11 @@ public struct SpeechModelManifest: Codable, Equatable, Sendable {
 // identical models and runtime reuses the same Core ML partitions.
 public enum SpeechModelCache {
     public static func recognizer(_ revision: String) -> String {
-        "sherpa-coreml-v3-\(SpeechModelManifest.ortVersion)-\(revision)"
+        "sherpa-coreml-v4-\(SpeechModelManifest.ortVersion)-\(revision)"
     }
 
     public static func speaker(_ model: SpeakerSegmentationModel) -> String {
-        "speaker-coreml-v3-\(SpeechModelManifest.ortVersion)-\(model.sha256)-\(SpeakerRuntime.revision)"
+        "speaker-coreml-v4-\(SpeechModelManifest.ortVersion)-\(model.sha256)-\(SpeakerRuntime.revision)"
     }
 
     public static func removeObsolete(in root: URL, retaining names: Set<String>) throws {
