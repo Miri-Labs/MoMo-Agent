@@ -1,6 +1,6 @@
 # MoMo Agent for Android
 
-Version 0.3.1. This is the iPhone app's Android port, not a second design:
+Version 0.6.0. This is the iPhone app's Android port, not a second design:
 the welcome/connection/chat structure, chat renderer, avatar, wordmark, receipts,
 composer and settings follow the iPhone client. It talks to the Mac hub over the
 existing access contract; the Mac keeps running the Agent and the memory vault.
@@ -13,7 +13,7 @@ this checkout.**
 ## Flow
 
 ```text
-Welcome experience → Connection flow → Chat / Transcripts / Memory tabs → Settings
+Welcome experience → Connection flow → Chat / Transcripts / Memory tabs → Desktop / Settings
 ```
 
 - Welcome: the same three scenarios and copy as the iPhone introduction, with the
@@ -83,7 +83,7 @@ gradle :app:lintDebug
 ```
 
 Current results: `assembleDebug` produces `app-debug.apk` (`com.momoagent.android`,
-version 0.3.1, versionCode 6, minSdk 26, targetSdk 35); 24/24 JVM tests pass;
+version 0.6.0, versionCode 8, minSdk 26, targetSdk 35); 28/28 JVM tests pass;
 lint reports 0 errors and 30 warnings. There is no device/emulator end-to-end
 run yet.
 
@@ -92,6 +92,21 @@ The Settings header and About row read `BuildConfig.VERSION_NAME`; the
 at the bottom. If a phone keeps displaying an old version after an install, the
 old package is still the one running: uninstall it and install the new APK
 (unpairing is local to the phone; scan the Mac QR to pair again).
+
+## Mac desktop
+
+The chat header's desktop button opens a full-screen viewer backed by
+`GET /desktop/v1/frames`, the Mac's multipart JPEG stream. Only two
+unacknowledged pictures are allowed, so the client acknowledges each rendered
+frame with `POST /desktop/v1/frame-ack`. Taps, double taps, drags, scroll mode
+and right clicks are normalized to image coordinates and sent through
+`POST /desktop/v1/input`; input coordinates ignore letterboxing.
+
+"Take control" claims the Mac desktop lease (`claim`), heartbeats every five
+seconds (`heartbeat`) and releases it on exit (`release`). Without a claim the
+viewer stays read-only. Screen Recording or Accessibility permissions are
+checked by the Mac when claiming; failures stay visible in the viewer instead
+of falling back to the old "not available" dialog.
 
 ## Liquid glass
 
@@ -111,8 +126,7 @@ chrome is glass.
 ## Known gaps
 
 - Local recording, on-device ASR, speaker diarization and local transcripts.
-- Watch/earphone capture status, desktop control, life illustrations and dream
-  briefing cards.
+- Watch/earphone capture status, life illustrations and dream briefing cards.
 - Chat voice dictation, push notifications, relay transport and an iOS LAN client.
 - Release signing and a narrowed production network policy.
 

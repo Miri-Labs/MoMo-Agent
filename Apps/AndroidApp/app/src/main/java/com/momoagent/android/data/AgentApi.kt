@@ -3,14 +3,21 @@ package com.momoagent.android.data
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartReader
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -187,6 +194,94 @@ class AgentApi {
         return execute(request, clientFor(connection.tlsSHA256))
     }
 
+    fun desktopStatus(connection: AgentConnection, credential: String): DesktopStatus {
+        val request = authenticated(connection, credential, join(connection.baseURL, "desktop/v1/status"))
+            .get()
+            .build()
+        return execute(request, clientFor(connection.tlsSHA256))
+    }
+
+    fun desktopControl(
+        connection: AgentConnection,
+        credential: String,
+        operation: String,
+        session: String? = null,
+        requestID: String? = null,
+    ): DesktopStatus {
+        val body = json.encodeToString(DesktopControlBody(session = session, requestID = requestID))
+        val request = authenticated(connection, credential, join(connection.baseURL, "desktop/v1/$operation"))
+            .post(body.toRequestBody(mediaType))
+            .build()
+        return execute(request, clientFor(connection.tlsSHA256))
+    }
+
+    fun desktopInput(
+        connection: AgentConnection,
+        credential: String,
+        session: String,
+        event: DesktopInputEvent,
+        eventID: String,
+    ) {
+        val body = json.encodeToString(DesktopInputBody(session = session, eventID = eventID, event = event))
+        val request = authenticated(connection, credential, join(connection.baseURL, "desktop/v1/input"))
+            .post(body.toRequestBody(mediaType))
+            .build()
+        executeIgnoringBody(request, clientFor(connection.tlsSHA256))
+    }
+
+    fun desktopFrameAck(
+        connection: AgentConnection,
+        credential: String,
+        streamID: String,
+        sequence: Int,
+    ) {
+        val body = json.encodeToString(DesktopFrameReceipt(streamID = streamID, sequence = sequence))
+        val request = authenticated(connection, credential, join(connection.baseURL, "desktop/v1/frame-ack"))
+            .post(body.toRequestBody(mediaType))
+            .build()
+        executeIgnoringBody(request, clientFor(connection.tlsSHA256))
+    }
+
+    fun desktopFrames(connection: AgentConnection, credential: String): Flow<DesktopPicture> = callbackFlow {
+        val request = authenticated(connection, credential, join(connection.baseURL, "desktop/v1/frames"))
+            .header("Accept", "multipart/x-mixed-replace")
+            .get()
+            .build()
+        val call = streamClientFor(connection.tlsSHA256).newCall(request)
+        val worker = launch(Dispatchers.IO) {
+            try {
+                call.execute().use { response ->
+                    if (!response.isSuccessful) {
+                        throw AgentHttpException(
+                            response.code,
+                            response.body?.string()?.take(512).orEmpty(),
+                        )
+                    }
+                    val reader = MultipartReader(response.body ?: throw IOException("Missing desktop stream"))
+                    while (isActive) {
+                        val part = reader.nextPart() ?: break
+                        val streamID = part.headers["X-Stream-ID"].orEmpty()
+                        val sequence = part.headers["X-Frame-Sequence"]?.toIntOrNull() ?: 0
+                        val bytes = part.body.readByteArray()
+                        if (streamID.isEmpty() || sequence <= 0 || bytes.size !in 5..(512 * 1024)) {
+                            throw IOException("Invalid desktop frame")
+                        }
+                        trySend(DesktopPicture(bytes, streamID, sequence))
+                    }
+                }
+                close()
+            } catch (error: CancellationException) {
+                close()
+            } catch (error: Exception) {
+                close(error)
+            }
+        }
+        awaitClose {
+            call.cancel()
+            worker.cancel()
+        }
+    }.buffer(Channel.CONFLATED)
+
     private fun authenticated(connection: AgentConnection, credential: String, url: String): Request.Builder =
         Request.Builder()
             .url(url)
@@ -220,6 +315,14 @@ class AgentApi {
         }
         val source = EventSources.createFactory(client).newEventSource(request, listener)
         awaitClose { source.cancel() }
+    }
+
+    private fun executeIgnoringBody(request: Request, client: OkHttpClient = http) {
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw AgentHttpException(response.code, response.body?.string()?.take(512).orEmpty())
+            }
+        }
     }
 
     private inline fun <reified T> execute(request: Request, client: OkHttpClient = http): T {

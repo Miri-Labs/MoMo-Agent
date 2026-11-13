@@ -381,12 +381,7 @@ fun ChatScreen(store: ConversationStore, onSettings: () -> Unit) {
     }
 
     if (showingDesktop) {
-        GlassDialog(
-            onDismiss = { showingDesktop = false },
-            title = stringResource(R.string.chat_desktop),
-        ) {
-            Text(stringResource(R.string.chat_desktop_unavailable), color = palette.muted)
-        }
+        DesktopScreen(store = store, onClose = { showingDesktop = false })
     }
 
     if (showingVoice) {

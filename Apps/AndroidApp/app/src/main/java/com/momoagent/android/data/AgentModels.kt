@@ -256,3 +256,58 @@ data class MessageBody(
 
 @Serializable
 data class RevokeResponse(val revoked: Boolean = false)
+
+@Serializable
+data class DesktopStatus(
+    val approved: Boolean = false,
+    val screen: Boolean = false,
+    val input: Boolean = false,
+    val owner: String = "",
+    val active: Boolean = false,
+    val epoch: Int = 0,
+    val session: String? = null,
+    @SerialName("input_sequence") val inputSequence: Int? = null,
+    @SerialName("preview_stream") val previewStream: Boolean? = null,
+)
+
+@Serializable
+data class DesktopInputEvent(
+    val kind: String,
+    val x: Double? = null,
+    val y: Double? = null,
+    @SerialName("to_x") val toX: Double? = null,
+    @SerialName("to_y") val toY: Double? = null,
+    val delta: Int? = null,
+    @SerialName("delta_x") val deltaX: Int? = null,
+    val text: String? = null,
+    val key: String? = null,
+    val modifiers: List<String>? = null,
+    val button: String? = null,
+    val sequence: Int? = null,
+    @SerialName("click_count") val clickCount: Int? = null,
+)
+
+data class DesktopPicture(
+    val jpeg: ByteArray,
+    val streamID: String,
+    val sequence: Int,
+)
+
+@Serializable
+data class DesktopControlBody(
+    val session: String? = null,
+    @SerialName("request_id") val requestID: String? = null,
+)
+
+@Serializable
+data class DesktopInputBody(
+    val session: String,
+    @SerialName("event_id") val eventID: String,
+    val event: DesktopInputEvent,
+)
+
+@Serializable
+data class DesktopFrameReceipt(
+    @SerialName("stream_id") val streamID: String,
+    val sequence: Int,
+)

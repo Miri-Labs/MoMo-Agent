@@ -107,6 +107,8 @@ class ConversationStore(
         scope.launch { loadSnapshot() }
     }
 
+    fun newDesktopSession(): DesktopStore = DesktopStore(api, connection, credential)
+
     fun setDraft(value: String) {
         _state.update { it.copy(draft = value) }
     }
