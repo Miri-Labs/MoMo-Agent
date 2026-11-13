@@ -755,6 +755,54 @@ final class ChatRendererTests: XCTestCase {
         XCTAssertEqual(renderer.openedAction, action)
     }
 
+    func testOpeningChatFollowsLatestAndReenteringResetsManualScroll() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let session = UUID()
+        let oldPosition = ChatReadingPosition(sessionID: session, following: false, top: 100, anchorID: nil, anchorOffset: 0)
+        let messages = (0..<40).map { index in
+            AgentChatMessage(id: "m\(index)", turnID: "t\(index)", role: "user",
+                blocks: [.init(id: "b\(index)", content: .text("消息 \(index)"))], state: .complete)
+        }
+        func chat(visible: Bool, count: Int) -> some View {
+            ChatRendererView(snapshot: .init(sessionID: session, messages: Array(messages.prefix(count)),
+                busy: false, readingPosition: oldPosition), isChatVisible: visible)
+                .environment(\.scenePhase, .active)
+        }
+        let host = UIHostingController(rootView: chat(visible: true, count: 24))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKey() }
+        host.view.layoutIfNeeded()
+        func findWeb(_ view: UIView) -> WKWebView? {
+            if let web = view as? WKWebView { return web }
+            return view.subviews.lazy.compactMap(findWeb).first
+        }
+        let web = try XCTUnwrap(findWeb(host.view))
+        let atBottom = "scrollY > 200 && Math.abs(scrollY + innerHeight - document.documentElement.scrollHeight) < 2"
+        func waitFor(_ expression: String) async throws {
+            let deadline = ContinuousClock.now + .seconds(8)
+            while ContinuousClock.now < deadline {
+                if (try? await web.evaluateJavaScript(expression)) as? Bool == true { return }
+                try await Task.sleep(for: .milliseconds(30))
+            }
+            XCTFail(expression)
+            throw NSError(domain: "ChatEntryScroll", code: 1)
+        }
+        try await waitFor(atBottom)
+        host.rootView = chat(visible: true, count: 32)
+        try await waitFor("document.querySelector('[data-message=\"m31\"]') && " + atBottom)
+        _ = try await web.evaluateJavaScript("window.scrollTo(0,100); true")
+        try await waitFor("scrollY === 100 && !document.querySelector('#jump').hidden")
+        host.rootView = chat(visible: true, count: 36)
+        try await waitFor("document.querySelector('[data-message=\"m35\"]') && scrollY === 100")
+        host.rootView = chat(visible: false, count: 40)
+        try await waitFor("document.querySelector('[data-message=\"m39\"]') && scrollY === 100")
+        host.rootView = chat(visible: true, count: 40)
+        try await waitFor(atBottom)
+    }
+
     func testReadingPositionRestoresOnlyItsSessionAcrossRendererRecreation() async throws {
         let first = UUID(), second = UUID()
         let body = (1...80).map { "第\($0)段：这是已保存的长会话内容。" }.joined(separator: "\n\n")
