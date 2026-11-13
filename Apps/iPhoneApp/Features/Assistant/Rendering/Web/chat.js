@@ -14,6 +14,7 @@
   let reduced = false, pageSuspended = false, userScrolling = false, wheelScrolling = false, wheelTimer;
   let restoring = null, restoreEpoch = 0, readingTimer = null, lastReading = null;
   let focusedRequest = null, openingChat = false, newMessageBelow = null;
+  let jumpMotion = null;
   const jump = document.querySelector('#jump');
   let referenceNowMs = Date.now(), previousTurnCount = -1;
   const post = (type, value) => window.webkit?.messageHandlers?.chat?.postMessage({ type, value });
@@ -187,7 +188,7 @@
     const summary = element('summary'), label = element('span','process-label');
     const body = element('div','process-steps'), receipts = element('div','action-results');
     summary.append(label,element('span','chevron','›'));
-    summary.addEventListener('click',() => { stopRestoring(); pin.pinned = false; });
+    summary.addEventListener('click',() => { cancelScrollIntent(); pin.pinned = false; });
     disclosure.append(summary,body); node.append(disclosure,receipts);
     return { node, disclosure, summary, label, body, receipts, completed:false, cards:new Map(), steps:new Map() };
   }
@@ -244,7 +245,7 @@
         if (reasoning) summary.append(element('span','process-title'),element('span','chevron','›'));
         else summary.append(element('span','step-icon'),element('span','step-label'),element('span','badge'),element('span','chevron','›'));
         node.append(summary);
-        summary.addEventListener('click',() => { item.touched = true; pin.pinned = false; });
+        summary.addEventListener('click',() => { item.touched = true; cancelScrollIntent(); pin.pinned = false; });
         node.append(content);
         node.dataset.step = step.id;
         item = { node, content, signature:null, touched:false }; view.steps.set(step.id,item);
@@ -541,13 +542,24 @@
   }
   function follow() {
     if (frame !== null) return;
-    frame = requestAnimationFrame(() => {
+    frame = requestAnimationFrame(now => {
       frame = null;
       if (restoring && !userScrolling && !wheelScrolling) {
         restoreReadingPosition();
       } else if (pin.pinned && !userScrolling) {
-        window.scrollTo({ top:maximumScrollTop(), behavior:'auto' });
+        let top = maximumScrollTop();
+        if (jumpMotion) {
+          // Use the current bottom on every frame so streaming and viewport resizes
+          // share the button's scroll instead of issuing a competing jump.
+          jumpMotion.start ??= now;
+          const progress = reduced || motionPreference.matches ? 1 : Math.min(1,(now - jumpMotion.start) / jumpMotion.duration);
+          const eased = progress * progress * (3 - 2 * progress);
+          top = jumpMotion.from + (top - jumpMotion.from) * eased;
+          if (progress === 1) jumpMotion = null;
+        }
+        window.scrollTo({ top, behavior:'auto' });
         pin.top = window.scrollY;
+        if (jumpMotion) { follow(); return; }
       }
       updateJump();
       scheduleReadingPosition();
@@ -569,7 +581,15 @@
     pin.pinned = restoring.following;
     pin.top = scrollY;
   }
-  function stopRestoring() { restoring = null; restoreEpoch++; }
+  function cancelScrollIntent() {
+    restoring = null; restoreEpoch++;
+    if (jumpMotion) {
+      jumpMotion = null;
+      pin.top = scrollY;
+      pin.pinned = maximumScrollTop() - scrollY <= 8;
+      updateJump();
+    }
+  }
   function messageAnchor(id) {
     const row = [...root.children].find(node => JSON.parse(node.dataset.sourceIds || '[]').includes(id));
     return row && ([...row.querySelectorAll('[data-source-message]')].find(node => node.dataset.sourceMessage === id) || row);
@@ -577,7 +597,7 @@
   function showMessage(id) {
     const anchor = messageAnchor(id);
     if (!anchor) return false;
-    stopRestoring(); pin.pinned = false;
+    cancelScrollIntent(); pin.pinned = false;
     window.scrollTo({ top:Math.max(0,Math.min(maximumScrollTop(),scrollY + anchor.getBoundingClientRect().top - headerInset() - 16)), behavior:'auto' });
     pin.top = scrollY;
     if (maximumScrollTop() - scrollY <= 8) pin.pinned = true;
@@ -594,7 +614,7 @@
     // reading. A notification or the explicit jump button has its own intent.
     if (!latest || latest.focus || !pin.pinned) return;
     openingChat = true; lastReading = null;
-    stopRestoring();
+    cancelScrollIntent();
     pin.pinned = true;
     applyChatEntry();
     follow();
@@ -617,7 +637,7 @@
   }
   function saveReadingPosition() {
     clearTimeout(readingTimer); readingTimer = null;
-    if (!latest || session === 'new' || restoring || openingChat) return;
+    if (!latest || session === 'new' || restoring || jumpMotion || openingChat) return;
     const top = scrollY;
     // Preserve the last settled position during native overscroll. Do not turn
     // an out-of-bounds visible offset into a seemingly valid persisted anchor.
@@ -655,6 +675,7 @@
       previousTurnCount = -1; referenceNowMs = Date.now();
     }
     if (snapshot.sessionID !== session) {
+      jumpMotion = null;
       saveReadingPosition();
       newMessageBelow = null; openingChat = false;
       session = snapshot.sessionID; views.clear(); root.replaceChildren(); pin.reset(); first = true; focusedRequest = null;
@@ -705,10 +726,20 @@
       setTimeout(() => { if (action.isConnected) { action.replaceChildren(...original); action.setAttribute('aria-label',action.dataset.action === 'copy-code' ? t("复制代码") : t("复制回复")); } },1000);
     }
   });
-  function scrollToBottom() { openingChat = false; stopRestoring(); pin.pinned = true; follow(); }
-  document.querySelector('#jump').addEventListener('click',scrollToBottom);
+  function scrollToBottom(animate = false) {
+    openingChat = false;
+    cancelScrollIntent();
+    pin.pinned = true;
+    const distance = maximumScrollTop() - scrollY;
+    if (animate && !reduced && !motionPreference.matches && distance > 8) {
+      jumpMotion = { from:scrollY, start:null, duration:Math.min(460,220 + distance / 10) };
+      updateJump();
+    }
+    follow();
+  }
+  jump.addEventListener('click',() => scrollToBottom(true));
   window.addEventListener('scroll',() => {
-    if (restoring) return;
+    if (restoring || jumpMotion) return;
     // Native scroll updates can return to an older offset before settling at the
     // requested bottom. Observe both directions so reaching that bottom restores
     // following; upward movement away from it still releases the reading position.
@@ -717,9 +748,9 @@
     scheduleReadingPosition();
   },{ passive:true });
   window.addEventListener('scrollend',saveReadingPosition,{ passive:true });
-  window.addEventListener('wheel',() => { openingChat = false; stopRestoring(); wheelScrolling = true; clearTimeout(wheelTimer); wheelTimer = setTimeout(() => { wheelScrolling = false; },300); },{ passive:true });
-  window.addEventListener('touchstart',() => { openingChat = false; stopRestoring(); userScrolling = true; },{ passive:true });
-  window.addEventListener('keydown',() => { openingChat = false; stopRestoring(); });
+  window.addEventListener('wheel',() => { openingChat = false; cancelScrollIntent(); wheelScrolling = true; clearTimeout(wheelTimer); wheelTimer = setTimeout(() => { wheelScrolling = false; },300); },{ passive:true });
+  window.addEventListener('touchstart',() => { openingChat = false; cancelScrollIntent(); userScrolling = true; },{ passive:true });
+  window.addEventListener('keydown',() => { openingChat = false; cancelScrollIntent(); });
   const finishTouch = () => { userScrolling = false; };
   window.addEventListener('touchend',finishTouch,{ passive:true });
   window.addEventListener('touchcancel',finishTouch,{ passive:true });
@@ -731,7 +762,7 @@
   window.addEventListener('resize',follow);
   window.visualViewport?.addEventListener('resize',follow);
   document.addEventListener('visibilitychange',() => {
-    if (document.hidden) saveReadingPosition();
+    if (document.hidden) { jumpMotion = null; saveReadingPosition(); }
     syncActivityMotion();
     if (!document.hidden && latest) {
       for (const view of views.values()) for (const piece of view.pieces.values()) {
@@ -743,6 +774,7 @@
   motionPreference.addEventListener('change',syncActivityMotion);
   function suspend() {
     pageSuspended = true;
+    jumpMotion = null;
     brandMotion.suspend();
     saveReadingPosition(); working.dataset.animating = 'false';
     document.documentElement.dataset.activityAnimating = 'false';

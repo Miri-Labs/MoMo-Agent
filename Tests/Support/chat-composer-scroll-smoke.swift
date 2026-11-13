@@ -56,7 +56,60 @@ Task { @MainActor in
         window.setContentSize(NSSize(width: 640, height: 450))
         try await settle()
         try await check("scrollY === 100")
-        print("PASS real WebKit: composing returns to bottom; repeated typing preserves DOM; viewport shrink follows; history reading remains stable")
+        // Capture actual viewport offsets after clicking the same button the user sees.
+        func clickJump(reduceMotion: Bool, onFirstMovement: String = "") async throws -> Int {
+            _ = try await web.evaluateJavaScript("fixture.appearance.reduceMotion = \(reduceMotion); MoMoChat.render(fixture)")
+            try await settle()
+            _ = try await web.evaluateJavaScript("window.scrollTo(0,100)")
+            try await settle()
+            try await check("scrollY === 100 && !document.querySelector('#jump').hidden")
+            let samples = try await web.callAsyncJavaScript("""
+            const start = scrollY, end = document.documentElement.scrollHeight - innerHeight;
+            const intermediate = new Set();
+            document.querySelector('#jump').click();
+            const deadline = performance.now() + 1000;
+            return await new Promise(resolve => {
+              function sample(now) {
+                if (scrollY > start + 2 && scrollY < end - 2) {
+                  const first = intermediate.size === 0;
+                  intermediate.add(scrollY);
+                  if (first) { \(onFirstMovement) }
+                }
+                if (atBottom() || now >= deadline) resolve(intermediate.size);
+                else requestAnimationFrame(sample);
+              }
+              requestAnimationFrame(sample);
+            });
+            """, arguments: [:], in: nil, contentWorld: .page)
+            return (samples as? NSNumber)?.intValue ?? -1
+        }
+        let systemReducesMotion = try await web.evaluateJavaScript("matchMedia('(prefers-reduced-motion: reduce)').matches") as? Bool == true
+        if systemReducesMotion {
+            let moved = try await clickJump(reduceMotion: false)
+            guard moved == 0 else { throw NSError(domain: "System reduced-motion jump animated", code: 1) }
+            try await check("atBottom()")
+        } else {
+            let moved = try await clickJump(reduceMotion: false, onFirstMovement: """
+            fixture.busy = true;
+            const reply = fixture.messages.at(-1);
+            reply.state = 'streaming';
+            reply.blocks[0].text += ' 新收到的内容。'.repeat(300);
+            MoMoChat.render(fixture);
+            """)
+            guard moved >= 2 else { throw NSError(domain: "Expected animated jump, observed \(moved) intermediate offsets", code: 1) }
+            try await check("fixture.busy && atBottom() && document.querySelector('#jump').hidden")
+            _ = try await clickJump(reduceMotion: false, onFirstMovement: """
+            window.dispatchEvent(new WheelEvent('wheel', { deltaY:-80 }));
+            window.scrollTo(0,80);
+            MoMoChat.render(fixture);
+            """)
+            try await check("scrollY === 80 && !document.querySelector('#jump').hidden")
+            print("PASS real WebKit: \(moved) intermediate offsets while reply grew; wheel interrupted the jump")
+        }
+        let reduced = try await clickJump(reduceMotion: true)
+        guard reduced == 0 else { throw NSError(domain: "Reduced-motion jump had \(reduced) intermediate offsets", code: 1) }
+        try await check("atBottom()")
+        print("PASS real WebKit: reduced motion, composing, viewport resizing and history reading")
         application.terminate(nil)
     } catch { print("FAIL \(error)"); exit(1) }
 }

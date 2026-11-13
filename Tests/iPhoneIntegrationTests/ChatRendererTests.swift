@@ -1096,11 +1096,11 @@ final class ChatRendererTests: XCTestCase {
         try await renderer.recordScrollEvents()
         let session = UUID()
         let body = (1...60).map { "第\($0)段：这是已收到的录音整理内容。" }.joined(separator:"\n\n")
-        renderer.render([user("长内容"),assistant([.init(id:"body",content:.text(body))])], sessionID: session)
+        renderer.render([user("长内容"),assistant([.init(id:"body",content:.text(body))])], reduceMotion:false, sessionID: session)
         try await renderer.wait("window.scrollY > 500")
         _ = try await renderer.web.evaluateJavaScript("window.scrollTo(0,0); true")
         try await renderer.wait("!document.querySelector('#jump').hidden")
-        renderer.render([user("长内容"),assistant([.init(id:"body",content:.text(body + "\n\n新增内容。"))],state:.streaming)],busy:true,sessionID:session)
+        renderer.render([user("长内容"),assistant([.init(id:"body",content:.text(body + "\n\n新增内容。"))],state:.streaming)],busy:true,reduceMotion:false,sessionID:session)
         try await renderer.wait("document.querySelector('.prose').textContent.includes('新增内容')")
         try await renderer.check("window.scrollY < 10")
         // JavaScript scrollTo can return before WK's native scroll and scrollend.
@@ -1114,7 +1114,14 @@ final class ChatRendererTests: XCTestCase {
         }
         let maximum = try await renderer.web.evaluateJavaScript("document.documentElement.scrollHeight - innerHeight")
         let bottom = try XCTUnwrap(maximum as? Double)
-        try await move("document.querySelector('#jump').click(); true", to: bottom, following: true)
+        let motionEnabled = try await renderer.bool("!matchMedia('(prefers-reduced-motion: reduce)').matches")
+        try await move("window.rendererScrollEvents.length = 0; document.querySelector('#jump').click(); true", to: bottom, following: true)
+        if motionEnabled {
+            try await renderer.check("""
+            new Set(rendererScrollEvents.filter(e => e.event === 'scroll' && e.top > 2 && e.top < \(bottom) - 2)
+              .map(e => e.top)).size >= 2
+            """)
+        }
         for _ in 0..<2 {
             try await move("window.scrollTo(0,0); true", to: 0, following: false)
             try await move("window.scrollTo(0,document.documentElement.scrollHeight - innerHeight); true", to: bottom, following: true)
