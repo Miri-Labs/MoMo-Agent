@@ -16,7 +16,7 @@ CURATION_POLICY_VERSION = "v5-transcript-evidence"
 MAX_BYTES = 32_000
 MAX_PARTS = 48
 RECEIPT = '''最后只返回 JSON：{"memory_review":{"outcome":"updated 或 no_change","reason":"本批保存、合并、清理、目录分层重整或纠正了什么（含记忆、Markdown 活页笔记重组/移动/删除或说话人修正），或为何无需改动"}}。
-updated 必须以原生 memory、notebook 或 relabel_speakers 工具成功回执为依据，文字承诺不算写入。工具失败时修正后重试；仍失败则说明失败，不得报告 no_change。'''
+updated 需要 memory、notebook 或 relabel_speakers 的实际变更回执。若所有调用都是 changed=false，返回 no_change。工具失败时修正后重试；仍失败则说明失败，不得报告 no_change。'''
 TRANSCRIPT_GUIDANCE = Path(__file__).with_name('dream-transcript-evidence.md').read_text(encoding='utf-8').strip()
 POLICY = TRANSCRIPT_GUIDANCE + '\n\n' + '''这是 MoMo Agent 的闲时记忆与生活上下文自治整理（Dream / Autonomous Memory Curation），不是用户的新任务。所有持久产出物均为纯 Markdown（`.md`）：核心摘要保存在 `USER.md` / `MEMORY.md`（通过 `memory` 工具），深层生活与工作知识库保存在 `memories/` 下的 Obsidian 式纯 Markdown 知识库（通过 `notebook` 工具自由读写、移动与清理 `BRIEFING.md` 及任意多级目录路径 `path`，如 `projects/<项目名>/overview.md`、`projects/<项目名>/双月OKR.md`、`journal/2026-11/2026-11-10.md`、`people/核心团队/小林.md` 或你按领域自建的多级文件夹，严禁往笔记里写 JSON）。
 USER.md 保存用户明确表达的稳定偏好、身份与核心原则；MEMORY.md 保存高优先级个人背景、当前活跃主线、有效承诺及指向深层笔记的索引。
@@ -73,16 +73,15 @@ def record_superagent_memory_write(home, session, content):
                        (session, content if isinstance(content, str) else json.dumps(content, ensure_ascii=False), time.time()))
 
 
-def _count_success_rows(rows):
-    count = 0
+def _changed_receipts(rows):
     for row in rows:
         try:
             value = json.loads(row[0] or "null")
         except (ValueError, TypeError):
             continue
-        if isinstance(value, dict) and value.get("success") is True:
-            count += 1
-    return count
+        # Pre-migration write receipts only recorded success.
+        if isinstance(value, dict) and value.get("success") is True and value.get("changed", True) is True:
+            yield value
 
 
 def _last_write_content(home, session):
@@ -102,22 +101,24 @@ def _last_write_content(home, session):
     return None
 
 
+def changed_write_receipts(home, session=None):
+    for database, query in (
+        (Path(home) / "state.db", "SELECT content FROM messages WHERE role='tool' AND tool_name IN ('memory','notebook','relabel_speakers')"),
+        (_writes_db_path(home), "SELECT content FROM memory_writes WHERE 1=1"),
+    ):
+        if database.exists():
+            with closing(readonly(database)) as db:
+                if database == _writes_db_path(home) and not db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_writes'"
+                ).fetchone():
+                    continue
+                if session:
+                    query += " AND session_id=?"
+                yield from _changed_receipts(db.execute(query, (session,) if session else ()))
+
+
 def successful_writes(home, session=None):
-    total = 0
-    path = Path(home) / "state.db"
-    if path.exists():
-        with closing(readonly(path)) as db:
-            query = "SELECT content FROM messages WHERE role='tool' AND tool_name IN ('memory','notebook','relabel_speakers')"
-            rows = db.execute(query + (" AND session_id=?" if session else ""), (session,) if session else ())
-            total += _count_success_rows(rows)
-    sa_path = _writes_db_path(home)
-    if sa_path.exists():
-        with closing(readonly(sa_path)) as db:
-            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_writes'").fetchone():
-                query = "SELECT content FROM memory_writes"
-                rows = db.execute(query + (" WHERE session_id=?" if session else ""), (session,) if session else ())
-                total += _count_success_rows(rows)
-    return total
+    return sum(1 for _ in changed_write_receipts(home, session))
 
 
 def _extract_receipt(output):
@@ -157,6 +158,18 @@ class InvalidReviewReceipt(Conflict):
     code = "review_invalid_receipt"
 
 
+def check_last_write(home, session):
+    last_content = _last_write_content(home, session)
+    if last_content is not None:
+        try:
+            last_obj = json.loads(last_content)
+            succeeded = isinstance(last_obj, dict) and last_obj.get('success') is True
+        except (ValueError, TypeError, AttributeError):
+            succeeded = False
+        if not succeeded:
+            raise InvalidReviewReceipt('Memory review ended with an unresolved native write failure')
+
+
 def outcome(home, session, output):
     """A completed run is not proof that memory was written, or even reviewed."""
     try:
@@ -167,15 +180,7 @@ def outcome(home, session, output):
     except (ValueError, TypeError, KeyError, AttributeError) as error:
         raise InvalidReviewReceipt("Memory review has no valid completion receipt") from error
     writes = successful_writes(home, session)
-    last_content = _last_write_content(home, session)
-    if last_content is not None:
-        try:
-            last_obj = json.loads(last_content)
-            succeeded = isinstance(last_obj, dict) and last_obj.get('success') is True
-        except (ValueError, TypeError, AttributeError):
-            succeeded = False
-        if not succeeded:
-            raise InvalidReviewReceipt('Memory review ended with an unresolved native write failure')
+    check_last_write(home, session)
     if kind == "updated" and not writes:
         raise InvalidReviewReceipt("Memory review claimed an update without a successful native write")
     return {"outcome": "updated" if writes else "no_change", "reason": reason[:500],
@@ -209,6 +214,17 @@ def chat_idle(data, now, idle_seconds=CHAT_IDLE_SECONDS):
     return True
 
 
+def eligible_chat_messages(db):
+    """Shared SELECT for Dream evidence, including profiles predating source_key."""
+    columns = {r[1] for r in db.execute("PRAGMA table_info(messages)")}
+    source_filter = "AND COALESCE(m.source_key, '') NOT LIKE 'dream-briefing:%'" if "source_key" in columns else ""
+    return f"""SELECT m.seq, m.role, m.content, m.created_at FROM messages m
+        LEFT JOIN inputs i ON i.operation_id=m.operation_id
+        WHERE m.role IN ('user','assistant')
+          AND COALESCE(m.operation_id, '') NOT LIKE 'dream-briefing:%' {source_filter}
+          AND (i.intent IS NULL OR i.intent!='steer' OR i.delivery_state='applied')"""
+
+
 def chat_batch(store, data, cursor=None, through=None):
     path = Path(data) / "runtime/conversation.sqlite"
     if not path.exists():
@@ -216,15 +232,9 @@ def chat_batch(store, data, cursor=None, through=None):
     cursor = cursor if cursor is not None else state(store, "chat_cursor", [0, 0])
     parts, end = [], list(cursor)
     with closing(readonly(path)) as db:
-        # A delivered Dream briefing is already an output of curation. Only a
-        # person's subsequent reply belongs in the next chat review.
-        columns = {r[1] for r in db.execute("PRAGMA table_info(messages)")}
-        briefing_key = "COALESCE(m.source_key, m.operation_id, '')" if "source_key" in columns else "COALESCE(m.operation_id, '')"
-        rows = db.execute(f"""SELECT m.seq,m.role,m.content,m.created_at FROM messages m
-            LEFT JOIN inputs i ON i.operation_id=m.operation_id
-            WHERE m.seq>=? AND m.seq<=? AND m.role IN ('user','assistant')
-              AND {briefing_key} NOT LIKE 'dream-briefing:%'
-              AND (i.intent IS NULL OR i.intent!='steer' OR i.delivery_state='applied') ORDER BY m.seq""", (cursor[0], through if through is not None else 2**63 - 1))
+        rows = db.execute(f"""SELECT * FROM ({eligible_chat_messages(db)})
+            WHERE seq BETWEEN ? AND ? ORDER BY seq""",
+            (cursor[0], through if through is not None else 2**63 - 1))
         for row in rows:
             offset = cursor[1] if row["seq"] == cursor[0] else 0
             text = row["content"]
@@ -278,6 +288,13 @@ def enqueue_manual_dream(store, data, now=None):
 
 def next_review(store, data, now):
     import daily_review
+    # Frozen work is already admitted. The daily interval applies to fresh
+    # snapshots, while retries keep their own bounded backoff across restarts.
+    pending = store.db.execute("""SELECT * FROM memory_reviews WHERE state='pending' AND first_attempt IS NULL
+        AND json_extract(input,'$.daily')=1 AND (attempt>0 OR json_extract(input,'$.continuation_of') IS NOT NULL)
+        ORDER BY rowid LIMIT 1""").fetchone()
+    if pending:
+        return pending if now >= json.loads(pending["input"]).get("retry_after", 0) else None
     # The latest admission survives restarts and includes previous-version jobs.
     latest = store.db.execute("""SELECT MAX(at) FROM (
         SELECT MAX(first_attempt) AS at FROM jobs UNION ALL SELECT MAX(first_attempt) FROM memory_reviews
@@ -301,7 +318,7 @@ DREAM_INSTRUCTION = """执行闲时深度 Dream（五阶段认知循环：后验
      c) **修复缺标题与臃肿流水账**：任何缺少 `# 一级标题`（首行直接是 `##`）或残留 `## 来源与边界` / `remaining_parts` / 裸 UUID 的笔记，立即用 `mode='replace'` 重写为带清晰 `# 标题` 的精炼手记，删掉过时的中间拉扯与已解决琐事；
      d) **淘汰空壳与过期记忆**：清理无实质信息的空壳人物页；在 `MEMORY.md` 中用 `memory(action='remove'/'patch')` 删除已完成事项、一次性琐事或已被项目活页完整承接的旧条目，让 `MEMORY.md` 始终保持精悍高信噪比。
 3. 【阶段三：全天时空拼图与计划对账（`notebook(category='journal')`）】
-   - 调用 `phone_context` 读取到访地点（`visits`）、日程（`calendar`）、待办（`reminders`）与作息（`health`），结合当天录音与聊天（`session_search`），将碎片对话按逻辑日用 `mode='replace'` 整合写入 `notebook(action='write', category='journal', slug='YYYY-MM-DD', ...)`。
+   - 通过 `phone_context` 核对到访地点（`visits`）、日程（`calendar`）和待办（`reminders`）。若某类还有 `next_cursor`，用该 `kind` 和 `after=next_cursor` 继续读取所需记录。日程仅表明计划，待办从快照消失也不能证明已完成；结合当天录音与聊天（`session_search`）核实后，再按逻辑日更新 `notebook(action='write', category='journal', slug='YYYY-MM-DD', ...)`。仅在用户明确提出相关健康问题时按需读取 `kind='health'`，常规步数和心率留在资料层，长期记忆仅保留用户明确要求记住的健康习惯或目标。
    - 包含：`# YYYY-MM-DD · <当日主线标题>`、`## 时空与事件脉络`（带 `[HH:MM 原音](momoagent://source/...)` 锚点）、`## 思考火花与决策演变`、`## 承诺与待办对账`（对照日历/提醒事项与口头实际进展）。
 4. 【阶段四：在研项目盘点与防串项隔离（`notebook(category='project')` + `notebook(category='topic')`）】
    - **严禁串项目（Project Isolation）**：根据业务域、核心术语、参与人判断每段讨论归属哪个独立项目，**绝不能把 A 项目的排期、规则、人物或客户混写到 B 项目中**。
@@ -331,12 +348,12 @@ DREAM_INSTRUCTION = """执行闲时深度 Dream（五阶段认知循环：后验
    - 最后用 `memory` 工具精炼更新 `USER.md` 与 `MEMORY.md`。若所有来源与笔记均已整洁最新且无需任何调整，可返回 `no_change`。"""
 
 
-def prompt(job):
+def prompt(job, dream_instruction=DREAM_INSTRUCTION):
     kind = job["kind"]
     instruction = (
         "整理这批真实聊天。用户本人明确表达可作为个人偏好、事实订正或说话人纠偏的最高优依据（例如用户指出某场会议/某段内容实际是某人说的，必须立即调用 `search_recordings`/`read_recording` + `relabel_speakers` 修正对应录音片段，并同步订正 `journal`、`project`、`person`、`topic` 与 `MEMORY.md` 中的旧记录）；不要把助手建议当成用户已经接受。按 offset 识别长消息片段，remaining 为真表示尚未读完。"
         if kind == "chat"
-        else DREAM_INSTRUCTION
+        else dream_instruction
     )
     return "MOMO_MEMORY_REVIEW\n" + POLICY + instruction + "\n" + RECEIPT + "\nEVIDENCE_JSON=" + job["input"]
 
@@ -383,8 +400,9 @@ def format_briefing_chat_message(markdown: str) -> str:
 def morning_briefing_evidence(data, db):
     """A bounded digest of recent user requests and dated notebook excerpts."""
     cutoff = time.time() - 7 * 86400
+    eligible = eligible_chat_messages(db)
     requests = db.execute(
-        "SELECT content,created_at FROM messages WHERE role='user' AND created_at>=? "
+        f"SELECT content,created_at FROM ({eligible}) WHERE role='user' AND created_at>=? "
         "AND trim(content)!='' ORDER BY seq DESC LIMIT 8", (cutoff,),
     ).fetchall()
     evidence = [{"at": time.strftime("%F %R", time.localtime(at)), "request_excerpt": text[:500]}
@@ -404,7 +422,7 @@ def morning_briefing_evidence(data, db):
     else:
         latest = next((entry["note"] for entry in evidence if "note" in entry), None)
         fallback = f"最近更新的笔记是 `{latest}`，可以从这里接着看。" if latest else "过去一周没有新的聊天或笔记可供整理。"
-    if not evidence and not db.execute("SELECT 1 FROM messages WHERE role='user' LIMIT 1").fetchone():
+    if not evidence and not db.execute(f"SELECT 1 FROM ({eligible}) WHERE role='user' LIMIT 1").fetchone():
         return "", None  # A new, unused installation has no personal briefing yet.
     return (canonical(evidence) if evidence else ""), fallback
 
@@ -425,8 +443,11 @@ def finish(store, job, receipt, home):
                 import daily_review
                 cursor = daily_review.finish_in_transaction(store, job, receipt)
                 store.db.execute("UPDATE memory_reviews SET result=? WHERE id=?", (canonical(receipt), job["id"]))
+            if receipt.get("pages_remaining"):
+                return
             stamp = reviewed["signature"]
-            if (cursor or receipt.get("native_writes")) and "chat_cursor" in reviewed and "source_revision" in reviewed:
+            snapshot_changed = cursor or receipt.get("native_writes") or reviewed.get("continuation_of")
+            if snapshot_changed and "source_revision" in reviewed and "chat_cursor" in reviewed:
                 stamp = signature(home, cursor or reviewed["chat_cursor"], reviewed["source_revision"])
             set_state(store, "dream", {"at": time.time(), "signature": stamp})
 
@@ -472,15 +493,24 @@ def retry_completed(store, table, job, error):
     """Retry only known terminal reviews; unknown admission/execution is never replayed."""
     if table not in {'jobs', 'memory_reviews'} or job['attempt'] >= 2:
         return False
-    job = store.db.execute(f'SELECT * FROM {table} WHERE id=?', (job['id'],)).fetchone()
     identity = str(uuid.uuid5(uuid.NAMESPACE_URL, job['id'] + ':retry'))
     with store.write():
+        job = store.db.execute(f'SELECT * FROM {table} WHERE id=?', (job['id'],)).fetchone()
         changed = store.db.execute(f"UPDATE {table} SET state='retrying',error=? WHERE id=? AND state IN ('pending','running')", (str(error)[:500],job['id'])).rowcount
         if not changed:
             return True
         if table == 'jobs':
             store.db.execute("INSERT OR IGNORE INTO jobs(id,source_id,source_revision,state,input,attempt) VALUES(?,?,?,'pending',?,?)",(identity,job['source_id'],job['source_revision'],job['input'],job['attempt']+1))
         else:
-            store.db.execute("INSERT OR IGNORE INTO memory_reviews(id,kind,input,attempt) VALUES(?,?,json_remove(?,'$.manual_requested_at'),?)",(identity,job['kind'],job['input'],job['attempt']+1))
-            store.db.execute("UPDATE daily_review_pages SET review_id=?,seen=0 WHERE review_id=?", (identity, job["id"]))
+            payload = json.loads(job["input"])
+            payload.pop("manual_requested_at", None)
+            if payload.get("daily"):
+                snapshot = payload.setdefault("snapshot_id", job["id"])
+                payload["resume_after"] = job["checkpoint_page"]
+                store.db.execute("UPDATE daily_review_pages SET seen=0 WHERE review_id=? AND seen=1 AND page>?",
+                                 (snapshot, job["checkpoint_page"]))
+            payload["retry_of"] = job["id"]
+            payload["retry_after"] = time.time() + (300 if job["attempt"] == 0 else 900)
+            store.db.execute("""INSERT INTO memory_reviews(id,kind,input,attempt,checkpoint_page)
+                VALUES(?,?,?,?,?)""", (identity, job["kind"], canonical(payload), job["attempt"]+1, job["checkpoint_page"]))
     return True

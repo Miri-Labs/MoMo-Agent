@@ -114,7 +114,10 @@ class ContextService:
                         elif url.path == "/v1/summaries":
                             result = recording_summary.enqueue(store, body)
                         elif url.path == "/v1/memories/forget":
-                            result = service.memory.forget(body["id"])
+                            identity, revision = body["id"], body.get("base_revision")
+                            if isinstance(identity, str) and identity.startswith("momo-page-") and revision is None:
+                                raise Conflict("Refresh memory before forgetting a notebook")
+                            result = service.memory.forget(identity, revision)
                         elif url.path == "/v1/memories/dream":
                             job, enqueued = memory_review.enqueue_manual_dream(store, service.data)
                             service.next_dispatch = 0
@@ -367,11 +370,9 @@ class ContextService:
             elif snapshot['status'] == 'failed':
                 memory_review.handle_failed_run(store, 'memory_reviews', job, snapshot)
             elif snapshot['status'] in {'started','queued','running','stopping'}:
-                now_ts = time.time()
-                if self.review_timed_out(job, snapshot, now_ts):
-                    if memory_review.retry_completed(store, 'memory_reviews', job, 'Memory review timed out'):
-                        return
-                    raise Conflict('Memory review timed out')
+                # The gateway owns the idle timeout. Only it can say a worker
+                # has stopped writing; polling a stale heartbeat cannot.
+                return
             else:
                 raise Conflict('Memory review execution needs review: ' + snapshot['status'])
         except Exception as error:

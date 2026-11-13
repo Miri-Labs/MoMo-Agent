@@ -1,4 +1,4 @@
-"""Opt-in phone evidence. Replace snapshots atomically; never enqueue memory ingestion."""
+"""Opt-in phone evidence. Sync snapshots atomically; daily Dream tracks material changes."""
 import base64
 import json
 import math
@@ -15,6 +15,15 @@ def number(value):
     if type(value) not in (int, float) or not math.isfinite(value):
         raise ValueError('Expected a finite number')
     return value
+
+
+def _review_content(snapshot):
+    # A foreground refresh advances the phone revision and shifts its coverage even
+    # when it carries precisely the same evidence. Only records can wake Dream.
+    records = snapshot["records"]
+    if not records:
+        return None
+    return snapshot["timezone"], {record["id"]: record for record in records}
 
 
 def sync_phone_source(store, payload):
@@ -75,6 +84,9 @@ def sync_phone_source(store, payload):
         if not saved or revision > saved['revision']:
             store.db.execute('INSERT OR REPLACE INTO phone_source_snapshots VALUES (?,?,?,?,?)',
                              (device, kind, revision, encoded, time.time()))
+            previous = _review_content(json.loads(saved['payload'])) if saved else None
+            if previous != _review_content(value):
+                store.advance()
     return dict(device_id=device, kind=kind, revision=revision)
 
 
