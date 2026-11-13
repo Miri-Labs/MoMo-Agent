@@ -12,6 +12,7 @@ struct ArchiveStorageTests {
             ("Library/Application Support/MoMoAgent/SpeechModels/revision.partial/model.download", 101),
             ("Library/Caches/MoMoAgent/SpeechModels/model/weights.bin", 203),
             ("Library/Caches/com.momoagent.ios/com.apple.e5rt.e5bundlecache/model/weights.bin", 307),
+            ("Library/Caches/com.watchmylife.ios/com.apple.e5rt.e5bundlecache/model/weights.bin", 103),
             ("tmp/MoMoThroughput-test/fixture.wav", 401)
         ] {
             let url = store.rootURL.appendingPathComponent(path)

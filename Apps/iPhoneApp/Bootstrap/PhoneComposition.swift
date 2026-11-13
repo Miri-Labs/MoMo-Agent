@@ -164,6 +164,14 @@ enum PhoneComposition {
                 let performance = PhoneSpeechPerformance(url: support.appendingPathComponent("transcription-performance.json"), backend: backend)
                 speechPerformance = performance
                 let bundle = try SpeechModelBundle.load(from: directory)
+                if let bundleID = Bundle.main.bundleIdentifier {
+                    do {
+                        try SpeechModelCache.retireSystemCache(in: container.appendingPathComponent("Library/Caches"),
+                                                              bundleID: bundleID, installation: Bundle.main.bundleURL)
+                    } catch {
+                        speechLog.error("Could not retire the system model cache: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
                 pruneStaleCoreMLCaches(in: coreMLCacheRoot, retainingASRHash: bundle.manifest.asrSHA256)
                 let downloadedModelsRoot = support.appendingPathComponent("SpeechModels", isDirectory: true)
                 PhoneSpeechModelSettings.pruneRetiredDownloads(at: downloadedModelsRoot)

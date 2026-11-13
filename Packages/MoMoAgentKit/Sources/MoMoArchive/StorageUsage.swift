@@ -32,6 +32,8 @@ enum StorageUsageReader {
         var databases: Int64 = 0, modelCaches: Int64 = 0
         var skippedLinks = 0
         let normalizedModel = modelDirectory?.standardizedFileURL
+        let cacheBundleIDs = Set(["com.momoagent.ios", "com.watchmylife.ios"] + [Bundle.main.bundleIdentifier].compactMap { $0 })
+        let compilerPrefixes = cacheBundleIDs.map { "Library/Caches/\($0)/com.apple.e5rt.e5bundlecache/" }
         for name in ["Documents", "Library", "tmp"] {
             let directory = root.appendingPathComponent(name, isDirectory: true)
             guard FileManager.default.fileExists(atPath: directory.path) else { continue }
@@ -39,7 +41,7 @@ enum StorageUsageReader {
                 let relative = String(url.standardizedFileURL.path.dropFirst(root.standardizedFileURL.path.count + 1))
                 if relative.hasPrefix("tmp/") { exports += size }
                 else if relative.hasPrefix("Library/Application Support/MoMoAgent/SpeechModels/") { models += size }
-                else if relative.hasPrefix("Library/Caches/MoMoAgent/SpeechModels/") || relative.hasPrefix("Library/Caches/com.momoagent.ios/com.apple.e5rt.e5bundlecache/") { modelCaches += size }
+                else if relative.hasPrefix("Library/Caches/MoMoAgent/SpeechModels/") || compilerPrefixes.contains(where: relative.hasPrefix) { modelCaches += size }
                 else if ["archive.sqlite", "archive.sqlite-wal", "archive.sqlite-shm"].contains(url.lastPathComponent), relative.hasPrefix("Library/Application Support/MoMoAgent/") { databases += size }
                 else if url.lastPathComponent == "audio" || ["wav", "m4a", "caf", "aac"].contains(url.pathExtension.lowercased()) { audio += size }
                 else if url.lastPathComponent == "transcript.json" || url.lastPathComponent == "transcript.md" || relative.hasPrefix("Documents/workspace/plans/") {

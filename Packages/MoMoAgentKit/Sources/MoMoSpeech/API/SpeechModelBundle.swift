@@ -34,12 +34,31 @@ public enum SpeechModelCache {
         "speaker-coreml-v4-\(SpeechModelManifest.ortVersion)-\(model.sha256)-\(SpeakerRuntime.revision)"
     }
 
+    // Apple's private compiler cache can also depend on the absolute installation
+    // path. Detach the previous installation's cache before any model is opened.
+    public static func retireSystemCache(in caches: URL, bundleID: String, installation: URL) throws {
+        let manager = FileManager.default
+        let appCaches = caches.appendingPathComponent("MoMoAgent")
+        let marker = appCaches.appendingPathComponent("coreml-installation")
+        let identity = Data(installation.standardizedFileURL.path.utf8)
+        if (try? Data(contentsOf: marker)) == identity { return }
+
+        try manager.createDirectory(at: appCaches, withIntermediateDirectories: true)
+        let system = caches.appendingPathComponent(bundleID).appendingPathComponent("com.apple.e5rt.e5bundlecache")
+        if manager.fileExists(atPath: system.path) {
+            let retired = appCaches.appendingPathComponent("SpeechModels/retired-system-" + UUID().uuidString)
+            try manager.createDirectory(at: retired.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try manager.moveItem(at: system, to: retired)
+        }
+        try identity.write(to: marker, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
     public static func removeObsolete(in root: URL, retaining names: Set<String>) throws {
         let manager = FileManager.default
         let entries = try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
         for entry in entries {
             let name = entry.lastPathComponent
-            if (name.hasPrefix("speaker-coreml-") || name.hasPrefix("sherpa-coreml-")) && !names.contains(name) {
+            if (name.hasPrefix("speaker-coreml-") || name.hasPrefix("sherpa-coreml-") || name.hasPrefix("retired-system-")) && !names.contains(name) {
                 try manager.removeItem(at: entry)
             }
         }
