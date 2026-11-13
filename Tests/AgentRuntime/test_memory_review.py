@@ -118,9 +118,13 @@ class MemoryReviewTests(unittest.TestCase):
     def test_terminal_retry_is_bounded_and_dream_does_not_replay_exhausted_job(self):
         review.set_state(self.store,'chat_cursor',[2,0])
         job=review.next_review(self.store,self.data,100)
-        for attempt in (1,2):
-            self.assertTrue(review.retry_completed(self.store,'memory_reviews',job,'invalid receipt'))
-            job=review.next_review(self.store,self.data,100)
+        now = 100
+        for attempt, delay in enumerate((300, 900), start=1):
+            with patch.object(review.time, "time", return_value=now):
+                self.assertTrue(review.retry_completed(self.store,'memory_reviews',job,'provider failed'))
+            now += delay
+            self.assertIsNone(review.next_review(self.store, self.data, now - 1))
+            job=review.next_review(self.store,self.data,now)
             self.assertEqual(attempt,job['attempt'])
         self.assertFalse(review.retry_completed(self.store,'memory_reviews',job,'invalid receipt'))
         self.store.db.execute("UPDATE memory_reviews SET state='needs_review' WHERE id=?",(job['id'],))
@@ -164,32 +168,46 @@ class MemoryReviewTests(unittest.TestCase):
         wake(start)
         job = admissions[0]
         self.assertEqual("dream", job["kind"])
-        session = "momo-review-" + job["id"]
         gateway = SuperAgentGateway.__new__(SuperAgentGateway)
         gateway.data = self.data
-        _, _, call = gateway._build_memory_review_session(session)
-        first = json.loads(daily_review.prompt(self.store, job).split("DAILY_EVIDENCE=")[-1])
-        self.assertEqual(first["evidence"]["messages"][0]["text"], "chat evidence")
-        self.assertGreater(first["total_pages"], 20)
-        page = first["next_page"]
+        pages = []
         sources = set()
-        while page is not None:
-            item = json.loads(call("read_daily_evidence", {"review_id": job["id"], "page": page}))
-            sources.add(item["evidence"]["source_id"])
-            page = item["next_page"]
+        while True:
+            job = admissions[-1]
+            _, _, call = gateway._build_memory_review_session("momo-review-" + job["id"])
+            item = json.loads(daily_review.prompt(self.store, job).split("DAILY_EVIDENCE=")[-1])
+            if not pages:
+                self.assertEqual(item["evidence"]["messages"][0]["text"], "chat evidence")
+                self.assertGreater(item["total_pages"], 20)
+                self.source("later arrival")
+                self.message(2, "later chat")
+            first = item["page"]
+            while True:
+                pages.append(item["page"])
+                if "source_id" in item["evidence"]:
+                    sources.add(item["evidence"]["source_id"])
+                if item["next_page"] is None:
+                    break
+                item = json.loads(call("read_daily_evidence", {"review_id": job["id"], "page": item["next_page"],
+                                                              "completed_page": item["page"]}))
+            self.assertLessEqual(item["page"] - first + 1, daily_review.PAGES_PER_RUN)
+            receipt = {"outcome": "no_change"}
+            with patch.object(review.time, "time", return_value=start):
+                review.finish(self.store, job, receipt, self.data / "hermes")
+            if not receipt["pages_remaining"]:
+                break
+            wake(start)
+        self.assertEqual(pages, list(range(1, item["total_pages"] + 1)))
         self.assertEqual(len(sources), 2)
-        self.source("later arrival")
-        self.message(2, "later chat")
-        with patch.object(review.time, "time", return_value=start):
-            review.finish(self.store, job, {"outcome": "no_change"}, self.data / "hermes")
+        completed_batches = len(admissions)
         self.assertEqual(review.state(self.store, "chat_cursor"), [2, 0])
         self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM jobs WHERE state='pending'").fetchone()[0], 1)
         self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM daily_review_pages").fetchone()[0], 0)
         for minutes in (1, 60, 120, 720, 1439):
             wake(start + 60 * minutes)
-        self.assertEqual(len(admissions), 1)
+        self.assertEqual(len(admissions), completed_batches)
         wake(start + 86400)
-        self.assertEqual(len(admissions), 2)
+        self.assertEqual(len(admissions), completed_batches + 1)
 
     def test_daily_partial_review_preserves_unread_pages(self):
         import daily_review
@@ -201,7 +219,12 @@ class MemoryReviewTests(unittest.TestCase):
         review.finish(self.store, job, {"outcome": "no_change"}, self.data/"hermes")
         self.assertEqual(review.state(self.store, "chat_cursor"), [2, 0])
         self.assertEqual(self.store.db.execute("SELECT state FROM jobs").fetchone()[0], "pending")
-        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM memory_reviews").fetchone()[0], 1)
+        next_job = review.next_review(self.store, self.data, 10001)
+        self.assertEqual(job["id"], json.loads(next_job["input"])["continuation_of"])
+        self.store.db.execute("UPDATE memory_reviews SET first_attempt=10001 WHERE id=?", (next_job["id"],))
+        self.assertEqual(2, json.loads(daily_review.prompt(self.store, next_job).split("DAILY_EVIDENCE=")[-1])["page"])
+        review.finish(self.store, next_job, {"outcome": "no_change"}, self.data/"hermes")
+        self.assertEqual(self.store.db.execute("SELECT state FROM jobs").fetchone()[0], "done")
 
     def test_daily_retry_reuses_frozen_pages_and_skips_a_revised_source(self):
         import daily_review
@@ -210,11 +233,12 @@ class MemoryReviewTests(unittest.TestCase):
         job = review.next_review(self.store, self.data, 100)
         self.store.db.execute("UPDATE memory_reviews SET state='running', first_attempt=100 WHERE id=?", (job["id"],))
         daily_review.prompt(self.store, job)
-        self.assertTrue(review.retry_completed(self.store, "memory_reviews", job, "gateway restarted"))
+        with patch.object(review.time, "time", return_value=100):
+            self.assertTrue(review.retry_completed(self.store, "memory_reviews", job, "gateway restarted"))
         self.assertIsNone(review.next_review(self.store, self.data, 101))
-        retry = review.next_review(self.store, self.data, 100 + review.DREAM_INTERVAL)
+        retry = review.next_review(self.store, self.data, 400)
         self.assertEqual(retry["attempt"], 1)
-        self.store.db.execute("UPDATE memory_reviews SET state='running', first_attempt=86500 WHERE id=?", (retry["id"],))
+        self.store.db.execute("UPDATE memory_reviews SET state='running', first_attempt=400 WHERE id=?", (retry["id"],))
         daily_review.prompt(self.store, retry)
         payload = json.loads(self.store.source(source["source_id"])["payload"])
         payload["version"] += 1
@@ -225,6 +249,164 @@ class MemoryReviewTests(unittest.TestCase):
         review.finish(self.store, retry, {"outcome": "no_change"}, self.data/"hermes")
         self.assertEqual(self.store.db.execute("SELECT count(*) FROM jobs WHERE state='done'").fetchone()[0], 0)
         self.assertEqual(self.store.db.execute("SELECT count(*) FROM jobs WHERE state='pending'").fetchone()[0], 1)
+
+    def test_upgraded_383_page_retry_restarts_at_checkpoint_and_drains_one_snapshot(self):
+        import daily_review
+        from superagent_gateway import SuperAgentGateway
+
+        self.message(1, "fixture")
+        now = 10000
+        original = review.next_review(self.store, self.data, now)
+        retry_id = str(uuid.uuid5(uuid.NAMESPACE_URL, original["id"] + ":retry"))
+        home = self.data / "hermes"
+        gateway = SuperAgentGateway.__new__(SuperAgentGateway)
+        gateway.data = self.data
+
+        def tools_for(row):
+            return gateway._build_memory_review_session("momo-review-" + row["id"])[2]
+
+        def admit(row):
+            self.store.db.execute("UPDATE memory_reviews SET state='running',first_attempt=? WHERE id=?", (now, row["id"]))
+            prompt = daily_review.prompt(self.store, row)
+            return prompt, json.loads(prompt.split("DAILY_EVIDENCE=")[-1])
+
+        def append(call):
+            return json.loads(call("notebook", {"action": "write", "path": "projects/recovery.md",
+                                                "mode": "append", "content": "Persist before the stream stalls."}))
+
+        self.assertTrue(append(tools_for(original))["changed"])
+        # Reproduce the old retry layout, including an existing write and no retry_of or retry_after.
+        with self.store.write():
+            self.store.db.execute("UPDATE memory_reviews SET state='retrying',first_attempt=? WHERE id=?", (now, original["id"]))
+            self.store.db.execute("INSERT INTO memory_reviews(id,kind,input,attempt) VALUES(?,'dream',?,1)",
+                                  (retry_id, original["input"]))
+            self.store.db.execute("DELETE FROM daily_review_pages")
+            self.store.db.executemany("INSERT INTO daily_review_pages(review_id,page,evidence) VALUES(?,?,?)", (
+                (retry_id, n, json.dumps({"cursor": [n+1, 0], "messages": [{"text": "x" * 31000}]}))
+                for n in range(1, 384)))
+
+        retry = review.next_review(self.store, self.data, now)
+        self.assertEqual(retry_id, retry["id"])
+        prompt, item = admit(retry)
+        self.assertIn("projects/recovery.md", prompt)
+        self.assertEqual((1, 383), (item["page"], item["total_pages"]))
+        call = tools_for(retry)
+        self.assertFalse(append(call)["changed"])
+        # A failed write cannot advance the durable checkpoint even if a page was fetched.
+        call("notebook", {"action": "write", "path": "projects/empty.md", "content": ""})
+        with self.assertRaises(review.InvalidReviewReceipt):
+            daily_review.read_page(self.store, retry_id, 2, completed_page=1)
+        self.assertFalse(append(call)["changed"])
+        self.assertEqual(2, daily_review.read_page(self.store, retry_id, 2, completed_page=1)["page"])
+        self.assertTrue(json.loads(call("notebook", {"action": "write", "path": "projects/second.md",
+                                                     "content": "# Second"}))["changed"])
+        with patch.object(review.time, "time", return_value=now):
+            self.assertTrue(review.retry_completed(self.store, "memory_reviews", retry, "stream stalled"))
+        with self.assertRaises(Conflict):
+            daily_review.read_page(self.store, retry_id, 3)
+        self.assertIsNone(review.next_review(self.store, self.data, now + 899))
+        now += 900
+        job = review.next_review(self.store, self.data, now)
+        prompt, item = admit(job)
+        self.assertEqual(2, item["page"])
+        self.assertIn("projects/second.md", prompt)
+        self.assertIn("projects/recovery.md", prompt)
+        with self.assertRaises(ValueError):
+            daily_review.read_page(self.store, job["id"], 5)
+        seen = [1]
+        batch_count = 0
+        while True:
+            batch_count += 1
+            while True:
+                seen.append(item["page"])
+                if item["next_page"] is None:
+                    break
+                item = daily_review.read_page(self.store, job["id"], item["next_page"], completed_page=item["page"])
+            receipt = {"outcome": "no_change", "native_writes": 0}
+            with patch.object(review.time, "time", return_value=now):
+                review.finish(self.store, job, receipt, home)
+                review.finish(self.store, job, receipt, home)
+            if batch_count == 1:
+                self.assertEqual(("updated", 2, 2), (receipt["outcome"], receipt["native_writes"], receipt["recovered_writes"]))
+            if not receipt["pages_remaining"]:
+                break
+            self.assertIsNone(review.state(self.store, "dream"))
+            job = review.next_review(self.store, self.data, now)
+            _, item = admit(job)
+        self.assertEqual(list(range(1, 384)), seen)
+        self.assertEqual(96, batch_count)
+        self.assertEqual([384, 0], review.state(self.store, "chat_cursor"))
+        self.assertIsNone(review.next_review(self.store, self.data, now + review.DREAM_INTERVAL))
+        saved = (home / "memories/projects/recovery.md").read_text()
+        self.assertEqual(1, saved.count("Persist before the stream stalls."))
+
+    def test_stale_running_review_waits_for_a_terminal_failure_before_retry(self):
+        self.message(1, "fixture")
+        job = review.next_review(self.store, self.data, 1)
+        self.store.db.execute("UPDATE memory_reviews SET state='running',first_attempt=1,run_id='r' WHERE id=?", (job["id"],))
+        job = self.store.db.execute("SELECT * FROM memory_reviews WHERE id=?", (job["id"],)).fetchone()
+        service = ContextService.__new__(ContextService)
+        service.data = self.data
+        snapshot = {"session_id": "momo-review-" + job["id"], "run_id": "r", "status": "started", "updated_at": 1}
+        service.request = lambda *_: snapshot
+        with patch.object(review.time, "time", return_value=10000):
+            service.advance_review(self.store, job)
+            self.assertEqual(["running"], [r[0] for r in self.store.db.execute("SELECT state FROM memory_reviews")])
+            snapshot.update(status="failed", error="stream stalled")
+            service.advance_review(self.store, job)
+        self.assertIsNotNone(review.next_review(self.store, self.data, 10300))
+
+    def test_repeated_noop_writes_do_not_keep_dream_alive(self):
+        from superagent_gateway import RepeatedToolRead, SuperAgentGateway
+        gateway = SuperAgentGateway.__new__(SuperAgentGateway)
+        gateway.data = self.data
+        write = {"id": "repeat", "function": {"name": "notebook", "arguments": json.dumps({
+            "action": "write", "path": "projects/repeated.md", "content": "# Repeated"})}}
+        with patch("superagent_gateway.resolve_superagent_llm", return_value={"dsh_provider": "antigravity", "model_id": "mock"}):
+            with patch("antigravity_bridge.run_antigravity_completion",
+                       return_value={"choices": [{"message": {"tool_calls": [write]}}]}) as model:
+                with self.assertRaises(RepeatedToolRead):
+                    gateway._call_configured_llm_memory_review("momo-review-repeat", "review")
+                self.assertEqual(4, model.call_count)
+        self.assertEqual(1, review.successful_writes(self.data / "hermes", "momo-review-repeat"))
+
+    def test_daily_write_needs_a_separate_completion_receipt(self):
+        import daily_review
+        from superagent_gateway import SuperAgentGateway
+        self.message(1, "fixture")
+        job = review.next_review(self.store, self.data, 1)
+        self.store.db.execute("UPDATE memory_reviews SET first_attempt=1 WHERE id=?", (job["id"],))
+        prompt = daily_review.prompt(self.store, job)
+        gateway = SuperAgentGateway.__new__(SuperAgentGateway)
+        gateway.data = self.data
+        session = "momo-review-" + job["id"]
+        write = {"id": "write", "function": {"name": "notebook", "arguments": json.dumps({
+            "action": "write", "path": "projects/unfinished.md", "content": "# Started"})}}
+        replies = [{"choices": [{"message": m}]} for m in ({"tool_calls": [write]}, {"content": ""}, {"content": ""})]
+        with patch("superagent_gateway.resolve_superagent_llm", return_value={"dsh_provider": "antigravity", "model_id": "mock"}):
+            with patch("antigravity_bridge.run_antigravity_completion", side_effect=replies):
+                with self.assertRaises(review.InvalidReviewReceipt):
+                    gateway._call_configured_llm_memory_review(session, prompt)
+        self.assertEqual(1, review.successful_writes(self.data / "hermes", session))
+        self.assertIsNone(review.state(self.store, "chat_cursor"))
+
+    def test_batch_rollback_retains_original_evidence_and_cursor(self):
+        import daily_review
+        self.message(1, "fixture")
+        self.source("unread")
+        job = review.next_review(self.store, self.data, 100)
+        self.store.db.execute("UPDATE memory_reviews SET first_attempt=100 WHERE id=?", (job["id"],))
+        daily_review.prompt(self.store, job)
+        self.store.db.execute("""CREATE TEMP TRIGGER interrupt BEFORE INSERT ON memory_reviews
+            BEGIN SELECT RAISE(ABORT,'simulated interruption'); END""")
+        with self.assertRaises(sqlite3.IntegrityError):
+            review.finish(self.store, job, {"outcome": "no_change"}, self.data / "hermes")
+        self.assertIsNone(review.state(self.store, "chat_cursor"))
+        self.assertEqual(2, self.store.db.execute("SELECT COUNT(*) FROM daily_review_pages").fetchone()[0])
+        self.store.db.execute("DROP TRIGGER interrupt")
+        review.finish(self.store, job, {"outcome": "no_change"}, self.data / "hermes")
+        self.assertEqual([2, 0], review.state(self.store, "chat_cursor"))
+        self.assertIsNotNone(review.next_review(self.store, self.data, 101))
 
     def test_repeated_recording_page_stops_but_twenty_distinct_pages_complete(self):
         from superagent_gateway import RepeatedToolRead, SuperAgentGateway

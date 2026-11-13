@@ -7,14 +7,14 @@ file store (`memories/USER.md`, `memories/MEMORY.md`, `memories/BRIEFING.md`,
 """
 from __future__ import annotations
 
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
+from functools import wraps
 import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
-import time
 from typing import Any
 
 from context_store import Conflict
@@ -145,6 +145,32 @@ def sanitize_notebook_slug(raw: str) -> str:
         for idx, part in enumerate(parts)
     ]
     return "/".join(sanitized)
+
+
+@contextmanager
+def _file_lock(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def _notebook_mutation(method):
+    # Moves and tombstones touch multiple paths. Share one short-lived vault
+    # lock across Dream, CLI and client mutations, including revision checks.
+    @wraps(method)
+    def locked(self, *args, **kwargs):
+        with _file_lock(self.memories_dir / ".notebooks.lock"):
+            return method(self, *args, **kwargs)
+    return locked
+
+
+def _page_id(relative_path: str) -> str:
+    return "momo-page-" + hashlib.sha256(relative_path.encode()).hexdigest()
 
 
 def _atomic_write_markdown(path: Path, text: str) -> None:
@@ -299,26 +325,6 @@ class MoMoMemoryStore:
             self._set_entries(target, entries)
             self._system_prompt_snapshot[target] = self._render_block(target, entries)
 
-    @contextmanager
-    def _file_lock(self, path: Path):
-        self.memories_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        lock_path = path.with_suffix(path.suffix + ".lock")
-        raw_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
-        try:
-            if hasattr(os, "fchmod"):
-                os.fchmod(raw_fd, 0o600)
-            fd = os.fdopen(raw_fd, "r+", encoding="utf-8")
-        except Exception:
-            os.close(raw_fd)
-            raise
-        with fd:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                with suppress(OSError):
-                    fcntl.flock(fd, fcntl.LOCK_UN)
-
     def _consolidation_failure(self, response: dict[str, Any]) -> dict[str, Any]:
         self._consolidation_failures += 1
         if self._consolidation_failures <= self._MAX_CONSOLIDATION_FAILURES_PER_TURN:
@@ -332,22 +338,23 @@ class MoMoMemoryStore:
             ),
         }
 
-    def _success_response(self, target: str, message: str | None = None, **extra) -> dict[str, Any]:
+    def _success_response(self, target: str, message: str | None = None, *, changed: bool, **extra) -> dict[str, Any]:
         self._consolidation_failures = 0
         return {
             "success": True,
             "done": True,
+            "changed": changed,
             "target": target,
             "usage": self._usage_pct(target, self._char_count(target)),
             "entry_count": len(self._entries_for(target)),
             **({"message": message} if message else {}),
             **extra,
-            "note": "Write saved. This update is complete — do not repeat it.",
+            "note": "Saved." if changed else "Already up to date.",
         }
 
     def _mutate(self, target: str, mutate) -> dict[str, Any]:
         path = self._path_for(target)
-        with self._file_lock(path):
+        with _file_lock(path.with_suffix(path.suffix + ".lock")):
             raw, read_ok = self._read_raw_checked(path)
             if not read_ok:
                 return {"success": False, "error": f"Refusing to write {path.name}: file could not be read."}
@@ -355,10 +362,12 @@ class MoMoMemoryStore:
             result = mutate(self._entries_for(target), self._char_limit(target))
             if isinstance(result, dict):
                 return result
-            self._set_entries(target, result[0])
-            _atomic_write_markdown(path, ENTRY_DELIMITER.join(result[0]))
+            changed = result[0] != self._entries_for(target)
+            if changed:
+                _atomic_write_markdown(path, ENTRY_DELIMITER.join(result[0]))
+                self._set_entries(target, result[0])
             extra_fields = result[2] if len(result) > 2 else {}
-            return self._success_response(target, result[1], **extra_fields)
+            return self._success_response(target, result[1], changed=changed, **extra_fields)
 
     def add(self, target: str, content: str) -> dict[str, Any]:
         content = (content or "").strip()
@@ -367,7 +376,7 @@ class MoMoMemoryStore:
 
         def _add(entries: list[str], limit: int):
             if content in entries:
-                return self._success_response(target, "Entry already exists (no duplicate added).")
+                return self._success_response(target, "Entry already exists (no duplicate added).", changed=False)
             new_total = len(ENTRY_DELIMITER.join(entries + [content]))
             if new_total > limit:
                 return self._consolidation_failure({
@@ -659,14 +668,13 @@ class MoMoMemory:
             pass
         return set()
 
-    def _mark_deleted_notebook(self, kind: str, slug: str, rel_path: str | None = None) -> None:
+    def _mark_deleted_notebook(self, kind: str, rel_path: str) -> None:
         if kind in ("memory", "user", "briefing"):
             return
         deleted = self._load_deleted_notebooks()
-        if kind in ("person", "topic", "project"):
-            deleted.add(f"{kind}:{slug}")
-        if rel_path:
-            deleted.add(f"path:{rel_path}")
+        # Legacy kind:slug tombstones are still read for old deletions. New
+        # tombstones cover precisely the path the user chose.
+        deleted.add(f"path:{rel_path}")
         _atomic_write_markdown(
             self._deleted_notebooks_path(),
             json.dumps(sorted(deleted), ensure_ascii=False, indent=2) + "\n",
@@ -756,15 +764,16 @@ class MoMoMemory:
                 if not raw:
                     continue
                 digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+                relative_path = path.relative_to(helper.memories_dir).as_posix()
                 items.append({
-                    "id": f"momo-{kind}-{digest}",
+                    "id": _page_id(relative_path),
                     "text": raw,
                     "kind": kind,
                     "basis": "dream",
                     "status": "current",
                     "revision": int(digest[:15], 16),
                     "evidence": [],
-                    "path": path.relative_to(helper.memories_dir).as_posix(),
+                    "path": relative_path,
                 })
         return sorted(items, key=lambda item: item["id"])
 
@@ -773,7 +782,8 @@ class MoMoMemory:
             raise ValueError("limit must be 1...200")
         with self.store() as store:
             items = self.items(store, self.home)
-        revision = int(hashlib.sha256("\n".join(item["id"] for item in items).encode()).hexdigest()[:15], 16)
+        manifest = "\n".join(f"{item['id']} {item['revision']}" for item in items)
+        revision = int(hashlib.sha256(manifest.encode()).hexdigest()[:15], 16)
         if expected_revision is not None and revision != expected_revision:
             raise Conflict("Memory changed; refresh the current entries")
         page = [item for item in items if item["id"] > after]
@@ -783,34 +793,31 @@ class MoMoMemory:
             "next_cursor": page[limit - 1]["id"] if len(page) > limit else None,
         }
 
-    def forget(self, identity: str):
+    @_notebook_mutation
+    def forget(self, identity: str, base_revision: int | None = None):
+        # Content-only notebook IDs from old listings cannot identify a path,
+        # even when only one of two identical files still exists.
         if not isinstance(identity, str) or not re.fullmatch(
-            r"(?:hermes|momo)-(memory|user|briefing|project|journal|person|topic|note)-[0-9a-f]{64}", identity
+            r"(?:momo-page|(?:hermes|momo)-(?:user|memory))-[0-9a-f]{64}", identity
         ):
             raise Conflict("This is an old memory view; refresh memory before editing")
+        if base_revision is not None and type(base_revision) is not int:
+            raise ValueError("Invalid memory revision")
         norm_id = "momo-" + identity.split("-", 1)[1]
         with self.store() as store:
             item = next((item for item in self.items(store, self.home) if item["id"] == norm_id), None)
             if item:
+                if base_revision is not None and base_revision != item["revision"]:
+                    raise Conflict("Memory changed; refresh before forgetting")
                 if item["kind"] in ("memory", "user"):
                     result = store.remove(item["kind"], item["text"], matched_entry=item["text"])
                     if not result.get("success"):
                         raise Conflict(result.get("error", "Memory changed; refresh and retry"))
                 else:
-                    for kind, slug, path in self._notebook_files():
-                        if kind != item["kind"]:
-                            continue
-                        try:
-                            raw = path.read_text(encoding="utf-8").strip()
-                        except OSError:
-                            continue
-                        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
-                        if f"momo-{kind}-{digest}" == norm_id:
-                            rel_posix = path.relative_to(self.memories_dir).as_posix()
-                            path.unlink(missing_ok=True)
-                            self._prune_empty_parents(path)
-                            self._mark_deleted_notebook(kind, slug, rel_posix)
-                            break
+                    path = self.memories_dir / item["path"]
+                    self._mark_deleted_notebook(item["kind"], item["path"])
+                    path.unlink(missing_ok=True)
+                    self._prune_empty_parents(path)
         return {"id": identity, "status": "forgotten"}
 
     @staticmethod
@@ -968,7 +975,7 @@ class MoMoMemory:
 
     def read_notebook(self, category: str | None = None, slug: str | None = None, *, path: str | None = None) -> dict:
         kind, clean_slug, rel_posix, full_path = self.resolve_notebook_target(category, slug, path=path)
-        if not full_path.is_file():
+        if not full_path.is_file() or self._is_deleted_notebook(kind, clean_slug, rel_posix):
             return {"success": False, "error": f"Note not found: {rel_posix}"}
         text = full_path.read_text(encoding="utf-8").strip()
         return {
@@ -980,6 +987,7 @@ class MoMoMemory:
             "characters": len(text),
         }
 
+    @_notebook_mutation
     def write_notebook(
         self,
         category: str | None = None,
@@ -989,6 +997,7 @@ class MoMoMemory:
         mode: str = "replace",
         *,
         path: str | None = None,
+        deduplicate_append: bool = False,
     ) -> dict:
         kind, clean_slug, rel_posix, full_path = self.resolve_notebook_target(category, slug or (None if path else title), path=path)
         if self._is_deleted_notebook(kind, clean_slug, rel_posix):
@@ -1003,9 +1012,13 @@ class MoMoMemory:
             return {"success": False, "error": "Markdown note exceeds 32,000 characters; keep notes concise and focused."}
         if (body.startswith("{") and body.endswith("}")) or (body.startswith("[") and body.endswith("]")):
             return {"success": False, "error": "Notebook notes must be pure Markdown (.md), never raw JSON."}
-        if mode == "append" and full_path.is_file():
-            existing = full_path.read_text(encoding="utf-8").strip()
-            if existing:
+        existing = full_path.read_text(encoding="utf-8").strip() if full_path.is_file() else ""
+        if mode == "append" and existing:
+            # A recovered Dream can replay a whole paragraph after another
+            # writer has added more. Match only on full block boundaries.
+            if deduplicate_append and f"\n\n{body}\n\n" in f"\n\n{existing}\n\n":
+                body = existing
+            else:
                 body = existing + "\n\n" + body
         if not re.match(r"^#\s+\S", body.lstrip()):
             derived_title = (title or "").strip()
@@ -1013,16 +1026,20 @@ class MoMoMemory:
                 first_h2 = next((ln.lstrip("# ").strip() for ln in body.splitlines() if ln.strip().startswith("#")), "")
                 derived_title = re.sub(r"^\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2}(?:[–—-]\d{1,2}:\d{2})?)?\s*[·•—–:：\-]?\s*", "", first_h2).strip() or Path(rel_posix).stem
             body = f"# {derived_title}\n\n{body}"
-        _atomic_write_markdown(full_path, body + "\n")
+        changed = body != existing
+        if changed:
+            _atomic_write_markdown(full_path, body + "\n")
         return {
             "success": True,
+            "changed": changed,
             "category": kind,
             "slug": clean_slug,
             "path": rel_posix,
             "characters": len(body),
-            "updated_at": round(time.time(), 2),
+            "updated_at": round(full_path.stat().st_mtime, 2),
         }
 
+    @_notebook_mutation
     def remove_notebook(
         self,
         category: str | None = None,
@@ -1034,12 +1051,13 @@ class MoMoMemory:
         kind, clean_slug, rel_posix, full_path = self.resolve_notebook_target(category, slug, path=path)
         if not full_path.is_file():
             return {"success": False, "error": f"Note not found: {rel_posix}"}
+        if user_initiated:
+            self._mark_deleted_notebook(kind, rel_posix)
         full_path.unlink(missing_ok=True)
         self._prune_empty_parents(full_path)
-        if user_initiated:
-            self._mark_deleted_notebook(kind, clean_slug, rel_posix)
-        return {"success": True, "category": kind, "slug": clean_slug, "path": rel_posix, "removed": True}
+        return {"success": True, "changed": True, "category": kind, "slug": clean_slug, "path": rel_posix, "removed": True}
 
+    @_notebook_mutation
     def move_notebook(
         self,
         category: str | None = None,
@@ -1054,7 +1072,7 @@ class MoMoMemory:
         src_kind, src_slug, src_rel, src_full = self.resolve_notebook_target(category, slug, path=path)
         if src_kind == "briefing":
             return {"success": False, "error": "BRIEFING.md must remain at the root of memories/."}
-        if not src_full.is_file():
+        if not src_full.is_file() or self._is_deleted_notebook(src_kind, src_slug, src_rel):
             return {"success": False, "error": f"Source note not found: {src_rel}"}
         dst_kind, dst_slug, dst_rel, dst_full = self.resolve_notebook_target(
             to_category,
@@ -1066,12 +1084,11 @@ class MoMoMemory:
         if self._is_deleted_notebook(dst_kind, dst_slug, dst_rel):
             return {"success": False, "error": f"Destination {dst_rel} was deleted by user; do not recreate it."}
         if src_full.resolve() == dst_full.resolve():
-            return {"success": True, "from_path": src_rel, "path": dst_rel, "category": dst_kind, "slug": dst_slug, "moved": False}
+            return {"success": True, "from_path": src_rel, "path": dst_rel, "category": dst_kind, "slug": dst_slug, "moved": False, "changed": False}
         if dst_full.exists() and not overwrite:
             return {"success": False, "error": f"Destination already exists: {dst_rel}. Merge content with write+remove or set overwrite=true."}
-        raw = src_full.read_text(encoding="utf-8")
-        _atomic_write_markdown(dst_full, raw)
-        src_full.unlink(missing_ok=True)
+        dst_full.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.replace(src_full, dst_full)
         self._prune_empty_parents(src_full)
         return {
             "success": True,
@@ -1080,4 +1097,5 @@ class MoMoMemory:
             "category": dst_kind,
             "slug": dst_slug,
             "moved": True,
+            "changed": True,
         }

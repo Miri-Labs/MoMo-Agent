@@ -32,12 +32,12 @@ def read_recording(source_id: str, source_revision: str = "", offset: int = 0, l
 
 if os.environ.get("MOMO_MEMORY_ONLY") == "1":
     @server.tool()
-    def read_daily_evidence(review_id: str, page: int) -> dict:
-        """Read the next numbered page of chat or transcript evidence for an active daily Dream."""
+    def read_daily_evidence(review_id: str, page: int, completed_page: int | None = None) -> dict:
+        """Fetch the next evidence page; pass completed_page only after verifying work on the preceding page."""
         from daily_review import read_page
         store = ContextStore(os.environ["MOMO_CONTEXT_DIRECTORY"])
         try:
-            return read_page(store, review_id, page)
+            return read_page(store, review_id, page, completed_page)
         finally:
             store.close()
 
