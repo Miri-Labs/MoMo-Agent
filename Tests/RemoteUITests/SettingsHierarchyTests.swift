@@ -44,6 +44,10 @@ final class SettingsHierarchyTests: XCTestCase {
         entry.tap()
         XCTAssertTrue(app.buttons["settings.mac"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["settings.advanced"].exists)
+        XCTAssertFalse(app.segmentedControls["settings.chatMode"].exists)
+        capture(app, "Settings — Home")
+        app.buttons["settings.general"].tap()
+        XCTAssertTrue(app.navigationBars["通用"].waitForExistence(timeout: 5))
         if exerciseMode {
             let picker = app.segmentedControls["settings.chatMode"]
             XCTAssertTrue(picker.waitForExistence(timeout: 10), app.debugDescription)
@@ -55,7 +59,9 @@ final class SettingsHierarchyTests: XCTestCase {
             chat.tap()
             XCTAssertTrue(chat.isSelected)
         }
-        capture(app, "Settings — Chat mode")
+        capture(app, "Settings — General")
+        back(app)
+        XCTAssertFalse(app.segmentedControls["settings.chatMode"].exists)
         app.buttons["settings.mac"].tap()
         XCTAssertTrue(app.navigationBars["Mac 连接"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.descendants(matching: .any)["remote.deviceState"].exists)

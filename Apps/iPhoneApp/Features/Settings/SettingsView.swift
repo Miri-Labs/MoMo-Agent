@@ -18,26 +18,16 @@ struct SettingsView: View {
 
     var body: some View {
         List {
-            if let store = remoteAgent.store {
-                Section {
-                    ChatModeSettings(store: store)
+            Section {
+                settingsLink("通用", symbol: "gearshape", id: "settings.general") {
+                    generalSettings
                 }
-            }
-            Section("通用") {
                 settingsLink("Mac 连接", symbol: "desktopcomputer", value: remoteAgent.connection == nil ? "尚未配对" : "已配对", id: "settings.mac") {
                     PhoneMacConnectionView(agent: remoteAgent, showsDoneButton: false)
                 }
                 if remoteAgent.connection != nil {
                     settingsLink("通知", symbol: "bell", value: remoteAgent.notifications.title, id: "settings.notifications") {
                         PhoneNotificationSettings(notifications: remoteAgent.notifications)
-                    }
-                }
-                settingsLink("每天起点", symbol: "clock", value: speechSettings.dayStartHourLabel, id: "settings.advanced.dayStartHour") {
-                    DayStartSettingsView(settings: speechSettings)
-                }
-                if let illustrations {
-                    settingsLink("生活插画", symbol: "photo", value: illustrations.settingsRowStatus, id: "settings.lifeIllustrations") {
-                        LifeIllustrationSettingsView(store: illustrations)
                     }
                 }
             }
@@ -112,6 +102,26 @@ struct SettingsView: View {
         .fullScreenCover(isPresented: $previewingWelcome) {
             WelcomeExperienceView(finishTitle: "返回设置", finish: { previewingWelcome = false }, closePreview: { previewingWelcome = false })
         }
+    }
+
+    private var generalSettings: some View {
+        Form {
+            if let store = remoteAgent.store {
+                Section("对话模式") { ChatModeSettings(store: store) }
+            }
+            Section {
+                settingsLink("每天起点", symbol: "clock", value: speechSettings.dayStartHourLabel, id: "settings.advanced.dayStartHour") {
+                    DayStartSettingsView(settings: speechSettings)
+                }
+                if let illustrations {
+                    settingsLink("生活插画", symbol: "photo", value: illustrations.settingsRowStatus, id: "settings.lifeIllustrations") {
+                        LifeIllustrationSettingsView(store: illustrations)
+                    }
+                }
+            }
+        }
+        .navigationTitle("通用")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private func settingsLink<Destination: View>(
