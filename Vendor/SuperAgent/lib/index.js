@@ -413,6 +413,18 @@ var Tickets = class extends EnginePart {
 		this.end(ticketId, "human", "stopped", this.now(), reason);
 		return this.require(ticketId);
 	}
+	/** Reconcile only the failure the caller observed. A new assignment, follow-up or question takes precedence. */
+	settleFailure(id, updatedAt, count, recover) {
+		const ticket = this.require(id);
+		const report = latestAssignment(ticket)?.report;
+		if (this.policy().paused || !liveTicket(ticket) || ticket.attention || ticket.delivery || !report || !waitsForPerson(ticket) || ticket.updatedAt !== updatedAt || ticket.assignments.length !== count) return "unchanged";
+		if (recover && ticket.assignments.at(-2)?.endedReason !== "retried") {
+			this.retry(id);
+			return "retried";
+		}
+		this.end(id, "executor", "failed", this.now(), report.summary);
+		return "failed";
+	}
 	/**
 	* Ends the stalled assignment of a retryable open ticket (`failed`, `blocked`, or failed input delivery) and starts a new one.
 	* @throws UserError when the ticket is unknown or not retryable.
@@ -1757,6 +1769,9 @@ var Engine = class {
 	*/
 	retryTicket(ticketId) {
 		return this.repo.atomic(() => this.tickets.retry(ticketId));
+	}
+	settleFailure(id, updatedAt, count, recover) {
+		return this.repo.atomic(() => this.tickets.settleFailure(id, updatedAt, count, recover));
 	}
 	/**
 	* The Executor's fact that an Assignment runs; the Inputs that wait for it go out.
@@ -5301,7 +5316,7 @@ const batchLine = (trigger) => ({
 /** Returns the other triggers in a ticket's origin batch (excluding the primary `origin.triggerId`), oldest first. */
 const batchOf = (host, ticket) => ticket.origin.triggerIds.filter((id) => id !== ticket.origin.triggerId).flatMap((id) => host.store.triggers.get(id) ?? []);
 const RESUMED = "This ticket ended earlier and the message that follows, on its thread, resumed it under the same mandate. If it asks for more within the original scope, inspect the worktree, git history and PR state and continue; if it asks for work beyond that scope or for another ticket, hand it back with orchestrator_trigger_handback and report dropped; if it needs nothing, such as thanks, report dropped without a message. Report ready when the follow-up is done. Do not repeat completed work.";
-const RETRIED = "A person retried this ticket. Continue the assignment from the current worktree, git history and PR state.";
+const RETRIED = "Resume this ticket from its current workspace, receipts and existing results. Check what already happened before repeating an external action.";
 /** Formats a policy-change input for the worker; inputs recorded before `effect` existed fall back to a general notice. */
 function policyMessage(effect) {
 	if (!effect) return "Policy change: the access or admission rules changed. Check that the remaining work stays within the assignment.";
@@ -8763,6 +8778,14 @@ function routes(runtime) {
 			return ticketList(views(runtime), state, offset, limit);
 		},
 		"GET tickets/:id": ({ params }) => ticketPage(runtime, params.id),
+		"POST tickets/:id/settle-failure": async ({ params, body }) => {
+			const seen = z.object({
+				updatedAt: z.string().min(1),
+				assignments: z.number().int().positive(),
+				recover: z.boolean()
+			}).parse(await body());
+			return { outcome: runtime.engine.settleFailure(ticket(params.id), seen.updatedAt, seen.assignments, seen.recover) };
+		},
 		"POST tickets/:id/retry": ({ params }) => {
 			const id = ticket(params.id);
 			runtime.engine.retryTicket(id);

@@ -3677,6 +3677,7 @@ window.__ModuleLoader__.load({
 			"outcome.merged": ["PR 已合并", "Pull request merged"],
 			"outcome.closed": ["PR 已关闭（未合并）", "Pull request closed unmerged"],
 			"outcome.dropped": ["无需处理", "Nothing to do"],
+			"outcome.failed": ["无法完成", "Could not complete"],
 			"outcome.stopped": ["人工停止", "Stopped by a person"],
 			"assignment.pending": ["待启动", "Pending"],
 			"assignment.running": ["执行中", "Running"],

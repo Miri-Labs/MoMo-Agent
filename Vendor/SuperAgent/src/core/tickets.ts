@@ -161,20 +161,35 @@ export class Tickets extends EnginePart {
     this.end(ticketId, 'human', 'stopped', this.now(), reason)
     return this.require(ticketId)
   }
+  /** Reconcile only the failure the caller observed. A new assignment, follow-up or question takes precedence. */
+  settleFailure(id: string, updatedAt: string, count: number, recover: boolean): 'retried' | 'failed' | 'unchanged' {
+    const ticket = this.require(id)
+    const report = latestAssignment(ticket)?.report
+    if (this.policy().paused || !liveTicket(ticket) || ticket.attention || ticket.delivery || !report
+      || !waitsForPerson(ticket) || ticket.updatedAt !== updatedAt || ticket.assignments.length !== count) return 'unchanged'
+    // The preceding assignment records the retry across restarts, including tickets from older builds.
+    const previous = ticket.assignments.at(-2)?.endedReason
+    if (recover && previous !== 'retried' && previous !== 'autoRetried') {
+      this.retry(id, 'autoRetried')
+      return 'retried'
+    }
+    this.end(id, 'executor', 'failed', this.now(), report.summary)
+    return 'failed'
+  }
   /**
    * Ends the stalled assignment of a retryable open ticket (`failed`, `blocked`, or failed input delivery) and starts a new one.
    * @throws UserError when the ticket is unknown or not retryable.
    */
-  retry(ticketId: string): Ticket {
+  retry(ticketId: string, reason: 'retried' | 'autoRetried' = 'retried'): Ticket {
     const ticket = this.require(ticketId)
     const latest = latestAssignment(ticket)
     if (!canRetry(ticket) || !latest) throw new UserError('notRetryable')
-    this.endAssignment(ticket, latest, 'retried')
+    this.endAssignment(ticket, latest, reason)
     this.requeueUntaken(ticket, latest)
     const assignment = this.newAssignment(ticket)
     ticket.updatedAt = this.now()
     this.repo.tickets.save(ticket)
-    this.options.executor.stop(ticket, latest, 'retried')
+    this.options.executor.stop(ticket, latest, reason)
     this.options.executor.start(ticket, assignment)
     return ticket
   }

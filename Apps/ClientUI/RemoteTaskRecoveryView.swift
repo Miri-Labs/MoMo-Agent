@@ -315,7 +315,7 @@ struct AgentActiveTasksSnapshot: Equatable {
             case "cancelled":
                 statusLabel = String(localized: "已停止")
             case "failed":
-                statusLabel = String(localized: "执行未完成")
+                statusLabel = String(localized: "无法完成")
             default:
                 statusLabel = String(localized: "已完成")
             }
@@ -327,8 +327,10 @@ struct AgentActiveTasksSnapshot: Equatable {
             statusLabel = String(localized: "排队中")
         } else if work.state == "finalizing" {
             statusLabel = String(localized: "正在整理结果")
-        } else if work.state == "failed" || work.reportState == "failed" {
-            statusLabel = String(localized: "待核对结果")
+        } else if work.reportState == "failed" {
+            statusLabel = String(localized: "结果未送达")
+        } else if work.state == "failed" {
+            statusLabel = String(localized: "无法完成")
         } else {
             statusLabel = String(localized: "正在执行")
         }
@@ -433,6 +435,7 @@ struct AgentActiveTasksSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedWork: ConversationWork?
     @State private var isSkippedExpanded = false
+    @State private var isIncompleteExpanded = false
     @State private var overviewFailed = false
 
     private var activeItems: [AgentActiveTasksSnapshot.Item] {
@@ -498,8 +501,11 @@ struct AgentActiveTasksSheet: View {
     }
 
     private var listSurface: some View {
-        Group {
-            if activeItems.isEmpty && recentItems.isEmpty && skippedItems.isEmpty {
+        let history = self.recentItems
+        let recentItems = history.filter { $0.work.state != "failed" }
+        let incomplete = history.filter { $0.work.state == "failed" }
+        return Group {
+            if activeItems.isEmpty && history.isEmpty && skippedItems.isEmpty {
                 emptyState
             } else {
                 ScrollView {
@@ -524,7 +530,7 @@ struct AgentActiveTasksSheet: View {
                                 }
                             }
                         }
-                        if activeItems.isEmpty && recentItems.isEmpty {
+                        if activeItems.isEmpty && history.isEmpty {
                             HStack(spacing: 8) {
                                 Image(systemName: "checklist")
                                     .font(.system(size: 13, weight: .medium))
@@ -537,6 +543,16 @@ struct AgentActiveTasksSheet: View {
                             }
                             .padding(.horizontal, 4)
                             .padding(.top, 2)
+                        }
+                        if !incomplete.isEmpty {
+                            DisclosureGroup(isExpanded: $isIncompleteExpanded) {
+                                ForEach(incomplete) { item in
+                                    ActiveTaskItemRow(store: store, item: item) { selectedWork = item.work }
+                                }
+                            } label: {
+                                sectionTitle("未完成的任务", count: incomplete.count)
+                            }
+                            .accessibilityIdentifier("activeTasks.incomplete")
                         }
                         if !skippedItems.isEmpty {
                             skippedCategorySection
@@ -868,6 +884,7 @@ private struct AgentTaskDetailView: View {
             return String(localized: "正在停止")
         }
         if let detail { return detail.statusLabel }
+        if initialWork.state == "failed" { return String(localized: "无法完成") }
         return initialWork.isPending ? String(localized: "正在执行") : String(localized: "已结束")
     }
 
