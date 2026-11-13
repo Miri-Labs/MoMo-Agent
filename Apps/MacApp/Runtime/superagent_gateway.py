@@ -106,13 +106,15 @@ def _unchanged_tool_key(call, results):
     result = results[call["id"]]
     is_read = name in _EVIDENCE_READS or (name == "notebook" and args.get("action", "list") in ("read", "list"))
     if not is_read:
-        # A successful mutation allows verification reads. An identical tool
-        # failure, however, cannot move the review forward on its own.
+        # Only a real mutation resets the progress check. Repeated errors and
+        # idempotent writes can otherwise keep a stalled review alive.
         try:
             payload = json.loads(result) if isinstance(result, str) else result
         except ValueError:
             return None
-        if not isinstance(payload, dict) or not (payload.get("error") or payload.get("success") is False):
+        if not isinstance(payload, dict):
+            return None
+        if not (payload.get("error") or payload.get("success") is False or payload.get("changed") is False):
             return None
     key = json.dumps([name, args, result], sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(key.encode()).digest()
@@ -2097,7 +2099,7 @@ class SuperAgentGateway:
         from health_store import read_health
         from momo_memory import MEMORY_SCHEMA, MoMoMemory, execute_memory_tool
         import memory_review
-        from phone_sources import read_phone_sources
+        from phone_sources import KINDS as PHONE_SOURCE_KINDS, read_phone_sources
 
         notebook_home = memory_home(self.data)
         (notebook_home / "memories").mkdir(parents=True, exist_ok=True)
@@ -2162,7 +2164,7 @@ class SuperAgentGateway:
             "- `notebook` to freely read, write, move, or remove pure Markdown (`.md`) notes anywhere in the multi-level `memories/` vault (`BRIEFING.md` via `category='briefing'` or `path='BRIEFING.md'`, and multi-level directories via `path='projects/<project>/<doc>.md'`, `path='journal/YYYY-MM/YYYY-MM-DD.md'`, `path='people/<group>/<name>.md'`, or any custom folder hierarchy you design);\n"
             "- `relabel_speakers` to fix or name speaker labels (`[说话人 1]` -> real name or fix `[我]` vs `[他人]`) when the transcript wording and speaker attribution are both corroborated;\n"
             "- `list_recordings`, `read_recording`, `search_recordings`, `phone_context`, and `session_search` to gather grounded evidence.\n"
-            "Never claim `outcome: \"updated\"` unless at least one `memory`, `notebook` (write/remove), or `relabel_speakers` call returned `success: true`.\n\n"
+            "Never claim `outcome: \"updated\"` unless at least one `memory`, `notebook` (write/remove), or `relabel_speakers` call confirmed a persisted change (`success: true`, `changed: true`).\n\n"
             f"{memory_context}\n\n{notebook_summary}\n\n{recent_recordings_summary}"
         )
         tool_specs = [
@@ -2300,15 +2302,16 @@ class SuperAgentGateway:
             },
             {
                 "name": "phone_context",
-                "description": "Read synchronized iPhone life context snapshots: visits (places & stay times), calendar (scheduled events), reminders (incomplete to-dos), health (steps & heart rate), or 'all'.",
+                "description": "Read synchronized visits, calendar events and incomplete reminders. For each kind, pass its next_cursor as after to continue. Request health separately only for a user's explicit health question.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "kind": {
                             "type": "string",
                             "enum": ["all", "visits", "calendar", "reminders", "health"],
-                            "description": "Which phone context source to read (default 'all').",
+                            "description": "'all' (default) returns visits, calendar and reminders. 'health' reads steps and heart rate.",
                         },
+                        "after": {"type": "string", "description": "That kind's next_cursor. Omit for the first page."},
                     },
                     "required": [],
                     "additionalProperties": False,
@@ -2332,8 +2335,10 @@ class SuperAgentGateway:
         if session_id.startswith("momo-review-"):
             tool_specs.append({
                 "name": "read_daily_evidence",
-                "description": "Read the next page of this daily Dream's frozen chat and recording evidence.",
-                "parameters": {"type": "object", "properties": {"review_id": {"type": "string"}, "page": {"type": "integer"}},
+                "description": "Fetch the next page. After finishing the previous page and verifying all writes, "
+                               "pass its number as completed_page to persist progress. Omit it when rereading.",
+                "parameters": {"type": "object", "properties": {"review_id": {"type": "string"}, "page": {"type": "integer"},
+                    "completed_page": {"type": "integer", "minimum": 1}},
                                "required": ["review_id", "page"], "additionalProperties": False},
             })
 
@@ -2352,7 +2357,9 @@ class SuperAgentGateway:
                     return json.dumps({"error": "Page belongs to another review"})
                 store = ContextStore(self.data / "context")
                 try:
-                    return json.dumps(daily_review.read_page(store, args["review_id"], args.get("page")), ensure_ascii=False)
+                    completed_page = args.get("completed_page")
+                    page = daily_review.read_page(store, args["review_id"], args.get("page"), completed_page)
+                    return json.dumps(page, ensure_ascii=False)
                 except (ValueError, Conflict) as exc:
                     return json.dumps({"error": str(exc)})
                 finally:
@@ -2388,15 +2395,10 @@ class SuperAgentGateway:
                             title=args.get("title"),
                             mode=str(args.get("mode") or "replace"),
                             path=rel_path,
+                            deduplicate_append=True,
                         )
-                        result_json = json.dumps(res, ensure_ascii=False)
-                        memory_review.record_superagent_memory_write(notebook_home, session_id, result_json)
-                        return result_json
                     elif action == "remove":
                         res = momo_mem.remove_notebook(category, slug, path=rel_path)
-                        result_json = json.dumps(res, ensure_ascii=False)
-                        memory_review.record_superagent_memory_write(notebook_home, session_id, result_json)
-                        return result_json
                     elif action == "move":
                         res = momo_mem.move_notebook(
                             category,
@@ -2407,14 +2409,14 @@ class SuperAgentGateway:
                             to_slug=args.get("to_slug"),
                             overwrite=bool(args.get("overwrite", False)),
                         )
-                        result_json = json.dumps(res, ensure_ascii=False)
-                        memory_review.record_superagent_memory_write(notebook_home, session_id, result_json)
-                        return result_json
                     else:
                         res = {"success": False, "error": f"Unknown notebook action: {action}"}
                 except Exception as exc:
                     res = {"success": False, "error": str(exc)}
-                return json.dumps(res, ensure_ascii=False)
+                result_json = json.dumps(res, ensure_ascii=False)
+                if action in {"write", "remove", "move"}:
+                    memory_review.record_superagent_memory_write(notebook_home, session_id, result_json)
+                return result_json
 
             if clean_name == "relabel_speakers":
                 ctx_dir = self.data / "context"
@@ -2519,15 +2521,20 @@ class SuperAgentGateway:
 
             if clean_name == "phone_context":
                 kind = str(args.get("kind") or "all").strip().lower()
+                after = args.get("after", "")
+                if not isinstance(after, str) or kind not in (*PHONE_SOURCE_KINDS, "health", "all") or (after and kind == "all"):
+                    return json.dumps({"error": "Choose one source kind for its next_cursor and pass the cursor as after."})
                 ctx_dir = self.data / "context"
                 store = ContextStore(ctx_dir)
                 try:
                     out = {}
-                    for k in ("visits", "calendar", "reminders"):
+                    for k in PHONE_SOURCE_KINDS:
                         if kind in ("all", k):
-                            out[k] = read_phone_sources(store, k, "", limit=40)
-                    if kind in ("all", "health"):
-                        out["health"] = read_health(store, "", limit=10)
+                            out[k] = read_phone_sources(store, k, after, limit=40)
+                    if kind == "health":
+                        if after and str(uuid.UUID(after)) != after:
+                            raise ValueError("Invalid health cursor")
+                        out["health"] = read_health(store, after, limit=10)
                     return json.dumps(out, ensure_ascii=False)
                 except Exception as exc:
                     return json.dumps({"error": str(exc)}, ensure_ascii=False)
@@ -2540,20 +2547,13 @@ class SuperAgentGateway:
                     return json.dumps({"messages": []}, ensure_ascii=False)
                 q = str(args.get("query") or "").strip()
                 lim = max(1, min(int(args.get("limit") or 10), 30))
-                with closing(sqlite3.connect(f"file:{conv_path.as_posix()}?mode=ro", uri=True, timeout=2)) as db:
-                    db.row_factory = sqlite3.Row
-                    if q:
-                        rows = db.execute(
-                            "SELECT seq, role, substr(content, 1, 1200) AS content, created_at FROM messages "
-                            "WHERE role IN ('user','assistant') AND content LIKE ? ORDER BY seq DESC LIMIT ?",
-                            (f"%{q}%", lim),
-                        ).fetchall()
-                    else:
-                        rows = db.execute(
-                            "SELECT seq, role, substr(content, 1, 1200) AS content, created_at FROM messages "
-                            "ORDER BY seq DESC LIMIT ?",
-                            (lim,),
-                        ).fetchall()
+                with closing(memory_review.readonly(conv_path)) as db:
+                    rows = db.execute(
+                        f"SELECT seq,role,substr(content, 1, 1200) AS content,created_at "
+                        f"FROM ({memory_review.eligible_chat_messages(db)}) "
+                        "WHERE content LIKE ? ORDER BY seq DESC LIMIT ?",
+                        (f"%{q}%", lim),
+                    ).fetchall()
                 return json.dumps({"messages": [dict(r) for r in reversed(rows)]}, ensure_ascii=False)
 
             return json.dumps({"error": f"Unknown tool: {clean_name}"}, ensure_ascii=False)
@@ -2620,7 +2620,7 @@ class SuperAgentGateway:
         def verified_output(raw_text):
             nonlocal correction_requested
             check_active()
-            output = self._finalize_memory_review_output(session_id, raw_text)
+            output = raw_text if "\nDAILY_EVIDENCE=" in prompt else self._finalize_memory_review_output(session_id, raw_text)
             try:
                 verify_review_receipt(memory_home(self.data), session_id, output)
             except InvalidReviewReceipt as error:

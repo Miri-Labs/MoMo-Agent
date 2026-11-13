@@ -143,6 +143,9 @@ class ContextStore:
             for table in ('jobs', 'memory_reviews'):
                 if 'attempt' not in {row[1] for row in self.db.execute(f'PRAGMA table_info({table})')}:
                     self.db.execute(f'ALTER TABLE {table} ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0')
+            with self.write():
+                if 'checkpoint_page' not in {row[1] for row in self.db.execute('PRAGMA table_info(memory_reviews)')}:
+                    self.db.execute('ALTER TABLE memory_reviews ADD COLUMN checkpoint_page INTEGER NOT NULL DEFAULT 0')
             initialized_id = _db_identity(db_path)
             if initialized_id is not None:
                 with _CACHE_LOCK:
@@ -743,9 +746,6 @@ class ContextStore:
         scope: str = "cluster",
         reason: str = "",
     ) -> dict:
-        row = self.source(source_id)
-        payload = json.loads(row["payload"])
-        session_id = str(payload.get("session_id") or source_id.split("/")[-1]).lower()
         clean_target = "我" if is_owner else str(target_speaker or "").strip()
         if clean_target == "身份待确认":
             raise ValueError("Use exclude_speaker to reject a name without assigning a new identity")
@@ -762,63 +762,68 @@ class ContextStore:
                 return txt[1:txt.index("]")].strip()
             return ""
 
-        effective_spans = self._apply_speaker_overrides(source_id, payload.get("spans") or [])
-        wanted_ids = {str(sid).strip().lower() for sid in (span_ids or []) if str(sid).strip()}
-        wanted_from = str(from_speaker or "").strip().strip("[]")
-        if clean_scope == "cluster" and wanted_ids and not wanted_from:
-            for sp in effective_spans:
-                if str(sp.get("id", "")).lower() in wanted_ids:
-                    lbl = _extract_label(sp)
-                    if lbl:
-                        wanted_from = lbl
-                        break
-
-        matched_span_ids: list[str] = []
-        for raw_sp, eff_sp in zip(payload.get("spans") or [], effective_spans):
-            sid = str(eff_sp.get("id", "")).lower()
-            if clean_scope == "selection" and wanted_ids:
-                if sid in wanted_ids:
-                    matched_span_ids.append(sid)
-                continue
-            eff_lbl = _extract_label(eff_sp)
-            raw_lbl = _extract_label(raw_sp)
-            if sid in wanted_ids or (wanted_from and (eff_lbl == wanted_from or raw_lbl == wanted_from)):
-                matched_span_ids.append(sid)
-
-        if not matched_span_ids:
-            return {"success": False, "error": "No matching transcript spans found for speaker relabeling"}
-
-        now = time.time()
-        relabel_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"momo-speaker-relabel:{source_id}:{clean_target}:{int(is_owner)}:{','.join(sorted(matched_span_ids))}"))
         with self.write():
-            for sid in matched_span_ids:
-                self.db.execute(
-                    "INSERT OR REPLACE INTO span_speaker_overrides(source_id, span_id, speaker, is_owner, reason, updated_at) VALUES(?,?,?,?,?,?)",
+            row = self.source(source_id)
+            payload = json.loads(row["payload"])
+            session_id = str(payload.get("session_id") or source_id.split("/")[-1]).lower()
+            effective_spans = self._apply_speaker_overrides(source_id, payload.get("spans") or [])
+            wanted_ids = {str(sid).strip().lower() for sid in (span_ids or []) if str(sid).strip()}
+            wanted_from = str(from_speaker or "").strip().strip("[]")
+            if clean_scope == "cluster" and wanted_ids and not wanted_from:
+                for sp in effective_spans:
+                    if str(sp.get("id", "")).lower() in wanted_ids:
+                        lbl = _extract_label(sp)
+                        if lbl:
+                            wanted_from = lbl
+                            break
+
+            matched_span_ids = []
+            changed_span_ids = []
+            for raw_sp, eff_sp in zip(payload.get("spans") or [], effective_spans):
+                sid = str(eff_sp.get("id", "")).lower()
+                eff_lbl = _extract_label(eff_sp)
+                selected = sid in wanted_ids
+                if clean_scope != "selection" or not wanted_ids:
+                    selected = selected or (wanted_from and wanted_from in (eff_lbl, _extract_label(raw_sp)))
+                if selected:
+                    matched_span_ids.append(sid)
+                    if eff_lbl != clean_target or eff_sp.get("is_owner") is not bool(is_owner):
+                        changed_span_ids.append(sid)
+
+            if not matched_span_ids:
+                return {"success": False, "error": "No matching transcript spans found for speaker relabeling"}
+
+            now = time.time()
+            relabel_id = None
+            updated = 0
+            for sid in changed_span_ids:
+                updated += self.db.execute(
+                    """INSERT INTO span_speaker_overrides(source_id, span_id, speaker, is_owner, reason, updated_at)
+                       VALUES(?,?,?,?,?,?) ON CONFLICT(source_id, span_id) DO UPDATE SET
+                       speaker=excluded.speaker, is_owner=excluded.is_owner, reason=excluded.reason,
+                       updated_at=excluded.updated_at
+                       WHERE speaker!=excluded.speaker OR is_owner!=excluded.is_owner""",
                     (source_id, sid, clean_target, int(bool(is_owner)), clean_reason, now),
+                ).rowcount
+            if updated:
+                # The phone deduplicates deliveries by ID. A later change back
+                # to an earlier label is a new delivery, even for the same spans.
+                relabel_id = str(uuid.uuid4())
+                self.db.execute(
+                    """INSERT INTO speaker_relabel_queue(
+                        id, source_id, session_id, span_ids, new_speaker, is_owner, scope, reason, created_at,
+                        applied_on_phone) VALUES(?,?,?,?,?,?,?,?,?,0)""",
+                    (relabel_id, source_id, session_id, canonical(changed_span_ids), clean_target,
+                     int(bool(is_owner)), clean_scope, clean_reason, now),
                 )
-            self.db.execute(
-                """INSERT OR REPLACE INTO speaker_relabel_queue(
-                    id, source_id, session_id, span_ids, new_speaker, is_owner, scope, reason, created_at, applied_on_phone
-                ) VALUES(?,?,?,?,?,?,?,?,?,0)""",
-                (
-                    relabel_id,
-                    source_id,
-                    session_id,
-                    canonical(matched_span_ids),
-                    clean_target,
-                    int(bool(is_owner)),
-                    clean_scope,
-                    clean_reason,
-                    now,
-                ),
-            )
-            self.advance()
+                self.advance()
         return {
             "success": True,
             "relabel_id": relabel_id,
             "source_id": source_id,
             "session_id": session_id,
-            "updated_span_count": len(matched_span_ids),
+            "updated_span_count": updated,
+            "changed": bool(updated),
             "new_speaker": clean_target,
             "is_owner": bool(is_owner),
             "scope": clean_scope,

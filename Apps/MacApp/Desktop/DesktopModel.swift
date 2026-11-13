@@ -203,13 +203,6 @@ final class DesktopModel {
                 await self?.loadContext(silent: true)
             }
         }
-        if ProcessInfo.processInfo.arguments.contains("--open-settings") {
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(500))
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            }
-        }
     }
 
     private static func openTaskStore(file: URL, connection: AgentConnection, client: AgentClient) throws -> RemoteTaskStore {

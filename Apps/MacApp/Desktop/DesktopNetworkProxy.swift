@@ -17,18 +17,10 @@ struct DesktopNetworkProxy: View {
             HStack {
                 Text("网络代理").font(.body)
                 Spacer()
-                Menu {
-                    Picker("网络代理", selection: $draft.mode) {
-                        ForEach(TailnetProxySettings.Mode.allCases) { mode in Text(mode.title).tag(mode) }
-                    }.pickerStyle(.inline).labelsHidden()
-                } label: {
-                    HStack(spacing: 12) {
-                        Text(draft.mode.title).lineLimit(1)
-                        Image(systemName: "chevron.down").font(.system(size: 10)).foregroundStyle(.secondary)
-                    }
+                Picker("网络代理", selection: $draft.mode) {
+                    ForEach(TailnetProxySettings.Mode.allCases) { mode in Text(mode.title).tag(mode) }
                 }
-                .menuStyle(.button).buttonStyle(DesktopSettingsButtonStyle()).menuIndicator(.hidden).fixedSize()
-               .accessibilityLabel("网络代理").accessibilityValue(draft.mode.title)
+                .labelsHidden().pickerStyle(.menu).fixedSize()
                 .accessibilityIdentifier("settings.proxyMode")
             }
             if draft.mode == .manual {
@@ -45,7 +37,7 @@ struct DesktopNetworkProxy: View {
                             if applying { ProgressView().controlSize(.small) }
                             Text(applying ? "正在应用" : "应用")
                         }.frame(minWidth: 74)
-                    }.buttonStyle(DesktopSettingsButtonStyle()).disabled(applying).accessibilityIdentifier("settings.applyProxy")
+                    }.buttonStyle(.bordered).disabled(applying).accessibilityIdentifier("settings.applyProxy")
                 }
             }
             if let message = error ?? model.tailnet.proxySettingsError {
