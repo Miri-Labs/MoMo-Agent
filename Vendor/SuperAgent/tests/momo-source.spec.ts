@@ -79,7 +79,7 @@ describe('momoKind policy and loopback bridge', () => {
       },
       policy: {
         rules: [{ id: 'commitment', name: 'Personal commitment', enabled: true, instruction: 'Explicit commitments made in voice recordings.' }],
-        sources: { momo: { allowed: [{ id: 'owner', name: 'User' }], admission: {} } },
+        sources: { momo: { allowed: [{ id: 'owner', name: 'User' }], bots: [{ id: 'recorder' }], admission: {} } },
       },
       eval: { mode: 'auto' },
     })
@@ -135,10 +135,17 @@ describe('momoKind policy and loopback bridge', () => {
       reason: 'not_a_member',
     })
 
+    const recording = { ...otherSpeakerTrigger, human: false, actor: { source: SOURCE, id: 'recorder' } }
+    expect(policy.gate(recording, emptyThread('transcript:rec-1'), [])).toMatchObject({
+      admissible: true, strength: 'inferred', basis: { via: 'bot', row: 'transcripts' },
+    })
+    expect(isCreatorRequest(recording)).toBe(false)
+
     const offSettings = SettingsSchema.parse({ ...settings, eval: { mode: 'off' } })
     const offSources = new SourceRegistry(() => offSettings, new HealthBoard())
     offSources.register(momoKind)
     const offPolicy = settingsPolicy(offSettings, offSources)
+    expect(offPolicy.gate(recording, participatingThread, [])).toMatchObject({ admissible: false })
     expect(offPolicy.gate(transcriptTrigger, emptyThread('transcript:rec-1'), [])).toMatchObject({ admissible: false })
   })
 

@@ -55,7 +55,6 @@ from superagent_runtime import (
     classify_transcript_span,
     dsh_api_request,
     format_transcript_span_line,
-    is_filler_only_utterance,
     node_environment,
     prepare_dsh_instance,
     prepare_superagent,
@@ -716,6 +715,7 @@ class SuperAgentGateway:
                         cstore.close()
             with self.bridge.db:
                 self.bridge.db.execute("INSERT OR REPLACE INTO meta VALUES('proactive_baseline', '1')")
+                self.bridge.db.execute("INSERT OR REPLACE INTO meta VALUES('recording_observations_v1', '1')")
             if not self.store.db.execute("SELECT 1 FROM push_meta WHERE key='baseline'").fetchone():
                 with self.store.db:
                     self.store.db.execute("INSERT INTO push_meta VALUES('baseline', '1')")
@@ -1658,9 +1658,12 @@ class SuperAgentGateway:
         cstore = ContextStore(context_dir)
         try:
             sources = cstore.db.execute(
-                "SELECT id, revision, payload, updated FROM sources WHERE deleted = 0 ORDER BY updated ASC"
+                "SELECT id, revision, updated FROM sources WHERE deleted = 0 ORDER BY updated ASC"
             ).fetchall()
             now = time.time()
+            day_start_hour = read_day_start_hour(self.data)
+            today_day = logical_local_date(now, day_start_hour)
+            upgrading = not self.bridge.db.execute("SELECT 1 FROM meta WHERE key='recording_observations_v1'").fetchone()
             for src in sources:
                 sid = src["id"]
                 rev = src["revision"]
@@ -1668,11 +1671,19 @@ class SuperAgentGateway:
                     "SELECT revision, max_seq, updated_at, last_recorded_at FROM source_watermarks WHERE source_id=?",
                     (sid,),
                 ).fetchone()
-                if watermark and watermark["revision"] == rev:
+                # Older gateways marked entire recordings consumed after filtering by speaker.
+                # Reassess the current recording day once; historical work stays at its checkpoint.
+                catch_up = bool(upgrading and watermark and logical_local_date(src["updated"], day_start_hour) == today_day)
+                if watermark and watermark["revision"] == rev and not catch_up:
                     continue
                 prev_max = int(watermark["max_seq"]) if watermark else -1
                 prev_last_ts = float(watermark["last_recorded_at"] or 0.0) if watermark else 0.0
-                payload = json.loads(src["payload"])
+                source = cstore.db.execute(
+                    "SELECT payload FROM sources WHERE id=? AND revision=? AND deleted=0", (sid, rev),
+                ).fetchone()
+                if not source:
+                    continue
+                payload = json.loads(source["payload"])
                 spans = cstore._apply_speaker_overrides(sid, payload.get("spans") or [])
                 if not spans:
                     with self.bridge.db:
@@ -1686,36 +1697,17 @@ class SuperAgentGateway:
                     (float(s.get("recorded_at") or 0.0) for s in spans if isinstance(s, dict)),
                     default=prev_last_ts,
                 )
-                has_emitted_for_source = (
-                    self.bridge.db.execute("SELECT 1 FROM triggers WHERE source_id=? LIMIT 1", (sid,)).fetchone()
-                    is not None
-                )
-                if watermark is None:
-                    indexed_new = [(idx, s) for idx, s in enumerate(spans)]
+                if catch_up:
+                    indexed_new = [(i, span) for i, span in enumerate(spans)
+                                   if logical_local_date(span["recorded_at"], day_start_hour) == today_day
+                                   or (i > prev_max and span["recorded_at"] > prev_last_ts)]
+                elif watermark is None:
+                    indexed_new = list(enumerate(spans))
                 else:
                     indexed_new = [
-                        (idx, s)
-                        for idx, s in enumerate(spans)
-                        if idx > prev_max and (prev_last_ts <= 0.0 or float(s.get("recorded_at") or 0.0) > prev_last_ts)
+                        (idx, span) for idx, span in enumerate(spans)
+                        if idx > prev_max and (prev_last_ts <= 0.0 or float(span.get("recorded_at") or 0.0) > prev_last_ts)
                     ]
-                    if not indexed_new:
-                        if not has_emitted_for_source and any(
-                            classify_transcript_span(s)[1] is True
-                            and not is_filler_only_utterance(classify_transcript_span(s)[2])
-                            for s in spans
-                            if isinstance(s, dict)
-                        ):
-                            # Live cluster-to-owner voiceprint upgrade or manual "[说话人 N] -> [我]" correction
-                            # on a source that previously emitted nothing because no owner speech was recognized yet.
-                            indexed_new = [(idx, s) for idx, s in enumerate(spans)]
-                        else:
-                            # Non-append metadata/diarization/summary revision: advance watermark silently without re-triggering!
-                            with self.bridge.db:
-                                self.bridge.db.execute(
-                                    "INSERT OR REPLACE INTO source_watermarks(source_id, revision, max_seq, updated_at, last_recorded_at) VALUES(?,?,?,?,?)",
-                                    (sid, rev, max_seq, now, max(prev_last_ts, max_span_ts)),
-                                )
-                            continue
                 new_spans = [s for _, s in indexed_new]
 
                 transcript_lines = []
@@ -1739,7 +1731,7 @@ class SuperAgentGateway:
                     or payload.get("is_final")
                     or payload.get("completed")
                 )
-                if settle_seconds > 0 and not is_final:
+                if settle_seconds > 0 and not is_final and not catch_up:
                     quiet_elapsed = max(0.0, now - float(src["updated"]))
                     defer_elapsed = max(0.0, now - float(watermark["updated_at"])) if watermark else quiet_elapsed
                     needs_more_settle = quiet_elapsed < settle_seconds or (
@@ -1774,27 +1766,12 @@ class SuperAgentGateway:
                     else:
                         segment_groups.append((s_id, idx, [span_item]))
 
-                with self.bridge.db:
-                    self.bridge.db.execute(
-                        "INSERT OR REPLACE INTO source_watermarks(source_id, revision, max_seq, updated_at, last_recorded_at) VALUES(?,?,?,?,?)",
-                        (sid, rev, max_seq, now, max(prev_last_ts, max_span_ts)),
-                    )
-
                 ended_threads = {
                     th_s
                     for t in self._cached_tickets
                     if isinstance(t, dict) and (t.get("ended") or t.get("state") == "ended")
                     for th_s in self._thread_keys(t.get("threads"))
                 }
-                live_threads = {
-                    th_s
-                    for t in self._cached_tickets
-                    if isinstance(t, dict) and not (t.get("ended") or t.get("state") == "ended")
-                    for th_s in self._thread_keys(t.get("threads"))
-                }
-                source_is_attributed = any(
-                    classify_transcript_span(s)[1] is not None for s in spans if isinstance(s, dict)
-                )
                 recent_tickets = self._recent_proactive_ticket_summaries(source_id=sid, now=now, max_items=6)
                 recent_ticket_note = ""
                 if recent_tickets:
@@ -1808,25 +1785,13 @@ class SuperAgentGateway:
                     )
 
                 title = payload.get("title") or sid
-                day_start_hour = read_day_start_hour(self.data)
                 now_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
-                today_day = logical_local_date(now, day_start_hour).isoformat()
 
                 for seg_idx, seg_first_idx, seg_spans in segment_groups:
                     seg_lines = []
-                    seg_has_substantive_owner = False
-                    seg_has_other = False
                     for span in seg_spans:
                         ts = float(span.get("recorded_at") or now)
                         dt_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
-                        _, spk_is_owner, spk_body = classify_transcript_span(span)
-                        if not spk_body:
-                            continue
-                        if spk_is_owner is True:
-                            if not is_filler_only_utterance(spk_body):
-                                seg_has_substantive_owner = True
-                        elif spk_is_owner is False:
-                            seg_has_other = True
                         formatted_line = format_transcript_span_line(dt_str, span)
                         if formatted_line:
                             seg_lines.append(formatted_line)
@@ -1840,33 +1805,6 @@ class SuperAgentGateway:
                     while f"momo:{candidate_thread}" in ended_threads:
                         suffix_idx += 1
                         candidate_thread = f"{base_thread}:r{suffix_idx}"
-
-                    if source_is_attributed or seg_has_other:
-                        if not seg_has_substantive_owner:
-                            # Never start proactive tasks from other speakers' utterances (e.g. colleague saying "我去 xxx").
-                            # Only deliver as non-owner follow-up context when a live open ticket already subscribes to this thread.
-                            if f"momo:{candidate_thread}" not in live_threads:
-                                continue
-                            actor_id = "other"
-                            actor_name = "Other Speaker (Voice Transcript)"
-                            speaker_note = (
-                                "[说话人归属提醒：本段无用户本人 [我（用户本人）] 的实质发言，仅包含其他说话人发言或简短附和，"
-                                "仅供当前活跃工单补充对话上下文参考，严禁据此新建工单或承接他人的任务。]\n"
-                            )
-                        else:
-                            actor_id = "owner"
-                            actor_name = "User (Voice Transcript)"
-                            speaker_note = (
-                                "[说话人归属提醒：本段为多人对话。仅标记为 [我（用户本人）] 的原话代表用户本人；"
-                                "标记为 [他人:...] 的原话（包括其中的第一人称“我去/我来/我这边...”）均属于其他说话人自己的行为或工作，"
-                                "绝不能把别人说的“我去 xxx”当成给用户建单的依据！]\n"
-                                if seg_has_other
-                                else ""
-                            )
-                    else:
-                        actor_id = "owner"
-                        actor_name = "User (Voice Transcript)"
-                        speaker_note = ""
 
                     context_prefix = ""
                     if seg_first_idx > 0:
@@ -1894,11 +1832,11 @@ class SuperAgentGateway:
                     rec_day = logical_local_date(latest_span_ts, day_start_hour).isoformat()
                     lag_seconds = max(0.0, now - latest_span_ts)
                     date_anchor_note = ""
-                    if rec_day != today_day or lag_seconds >= 6 * 3600:
+                    if rec_day != today_day.isoformat() or lag_seconds >= 6 * 3600:
                         lag_hours = lag_seconds / 3600.0
                         sync_status = (
                             f"跨日补同步（滞后 {lag_hours:.1f} 小时，录制于 {rec_day}）"
-                            if rec_day != today_day
+                            if rec_day != today_day.isoformat()
                             else f"延迟补同步（滞后 {lag_hours:.1f} 小时）"
                         )
                         date_anchor_note = (
@@ -1914,10 +1852,12 @@ class SuperAgentGateway:
                         if len(segment_groups) == 1
                         else f"transcript:{sid}:{rev[:24]}:s{seg_idx}"
                     )
+                    if catch_up:
+                        event_id = f"transcript:{sid}:review:{today_day}:s{seg_idx}"
                     trigger_id = f"momo:{event_id}"
                     text = (
                         f"[MoMo 同步录音转写 | source_id={sid} | 标题={title} | 录音时间={rec_time_label} | 当前时间={now_str} | 同步状态={sync_status}]\n"
-                        f"{date_anchor_note}{recent_ticket_note}{speaker_note}{context_prefix}{body}"
+                        f"{date_anchor_note}{recent_ticket_note}{context_prefix}{body}"
                     )
                     self.bridge.enqueue_trigger(
                         trigger_id=trigger_id,
@@ -1926,15 +1866,24 @@ class SuperAgentGateway:
                         message_id=event_id,
                         source_id=sid,
                         title=title,
-                        actor_id=actor_id,
-                        actor_name=actor_name,
+                        actor_id="recorder",
+                        actor_name="MoMo Recorder",
                         addressed=False,
-                        human=True,
+                        human=False,
                         observed=True,
                         text=text,
                         at_iso=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(latest_span_ts)),
                     )
                     emitted.append(trigger_id)
+                with self.bridge.db:
+                    self.bridge.db.execute(
+                        "INSERT OR REPLACE INTO source_watermarks(source_id, revision, max_seq, updated_at, last_recorded_at) VALUES(?,?,?,?,?)",
+                        (sid, rev, max_seq, now, max(prev_last_ts, max_span_ts)),
+                    )
+
+            if upgrading:
+                with self.bridge.db:
+                    self.bridge.db.execute("INSERT OR REPLACE INTO meta VALUES('recording_observations_v1', '1')")
         finally:
             cstore.close()
         return emitted
@@ -4328,6 +4277,9 @@ class SuperAgentGateway:
             wait_ms = max(0, min(15_000, int(request.query.get("wait_ms", "0") or 0)))
         except ValueError:
             wait_ms = 0
+        # A newly started watcher can poll before recorder policy and prompts have been seeded.
+        if self.manage_dsh and not self.dsh_ready:
+            return web.json_response({"events": [], "next_cursor": str(after)})
         items, cursor, polled_runs = self.bridge.list_triggers(after)
         if not items and wait_ms > 0:
             self._trigger_wakeup.clear()
@@ -4620,9 +4572,6 @@ class SuperAgentGateway:
                 return [], None
 
             # Group spans into ~1000-char chronological passages across the entire recording (never truncating at 120 spans).
-            source_is_attributed = any(
-                classify_transcript_span(s)[1] is not None for s in spans if isinstance(s, dict)
-            )
             passages: list[dict] = []
             buf_lines: list[str] = []
             buf_chars = 0
@@ -4635,7 +4584,7 @@ class SuperAgentGateway:
                     return "owner"
                 if other_label:
                     return f"other:{other_label}"
-                return "unattributed" if source_is_attributed else "owner"
+                return "unattributed"
 
             for span in spans:
                 spk_label, spk_is_owner, spk_body = classify_transcript_span(span)
@@ -4720,14 +4669,11 @@ class SuperAgentGateway:
                 nxt = f"offset:{offset + limit}" if offset + limit < len(passages) else None
                 return page, nxt
 
-            if target_idx < limit:
-                return passages[:limit], f"offset:{limit}"
-
-            win_len = max(3, limit - 2)
-            start = max(2, min(len(passages) - win_len, target_idx - (win_len // 2)))
-            initial = [passages[0], passages[1], *passages[start : start + win_len]]
-            nxt = f"offset:{start + win_len}" if start + win_len < len(passages) else None
-            return initial, nxt
+            # Keep the candidate in the initial window. The continuation starts at the
+            # first omitted passage; admissionContext deduplicates any overlapping IDs.
+            if target_idx >= limit:
+                return [*passages[:limit - 1], passages[target_idx]], f"offset:{limit - 1}"
+            return passages[:limit], f"offset:{limit}"
         finally:
             cstore.close()
 

@@ -68,5 +68,6 @@ export async function candidateCard(host: LinkHost, candidate: Candidate) {
     ...(delivered.length ? { delivered_to: delivered } : {}), ...(referenced.length ? { referenced_tickets: referenced.map(ticketCard) } : {}),
     next_action: isCreatorRequest(primary) ? 'The owner selected Creator mode. For a customization request, accept a fresh ticket with orchestrator_route so its Creator worker can build and install the extension locally.'
       : candidate.strength === 'explicit' ? 'Route it with orchestrator_route as dispatch says: accept, attach, stop or ignore.'
+      : primary.source === 'momo' && primary.meta.stream === 'transcripts' ? 'Read the recording with orchestrator_eval, follow up with orchestrator_eval_read as needed, then use orchestrator_eval_decide.'
       : 'Ignore it with orchestrator_route if the card shows it touches no enabled rule; else assess it with orchestrator_eval, orchestrator_eval_read, then orchestrator_eval_decide.' }
 }

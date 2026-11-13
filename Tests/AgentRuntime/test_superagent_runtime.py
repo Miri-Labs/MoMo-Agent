@@ -57,6 +57,19 @@ from superagent_runtime import prepare_dsh_instance
 
 
 class RuntimeEngineConfigTests(unittest.TestCase):
+    def test_upgrades_stock_prompt_parts_without_overwriting_custom_parts(self) -> None:
+        from superagent_runtime import _upgrade_prompt_defaults
+        old = {"scope": "old", "skills": {"removed": "legacy"}, "overrides": {
+            "admission": {"text": "owner only"}, "handoff": {"text": "send"}, "work": {"text": "old"}}}
+        current = {"scope": "custom", "skills": {"extra": "mine"}, "overrides": {
+            "admission": {"text": "owner only", "base": "hash"}, "handoff": {"text": "my handoff"}}}
+        new = {"scope": "new", "skills": {"new": "new"}, "overrides": {
+            "admission": {"text": "read the record"}, "work": {"text": "new"}}}
+        self.assertEqual(_upgrade_prompt_defaults(old, current, new), {
+            "scope": "custom", "skills": {"extra": "mine", "new": "new"},
+            "overrides": {"admission": {"text": "read the record"}, "handoff": {"text": "my handoff"}},
+        })
+
     def test_defaults_to_superagent_without_creating_files_and_persists_privately(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             data = Path(tmp) / "Agent"
@@ -946,11 +959,8 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertIn(["focused_local_change", "grounded_artifact_and_audit"], LEGACY_PROACTIVE_RULE_IDS)
                 self.assertIn(["research_and_synthesis", "focused_local_change"], LEGACY_PROACTIVE_RULE_IDS)
-                self.assertEqual(DEFAULT_PROACTIVE_RULES[0]["id"], "research_and_synthesis")
-                self.assertTrue(DEFAULT_PROACTIVE_RULES[0].get("exploratory"))
-                self.assertEqual(DEFAULT_PROACTIVE_RULES[1]["id"], "focused_local_change")
-                self.assertEqual(DEFAULT_PROACTIVE_RULES[2]["id"], "personal_todo_and_schedule")
-                self.assertTrue(DEFAULT_PROACTIVE_RULES[2].get("exploratory"))
+                self.assertEqual([rule["id"] for rule in DEFAULT_PROACTIVE_RULES], ["recording_followup"])
+                self.assertTrue(DEFAULT_PROACTIVE_RULES[0]["exploratory"])
 
                 cursor_before_seg = (
                     await (await client.get("/momo/internal/superagent/triggers?after=0", headers=bridge_headers)).json()
@@ -1116,19 +1126,42 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 await client.close()
 
-    async def test_owner_only_proactive_speaker_gating(self) -> None:
+    async def test_upgrade_reassesses_only_current_recording_day_once(self) -> None:
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "Agent"
+            conn = momo_agent.initialize(data, 19835)
+            gateway = SuperAgentGateway(data, conn, python_executable=Path(sys.executable), base_env={}, manage_dsh=False)
+            store = ContextStore(data / "context")
+            try:
+                for at, text in [(time.time() - 86400, "旧问题"), (time.time(), "方案的两个报价互相矛盾")]:
+                    payload = make_source_payload("讨论", [f"[同事] {text}"])
+                    payload["spans"][0]["recorded_at"] = at
+                    store.sync_source(payload)
+                gateway._ensure_proactive_baseline()
+                self.assertEqual(gateway.ingest_context_sources(), [])
+                with gateway.bridge.db:
+                    gateway.bridge.db.execute("DELETE FROM meta WHERE key='recording_observations_v1'")
+                self.assertEqual(len(gateway.ingest_context_sources()), 1)
+                event = gateway.bridge.list_triggers(0)[0][0]
+                self.assertIn("[他人:同事] 方案的两个报价互相矛盾", event["text"])
+                self.assertEqual(event["actor_id"], "recorder")
+                self.assertEqual(gateway.ingest_context_sources(), [])
+            finally:
+                store.close()
+                gateway.bridge.close()
+                gateway.store.db.close()
+
+    async def test_recording_observations_keep_attribution_and_reach_assessment(self) -> None:
         from superagent_runtime import (
             DEFAULT_PROACTIVE_RULES,
             MOMO_PROMPT_CONFIG,
             classify_transcript_span,
         )
 
-        # Every proactive rule stays within dsh-superagent's 2000-char instruction schema limit and enforces owner-only origination.
         for rule in DEFAULT_PROACTIVE_RULES:
             self.assertLessEqual(len(rule["instruction"]), 2000)
-            self.assertIn("[我（用户本人）]", rule["instruction"])
-            self.assertIn("[他人:...]", rule["instruction"])
-        self.assertIn("本人触发铁律", MOMO_PROMPT_CONFIG["overrides"]["runtime/admission"]["text"])
+        self.assertIn("orchestrator_eval_read", MOMO_PROMPT_CONFIG["overrides"]["runtime/admission"]["text"])
         self.assertIn("speaker_role", MOMO_PROMPT_CONFIG["overrides"]["runtime/work"]["text"])
 
         self.assertEqual(classify_transcript_span({"text": "[我] 我去整理一下文档"}), ("我", True, "我去整理一下文档"))
@@ -1162,7 +1195,7 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                 auth = {"Authorization": f"Bearer {api_key}"}
                 bridge_headers = {"X-MoMo-Bridge": gateway.bridge_secret}
 
-                # 1. Other speakers saying "我去 xxx" (plus pure filler backchannel "[我] 嗯。") MUST NOT originate a trigger.
+                # 1. Other-speaker content is an observation for assessment, including when the owner only says "嗯".
                 cstore = ContextStore(data / "context")
                 try:
                     other_only_payload = make_source_payload(
@@ -1189,9 +1222,15 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                     cstore.close()
 
                 ingested_other = await (await client.post("/momo/v1/proactive/ingest", headers=auth, json={})).json()
-                self.assertEqual(ingested_other["count"], 0)
+                self.assertEqual(ingested_other["count"], 1)
+                first = await (await client.get("/momo/internal/superagent/triggers?after=0", headers=bridge_headers)).json()
+                event = first["events"][0]
+                self.assertEqual(event["actor_id"], "recorder")
+                self.assertFalse(event["human"])
+                self.assertNotIn("addressed", event)
+                self.assertIn("[他人:盛立]", event["text"])
 
-                # 2. When the user ([我]) subsequently speaks in the same conversation, emit owner trigger with prior context preserved!
+                # 2. A subsequent passage keeps the original speakers in context.
                 cstore = ContextStore(data / "context")
                 try:
                     owner_followup_payload = dict(other_only_payload)
@@ -1216,11 +1255,11 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                 ingested_owner = await (await client.post("/momo/v1/proactive/ingest", headers=auth, json={})).json()
                 self.assertEqual(ingested_owner["count"], 1)
                 poll_1 = await (
-                    await client.get("/momo/internal/superagent/triggers?after=0", headers=bridge_headers)
+                    await client.get(f"/momo/internal/superagent/triggers?after={first['next_cursor']}", headers=bridge_headers)
                 ).json()
                 self.assertEqual(len(poll_1["events"]), 1)
                 ev1 = poll_1["events"][0]
-                self.assertEqual(ev1["actor_id"], "owner")
+                self.assertEqual(ev1["actor_id"], "recorder")
                 self.assertIn("[我（用户本人）] 那我今晚去把我们这边的 API 鉴权方案和灰度清单整理一版出来。", ev1["text"])
                 self.assertIn("[近期前文参考]", ev1["text"])
                 self.assertIn("[他人:说话人 3]", ev1["text"])
@@ -1235,7 +1274,7 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("[他人:盛立]", ctx_1["messages"][0]["text"])
                 self.assertIn("[我（用户本人）]", ctx_1["messages"][0]["text"])
 
-                # 3. Non-owner speech on an active live ticket's thread is delivered with actor_id="other" (never "owner").
+                # 3. Recorder observations also reach ongoing work.
                 gateway._cached_tickets = [
                     {
                         "id": "tkt_live_auth",
@@ -1276,12 +1315,12 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                         headers=bridge_headers,
                     )
                 ).json()
-                self.assertEqual(poll_2["events"][0]["actor_id"], "other")
-                self.assertIn("[说话人归属提醒：本段无用户本人", poll_2["events"][0]["text"])
+                self.assertEqual(poll_2["events"][0]["actor_id"], "recorder")
+                self.assertIn("[他人:盛立]", poll_2["events"][0]["text"])
                 cleaned_excerpt = gateway._clean_trigger_excerpt(poll_2["events"][0]["text"])
                 self.assertNotIn("[说话人归属提醒：", cleaned_excerpt or "")
 
-                # 4. Live voiceprint cluster upgrade ([说话人 1] -> [我] at same timestamps) emits once upgraded to owner.
+                # 4. Attribution edits update the readable recording without dispatching it twice.
                 cstore = ContextStore(data / "context")
                 try:
                     upgrade_v1 = make_source_payload(
@@ -1295,7 +1334,7 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertEqual(
                     (await (await client.post("/momo/v1/proactive/ingest", headers=auth, json={})).json())["count"],
-                    0,
+                    1,
                 )
 
                 cstore = ContextStore(data / "context")
@@ -1316,7 +1355,7 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertEqual(
                     (await (await client.post("/momo/v1/proactive/ingest", headers=auth, json={})).json())["count"],
-                    1,
+                    0,
                 )
 
                 # 5. momo_cli recording & search expose explicit speaker_role ('owner' vs 'other').
