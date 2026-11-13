@@ -483,7 +483,6 @@ class SuperAgentGateway:
         self._cached_decisions: list[dict] = []
         self._cached_state: dict = {}
         self._unsubscribed_legacy_threads: set[str] = set()
-        self._ticket_auto_retries: dict[str, tuple[int, str]] = {}
         self._dsh_log_offset: int = 0
         self._dsh_seeded_failure_baseline: bool = False
         self._last_dsh_model_health: dict = {}
@@ -889,7 +888,6 @@ class SuperAgentGateway:
         env["MOMO_LLM_PROVIDER"] = str(self.dsh_provider)
         env["MOMO_LLM_MODEL"] = str(self.model_name)
         env["MOMO_COMPUTER_BRIDGE"] = f"http://127.0.0.1:{self.connection['port']}"
-        self._ticket_auto_retries.clear()
         self._dsh_seeded_failure_baseline = False
         env["DSH_SUPERAGENT_MOMO_CLI"] = str(instance["state_dir"] / "momo-cli")
         env["DSH_SUPERAGENT_MOMO_WORKSPACE"] = str(workspace_dir)
@@ -1052,65 +1050,45 @@ class SuperAgentGateway:
         return "；".join(parts) if parts else None
 
     @classmethod
-    def _is_transient_transport_ticket_failure(cls, ticket: dict) -> bool:
-        failure_text = cls._extract_ticket_failure_text(ticket)
-        if not failure_text:
-            return False
-        if classify_provider_issue(failure_text) is not None:
-            return False
-        return bool(
-            re.search(
-                r"(connection error|fetch failed|socket hang up|econnrefused|econnreset|etimedout|cannot write to closing transport|ticket is not running)",
-                failure_text,
-                re.IGNORECASE,
-            )
-        )
+    def _can_recover_ticket(cls, ticket: dict) -> bool:
+        text = cls._extract_ticket_failure_text(ticket)
+        issue = classify_provider_issue(text)
+        if issue:
+            return issue["kind"] == "rate_limit"
+        if ticket.get("action") == "blocked":
+            return True
+        # Some providers return only this generic rejection. Let a new assignment resume once.
+        return bool(re.search(
+            r"connection error|fetch failed|socket hang up|econnrefused|econnreset|etimedout|"
+            r"cannot write to closing transport|ticket is not running|"
+            r"\b(?:timeout|timed out|temporarily unavailable|HTTP (?:408|5\d\d))\b|"
+            r'^LlmError:\s*(?:Bad Request|\{\s*"detail"\s*:\s*"Bad Request"\s*\})\s*$',
+            text.strip(), re.IGNORECASE | re.MULTILINE,
+        ))
 
     def _recover_interrupted_tickets(self, state: dict, tickets: list[dict]) -> None:
-        """Auto-retry open tickets paused in `blocked` or transient transport `failed` state once per dsh boot."""
-        if not self.dsh_ready or (isinstance(state, dict) and state.get("paused")):
+        if not self.dsh_ready or state.get("paused"):
             return
-        for t in tickets:
-            if not isinstance(t, dict) or t.get("ended"):
+        for ticket in tickets:
+            if (ticket.get("state") != "open" or ticket.get("ended") or ticket.get("attention")
+                    or ticket.get("action") not in ("failed", "blocked") or not (ticket.get("actions") or {}).get("retry")):
                 continue
-            if str(t.get("state") or "") != "open":
+            tid = ticket["id"]
+            try:
+                result = dsh_api_request(self.dsh_port, "POST",
+                    f"/orchestrator/api/tickets/{quote(tid, safe='')}/settle-failure",
+                    {"updatedAt": ticket["updatedAt"], "assignments": ticket["assignments"],
+                     "recover": self._can_recover_ticket(ticket)}, timeout=4.0)
+            except (OSError, RuntimeError) as error:
+                log.warning("Could not reconcile stalled ticket %s: %s", tid, error)
                 continue
-            action = str(t.get("action") or "")
-            if action == "blocked":
-                pass
-            elif action == "failed" and self._is_transient_transport_ticket_failure(t):
-                pass
-            else:
-                continue
-            if t.get("attention"):
-                continue
-            actions = t.get("actions")
-            if not (isinstance(actions, dict) and actions.get("retry") is True):
-                continue
-            tid = str(t.get("id") or "").strip()
-            if not tid:
-                continue
-            prev_count, _ = self._ticket_auto_retries.get(tid, (0, ""))
-            if prev_count >= 1:
-                continue
-            updated_at = str(t.get("updatedAt") or "")
-            self._ticket_auto_retries[tid] = (prev_count + 1, updated_at)
-            with suppress(Exception):
-                dsh_api_request(
-                    self.dsh_port,
-                    "POST",
-                    f"/orchestrator/api/tickets/{quote(tid, safe='')}/retry",
-                    {},
-                    timeout=4.0,
-                )
+            if result.get("outcome") == "retried":
                 with self.bridge.db:
                     self.bridge.db.execute(
-                        """UPDATE chat_runs
-                           SET status='started', error=NULL, wait_reason=NULL, cancellable=1, updated_at=?
-                           WHERE ticket_id=? AND status='failed'""",
+                        """UPDATE chat_runs SET status='started', error=NULL, wait_reason=NULL,
+                           cancellable=1, updated_at=? WHERE ticket_id=? AND status='failed'""",
                         (time.time(), tid),
                     )
-                log.info("Auto-retrying interrupted %s ticket %s", action, tid)
 
     def _unsubscribe_ended_transcript_threads(self, tickets: list[dict]) -> None:
         """Drop ended tickets' subscriptions to transcript threads so subsequent recording chunks never force-reopen ended tickets."""
@@ -1406,33 +1384,12 @@ class SuperAgentGateway:
                 elif ended_outcome in ("stopped", "canceled", "cancelled") or t_state in ("stopped", "canceled", "cancelled"):
                     new_status = "cancelled"
                     wait_reason = None
-                elif t_action == "failed" or ended_outcome == "failed" or t_state == "failed":
-                    prev_count, prev_updated = self._ticket_auto_retries.get(str(ticket_id), (0, ""))
-                    awaiting_transient_retry = (
-                        not ended_info
-                        and t_state == "open"
-                        and self._is_transient_transport_ticket_failure(ticket)
-                        and prev_count >= 1
-                        and str(ticket.get("updatedAt") or "") == prev_updated
-                    )
-                    if not awaiting_transient_retry:
-                        new_status = "failed"
-                        ticket_notice = self._record_provider_issue(self._extract_ticket_failure_text(ticket))
-                        recent_notice = ticket_notice or self.current_provider_notice()
-                        if recent_notice and (now - float(recent_notice.get("updated_at", 0))) <= 180.0:
-                            err = recent_notice["short_error"]
-                        else:
-                            err = "执行未完成，请核对已有结果。"
-                elif t_action == "blocked" and not ticket.get("attention"):
-                    prev_count, prev_updated = self._ticket_auto_retries.get(str(ticket_id), (0, ""))
-                    if prev_count >= 1 and str(ticket.get("updatedAt") or "") != prev_updated:
-                        new_status = "failed"
-                        wait_reason = None
-                        recent_notice = self.current_provider_notice()
-                        if recent_notice and (now - float(recent_notice.get("updated_at", 0))) <= 180.0:
-                            err = recent_notice["short_error"]
-                        else:
-                            err = "执行受阻未完成，请核对已有结果或重试。"
+                elif ended_outcome == "failed" or t_state == "failed":
+                    new_status = "failed"
+                    wait_reason = None
+                    reason = self._extract_ticket_failure_text(ticket)
+                    notice = self._record_provider_issue(reason)
+                    err = notice["short_error"] if notice else ("无法完成。" + reason[:240] if reason else "无法完成。")
                 elif ended_outcome in ("dropped",) or t_state in ("dropped",):
                     new_status = "completed"
                     wait_reason = None
@@ -3752,7 +3709,7 @@ class SuperAgentGateway:
                 "completed": "已完成",
                 "dropped": "核查后静默跳过",
                 "cancelled": "已停止",
-                "failed": "执行未完成",
+                "failed": "无法完成",
             }
             return {
                 "id": f"superagent:{tid}",

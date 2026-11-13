@@ -190,6 +190,10 @@ function routes(runtime: HttpHost): Routes {
       return ticketList(views(runtime), state, offset, limit)
     },
     'GET tickets/:id': ({ params }) => ticketPage(runtime, params.id),
+    'POST tickets/:id/settle-failure': async ({ params, body }) => {
+      const seen = z.object({ updatedAt: z.string().min(1), assignments: z.number().int().positive(), recover: z.boolean() }).parse(await body())
+      return { outcome: runtime.engine.settleFailure(ticket(params.id), seen.updatedAt, seen.assignments, seen.recover) }
+    },
     'POST tickets/:id/retry': ({ params }) => { const id = ticket(params.id); runtime.engine.retryTicket(id); return { retried: true } },
     'POST tickets/:id/stop': ({ params }) => { const id = ticket(params.id); runtime.engine.stopTicket(id); return { stopped: true } },
     'POST executor/pause': async ({ body }) => runtime.settings.pause(z.object({ paused: z.boolean() }).parse(await body()).paused, 'panel'),

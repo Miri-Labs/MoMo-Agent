@@ -32,6 +32,7 @@ export interface Api {
   'POST decisions/:id/dismiss': { response: { dismissed: true } }
   'GET tickets': { query?: Paged & { state?: TicketFilter }; response: TicketListView }
   'GET tickets/:id': { response: TicketPageView }
+  'POST tickets/:id/settle-failure': { body: { updatedAt: string; assignments: number; recover: boolean }; response: { outcome: 'retried' | 'failed' | 'unchanged' } }
   'POST tickets/:id/retry': { response: { retried: true } }
   'POST tickets/:id/stop': { response: { stopped: true } }
   'POST executor/pause': { body: { paused: boolean }; response: { paused: boolean } }

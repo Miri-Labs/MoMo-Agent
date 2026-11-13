@@ -263,10 +263,10 @@ class ApplePIMTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 )
                 gateway.bridge.db.commit()
-                retried_calls: list[str] = []
+                recovery_calls = []
                 with mock.patch(
                     "superagent_gateway.dsh_api_request",
-                    side_effect=lambda port, method, path, payload=None, timeout=8.0: (retried_calls.append(path) or {}),
+                    side_effect=lambda port, method, path, payload=None, timeout=8.0: (recovery_calls.append((path, payload["recover"])) or {"outcome": "retried" if payload["recover"] else "failed"}),
                 ):
                     gateway._recover_interrupted_tickets(
                         {"paused": False},
@@ -277,7 +277,7 @@ class ApplePIMTests(unittest.IsolatedAsyncioTestCase):
                                 "action": "failed",
                                 "ended": None,
                                 "attention": None,
-                                "actions": {"retry": True},
+                                "actions": {"retry": True}, "assignments": 1,
                                 "summary": "LlmError: Connection error.",
                                 "updatedAt": "2026-11-11T12:46:00.000Z",
                             },
@@ -287,13 +287,21 @@ class ApplePIMTests(unittest.IsolatedAsyncioTestCase):
                                 "action": "failed",
                                 "ended": None,
                                 "attention": None,
-                                "actions": {"retry": True},
+                                "actions": {"retry": True}, "assignments": 1,
                                 "summary": "Error code: 429 - insufficient_quota: exceeded your current quota",
                                 "updatedAt": "2026-11-11T12:46:00.000Z",
                             },
                         ],
                     )
-                self.assertEqual(retried_calls, ["/orchestrator/api/tickets/tkt_conn_err/retry"])
+                self.assertEqual(recovery_calls, [
+                    ("/orchestrator/api/tickets/tkt_conn_err/settle-failure", True),
+                    ("/orchestrator/api/tickets/tkt_quota_err/settle-failure", False),
+                ])
+                for summary, recover in [
+                    ('LlmError: {"detail":"Bad Request"}', True), ('rate limit exceeded', True),
+                    ('HTTP 503', True), ('invalid API key', False), ('invalid schema', False),
+                ]:
+                    self.assertEqual(gateway._can_recover_ticket({"action": "failed", "summary": summary}), recover)
                 recovered_row = gateway.bridge.db.execute(
                     "SELECT status, error, cancellable FROM chat_runs WHERE run_id='run_recover_1'"
                 ).fetchone()

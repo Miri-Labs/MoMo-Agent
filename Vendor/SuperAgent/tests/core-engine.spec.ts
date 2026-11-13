@@ -1131,6 +1131,32 @@ describe('ticket commands', () => {
     expect(h.executor.start).toHaveBeenLastCalledWith(expect.objectContaining({ id: ticketId }), retried.assignments[1])
   })
 })
+describe('automatic recovery of stalled work', () => {
+  it('resumes once, ignores repeated snapshots, and archives a repeated failure with its reason', () => {
+    const h = harness(), id = accepted(h).ticketId!
+    const fail = () => h.engine.report(id, { state: 'failed', summary: 'LlmError: Bad Request' })
+    const first = fail()
+    expect(h.engine.settleFailure(id, first.updatedAt, 1, true)).toBe('retried')
+    expect(h.engine.settleFailure(id, first.updatedAt, 1, true)).toBe('unchanged')
+    h.settle()
+    const second = fail()
+    expect(h.engine.settleFailure(id, second.updatedAt, 2, true)).toBe('failed')
+    expect(h.repo.tickets.get(id)?.ended).toMatchObject({ by: 'executor', outcome: 'failed', reason: 'LlmError: Bad Request' })
+    expect(h.engine.settleFailure(id, second.updatedAt, 2, true)).toBe('unchanged')
+  })
+  it('honors attention, newer work and pause, and concludes a permanent failure directly', () => {
+    const h = harness(), id = accepted(h).ticketId!
+    const question = h.engine.report(id, { state: 'blocked', summary: 'Need a decision', question: 'Which account?' })
+    expect(h.engine.settleFailure(id, question.updatedAt, 1, false)).toBe('unchanged')
+    h.tick(2)
+    const failed = h.engine.report(id, { state: 'failed', summary: 'Invalid key', question: null })
+    expect(h.engine.settleFailure(id, question.updatedAt, 1, false)).toBe('unchanged')
+    h.setPaused(true)
+    expect(h.engine.settleFailure(id, failed.updatedAt, 1, false)).toBe('unchanged')
+    h.setPaused(false)
+    expect(h.engine.settleFailure(id, failed.updatedAt, 1, false)).toBe('failed')
+  })
+})
 describe('failed deliveries', () => {
   it('forgets a failed delivery once a new Assignment takes over or the ticket ends', () => {
     const h = harness()

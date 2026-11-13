@@ -327,6 +327,7 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
   'GET tickets': { query: ['state', 'offset', 'limit'], answer: ({ query }) => page(server.tickets[query.state === 'ended' ? 'ended'
     : 'open']) },
   'GET tickets/:id': { answer: ({ params }) => server.ticketDetails[params.id] ?? refuse(404, 'Ticket not found') },
+  'POST tickets/:id/settle-failure': { body: true, answer: () => ({ outcome: 'unchanged' }) },
   'POST tickets/:id/retry': { answer: ({ params }) => {
     const ticket = ticketOf(params.id)
     if (!ticket) return refuse(404, 'Ticket not found')
