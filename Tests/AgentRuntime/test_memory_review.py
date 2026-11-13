@@ -250,6 +250,104 @@ class MemoryReviewTests(unittest.TestCase):
         self.assertEqual(self.store.db.execute("SELECT count(*) FROM jobs WHERE state='done'").fetchone()[0], 0)
         self.assertEqual(self.store.db.execute("SELECT count(*) FROM jobs WHERE state='pending'").fetchone()[0], 1)
 
+    def start_daily_batch(self, job):
+        from unittest.mock import Mock
+        service = ContextService.__new__(ContextService)
+        service.data = self.data
+        run = {"run_id": str(uuid.uuid4()), "session_id": "momo-review-" + job["id"], "status": "started"}
+        service.request = Mock(side_effect=[
+            {"features": {"runs_idempotency": {"durable": True, "supported": True, "retention_seconds": 3600}}},
+            run, run,
+        ])
+        service.advance_review(self.store, job)
+        prompt = service.request.call_args_list[1].args[1]["input"]
+        row = self.store.db.execute("SELECT * FROM memory_reviews WHERE id=?", (job["id"],)).fetchone()
+        self.assertEqual("running", row["state"])
+        return row, prompt, json.loads(prompt.split("DAILY_EVIDENCE=")[-1])
+
+    def revise_recording(self, source, *, deleted=False):
+        payload = json.loads(self.store.source(source["source_id"])["payload"])
+        payload["version"] += 1
+        payload["deleted"] = deleted
+        if deleted:
+            payload.update(spans=[], text_sha256=digest(""))
+        return self.store.sync_source(payload)
+
+    def test_skip_replaced_and_deleted_pages_before_admission_and_retry_with_gaps(self):
+        import daily_review
+        self.message(1, "chat")
+        recordings = [self.source(f"recording {i}") for i in range(6)]
+        job = review.next_review(self.store, self.data, 100)
+        for i in (0, 2, 4):
+            self.revise_recording(recordings[i], deleted=(i == 2))
+        job, prompt, page = self.start_daily_batch(job)
+        self.assertIn(review.DREAM_INSTRUCTION, prompt)
+        self.assertEqual((1, 3, 7), (page["page"], page["next_page"], page["batch_end"]))
+        with self.assertRaises(ValueError):
+            daily_review.read_page(self.store, job["id"], 5)
+        daily_review.read_page(self.store, job["id"], 3)
+        with self.assertRaises(ValueError):
+            daily_review.read_page(self.store, job["id"], 5, completed_page=3)
+        daily_review.read_page(self.store, job["id"], 3, completed_page=1)
+        self.assertTrue(review.retry_completed(self.store, "memory_reviews", job, "interrupted"))
+        # Page 3 was delivered without a checkpoint and becomes stale before the retry.
+        self.revise_recording(recordings[1])
+        retry = self.store.db.execute("SELECT * FROM memory_reviews WHERE state='pending'").fetchone()
+        retry, _, page = self.start_daily_batch(retry)
+        self.assertEqual((5, 7), (page["page"], page["next_page"]))
+        daily_review.read_page(self.store, retry["id"], 7, completed_page=5)
+        receipt = {"outcome": "no_change"}
+        review.finish(self.store, retry, receipt, self.data / "hermes")
+        self.assertEqual((3, 4, 0), (receipt["pages_reviewed"], receipt["pages_skipped"], receipt["pages_remaining"]))
+        self.assertEqual([2, 0], review.state(self.store, "chat_cursor"))
+        self.assertEqual(3, self.store.db.execute("SELECT count(*) FROM jobs WHERE state='pending'").fetchone()[0])
+        self.assertEqual(2, self.store.db.execute("SELECT count(*) FROM jobs WHERE state='done'").fetchone()[0])
+
+    def test_skip_receipt_count_belongs_to_one_batch_and_all_stale_tail_still_runs_final(self):
+        import daily_review
+        recordings = [self.source(f"recording {i}") for i in range(7)]
+        job = review.next_review(self.store, self.data, 100)
+        self.revise_recording(recordings[2])
+        job, prompt, page = self.start_daily_batch(job)
+        self.assertNotIn(review.DREAM_INSTRUCTION, prompt)
+        self.assertEqual(5, page["batch_end"])
+        while page["next_page"]:
+            page = daily_review.read_page(self.store, job["id"], page["next_page"], completed_page=page["page"])
+        receipt = {"outcome": "no_change"}
+        review.finish(self.store, job, receipt, self.data / "hermes")
+        self.assertEqual((4, 1, 2), (receipt["pages_reviewed"], receipt["pages_skipped"], receipt["pages_remaining"]))
+        self.revise_recording(recordings[5])
+        self.revise_recording(recordings[6], deleted=True)
+        following = review.next_review(self.store, self.data, 101)
+        following, prompt, page = self.start_daily_batch(following)
+        self.assertEqual(7, page["total_pages"])
+        self.assertIsNone(page["next_page"])
+        self.assertFalse(page["has_more_batches"])
+        self.assertNotIn("evidence", page)
+        self.assertIn(review.DREAM_INSTRUCTION, prompt)
+        receipt = {"outcome": "no_change"}
+        review.finish(self.store, following, receipt, self.data / "hermes")
+        self.assertEqual((0, 2, 0), (receipt["pages_reviewed"], receipt["pages_skipped"], receipt["pages_remaining"]))
+        self.assertIsNotNone(review.state(self.store, "dream"))
+
+    def test_retry_preserves_acknowledged_chat_when_all_unconfirmed_pages_become_stale(self):
+        import daily_review
+        self.message(1, "confirmed chat")
+        source = self.source()
+        job = review.next_review(self.store, self.data, 100)
+        job, _, _ = self.start_daily_batch(job)
+        daily_review.read_page(self.store, job["id"], 2, completed_page=1)
+        self.assertTrue(review.retry_completed(self.store, "memory_reviews", job, "interrupted"))
+        self.revise_recording(source)
+        retry = self.store.db.execute("SELECT * FROM memory_reviews WHERE state='pending'").fetchone()
+        retry, prompt, page = self.start_daily_batch(retry)
+        self.assertNotIn("evidence", page)
+        self.assertIn(review.DREAM_INSTRUCTION, prompt)
+        receipt = {"outcome": "no_change"}
+        review.finish(self.store, retry, receipt, self.data / "hermes")
+        self.assertEqual((1, 1), (receipt["pages_reviewed"], receipt["pages_skipped"]))
+        self.assertEqual([2, 0], review.state(self.store, "chat_cursor"))
+
     def test_upgraded_383_page_retry_restarts_at_checkpoint_and_drains_one_snapshot(self):
         import daily_review
         from superagent_gateway import SuperAgentGateway

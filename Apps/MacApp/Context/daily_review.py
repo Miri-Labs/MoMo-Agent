@@ -88,6 +88,28 @@ def enqueue(store, data, now, manual=False):
         return job, True
 
 
+def skip_superseded_in_transaction(store, job):
+    """Remove unread pages whose frozen recording is gone or has been revised."""
+    payload = json.loads(job["input"])
+    snapshot = payload.get("snapshot_id", job["id"])
+    revision = store.revision
+    if payload.get("pages_checked_revision") == revision:
+        return job
+    if "snapshot_last_page" not in payload:
+        payload["snapshot_last_page"] = store.db.execute(
+            "SELECT COALESCE(MAX(page),0) FROM daily_review_pages WHERE review_id=?", (snapshot,)).fetchone()[0]
+    skipped = store.db.execute("""
+        DELETE FROM daily_review_pages WHERE review_id=? AND seen=0 AND job_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM sources
+            WHERE id=json_extract(daily_review_pages.evidence,'$.source_id') AND deleted=0
+            AND revision=json_extract(daily_review_pages.evidence,'$.source_revision'))
+    """, (snapshot,)).rowcount
+    payload["pages_checked_revision"] = revision
+    payload["pages_skipped"] = payload.get("pages_skipped", 0) + skipped
+    return store.db.execute("UPDATE memory_reviews SET input=? WHERE id=? RETURNING *",
+                            (canonical(payload), job["id"])).fetchone()
+
+
 def read_page(store, review_id, page, completed_page=None):
     if type(page) is not int or page < 1:
         raise ValueError("page must be a positive integer")
@@ -96,20 +118,22 @@ def read_page(store, review_id, page, completed_page=None):
             AND state IN ('pending','running') AND first_attempt IS NOT NULL""", (review_id,)).fetchone()
         if not active:
             raise Conflict("Daily review is not active")
-        snapshot = json.loads(active["input"]).get("snapshot_id", review_id)
-        first, last = store.db.execute("SELECT MIN(page),MAX(page) FROM daily_review_pages WHERE review_id=?",
-                                       (snapshot,)).fetchone()
-        if first is None and page == 1 and completed_page is None:
-            return {"total_pages": 0, "next_page": None}
-        if first is None or not first <= page <= min(last, first + PAGES_PER_RUN - 1):
+        payload = json.loads(active["input"])
+        snapshot = payload.get("snapshot_id", review_id)
+        pages = store.db.execute("""SELECT page,seen FROM daily_review_pages
+            WHERE review_id=? ORDER BY page LIMIT ?""", (snapshot, PAGES_PER_RUN)).fetchall()
+        # Pruning on retry may leave only the already-checkpointed prefix.
+        if page == 1 and completed_page is None and (not pages or pages[-1]["page"] <= active["checkpoint_page"]):
+            return {"total_pages": payload.get("snapshot_last_page", 0), "next_page": None, "has_more_batches": False}
+        numbers = [row["page"] for row in pages]
+        if page not in numbers:
             raise ValueError("Page outside the current Dream batch")
-        checkpoint = active["checkpoint_page"]
-        if page > first and not store.db.execute("SELECT seen FROM daily_review_pages WHERE review_id=? AND page=?",
-                                                  (snapshot, page - 1)).fetchone()[0]:
+        index = numbers.index(page)
+        if index and not pages[index - 1]["seen"]:
             raise ValueError("Read the preceding evidence page first")
         if completed_page is not None:
-            if (type(completed_page) is not int or completed_page != page - 1 or completed_page < first
-                    or completed_page > max(checkpoint, first - 1) + 1):
+            if (type(completed_page) is not int or not index or completed_page != numbers[index - 1]
+                    or (index >= 2 and numbers[index - 2] > active["checkpoint_page"])):
                 raise ValueError("Only the preceding, processed page can be checkpointed, in order")
             review.check_last_write(memory_home(store.directory.parent), "momo-review-" + review_id)
             store.db.execute("UPDATE memory_reviews SET checkpoint_page=MAX(checkpoint_page,?) WHERE id=?",
@@ -121,9 +145,10 @@ def read_page(store, review_id, page, completed_page=None):
             if not current or current["deleted"] or current["revision"] != batch["source_revision"]:
                 batch = {"superseded": True}
         store.db.execute("UPDATE daily_review_pages SET seen=1 WHERE review_id=? AND page=?", (snapshot, page))
-        batch_end = min(last, first + PAGES_PER_RUN - 1)
-        return {"page": page, "total_pages": last, "batch_end": batch_end,
-                "next_page": page + 1 if page < batch_end else None, "evidence": batch}
+        last = store.db.execute("SELECT MAX(page) FROM daily_review_pages WHERE review_id=?", (snapshot,)).fetchone()[0]
+        return {"page": page, "total_pages": payload.get("snapshot_last_page", last), "batch_end": numbers[-1],
+                "has_more_batches": numbers[-1] < last,
+                "next_page": numbers[index + 1] if index + 1 < len(numbers) else None, "evidence": batch}
 
 
 def previous_writes(store, job):
@@ -151,13 +176,14 @@ def previous_writes(store, job):
 def prompt(store, job):
     payload = json.loads(job["input"])
     snapshot = payload.get("snapshot_id", job["id"])
-    first = store.db.execute("SELECT MIN(page) FROM daily_review_pages WHERE review_id=?", (snapshot,)).fetchone()[0]
-    page = max(first or 1, payload.get("resume_after", 0) + 1)
-    evidence = read_page(store, job["id"], page)
+    # Keep admission replay anchored to the attempt's original resume position.
+    page = store.db.execute("SELECT MIN(page) FROM daily_review_pages WHERE review_id=? AND page>?",
+                            (snapshot, payload.get("resume_after", 0))).fetchone()[0]
+    evidence = read_page(store, job["id"], page or 1)
     instruction = ("逐页处理本批证据。确认本页需要的写入均已成功，或确实无需写入后，再用 read_daily_evidence "
                    "传 review_id、page=next_page 和 completed_page=当前页码。最后一页用最终回执确认。")
     scope = "读完本批所有证据后，执行当天的全局整理。\n" + review.DREAM_INSTRUCTION
-    if evidence.get("batch_end", 0) < evidence["total_pages"]:
+    if evidence["has_more_batches"]:
         scope = "本批只核对当前证据、订正归属、更新涉及的记忆和笔记。全局整理和晨报留给末批。"
     if job["attempt"]:
         instruction += "这是中断后的续跑。先核对之前已落盘的写入与目标笔记；保留已完成的修改。"
@@ -176,6 +202,7 @@ def finish_in_transaction(store, job, receipt):
     if count and not seen:
         raise Conflict("Daily review has not received any evidence pages")
     receipt["pages_reviewed"], receipt["pages_remaining"] = seen, count - seen
+    receipt["pages_skipped"] = payload.pop("pages_skipped", 0)
     prior_count, _ = previous_writes(store, job)
     if prior_count:
         receipt["recovered_writes"] = prior_count
