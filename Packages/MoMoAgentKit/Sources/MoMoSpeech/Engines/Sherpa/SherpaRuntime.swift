@@ -398,7 +398,7 @@ final class SherpaRuntime: @unchecked Sendable {
                          model: SpeechModelChoice = .senseVoice, cacheRoot: URL?) throws -> String {
         let root = cacheRoot ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MoMoAgent/SpeechModels")
-        let directory = root.appendingPathComponent("sherpa-coreml-v2-\(revision)", isDirectory: true)
+        let directory = root.appendingPathComponent(SpeechModelCache.recognizer(revision), isDirectory: true)
         try FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true,

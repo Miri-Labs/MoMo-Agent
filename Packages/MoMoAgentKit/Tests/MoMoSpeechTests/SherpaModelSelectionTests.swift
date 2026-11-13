@@ -146,3 +146,24 @@ import MoMoSherpaBridge
     #expect(try clean("/sil") == "")
     #expect(try clean("FFFFFFFFFFFFFFFF") == "")
 }
+
+@Test func cacheCleanupRemovesEarlierFormatsAndRevisionsAndPreservesActiveData() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let current = SpeechModelCache.speaker(.diariZenWavLMBase)
+    let asr = SpeechModelCache.recognizer("current")
+    let old = ["speaker-coreml-v2-ddc29bab8f9331ea", "sherpa-coreml-v2-old", SpeechModelCache.recognizer("old")]
+    let kept = [current, asr, "unrelated"]
+    for name in old + kept {
+        let directory = root.appendingPathComponent(name).appendingPathComponent("partitions")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data([42]).write(to: directory.appendingPathComponent("weights"))
+    }
+    for _ in 0..<2 {
+        try SpeechModelCache.removeObsolete(in: root, retaining: [asr, current])
+        #expect(Set(try FileManager.default.contentsOfDirectory(atPath: root.path)) == Set(kept))
+        for name in kept {
+            #expect(try Data(contentsOf: root.appendingPathComponent(name + "/partitions/weights")) == Data([42]))
+        }
+    }
+}

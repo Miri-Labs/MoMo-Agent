@@ -202,22 +202,22 @@ enum PhoneComposition {
     }
 
     private static func pruneStaleCoreMLCaches(in cacheRoot: URL, retainingASRHash: String) {
-        var retainedNames: Set<String> = ["sherpa-coreml-v2-\(retainingASRHash)"]
+        var retainedNames = Set(SpeakerSegmentationModel.allCases.map(SpeechModelCache.speaker))
+        retainedNames.insert(SpeechModelCache.recognizer(retainingASRHash))
         for model in PhoneSpeechModelSettings.downloadable {
             if let revision = try? model.catalog()?.revision {
-                retainedNames.insert("sherpa-coreml-v2-\(revision)")
+                retainedNames.insert(SpeechModelCache.recognizer(revision))
             }
         }
-        for model in SpeakerSegmentationModel.allCases {
-            retainedNames.insert("speaker-coreml-v2-\(model.sha256.prefix(16))")
-        }
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: cacheRoot,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else { return }
-        for entry in entries where !retainedNames.contains(entry.lastPathComponent) {
-            try? FileManager.default.removeItem(at: entry)
+        // Legacy caches may contain tens of GB. Only retired namespaces are removed,
+        // so active sessions can start immediately and an interrupted cleanup can retry.
+        Task.detached(priority: .utility) { [retainedNames] in
+            do {
+                try SpeechModelCache.removeObsolete(in: cacheRoot, retaining: retainedNames)
+            } catch {
+                Logger(subsystem: "com.momoagent.ios", category: "SpeechPerformance")
+                    .error("Could not prune obsolete speech model caches: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 }
