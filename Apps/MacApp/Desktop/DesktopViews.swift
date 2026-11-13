@@ -335,7 +335,7 @@ struct DesktopChat: View {
                 .padding(.bottom, isEmpty ? 0 : 8)
                 .zIndex(1)
                 if !isEmpty {
-                    ChatRendererView(snapshot: snapshot, scrollToBottomRequest: composeRevision, isChatVisible: isActive, headerInset: headerOverlap, onReadingPosition: model.rememberReadingPosition,
+                    ChatRendererView(snapshot: snapshot, scrollToBottomRequest: composeRevision, isChatVisible: isActive && !showingActiveTasks && !showingBriefingDetail && previewAttachment == nil, isChatSelected: isActive, headerInset: headerOverlap, onReadingPosition: model.rememberReadingPosition,
                         onAttachment: { id in previewAttachment = store.attachment(id: id) },
                         onRetryMessage: { id in Task { await store.checkAgain(id: id) } })
                         .frame(maxWidth: 780)

@@ -3897,12 +3897,15 @@ class SuperAgentGateway:
                 return web.json_response({"mode": self.bridge.chat_mode()})
             if request.method == "GET" and suffix == "":
                 cfg = read_engine_config(self.data)
+                device = request.headers.get("X-MoMo-Device", "local")
+                read = self.store.db.execute("SELECT through_seq FROM reads WHERE device=?", (device,)).fetchone()
                 return web.json_response(
                     {
                         "conversation_id": self.store.identity["id"],
                         "session_id": self.store.identity["root"],
                         "assistant_id": self.connection["assistant_id"],
                         "instance_id": self.connection["instance_id"],
+                        "read_through": read[0] if read else None,
                         "engine": "superagent",
                         "proactive_mode": cfg["proactive_mode"],
                         "capabilities": {

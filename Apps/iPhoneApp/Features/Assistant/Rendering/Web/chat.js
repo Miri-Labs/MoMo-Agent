@@ -13,7 +13,8 @@
   let previousActivity = 'idle';
   let reduced = false, pageSuspended = false, userScrolling = false, wheelScrolling = false, wheelTimer;
   let restoring = null, restoreEpoch = 0, readingTimer = null, lastReading = null;
-  let focusedRequest = null;
+  let focusedRequest = null, openingChat = false, newMessageBelow = null;
+  const jump = document.querySelector('#jump');
   let referenceNowMs = Date.now(), previousTurnCount = -1;
   const post = (type, value) => window.webkit?.messageHandlers?.chat?.postMessage({ type, value });
   const escape = text => text.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -548,7 +549,7 @@
         window.scrollTo({ top:maximumScrollTop(), behavior:'auto' });
         pin.top = window.scrollY;
       }
-      document.querySelector('#jump').hidden = pin.pinned || maximumScrollTop() - scrollY <= 8;
+      updateJump();
       scheduleReadingPosition();
     });
   }
@@ -569,29 +570,71 @@
     pin.top = scrollY;
   }
   function stopRestoring() { restoring = null; restoreEpoch++; }
+  function messageAnchor(id) {
+    const row = [...root.children].find(node => JSON.parse(node.dataset.sourceIds || '[]').includes(id));
+    return row && ([...row.querySelectorAll('[data-source-message]')].find(node => node.dataset.sourceMessage === id) || row);
+  }
+  function showMessage(id) {
+    const anchor = messageAnchor(id);
+    if (!anchor) return false;
+    stopRestoring(); pin.pinned = false;
+    window.scrollTo({ top:Math.max(0,Math.min(maximumScrollTop(),scrollY + anchor.getBoundingClientRect().top - headerInset() - 16)), behavior:'auto' });
+    pin.top = scrollY;
+    if (maximumScrollTop() - scrollY <= 8) pin.pinned = true;
+    scheduleReadingPosition();
+    return true;
+  }
   function focusNotification(target) {
     if (!target || target.requestID === focusedRequest) return;
-    const row = [...root.children].find(node => JSON.parse(node.dataset.sourceIds || '[]').includes(target.messageID));
-    if (!row) return; // Replay/history may not have reached the requested message yet.
-    const anchor = [...row.querySelectorAll('[data-source-message]')].find(node => node.dataset.sourceMessage === target.messageID) || row;
-    stopRestoring(); pin.pinned = false;
-    window.scrollTo({ top: Math.max(0, Math.min(maximumScrollTop(), scrollY + anchor.getBoundingClientRect().top - headerInset() - 16)), behavior: 'auto' });
-    pin.top = scrollY; focusedRequest = target.requestID;
-    scheduleReadingPosition();
+    openingChat = false;
+    if (showMessage(target.messageID)) focusedRequest = target.requestID;
+  }
+  function openChat() {
+    if (!latest || latest.focus) return;
+    openingChat = true; lastReading = null;
+    stopRestoring();
+    pin.pinned = true;
+    applyChatEntry();
+    follow();
+  }
+  function applyChatEntry() {
+    if (!openingChat) return;
+    if (latest.firstUnreadMessageID && showMessage(latest.firstUnreadMessageID)) {
+      openingChat = false;
+    } else if (latest.chatEntryReady !== false && latest.messages.length && !latest.firstUnreadMessageID) {
+      openingChat = false;
+    }
+  }
+  function updateJump() {
+    jump.hidden = pin.pinned || maximumScrollTop() - scrollY <= 8;
+    if (jump.hidden || (newMessageBelow && messageAnchor(newMessageBelow)?.getBoundingClientRect().bottom <= innerHeight)) newMessageBelow = null;
+    const label = newMessageBelow ? t('新消息') : '';
+    jump.textContent = label ? label + ' ↓' : '↓';
+    jump.classList.toggle('has-new', Boolean(label));
+    jump.setAttribute('aria-label',label || t('回到最新消息'));
   }
   function saveReadingPosition() {
     clearTimeout(readingTimer); readingTimer = null;
-    if (!latest || session === 'new' || restoring) return;
+    if (!latest || session === 'new' || restoring || openingChat) return;
     const top = scrollY;
     // Preserve the last settled position during native overscroll. Do not turn
     // an out-of-bounds visible offset into a seemingly valid persisted anchor.
     if (top < 0 || top > maximumScrollTop()) { scheduleReadingPosition(); return; }
     const anchor = [...root.children].find(node => node.getBoundingClientRect().bottom > headerInset());
-    const visibleMessageIDs = [...root.children].filter(node => {
-      const rect = node.getBoundingClientRect();
-      return rect.height > 0 && rect.bottom > headerInset() && rect.bottom <= innerHeight;
-    }).flatMap(node => JSON.parse(node.dataset.sourceIds || '[]')).slice(-500);
-    const value = { sessionID:session, following:pin.pinned, top, visibleMessageIDs,
+    const visibleMessageIDs = [];
+    for (const row of root.children) {
+      const rect = row.getBoundingClientRect();
+      if (rect.bottom <= headerInset() || rect.top >= innerHeight) continue;
+      const ends = new Map();
+      for (const part of row.querySelectorAll('[data-source-message]')) {
+        if (part.dataset.sourceMessage && part.getBoundingClientRect().height > 0) ends.set(part.dataset.sourceMessage,part);
+      }
+      for (const id of JSON.parse(row.dataset.sourceIds || '[]')) {
+        const bottom = ends.get(id)?.getBoundingClientRect().bottom ?? rect.bottom;
+        if (bottom > headerInset() && bottom <= innerHeight) visibleMessageIDs.push(id);
+      }
+    }
+    const value = { sessionID:session, following:pin.pinned, top, visibleMessageIDs:visibleMessageIDs.slice(-500),
       anchorID:anchor?.dataset.message || null, anchorOffset:anchor ? anchor.getBoundingClientRect().top - headerInset() : 0 };
     const encoded = JSON.stringify(value);
     if (encoded !== lastReading) { lastReading = encoded; post('readingPosition',value); }
@@ -611,6 +654,7 @@
     }
     if (snapshot.sessionID !== session) {
       saveReadingPosition();
+      newMessageBelow = null; openingChat = false;
       session = snapshot.sessionID; views.clear(); root.replaceChildren(); pin.reset(); first = true; focusedRequest = null;
       previousTurnCount = -1; referenceNowMs = Date.now();
       previousBusy = false; previousStopped = false; previousActivity = 'idle';
@@ -626,6 +670,9 @@
         })));
       }
     }
+    const lastIncoming = snapshot.messages.findLast(message => message.role === 'assistant');
+    if (!pin.pinned && latest?.sessionID === session && lastIncoming &&
+        !latest.messages.some(message => message.id === lastIncoming.id)) newMessageBelow = lastIncoming.id;
     latest = snapshot; reduced = !!snapshot.appearance.reduceMotion;
     document.documentElement.dataset.dark = String(snapshot.appearance.dark);
     document.documentElement.dataset.reduceMotion = String(reduced);
@@ -636,7 +683,7 @@
     document.documentElement.style.setProperty('--header-inset', headerInset() + 'px');
     document.documentElement.style.setProperty('--scale',Math.max(.8,Math.min(3.2,snapshot.appearance.scale)));
     renderTurns(first); first = false;
-    focusNotification(snapshot.focus);
+    if (snapshot.focus) focusNotification(snapshot.focus); else applyChatEntry();
   }
   document.addEventListener('click',event => {
     const anchor = event.target.closest('a');
@@ -656,7 +703,7 @@
       setTimeout(() => { if (action.isConnected) { action.replaceChildren(...original); action.setAttribute('aria-label',action.dataset.action === 'copy-code' ? t("复制代码") : t("复制回复")); } },1000);
     }
   });
-  function scrollToBottom() { stopRestoring(); pin.pinned = true; follow(); }
+  function scrollToBottom() { openingChat = false; stopRestoring(); pin.pinned = true; follow(); }
   document.querySelector('#jump').addEventListener('click',scrollToBottom);
   window.addEventListener('scroll',() => {
     if (restoring) return;
@@ -664,13 +711,13 @@
     // requested bottom. Observe both directions so reaching that bottom restores
     // following; upward movement away from it still releases the reading position.
     pin.observe(window.scrollY,window.innerHeight,document.documentElement.scrollHeight);
-    document.querySelector('#jump').hidden = pin.pinned;
+    updateJump();
     scheduleReadingPosition();
   },{ passive:true });
   window.addEventListener('scrollend',saveReadingPosition,{ passive:true });
-  window.addEventListener('wheel',() => { stopRestoring(); wheelScrolling = true; clearTimeout(wheelTimer); wheelTimer = setTimeout(() => { wheelScrolling = false; },300); },{ passive:true });
-  window.addEventListener('touchstart',() => { stopRestoring(); userScrolling = true; },{ passive:true });
-  window.addEventListener('keydown',stopRestoring);
+  window.addEventListener('wheel',() => { openingChat = false; stopRestoring(); wheelScrolling = true; clearTimeout(wheelTimer); wheelTimer = setTimeout(() => { wheelScrolling = false; },300); },{ passive:true });
+  window.addEventListener('touchstart',() => { openingChat = false; stopRestoring(); userScrolling = true; },{ passive:true });
+  window.addEventListener('keydown',() => { openingChat = false; stopRestoring(); });
   const finishTouch = () => { userScrolling = false; };
   window.addEventListener('touchend',finishTouch,{ passive:true });
   window.addEventListener('touchcancel',finishTouch,{ passive:true });
@@ -704,6 +751,6 @@
     pageSuspended = false; brandMotion.resume();
     if (latest) renderTurns(false); else syncActivityMotion();
   });
-  window.MoMoChat = { render, scrollToBottom, saveReadingPosition, suspend };
+  window.MoMoChat = { render, openChat, scrollToBottom, saveReadingPosition, suspend };
   post('ready',true);
 })();

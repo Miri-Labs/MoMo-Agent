@@ -253,6 +253,7 @@ input[type=checkbox] { accent-color: var(--ink); }
 #working:not([hidden]) { display: flex; }
 #bottom { height: 20px; }
 #jump { position: fixed; bottom: 12px; left: calc(50% - 22px); width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper); font-size: 24px; z-index: 2; }
+#jump.has-new { left: 50%; transform: translateX(-50%); width: auto; padding: 0 14px; border-radius: 22px; font-size: 14px; white-space: nowrap; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .activity-mark { width: 32px; height: 28px; flex: none; display: grid; place-items: center; }
 .brand-thinking { display: block; width: 32px; height: 28px; object-fit: contain; background: #000; border-radius: 7px; }

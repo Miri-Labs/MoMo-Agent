@@ -400,6 +400,10 @@ import XCTest
         XCTAssertTrue(valid); XCTAssertFalse(legacy); XCTAssertFalse(invalid)
         let read = await wire.readSeq
         XCTAssertEqual(read, [7])
+        store.background()
+        let restored = try RemoteTaskStore(file: folder.appendingPathComponent("journal.json"), connection: connection, client: client)
+        XCTAssertEqual(restored.lastSeenMessageSequence, 7)
+        XCTAssertEqual(restored.firstUnreadMessageID, store.messages.first { $0.role == "assistant" && $0.sourceSession == nil && $0.seq > 7 }?.id)
         XCTAssertEqual(store.messageCursor, 205)
     }
 

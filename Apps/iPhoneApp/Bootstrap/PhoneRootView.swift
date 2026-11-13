@@ -65,7 +65,7 @@ struct PhoneRootView: View {
                         openMemory: { selectedTab = .memory },
                         speech: runtime.speech,
                         stopPlayback: { await runtime.playback.stop(deactivateImmediately: true) },
-                        chatIsVisible: selectedTab == .chat && !showingSettings)
+                        chatIsVisible: selectedTab == .chat && !showingSettings, chatIsSelected: selectedTab == .chat)
                         .recordingSourceLinks(archive: runtime.archive, playback: runtime.playback)
                 }
             }

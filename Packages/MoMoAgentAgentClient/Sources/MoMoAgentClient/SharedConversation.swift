@@ -5,6 +5,7 @@ public struct SharedConversation: Codable, Sendable, Equatable {
     public let sessionID: String
     public let assistantID: UUID
     public let instanceID: UUID
+    public var readThrough: Int? = nil
     public let capabilities: Capabilities
     public struct Capabilities: Codable, Sendable, Equatable {
         public let sharedConversation: Bool
@@ -26,7 +27,7 @@ public struct SharedConversation: Codable, Sendable, Equatable {
     }
     enum CodingKeys: String, CodingKey {
         case conversationID = "conversation_id", sessionID = "session_id", assistantID = "assistant_id"
-        case instanceID = "instance_id", capabilities
+        case instanceID = "instance_id", readThrough = "read_through", capabilities
     }
 }
 

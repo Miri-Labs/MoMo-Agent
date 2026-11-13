@@ -3,11 +3,18 @@ import WebKit
 import OSLog
 import MoMoContracts
 
+struct ChatScrollRequest: Equatable {
+    enum Destination { case entry, latest }
+    let destination: Destination
+    let id = UUID()
+}
+
 /// Offline presentation surface. It cannot execute agent tools or access provider configuration.
 struct ChatRendererView: View {
     let snapshot: ChatRenderSnapshot
     var scrollToBottomRequest = 0
     var isChatVisible = true
+    var isChatSelected = true
     var headerInset: CGFloat = 0
     var onRegenerate: (String) -> Void = { _ in }
     var onReadingPosition: (ChatReadingPosition) -> Void = { _ in }
@@ -19,10 +26,11 @@ struct ChatRendererView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @ScaledMetric(relativeTo: .body) private var fontSize = Double(PhoneTextStyle.body.size)
-    @State private var scrollRequest = UUID()
+    @State private var scrollRequest = ChatScrollRequest(destination: .entry)
     @State private var renderingFailed = false
     @State private var rendererReady = ChatWebSurface.hasWarmRenderedView
     @State private var nativeFocusedRequest: String?
+    @State private var nativeEntryPlaced = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,8 +44,8 @@ struct ChatRendererView: View {
                 plainTranscript
             } else {
                 ZStack(alignment: .top) {
-                    ChatWebSurface(snapshot: snapshot, scrollToBottomRequest: scrollRequest, dark: colorScheme == .dark,
-                        reduceMotion: reduceMotion, scale: fontSize / Double(PhoneTextStyle.body.size), headerInset: headerInset, active: scenePhase == .active,
+                    ChatWebSurface(snapshot: snapshot, scrollRequest: scrollRequest, dark: colorScheme == .dark,
+                        reduceMotion: reduceMotion, scale: fontSize / Double(PhoneTextStyle.body.size), headerInset: headerInset, active: isChatVisible && scenePhase == .active,
                         failed: { renderingFailed = true }, rendered: { rendererReady = true },
                         recovering: { rendererReady = false },
                         open: { openURL($0) }, regenerate: onRegenerate,
@@ -51,11 +59,11 @@ struct ChatRendererView: View {
         }
         .background(MoMoPalette.canvas)
         .phoneSoftTopEdge()
-        .onChange(of: isChatVisible && scenePhase != .background, initial: true) { _, visible in
-            if visible, snapshot.focus == nil { scrollRequest = UUID() }
+        .onChange(of: isChatSelected) { _, selected in
+            if selected { scrollRequest = ChatScrollRequest(destination: .entry) }
         }
-        .onChange(of: scrollToBottomRequest) { scrollRequest = UUID() }
-        .onChange(of: snapshot.sessionID) { renderingFailed = false }
+        .onChange(of: scrollToBottomRequest) { scrollRequest = ChatScrollRequest(destination: .latest) }
+        .onChange(of: snapshot.sessionID) { renderingFailed = false; scrollRequest = ChatScrollRequest(destination: .entry) }
         .onChange(of: scenePhase) {
             if scenePhase == .active, renderingFailed { rendererReady = false; renderingFailed = false }
         }
@@ -180,11 +188,26 @@ struct ChatRendererView: View {
             #endif
             .accessibilityIdentifier("assistant.nativeTranscript")
             .onChange(of: scrollRequest, initial: true) {
-                if snapshot.focus == nil { reader.scrollTo("composer-bottom", anchor: .bottom) }
+                nativeEntryPlaced = false
+                placeNativeChat(reader)
             }
+            .onChange(of: snapshot.firstUnreadMessageID) { placeNativeChat(reader) }
+            .onChange(of: snapshot.chatEntryReady) { placeNativeChat(reader) }
+            .simultaneousGesture(DragGesture().onChanged { _ in nativeEntryPlaced = true })
             .onChange(of: snapshot.focus, initial: true) { _, _ in focusNativeMessage(reader) }
             .onChange(of: snapshot.messages.count) { _, _ in focusNativeMessage(reader) }
             }
+        }
+    }
+
+    private func placeNativeChat(_ reader: ScrollViewProxy) {
+        guard !nativeEntryPlaced, isChatVisible, snapshot.focus == nil else { return }
+        if scrollRequest.destination == .entry, let id = snapshot.firstUnreadMessageID {
+            reader.scrollTo(id, anchor: .top)
+            nativeEntryPlaced = true
+        } else {
+            reader.scrollTo("composer-bottom", anchor: .bottom)
+            nativeEntryPlaced = scrollRequest.destination == .latest || snapshot.chatEntryReady
         }
     }
 
@@ -205,7 +228,7 @@ private typealias ChatWebRepresentable = NSViewRepresentable
         let resourceDirectory: URL
         let documentID: UUID
         let sent: ChatRenderPayload?
-        let sentScroll: UUID?
+        let sentScroll: ChatScrollRequest?
         let didRender: Bool
     }
     static var entry: Entry?
@@ -228,7 +251,7 @@ private struct ChatWebSurface: ChatWebRepresentable {
     }
 
     let snapshot: ChatRenderSnapshot
-    let scrollToBottomRequest: UUID
+    let scrollRequest: ChatScrollRequest
     let dark: Bool
     let reduceMotion: Bool
     let scale: Double
@@ -319,8 +342,9 @@ private struct ChatWebSurface: ChatWebRepresentable {
         context.coordinator.systemAction = systemAction
         context.coordinator.attachment = attachment
         context.coordinator.retryMessage = retryMessage
-        context.coordinator.setActive(active)
-        context.coordinator.update(.init(snapshot: snapshot, appearance: .init(dark: dark, reduceMotion: reduceMotion, scale: scale, headerInset: headerInset)), scrollRequest: scrollToBottomRequest)
+        if !active { context.coordinator.setActive(false) }
+        context.coordinator.update(.init(snapshot: snapshot, appearance: .init(dark: dark, reduceMotion: reduceMotion, scale: scale, headerInset: headerInset)), scrollRequest: scrollRequest)
+        if active { context.coordinator.setActive(true) }
     }
 
     private func configureBackground(_ web: WKWebView) {
@@ -416,8 +440,8 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
     private var pending: ChatRenderPayload?
     private var sent: ChatRenderPayload?
     private var sending = false
-    private var pendingScroll: UUID?
-    private var sentScroll: UUID?
+    private var pendingScroll: ChatScrollRequest?
+    private var sentScroll: ChatScrollRequest?
     private var lastFlushTime: ContinuousClock.Instant?
     private var coalescedFlushTask: Task<Void, Never>?
 
@@ -428,7 +452,7 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
         self.systemAction = systemAction
     }
 
-    func update(_ payload: ChatRenderPayload, scrollRequest: UUID? = nil) {
+    func update(_ payload: ChatRenderPayload, scrollRequest: ChatScrollRequest? = nil) {
         pending = payload; pendingScroll = scrollRequest
         scheduleFlush()
     }
@@ -533,8 +557,11 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
             // Structured arguments keep model text out of executable JavaScript.
             // Rendering updates the DOM synchronously. An opacity-zero WKWebView can suspend
             // animation frames, so waiting for one before revealing it deadlocks first paint.
-            let script = "if (payloadJSON) window.MoMoChat.render(JSON.parse(payloadJSON)); if (scrollToBottom) window.MoMoChat.scrollToBottom();"
-            webView.callAsyncJavaScript(script, arguments: ["payloadJSON": payloadJSON, "scrollToBottom": scroll != sentScroll && payload.snapshot.focus == nil],
+            let requestChanged = scroll != sentScroll
+            let script = "if (payloadJSON) MoMoChat.render(JSON.parse(payloadJSON)); if (openChat) MoMoChat.openChat(); if (latest) MoMoChat.scrollToBottom();"
+            webView.callAsyncJavaScript(script, arguments: ["payloadJSON": payloadJSON,
+                "openChat": requestChanged && scroll?.destination == .entry,
+                "latest": requestChanged && scroll?.destination == .latest && payload.snapshot.focus == nil],
                 in: nil, in: .page, completionHandler: { [weak self] result in
                 guard let self, self.webView === webView, document == self.documentID else { return }
                 sending = false
@@ -605,7 +632,7 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
     }
 
     func receiveReadingPosition(_ value: [String: Any]) {
-        guard let rawID = value["sessionID"] as? String, let id = UUID(uuidString: rawID),
+        guard active, let rawID = value["sessionID"] as? String, let id = UUID(uuidString: rawID),
               let snapshot = [pending?.snapshot, sent?.snapshot].compactMap({ $0 }).first(where: { $0.sessionID == rawID }),
               let following = value["following"] as? Bool,
               let top = value["top"] as? Double, let offset = value["anchorOffset"] as? Double else { return }

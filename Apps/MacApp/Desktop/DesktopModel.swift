@@ -1011,7 +1011,14 @@ final class DesktopModel {
             _ = await control("pair/invite")
         }
     }
-    func rememberReadingPosition(_ position: ChatReadingPosition) { readingPosition = position }
+    func rememberReadingPosition(_ position: ChatReadingPosition) {
+        readingPosition = position
+        guard let store = taskStore, position.sessionID == store.connection.assistantID else { return }
+        let visible = Set(position.visibleMessageIDs ?? [])
+        if let seq = store.messages.last(where: { $0.sourceSession == nil && visible.contains($0.id) })?.seq {
+            Task { await store.markVisibleMessagesRead(through: seq) }
+        }
+    }
 
     func prepareDesktop() {
         guard desktopHost == nil, !key.isEmpty, let port = connection?.baseURL.port else { return }
