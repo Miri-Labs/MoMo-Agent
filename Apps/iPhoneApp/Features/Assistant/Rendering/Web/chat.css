@@ -168,8 +168,9 @@ button[hidden], [hidden] { display: none !important; }
 .assistant > .actions { max-width: 85%; }
 .assistant .prose { width:fit-content; max-width:100%; box-sizing:border-box; padding:10px 16px; background:var(--surface); border-radius:22px; }
 .user-message-row { display:flex; align-items:center; justify-content:flex-end; gap:8px; min-width:0; }
-.delivery-retry { flex:0 0 44px; width:44px; height:44px; padding:0; border:0; color:var(--paper); background:none; display:grid; place-items:center; cursor:pointer; }
-.delivery-symbol { width:20px; height:20px; border-radius:50%; background:var(--failure); font:700 14px/20px var(--ui); text-align:center; }
+.delivery-failure { display:flex; align-items:baseline; justify-content:flex-end; gap:8px; max-width:100%; color:var(--failure); font:.8125rem/1.4 var(--ui); text-align:end; }
+.delivery-error { overflow-wrap:anywhere; }
+.delivery-retry { flex:none; min-height:44px; padding:0 4px; border:0; color:inherit; background:none; font:inherit; text-decoration:underline; cursor:pointer; }
 .read-receipt { position:absolute; top:calc(100% + 2px); right:0; height:16px; color:var(--tertiary, var(--muted)); font:12px/16px var(--ui); text-align:end; user-select:none; pointer-events:none; opacity:0; transition:opacity .3s cubic-bezier(.19,1,.22,1); }
 .read-receipt[aria-hidden=false] { opacity:1; }
 :root[data-reduce-motion=true] .read-receipt { transition:none; }

@@ -43,7 +43,7 @@ final class TimelineReadingIntegrationTests: XCTestCase {
         var jumps: [UUID] = []
         window.rootViewController = UIHostingController(rootView: NavigationStack {
             TimelineDetailView(id: id, library: model, playback: playback, transcription: nil, speechFailure: nil,
-                retryTimeline: nil, canDiscuss: false, discuss: { _ in }, initialMarkID: mark.markID,
+                retryTimeline: nil, canDiscuss: false, discuss: { _, _ in }, initialMarkID: mark.markID,
                 readingPositionObserver: { event in
                     observation = event
                     if event.event == "scrollTo", let target = event.spanID { jumps.append(target) }
@@ -153,7 +153,7 @@ final class TimelineReadingIntegrationTests: XCTestCase {
         defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKey() }
         window.rootViewController = UIHostingController(rootView: NavigationStack {
             TimelineDetailView(id: id, library: model, playback: playback, transcription: nil, speechFailure: nil,
-                retryTimeline: nil, canDiscuss: false, discuss: { _ in })
+                retryTimeline: nil, canDiscuss: false, discuss: { _, _ in })
         })
         window.makeKeyAndVisible()
         try await wait(in: window, stage: "performance-visible-text") {
@@ -328,7 +328,7 @@ final class TimelineReadingIntegrationTests: XCTestCase {
             let current = incarnation
             window.rootViewController = UIHostingController(rootView: NavigationStack {
                 TimelineDetailView(id: id, library: model, playback: playback, transcription: nil, speechFailure: nil,
-                    retryTimeline: nil, canDiscuss: false, discuss: { _ in }, readingPositionObserver: { [weak window] event in
+                    retryTimeline: nil, canDiscuss: false, discuss: { _, _ in }, readingPositionObserver: { [weak window] event in
                         observations[current] = event
                         if let spanID = event.spanID {
                             if let frame = event.frame {

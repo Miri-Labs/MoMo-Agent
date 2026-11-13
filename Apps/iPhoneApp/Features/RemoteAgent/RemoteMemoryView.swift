@@ -472,15 +472,8 @@ private struct RemoteMemoryDetail: View {
         submittingInstruction = true
         instructionError = nil
 
-        let previousDraft = store.draft
-        store.setDraft(fullPrompt)
-        defer {
-            if !previousDraft.isEmpty {
-                store.setDraft(previousDraft)
-            }
-        }
         do {
-            try store.enqueue()
+            try store.enqueueIndependentMessage(fullPrompt)
             instructionDraft = ""
             instructionFieldFocused = false
             withAnimation(.easeInOut(duration: 0.16)) {

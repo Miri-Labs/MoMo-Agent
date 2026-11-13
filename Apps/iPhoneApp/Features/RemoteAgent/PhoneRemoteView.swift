@@ -175,7 +175,7 @@ private struct RemoteConversationView: View {
         let snapshot = ChatRenderSnapshot(store: store, readingPosition: agent.readingPosition,
             notificationTarget: agent.notifications.focusedTarget)
         let isEmpty = store.isEmpty || snapshot.messages.isEmpty
-        let draftEmpty = store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let draftEmpty = store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && store.draftAttachments.isEmpty
         VStack(spacing: 0) {
             if isEmpty {
                 identityHeader(isEmpty: true)
@@ -192,9 +192,8 @@ private struct RemoteConversationView: View {
                     dismissedIDs: $dismissedBriefingCardIDs,
                     compact: !isEmpty,
                     onSelectCard: { card in
-                        store.setDraft(card.prompt)
                         do {
-                            try store.enqueue()
+                            try store.enqueueIndependentMessage(card.prompt)
                             sendFailure = nil
                             composeRevision += 1
                             Task { await store.refresh(userInitiated: true) }
@@ -211,7 +210,9 @@ private struct RemoteConversationView: View {
             RemoteTaskControlsView(store: store, viewport: viewport, onControlVisibility: agent.notifications.controlVisible,
                                    openDesktop: openDesktop)
             RemoteTaskRecoveryView(store: store, reconnect: reconnect, retry: { await agent.reconnect() })
-            if let failure = sendFailure ?? store.interactionFailure { Text(failure).foregroundStyle(.red).font(.footnote) }
+            if let failure = agent.recordingReferenceFailure ?? sendFailure ?? store.interactionFailure {
+                Text(failure).foregroundStyle(.red).font(.footnote)
+            }
         }
         .onChange(of: agent.notifications.navigationRevision) { _, _ in
             if agent.notifications.focusedTarget?.messageID == nil { composeRevision += 1 }
@@ -272,7 +273,7 @@ private struct RemoteConversationView: View {
             return .handled
         })
         .safeAreaInset(edge: .bottom) {
-            ClientComposer(text: Binding(get: { store.draft }, set: store.setDraft),
+            ClientComposer(text: Binding(get: { store.draft }, set: { store.setDraft($0) }),
                            store: store,
                            prompt: "发消息给 MoMo",
                            onCompose: { composeRevision += 1 },
@@ -291,7 +292,14 @@ private struct RemoteConversationView: View {
             isChatSelected: chatIsSelected, headerInset: headerInset,
             onReadingPosition: agent.rememberReadingPosition,
             onAttachment: { id in previewAttachment = store.attachment(id: id) },
-            onRetryMessage: { id in Task { await store.checkAgain(id: id) } })
+            onRetryMessage: { id in
+                do {
+                    if try store.reselectRecording(id: id) {
+                        sendFailure = nil
+                        openLibrary()
+                    } else { Task { await store.checkAgain(id: id) } }
+                } catch { sendFailure = error.localizedDescription }
+            })
     }
 
     private func identityHeader(isEmpty: Bool) -> some View {

@@ -8,6 +8,7 @@ struct PhoneRootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab: PhoneTab = .chat
     @State private var showingSettings = false
+    @State private var discussionRequest: UUID?
 
     var body: some View {
         Group {
@@ -80,7 +81,7 @@ struct PhoneRootView: View {
                         canDiscuss: runtime.remoteAgent.store != nil,
                         discuss: { discuss([$0]) }, illustrations: runtime.lifeIllustrations, openSettings: { showingSettings = true },
                         retryTranscription: { try await runtime.retryTranscription(sessionID: $0, expectedGeneration: $1) },
-                        discussSources: discuss,
+                        discussSources: { sources, window in discuss(sources, window: window) },
                         retryTimeline: { try await runtime.retryTimeline($0) },
                         continueInBackground: runtime.supportsTranscriptionContinuation
                             ? { try await runtime.continueTranscriptionInBackground() } : nil,
@@ -96,8 +97,7 @@ struct PhoneRootView: View {
                         RemoteMemoryView(sync: sync, taskStore: runtime.remoteAgent.store) { card in
                             selectedTab = .chat
                             if let store = runtime.remoteAgent.store {
-                                store.setDraft(card.prompt)
-                                try? store.enqueue()
+                                try? store.enqueueIndependentMessage(card.prompt)
                                 Task { await store.refresh(userInitiated: true) }
                             }
                         }
@@ -149,11 +149,22 @@ struct PhoneRootView: View {
         runtime.remoteAgent.notifications.chatVisible = selectedTab == .chat && !showingSettings && scenePhase == .active
     }
 
-    private func discuss(_ sources: [SourceReference]) {
+    private func discuss(_ sources: [SourceReference], window: TimelineWindow? = nil) {
+        let request = UUID()
+        discussionRequest = request
         selectedTab = .chat
         Task {
             let resolved = await runtime.prepareSourcesForDiscussion(sources)
-            runtime.remoteAgent.selectSources(resolved)
+            guard discussionRequest == request, selectedTab == .chat else { return }
+            let title: String
+            if let window {
+                let start = TimelineDate.time(window.id.start, offset: window.id.timezoneOffset)
+                let end = TimelineDate.time(window.end, offset: window.id.timezoneOffset)
+                title = String(localized: "录音 · \(start)–\(end)")
+            } else {
+                title = String(localized: "录音引用")
+            }
+            runtime.remoteAgent.selectSources(resolved, title: title)
         }
     }
 }

@@ -23,7 +23,7 @@ struct LibraryView: View {
     var illustrations: LifeIllustrationStore? = nil
     var openSettings: (() -> Void)? = nil
     var retryTranscription: ((UUID, Int64) async throws -> Void)? = nil
-    var discussSources: (([SourceReference]) -> Void)? = nil
+    var discussSources: (([SourceReference], TimelineWindow) -> Void)? = nil
     var retryTimeline: ((TimelineRetryRequest) async throws -> Void)? = nil
     var continueInBackground: (() async throws -> Void)? = nil
     var hasBackgroundContinuation = false
@@ -82,8 +82,8 @@ struct LibraryView: View {
         .navigationDestination(item: $selectedWindow) { destination in
             TimelineDetailView(id: destination.windowID, library: model, playback: playback,
                 transcription: transcription, speechFailure: speechFailure,
-                retryTimeline: retryTimeline, canDiscuss: canDiscuss, discuss: { sources in
-                    if let discussSources { discussSources(sources) }
+                retryTimeline: retryTimeline, canDiscuss: canDiscuss, discuss: { sources, window in
+                    if let discussSources { discussSources(sources, window) }
                     else if let first = sources.first { discuss(first) }
                 }, initialMarkID: destination.markID, onSpeakersChanged: onSpeakersChanged,
                 resolveFiles: resolveFiles, openRecording: { openRecording($0) },

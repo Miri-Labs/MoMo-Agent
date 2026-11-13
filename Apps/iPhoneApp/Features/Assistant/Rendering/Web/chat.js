@@ -397,22 +397,31 @@
           if (!hydrated && firstBubble && !replacingOutgoing) bubble.classList.add('user-enter');
           if (turn.text) {
             const row = element('div','user-message-row'); row.append(bubble);
-            view.userRow = row;
             nodes.push(row);
           }
           view.parts.replaceChildren(...nodes);
         }
-        // Delivery metadata patches the existing bubble; it must never restart its entrance animation.
-        let retry = view.userRow?.querySelector('.delivery-retry');
-        if (turn.delivery === 'failed' && view.userRow) {
-          if (!retry) {
-            retry = element('button','delivery-retry'); retry.type = 'button'; retry.append(element('span','delivery-symbol','!'));
-            retry.setAttribute('aria-label',t('发送失败，点击重试'));
+        // Patch delivery details separately to preserve the bubble and attachment cards.
+        let failure = view.parts.querySelector('.delivery-failure');
+        if (turn.delivery === 'failed') {
+          if (!failure) {
+            failure = element('div','delivery-failure');
+            failure.setAttribute('data-markdown-copy','exclude');
+            const reason = element('span','delivery-error');
+            const retry = element('button','delivery-retry');
+            retry.type = 'button';
             retry.addEventListener('click',() => post('retryMessage',{turnID:retry.dataset.turn,sessionID:latest.sessionID}));
-            view.userRow.append(retry);
+            failure.append(reason, retry);
+            view.parts.insertBefore(failure,view.parts.querySelector('.read-receipt'));
           }
-          retry.dataset.turn = turn.turnID; retry.title = turn.deliveryError || t('发送失败');
-        } else { retry?.remove(); }
+          const [reason,retry] = failure.children;
+          const error = turn.deliveryError || t('发送失败');
+          const action = turn.deliveryAction || t('重试');
+          if (reason.textContent !== error) reason.textContent = error;
+          if (retry.textContent !== action) retry.textContent = action;
+          retry.dataset.turn = turn.turnID;
+          retry.setAttribute('aria-label',turn.deliveryAction || t('发送失败，点击重试'));
+        } else { failure?.remove(); }
         // Dots keeps the receipt independent of the outgoing bubble and animates
         // only its opacity (initial:false). Its reserved space must not reflow history.
         let receipt = view.parts.querySelector('.read-receipt');

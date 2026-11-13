@@ -16,10 +16,12 @@ import os
 from pathlib import Path
 import re
 import socket
+import sqlite3
 import sys
 import time
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 import urllib.request
+import uuid
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 if str(REPOSITORY / "Apps/MacApp/Runtime") not in sys.path:
@@ -109,6 +111,35 @@ def _cmd_recording(data: Path, args: argparse.Namespace) -> dict:
         return result
     finally:
         store.close()
+
+
+def _cmd_recording_reference(data: Path, args: argparse.Namespace) -> dict:
+    operation = str(uuid.UUID(args.operation_id))
+    if args.offset < 0 or not 1 <= args.limit <= 100:
+        raise ValueError("Use a nonnegative offset and a limit between 1 and 100 spans")
+    db_path = data / "runtime/conversation.sqlite"
+    with contextlib.closing(sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True)) as db:
+        row = db.execute("SELECT attachments_json FROM inputs WHERE operation_id=?", (operation,)).fetchone()
+    attachments = json.loads(row[0] or "[]") if row else []
+    reference = next((item["recording"] for item in attachments if "recording" in item), None)
+    if reference is None:
+        raise ValueError("Recording reference not found for this operation")
+    from context_store import Conflict
+    with contextlib.closing(_open_context(data)) as store:
+        try:
+            spans = store.recording_reference_spans(reference)
+        except Conflict as error:
+            raise ValueError("recording_reference_changed") from error
+    page = []
+    text_bytes = 0
+    for span in spans[args.offset:args.offset + args.limit]:
+        size = len(span["text"].encode("utf-8"))
+        if page and text_bytes + size > 12_000:
+            break
+        page.append(span)
+        text_bytes += size
+    end = args.offset + len(page)
+    return {"spans": page, "next_offset": end if end < len(spans) else None}
 
 
 def _cmd_search(data: Path, args: argparse.Namespace) -> dict:
@@ -267,7 +298,6 @@ def _cmd_pim(data: Path, args: argparse.Namespace) -> dict:
 
 
 def _cmd_conversation(data: Path, args: argparse.Namespace) -> dict:
-    import sqlite3
     db_path = data / "runtime/conversation.sqlite"
     if not db_path.is_file():
         return {"current_local_time": _local_dt(time.time()), "messages": []}
@@ -526,6 +556,11 @@ def main() -> int:
     rec_read.add_argument("--offset", type=int, default=0)
     rec_read.add_argument("--limit", type=int, default=12000)
 
+    rec_reference = sub.add_parser("recording-reference", help="Read selected recording spans for a chat operation")
+    rec_reference.add_argument("operation_id")
+    rec_reference.add_argument("--offset", type=int, default=0)
+    rec_reference.add_argument("--limit", type=int, default=50)
+
     rec_search = sub.add_parser("search", help="Search voice recording transcripts")
     rec_search.add_argument("query")
     rec_search.add_argument("--limit", type=int, default=20)
@@ -603,6 +638,7 @@ def main() -> int:
         "recordings": _cmd_recordings,
         "life-illustrations": _cmd_life_illustrations,
         "recording": _cmd_recording,
+        "recording-reference": _cmd_recording_reference,
         "search": _cmd_search,
         "save-result": _cmd_save_recording_result,
         "phone-context": _cmd_phone_context,

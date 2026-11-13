@@ -16,6 +16,7 @@ public struct SharedConversation: Codable, Sendable, Equatable {
         public var messageIdempotency: AgentCapabilities.Features.Idempotency? = nil
         public var messageStreaming: Bool? = nil
         public var conversationEvents: Bool? = nil
+        public var recordingReferences: Bool? = nil
         enum CodingKeys: String, CodingKey {
             case sharedConversation = "shared_conversation", serverOwnedCompletion = "server_owned_completion"
             case durableSteering = "durable_steering", independentChatWhileWaiting = "independent_chat_while_waiting"
@@ -23,6 +24,7 @@ public struct SharedConversation: Codable, Sendable, Equatable {
             case messageIdempotency = "message_idempotency"
             case messageStreaming = "message_streaming"
             case conversationEvents = "conversation_events"
+            case recordingReferences = "recording_references"
         }
     }
     enum CodingKeys: String, CodingKey {
@@ -306,7 +308,7 @@ extension AgentClient {
         var value: [String: Any] = ["operation_id": operationID.uuidString.lowercased(), "content": input, "intent": targetRunID == nil ? "new" : "steer"]
         if let targetRunID, let generation { value["target_run_id"] = targetRunID; value["execution_generation"] = generation; value["work_id"] = workID }
         if let attachments, !attachments.isEmpty {
-            value["attachments"] = attachments.map { item -> [String: Any] in
+            value["attachments"] = try attachments.map { item -> [String: Any] in
                 var dict: [String: Any] = [
                     "id": item.id.uuidString.lowercased(),
                     "name": item.name,
@@ -317,6 +319,9 @@ extension AgentClient {
                 if let data = item.data { dict["data"] = data.base64EncodedString() }
                 if let text = item.text { dict["text"] = text }
                 if let preview = item.preview { dict["preview"] = preview.base64EncodedString() }
+                if let recording = item.recording {
+                    dict["recording"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recording))
+                }
                 return dict
             }
         }

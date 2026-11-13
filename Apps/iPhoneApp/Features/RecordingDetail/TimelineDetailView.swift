@@ -10,7 +10,7 @@ struct TimelineDetailView: View {
     let speechFailure: String?
     let retryTimeline: ((TimelineRetryRequest) async throws -> Void)?
     let canDiscuss: Bool
-    let discuss: ([SourceReference]) -> Void
+    let discuss: ([SourceReference], TimelineWindow) -> Void
     var initialMarkID: UUID? = nil
     var onSpeakersChanged: (() async -> Void)? = nil
     var resolveFiles: ((RecordingFileIssue, RecordingFileRecoveryAction) async throws -> Void)? = nil
@@ -190,8 +190,8 @@ struct TimelineDetailView: View {
         .watchStatusRefresh(requestWatchStatus)
         .navigationTitle("转录详情").navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-            if window != nil, !references.isEmpty {
-                TranscriptDiscussAction(title: String(localized: "围绕这段时间提问"), enabled: canDiscuss) { discuss(references) }
+            if let window, !references.isEmpty {
+                TranscriptDiscussAction(title: String(localized: "围绕这段时间提问"), enabled: canDiscuss) { discuss(references, window) }
             }
         }
         .task(id: loadIdentity) { await load() }
@@ -424,7 +424,7 @@ struct TimelineDetailView: View {
         }
         readableSpans = Set(paragraphs.map(\.id))
         readingOrder = Dictionary(uniqueKeysWithValues: paragraphs.enumerated().map { ($0.element.id, $0.offset) })
-        references = paragraphs.map(\.source)
+        references = paragraphs.flatMap(\.sources)
         if pendingReadingRestore != nil, readingLayout != loaded.layout {
             issuedReadingRestore = nil
             readyReadingRestore = nil

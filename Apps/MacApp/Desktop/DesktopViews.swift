@@ -362,7 +362,7 @@ struct DesktopChat: View {
             if let store = model.taskStore {
                 let snapshot = ChatRenderSnapshot(store: store, readingPosition: model.readingPosition)
                 let isEmpty = store.isEmpty || snapshot.messages.isEmpty
-                let draftEmpty = store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                let draftEmpty = store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && store.draftAttachments.isEmpty
                 VStack(spacing: isEmpty ? 18 : 6) {
                     PersonalAgentSlot(size: isEmpty ? 144 : 56, active: isActive && store.hasActiveTask, expression: store.hasActiveTask ? .thinking : .present)
                     PhoneBrandWordmark(.momo, size: isEmpty ? 22 : 12)
@@ -375,7 +375,14 @@ struct DesktopChat: View {
                 if !isEmpty {
                     ChatRendererView(snapshot: snapshot, scrollToBottomRequest: composeRevision, isChatVisible: isActive && !showingActiveTasks && !showingBriefingDetail && previewAttachment == nil, isChatSelected: isActive, headerInset: headerOverlap, onReadingPosition: model.rememberReadingPosition,
                         onAttachment: { id in previewAttachment = store.attachment(id: id) },
-                        onRetryMessage: { id in Task { await store.checkAgain(id: id) } })
+                        onRetryMessage: { id in
+                            do {
+                                if try store.reselectRecording(id: id) {
+                                    model.failure = nil
+                                    model.selection = "sources"
+                                } else { Task { await store.checkAgain(id: id) } }
+                            } catch { model.failure = error.localizedDescription }
+                        })
                         .frame(maxWidth: 780)
                         .padding(.top, -headerOverlap)
                 }
@@ -386,9 +393,8 @@ struct DesktopChat: View {
                         dismissedIDs: $dismissedBriefingCardIDs,
                         compact: !isEmpty,
                         onSelectCard: { card in
-                            store.setDraft(card.prompt)
                             do {
-                                try store.enqueue()
+                                try store.enqueueIndependentMessage(card.prompt)
                                 composeRevision += 1
                                 Task { await store.refresh(userInitiated: true) }
                             } catch {

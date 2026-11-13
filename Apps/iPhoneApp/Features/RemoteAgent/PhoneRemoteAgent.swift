@@ -370,10 +370,40 @@ final class PhoneRemoteAgent {
         notifications.rendered(messageIDs: visible, failedRunIDs: Set(visible.filter { $0.hasPrefix("run-status-") }.map { String($0.dropFirst(11)) }))
     }
 
-    func selectSources(_ sources: [SourceReference]) {
-        // Source selection is a draft, never permission to execute transcript instructions.
-        let references = sources.map(\.citationURL).joined(separator: "\n")
-        store?.setDraft(String(localized: "请根据这些录音稿帮我梳理要做的事：\n") + references)
+    private(set) var recordingReferenceFailure: String?
+
+    func selectSources(_ sources: [SourceReference], title: String) {
+        guard let store, !sources.isEmpty else { return }
+        let grouped = Dictionary(grouping: sources, by: \.sessionID)
+        var sessions: [AgentAttachment.RecordingReference.Session] = []
+        for (id, references) in grouped.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+            guard let first = references.first,
+                  references.allSatisfy({ $0.transcriptVersion == first.transcriptVersion && $0.generation == first.generation }) else {
+                recordingReferenceFailure = PhoneContextSync.SyncError.sourceChanged.localizedDescription
+                return
+            }
+            sessions.append(.init(sessionID: id, version: first.transcriptVersion, generation: first.generation,
+                                  spanIDs: Set(references.map(\.spanID)).sorted { $0.uuidString < $1.uuidString }))
+        }
+        let reference = AgentAttachment.RecordingReference(libraryID: archive.libraryInstanceID, sessions: sessions)
+        let attachment = AgentAttachment(name: title, kind: .document, mediaType: "application/vnd.momo.recording-reference",
+                                         byteCount: 0, recording: reference)
+        let oldHeader = String(localized: "请根据这些录音稿帮我梳理要做的事：\n")
+        let oldDraft = store.draft
+        let generated = oldDraft.hasPrefix(oldHeader) && oldDraft.dropFirst(oldHeader.count)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .allSatisfy { line in
+                guard let url = URL(string: String(line)) else { return false }
+                return RecordingSourceURL.source(for: url) != nil
+            }
+        do {
+            try store.setRecordingAttachment(attachment, replacingDraft: generated ? "" : nil)
+            recordingReferenceFailure = nil
+        } catch is AttachmentError {
+            recordingReferenceFailure = String(localized: "无法添加录音引用，请检查附件数量或重新选择较短的录音。")
+        } catch {
+            recordingReferenceFailure = error.localizedDescription
+        }
     }
 
     private func transport(for connection: AgentConnection) throws -> (any AgentTransport)? {
@@ -418,7 +448,9 @@ final class PhoneRemoteAgent {
         sync.recordingSummaries?.onChanged = { [weak self] in self?.onSummariesChanged?() }
         health?.onAuthenticationRequired = { [weak tasks] error in tasks?.recordConnectionFailure(error) }
         sources?.onAuthenticationRequired = { [weak tasks] error in tasks?.recordConnectionFailure(error) }
-        tasks.prepareSubmission = { task in try await sync.prepareSubmission(input: task.input) }
+        tasks.prepareSubmission = { task in
+            try await sync.prepareSubmission(input: task.input, attachments: task.attachments ?? [])
+        }
         if let endpoint = connection.dataURL {
             let dataClient = try AgentClient(baseURL: endpoint, credential: key, assistantID: connection.assistantID, transport: route)
             lifeIllustrations.configure(client: dataClient, scope: connection.workspaceID.uuidString)

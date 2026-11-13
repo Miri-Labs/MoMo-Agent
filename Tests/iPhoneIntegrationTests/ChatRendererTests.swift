@@ -8,6 +8,61 @@ import MoMoAgentClient
 
 @MainActor
 final class ChatRendererTests: XCTestCase {
+    func testRecordingDeliveryFailureShowsReasonAndActionBelowAttachmentOnlyOrTextMessage() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("tasks.json")
+        let connection = AgentConnection(workspaceID: UUID(), assistantID: UUID(), instanceID: UUID(),
+                                         baseURL: URL(string: "https://unsent.invalid")!)
+        let client = try AgentClient(baseURL: connection.baseURL, credential: "fixture", assistantID: connection.assistantID)
+        let store = try RemoteTaskStore(file: file, connection: connection, client: client)
+        let recording = AgentAttachment(name: "录音卡", kind: .document, mediaType: "application/vnd.momo.recording-reference",
+                                        byteCount: 0, recording: .init(libraryID: UUID(), sessions: [
+                                            .init(sessionID: UUID(), version: 1, generation: 0, spanIDs: [UUID()])
+                                        ]))
+        try store.setRecordingAttachment(recording)
+        let upgrade = try store.enqueue()
+        store.setDraft("录音里说了什么？")
+        try store.setRecordingAttachment(recording)
+        let changed = try store.enqueue()
+
+        var journal = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        var tasks = try XCTUnwrap(journal["tasks"] as? [[String: Any]])
+        tasks[0]["deliveryFailure"] = "macUpgradeRequired"
+        tasks[0]["needsReview"] = true
+        tasks[0]["lastError"] = "Mac 端需要更新"
+        tasks[1]["deliveryFailure"] = "recordingReferenceChanged"
+        tasks[1]["needsReview"] = true
+        tasks[1]["lastError"] = "录音已变化"
+        journal["tasks"] = tasks
+        try JSONSerialization.data(withJSONObject: journal).write(to: file)
+        let reopened = try RemoteTaskStore(file: file, connection: connection, client: client)
+        let renderer = try RendererHarness()
+        defer { renderer.close() }
+        var actions: [UUID] = []
+        renderer.coordinator.retryMessage = { actions.append($0) }
+        try await renderer.ready()
+        renderer.coordinator.update(.init(snapshot: .init(store: reopened), appearance: .init(dark: false, reduceMotion: true, scale: 1)))
+        try await renderer.wait("document.querySelectorAll('.delivery-failure').length === 2")
+        try await renderer.check("""
+        (() => {
+          const [upgrade, changed] = document.querySelectorAll('.delivery-failure');
+          return upgrade.previousElementSibling.classList.contains('message-attachments') &&
+                 changed.previousElementSibling.classList.contains('user-message-row') &&
+                 upgrade.querySelector('.delivery-error').textContent === 'Mac 端需要更新' &&
+                 changed.querySelector('.delivery-error').textContent === '录音已变化' &&
+                 [upgrade, changed].every(row => row.getBoundingClientRect().height > 0 &&
+                   row.querySelector('button').getBoundingClientRect().height >= 44);
+        })()
+        """)
+        _ = try await renderer.web.evaluateJavaScript("document.querySelectorAll('.delivery-retry').forEach(button => button.click()); true")
+        for _ in 0..<30 {
+            if actions.count == 2 { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(actions, [upgrade, changed])
+    }
+
     func testInterleavedCompletionsNeverRebuildOrAnimateHistoryOnRefresh() async throws {
         let renderer = try RendererHarness()
         defer { renderer.close() }
