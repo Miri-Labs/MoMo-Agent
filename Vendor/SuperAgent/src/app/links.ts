@@ -51,6 +51,10 @@ function referencedTickets(host: LinkHost, trigger: Trigger, known: readonly Tic
   for (const ticket of known) ids.delete(ticket.id)
   return [...ids].flatMap(id => host.store.tickets.get(id) ?? []).slice(0, 4)
 }
+const CREATOR_NEXT_ACTION = "The owner selected Creator mode. Feedback about MoMo's future behavior can request a lasting change, including which sources it watches. "
+  + "Use existing settings for a requested rule or source change when they suffice. For a missing capability, accept a fresh ticket with orchestrator_route "
+  + "so the Creator worker can build and verify it. Answer a one-off question normally."
+
 /** Builds the main Session's candidate card with routing metadata, handback history, and related or referenced tickets. */
 export async function candidateCard(host: LinkHost, candidate: Candidate) {
   const primary = candidate.triggers.at(-1)!
@@ -66,7 +70,7 @@ export async function candidateCard(host: LinkHost, candidate: Candidate) {
     mode: settings.eval.mode, ...others.length ? { batch: others.map(trigger => triggerCard(trigger)) } : {},
     ...handedBack.length ? { handed_back: handedBack } : {}, ...relatedTickets(candidate.tickets),
     ...(delivered.length ? { delivered_to: delivered } : {}), ...(referenced.length ? { referenced_tickets: referenced.map(ticketCard) } : {}),
-    next_action: isCreatorRequest(primary) ? 'The owner selected Creator mode. For a customization request, accept a fresh ticket with orchestrator_route so its Creator worker can build and install the extension locally.'
+    next_action: isCreatorRequest(primary) ? CREATOR_NEXT_ACTION
       : candidate.strength === 'explicit' ? 'Route it with orchestrator_route as dispatch says: accept, attach, stop or ignore.'
       : primary.source === 'momo' && primary.meta.stream === 'transcripts' ? 'Read the recording with orchestrator_eval, follow up with orchestrator_eval_read as needed, then use orchestrator_eval_decide.'
       : 'Ignore it with orchestrator_route if the card shows it touches no enabled rule; else assess it with orchestrator_eval, orchestrator_eval_read, then orchestrator_eval_decide.' }

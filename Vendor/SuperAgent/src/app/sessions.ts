@@ -16,7 +16,7 @@ import type { Variable } from './execution-environment.ts'
 import { RetryHealth } from './retry-health.ts'
 import { initializeRoleModel, syncRoleModel } from './role-models.ts'
 import type { RoleModel } from '../policy.ts'
-import { bundledSkills } from './skill-files.ts'
+import { bundledSkills, creatorSkill } from './skill-files.ts'
 import { SKILL_PREFIX, type PromptVersion, type Prompts } from './prompts.ts'
 import type { Store } from './store.ts'
 import { KV } from '../kv.ts'
@@ -62,6 +62,10 @@ declare module '@deepseek-ai/cordis' {
  */
 const WORK_TOOLS = ['read', 'write', 'edit', 'read_image', 'glob', 'grep', 'bash', 'pwsh', 'job_output', 'job_list', 'job_kill', 'web_search',
   'web_fetch', 'skill', 'todo_write', 'subagent', 'list_subagent_models', 'send_message', 'list_agents', 'interrupt_agent']
+const CREATOR_GUIDANCE = "In Creator mode you can improve how MoMo works in future sessions. When the owner's feedback reveals a recurring gap, "
+  + `identify what would have changed the outcome. Use the ${creatorSkill.name} skill for lasting changes, including monitoring a missing source. `
+  + "Carry an actionable request through to a verified change and explain what will happen next time."
+
 /** What the main Session is told when it would wait: what it waits for comes to it, and a waiting step holds back the next. */
 const NO_WAIT = 'Reports, follow_up notices, new candidates and a background job\'s end with its output arrive by themselves as messages; '
   + 'end the turn instead of waiting for them.'
@@ -328,6 +332,7 @@ export class Sessions {
     const master = agent.id === host.masterId
     const ticket = master ? undefined : this.ticketOf(agent)
     if (!master && !ticket) { this.limitSubagent(agent); return }
+    const creator = ticket !== undefined && this.workerPreset(ticket.id) === 'cordis'
     const binding: SessionBinding = { disposers: [] }
     this.bindings.set(agent, binding)
     this.retryHealth.restore(agent.id, agent.session.snapshotEvents())
@@ -339,12 +344,15 @@ export class Sessions {
       const current = ticket && host.store.tickets.get(ticket.id)
       const composed = host.prompts.compose(version.config, master ? 'orchestrator' : 'worker', current ? host.environment(current) : undefined)
       const mandate = current ? mandateInstructions(current.mandate, host.store.settings().policy.rules) : ''
-      const creator = current && this.workerPreset(current.id) === 'cordis'
-        ? '\nThe owner selected Creator mode. For customization requests, use the Harness plugin development skill and plugin_manager. Keep extension sources under $MOMO_DATA_DIR/extensions, install from that local directory and verify activation. For tools needed in ordinary MoMo tasks, register in the worker agent scope. Report what actually runs and any restart or setup still needed. Publish only if explicitly requested.' : ''
-      return `[dsh-superagent prompt revision ${version.revision}]\n${composed}\n${mandate}${creator}${momoMemoryPromptBlock()}`
+      const guidance = creator ? `\n${CREATOR_GUIDANCE}` : ''
+      return `[dsh-superagent prompt revision ${version.revision}]\n${composed}\n${mandate}${guidance}${momoMemoryPromptBlock()}`
     }, ...(master ? { complete: true } : {}) }))
     // A recreated skill scope (e.g. after the skills service restarts) starts empty, so reset `binding.skills` before rebinding.
     const skillScope = agent.ctx.inject(['skills'], scope => {
+      if (creator) {
+        const { name, description, content } = creatorSkill
+        scope.skills.register({ name, description, content, source: 'runtime' })
+      }
       binding.scope = scope
       binding.skills = undefined
       this.bindSkills(binding, host.prompts.current())
@@ -360,7 +368,7 @@ export class Sessions {
         agent.ctx.tools.guard(execution => noWait(execution, () => this.routed(agent))))
     } else {
       // An Executor Session keeps the profile's work tools it has, which DSH requires to be known; its own tools are not masked.
-      binding.disposers.push(...this.workOnly(agent, ticket!.id, this.workerPreset(ticket!.id) === 'cordis'))
+      binding.disposers.push(...this.workOnly(agent, ticket!.id, creator))
     }
   }
   /**
