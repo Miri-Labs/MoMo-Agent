@@ -144,3 +144,13 @@ MoMo Agent builds upon outstanding open-source work from [DeepSeek SuperAgent](h
 ### License
 
 MoMo Agent's original application source is licensed under **[AGPL-3.0-only](LICENSE)**. Third-party components and model weights retain their own licenses; the README device illustrations have separate noncommercial restrictions. See [NOTICE.md](NOTICE.md).
+
+---
+
+### Developer WeChat Group
+
+Scan the QR code in WeChat to join the MoMo Agent developer group.
+
+<p align="center">
+  <img src="docs/assets/wechat-developer-group.png" width="360" alt="WeChat invitation QR code for the MoMo Agent developer group, valid before November 20, 2026." />
+</p>

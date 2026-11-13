@@ -144,3 +144,13 @@ MoMo Agent 基于众多优秀的开源项目构建：[DeepSeek SuperAgent](https
 ### 开源许可证
 
 MoMo Agent 原创应用源码采用 **[AGPL-3.0-only](LICENSE)**。第三方组件与模型权重保留各自许可证；README 设备配图另有非商业使用限制。详见[许可证与第三方声明](NOTICE.md)。
+
+---
+
+### 开发者微信群
+
+用微信扫码，加入 MoMo Agent 开发者交流群。
+
+<p align="center">
+  <img src="docs/assets/wechat-developer-group.png" width="360" alt="MoMo Agent 开发者交流群二维码，2026 年 11 月 20 日前有效" />
+</p>
