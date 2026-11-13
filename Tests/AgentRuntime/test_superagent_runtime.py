@@ -93,6 +93,43 @@ class RuntimeEngineConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 write_engine_config(data, proactive_mode="invalid")
 
+    def test_seeding_keeps_adjusted_sources_and_refreshes_the_gateway_address(self):
+        from superagent_runtime import DEFAULT_PROACTIVE_RULES, seed_superagent_orchestrator
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "work"
+            (work.parent / "state").mkdir()
+            settings = {
+                "sources": [
+                    {"id": "momo", "revision": 3, "value": {"enabled": True, "config": {
+                        "bridgeUrl": "http://127.0.0.1:1234", "transcripts": "none", "lifeSignals": "all",
+                        "chat": True, "pollIntervalMs": 900, "waitMs": 1000, "readPageSize": 12}}},
+                    {"id": "github", "revision": 2, "value": {"enabled": True, "config": {"repository": "org/project"}}},
+                ],
+                "blocks": {
+                    "policy": {"revision": 1, "value": {"rules": DEFAULT_PROACTIVE_RULES, "sources": {"momo": {
+                        "allowed": [{"id": "owner"}], "bots": [{"id": "recorder"}], "admission": {}}}}},
+                    "eval": {"revision": 1, "value": {"mode": "observe", "timeoutSeconds": 180}},
+                    "executor": {"revision": 1, "value": {"directory": str(work)}},
+                },
+            }
+            writes = []
+
+            def request(port, method, path, payload=None, **kwargs):
+                if method == "PUT":
+                    writes.append((path, payload))
+                    return {}
+                return {
+                    "/orchestrator/api/settings": settings,
+                    "/orchestrator/api/prompts": {"current": {"revision": 4}},
+                    "/orchestrator/api/state": {"health": {"runtime": {"state": "ready"}}},
+                }[path]
+
+            with patch("superagent_runtime.dsh_api_request", side_effect=request):
+                seed_superagent_orchestrator(dsh_port=1235, gateway_port=5678, work_dir=work, proactive_mode="observe")
+            self.assertEqual(writes, [("/orchestrator/api/settings/source:momo", {"revision": 3, "value": {
+                "enabled": True, "config": {**settings["sources"][0]["value"]["config"],
+                                            "bridgeUrl": "http://127.0.0.1:5678"}}})])
+
     def test_restarting_a_legacy_profile_keeps_user_plugins_and_their_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             data = Path(tmp)

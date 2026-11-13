@@ -3131,6 +3131,7 @@ function load(name) {
 		path
 	};
 }
+const creatorSkill = load("momo-creator");
 const bundledSkills = {
 	feishu: load("feishu"),
 	github: load("github")
@@ -3585,6 +3586,7 @@ function referencedTickets(host, trigger, known) {
 	for (const ticket of known) ids.delete(ticket.id);
 	return [...ids].flatMap((id) => host.store.tickets.get(id) ?? []).slice(0, 4);
 }
+const CREATOR_NEXT_ACTION = "The owner selected Creator mode. Feedback about MoMo's future behavior can request a lasting change, including which sources it watches. Use existing settings for a requested rule or source change when they suffice. For a missing capability, accept a fresh ticket with orchestrator_route so the Creator worker can build and verify it. Answer a one-off question normally.";
 /** Builds the main Session's candidate card with routing metadata, handback history, and related or referenced tickets. */
 async function candidateCard(host, candidate) {
 	const primary = candidate.triggers.at(-1);
@@ -3606,7 +3608,7 @@ async function candidateCard(host, candidate) {
 		...relatedTickets(candidate.tickets),
 		...delivered.length ? { delivered_to: delivered } : {},
 		...referenced.length ? { referenced_tickets: referenced.map(ticketCard) } : {},
-		next_action: isCreatorRequest(primary) ? "The owner selected Creator mode. For a customization request, accept a fresh ticket with orchestrator_route so its Creator worker can build and install the extension locally." : candidate.strength === "explicit" ? "Route it with orchestrator_route as dispatch says: accept, attach, stop or ignore." : primary.source === "momo" && primary.meta.stream === "transcripts" ? "Read the recording with orchestrator_eval, follow up with orchestrator_eval_read as needed, then use orchestrator_eval_decide." : "Ignore it with orchestrator_route if the card shows it touches no enabled rule; else assess it with orchestrator_eval, orchestrator_eval_read, then orchestrator_eval_decide."
+		next_action: isCreatorRequest(primary) ? CREATOR_NEXT_ACTION : candidate.strength === "explicit" ? "Route it with orchestrator_route as dispatch says: accept, attach, stop or ignore." : primary.source === "momo" && primary.meta.stream === "transcripts" ? "Read the recording with orchestrator_eval, follow up with orchestrator_eval_read as needed, then use orchestrator_eval_decide." : "Ignore it with orchestrator_route if the card shows it touches no enabled rule; else assess it with orchestrator_eval, orchestrator_eval_read, then orchestrator_eval_decide."
 	};
 }
 //#endregion
@@ -9327,6 +9329,7 @@ const WORK_TOOLS = [
 	"list_agents",
 	"interrupt_agent"
 ];
+const CREATOR_GUIDANCE = `In Creator mode you can improve how MoMo works in future sessions. When the owner's feedback reveals a recurring gap, identify what would have changed the outcome. Use the ${creatorSkill.name} skill for lasting changes, including monitoring a missing source. Carry an actionable request through to a verified change and explain what will happen next time.`;
 /** What the main Session is told when it would wait: what it waits for comes to it, and a waiting step holds back the next. */
 const NO_WAIT = "Reports, follow_up notices, new candidates and a background job's end with its output arrive by themselves as messages; end the turn instead of waiting for them.";
 /** What a main Session under `standard` is told when its command would wait the shell's default. */
@@ -9625,6 +9628,7 @@ var Sessions = class {
 			this.limitSubagent(agent);
 			return;
 		}
+		const creator = ticket !== void 0 && this.workerPreset(ticket.id) === "cordis";
 		const binding = { disposers: [] };
 		this.bindings.set(agent, binding);
 		this.retryHealth.restore(agent.id, agent.session.snapshotEvents());
@@ -9639,12 +9643,21 @@ var Sessions = class {
 				const current = ticket && host.store.tickets.get(ticket.id);
 				const composed = host.prompts.compose(version.config, master ? "orchestrator" : "worker", current ? host.environment(current) : void 0);
 				const mandate = current ? mandateInstructions(current.mandate, host.store.settings().policy.rules) : "";
-				const creator = current && this.workerPreset(current.id) === "cordis" ? "\nThe owner selected Creator mode. For customization requests, use the Harness plugin development skill and plugin_manager. Keep extension sources under $MOMO_DATA_DIR/extensions, install from that local directory and verify activation. For tools needed in ordinary MoMo tasks, register in the worker agent scope. Report what actually runs and any restart or setup still needed. Publish only if explicitly requested." : "";
-				return `[dsh-superagent prompt revision ${version.revision}]\n${composed}\n${mandate}${creator}${momoMemoryPromptBlock()}`;
+				const guidance = creator ? `\n${CREATOR_GUIDANCE}` : "";
+				return `[dsh-superagent prompt revision ${version.revision}]\n${composed}\n${mandate}${guidance}${momoMemoryPromptBlock()}`;
 			},
 			...master ? { complete: true } : {}
 		}));
 		const skillScope = agent.ctx.inject(["skills"], (scope) => {
+			if (creator) {
+				const { name, description, content } = creatorSkill;
+				scope.skills.register({
+					name,
+					description,
+					content,
+					source: "runtime"
+				});
+			}
 			binding.scope = scope;
 			binding.skills = void 0;
 			this.bindSkills(binding, host.prompts.current());
@@ -9667,7 +9680,7 @@ var Sessions = class {
 			"job_list",
 			"job_kill"
 		] }), agent.ctx.tools.guard((execution) => noWait(execution, () => this.routed(agent))));
-		else binding.disposers.push(...this.workOnly(agent, ticket.id, this.workerPreset(ticket.id) === "cordis"));
+		else binding.disposers.push(...this.workOnly(agent, ticket.id, creator));
 	}
 	/**
 	* Whether a Session runs the router preset: as DSH's preset registry last selected it, read through the session projection
