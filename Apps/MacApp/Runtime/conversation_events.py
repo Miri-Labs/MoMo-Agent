@@ -70,7 +70,7 @@ class ConversationEvents:
 
         try:
             await response.prepare(request)
-            await send(dict(conversation_id=self.conversation_id, kind='ready'))
+            await send(dict(conversation_id=self.conversation_id, kind='ready', head_cursor=self.cursor))
             while True:
                 # Clear before reading: a commit while writing a batch cannot be lost.
                 wake.clear()

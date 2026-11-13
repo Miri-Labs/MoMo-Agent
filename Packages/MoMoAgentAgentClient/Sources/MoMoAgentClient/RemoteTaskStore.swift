@@ -68,6 +68,9 @@ public final class RemoteTaskStore {
     @ObservationIgnored private var serverRetryNotBefore: Date?
     private var serverIsThrottling: Bool { serverRetryNotBefore.map { now() < $0 } ?? false }
     @ObservationIgnored private var lifetime = UUID()
+    public private(set) var lastSeenMessageSequence: Int?
+    public private(set) var initialMessagesSynced = false
+    @ObservationIgnored private var replayHead: Int?
     @ObservationIgnored private var visibleReadSeq = 0
     public var acknowledgedReadSequence: Int { visibleReadSeq }
     @ObservationIgnored private var pendingReadSeq = 0
@@ -148,6 +151,18 @@ public final class RemoteTaskStore {
         catch { recoveredSupplements.remove(current.id); steeringTarget = oldTarget; return false }
     }
     public var isEmpty: Bool { tasks.isEmpty && messages.isEmpty }
+    public var firstUnreadMessageID: String? {
+        guard let lastSeenMessageSequence else { return nil }
+        // Wait for older pages when the read boundary predates the loaded window.
+        if let olderMessagesBefore, olderMessagesBefore - 1 > lastSeenMessageSequence { return nil }
+        return messages.first { $0.seq > lastSeenMessageSequence && $0.sourceSession == nil && $0.role == "assistant" }?.id
+    }
+
+    public var chatEntryReady: Bool {
+        guard let lastSeenMessageSequence, initialMessagesSynced else { return false }
+        return olderMessagesBefore.map { $0 - 1 <= lastSeenMessageSequence } ?? true
+    }
+
     /// Server facts rendered as system notices, never persisted as model messages or cursors.
     public var displayMessages: [ConversationMessage] {
         let ordered = messages.sorted {
@@ -206,6 +221,7 @@ public final class RemoteTaskStore {
         let tasks: [RemoteTask]
         var conversation: SharedConversation? = nil
         var messages: [ConversationMessage]? = nil
+        var lastSeenMessageSequence: Int? = nil
         var messageCursor: Int? = nil
         var eventCursor: Int? = nil
         var olderMessagesBefore: Int? = nil
@@ -246,6 +262,7 @@ public final class RemoteTaskStore {
             pendingCancellations = saved.pendingCancellations ?? [:]
             pendingReports = saved.pendingReports ?? [:]; recoveredSupplements = saved.recoveredSupplements ?? []
             conversation = saved.conversation; messages = saved.messages ?? []; messageCursor = saved.messageCursor ?? 0
+            lastSeenMessageSequence = saved.lastSeenMessageSequence
             eventCursor = saved.eventCursor; olderMessagesBefore = saved.olderMessagesBefore
             sharedRuns = saved.sharedRuns ?? []; backgroundWork = saved.backgroundWork ?? []
             guard eventCursor.map({ $0 >= 0 }) ?? true else { throw StoreError.invalidJournal }
@@ -389,6 +406,7 @@ public final class RemoteTaskStore {
 
     public func foreground() {
         guard observing == nil, canContactServer else { return }
+        initialMessagesSynced = false; replayHead = nil
         confirmedInCurrentForeground = false
         absorbedInitialStreamSocketFailure = false
         if !serverIsThrottling {
@@ -404,7 +422,7 @@ public final class RemoteTaskStore {
         observing = Task { [weak self] in
             // Upgrade older journals on entry. The durable shared inbox contract is
             // bound to the verified server identity, not a 60-second send preflight.
-            await self?.discoverConversation(refreshContract: self?.conversation?.capabilities.messageIdempotency == nil || self?.conversation?.capabilities.conversationEvents == nil)
+            await self?.discoverConversation(refreshContract: self?.lastSeenMessageSequence == nil || self?.conversation?.capabilities.messageIdempotency == nil || self?.conversation?.capabilities.conversationEvents == nil)
             // The live subscription opens the interactive route. A separate short-lived
             // preflight can time out and retire that same pool while the stream connects.
             if let self, !Task.isCancelled, !self.serverIsThrottling, let conversation = self.conversation,
@@ -570,6 +588,11 @@ public final class RemoteTaskStore {
             failures[.discovery] = nil
             refreshConversationOnRecovery = false
             markConnectionReady()
+            if let confirmed = found.readThrough {
+                visibleReadSeq = max(visibleReadSeq, confirmed)
+            }
+            // Older journals without a server receipt have no reliable unread boundary.
+            lastSeenMessageSequence = max(lastSeenMessageSequence ?? found.readThrough ?? messageCursor, visibleReadSeq)
             conversation = found
             do { try persist(tasks: tasks, draft: draft) } catch { conversation = nil }
         } catch {
@@ -602,7 +625,7 @@ public final class RemoteTaskStore {
                 messages.sort { $0.seq < $1.seq }; messageCursor = page.nextCursor
                 do { try persist(tasks: tasks, draft: draft) }
                 catch { messages = oldMessages; messageCursor = oldCursor; return }
-                if !page.hasMore { break }
+                if !page.hasMore { initialMessagesSynced = true; break }
             }
             var runs: [AgentRun] = []; var cursor = 0; var states: [String: String] = [:]
             var latestNotice: ProviderServiceNotice?
@@ -743,8 +766,12 @@ public final class RemoteTaskStore {
     }
 
     public func markVisibleMessagesRead(through sequence: Int) async -> Bool {
-        guard canContactServer, conversation != nil, sequence > visibleReadSeq,
-              messages.contains(where: { $0.seq == sequence && $0.sourceSession == nil }) else { return false }
+        guard conversation != nil, messages.contains(where: { $0.seq == sequence && $0.sourceSession == nil }) else { return false }
+        if let lastSeenMessageSequence, sequence > lastSeenMessageSequence {
+            self.lastSeenMessageSequence = sequence
+            scheduleCheckpointSave()
+        }
+        guard canContactServer, lastSeenMessageSequence != nil, sequence > visibleReadSeq else { return false }
         pendingReadSeq = max(pendingReadSeq, sequence)
         guard !sendingReadReceipt else { return false }
         sendingReadReceipt = true
@@ -1141,12 +1168,19 @@ public final class RemoteTaskStore {
             eventCursor = oldCursor; messageCursor = oldMessageCursor; olderMessagesBefore = oldBefore
             throw error
         }
+        initialMessagesSynced = true
         liveConnectionConfirmed(); loadOlderMessages()
     }
 
     private func applyConversationEvent(_ value: ConversationEvent) throws {
         guard value.conversationID == conversation?.conversationID else { throw StoreError.invalidResponse }
-        if ["ready", "heartbeat"].contains(value.kind) { liveConnectionConfirmed(); return }
+        if value.kind == "ready" {
+            replayHead = value.headCursor
+            initialMessagesSynced = (eventCursor ?? 0) >= (value.headCursor ?? 0)
+            liveConnectionConfirmed()
+            return
+        }
+        if value.kind == "heartbeat" { liveConnectionConfirmed(); return }
         guard let cursor = value.cursor, cursor > 0 else { throw StoreError.invalidResponse }
         if cursor <= (eventCursor ?? 0) { return }
         let oldMessages = messages, oldRuns = sharedRuns, oldTasks = tasks, oldWork = backgroundWork
@@ -1201,6 +1235,7 @@ public final class RemoteTaskStore {
             eventCursor = oldCursor; messageCursor = oldMessageCursor
             throw error
         }
+        if let replayHead, cursor >= replayHead { initialMessagesSynced = true }
         liveConnectionConfirmed()
     }
 
@@ -1247,7 +1282,7 @@ public final class RemoteTaskStore {
             let sanitizedTasks = stripConfirmedAttachmentPayloads(tasks)
             let data = try JSONEncoder().encode(Document(connection: connection, sessionID: sessionID, draft: draft,
                 draftAttachments: currentAttachments.isEmpty ? nil : currentAttachments, tasks: sanitizedTasks,
-                conversation: conversation, messages: messages, messageCursor: messageCursor,
+                conversation: conversation, messages: messages, lastSeenMessageSequence: lastSeenMessageSequence, messageCursor: messageCursor,
                 eventCursor: eventCursor, olderMessagesBefore: olderMessagesBefore, sharedRuns: sharedRuns, backgroundWork: backgroundWork, steeringTarget: (draft.isEmpty && currentAttachments.isEmpty) ? nil : steeringTarget, pendingCancellations: pendingCancellations,
                 pendingReports: pendingReports, recoveredSupplements: recoveredSupplements))
             try data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])

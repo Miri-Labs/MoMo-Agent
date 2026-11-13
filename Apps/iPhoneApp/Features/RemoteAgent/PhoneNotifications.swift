@@ -14,7 +14,7 @@ final class PhoneNotifications {
     private(set) var focusedTarget: AgentNotificationTarget?
     var chatVisible = false {
         didSet {
-            if chatVisible { rendered(messageIDs: visibleMessageIDs, failedRunIDs: visibleFailedRuns) }
+            if !chatVisible { visibleMessageIDs = []; visibleFailedRuns = [] }
         }
     }
     var desktopVisible = false

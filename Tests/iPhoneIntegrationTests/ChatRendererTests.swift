@@ -755,22 +755,25 @@ final class ChatRendererTests: XCTestCase {
         XCTAssertEqual(renderer.openedAction, action)
     }
 
-    func testOpeningChatFollowsLatestAndReenteringResetsManualScroll() async throws {
+    func testChatEntryUnreadResumeAndExplicitReentry() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         let session = UUID()
         let oldPosition = ChatReadingPosition(sessionID: session, following: false, top: 100, anchorID: nil, anchorOffset: 0)
         let messages = (0..<40).map { index in
-            AgentChatMessage(id: "m\(index)", turnID: "t\(index)", role: "user",
+            AgentChatMessage(id: "m\(index)", turnID: "t\(index)", role: "assistant",
                 blocks: [.init(id: "b\(index)", content: .text("消息 \(index)"))], state: .complete)
         }
-        func chat(visible: Bool, count: Int) -> some View {
-            ChatRendererView(snapshot: .init(sessionID: session, messages: Array(messages.prefix(count)),
-                busy: false, readingPosition: oldPosition), isChatVisible: visible)
+        func chat(visible: Bool, count: Int, selected: Bool = true, unread: String? = nil, ready: Bool = true) -> some View {
+            var snapshot = ChatRenderSnapshot(sessionID: session, messages: Array(messages.prefix(count)),
+                busy: false, readingPosition: oldPosition)
+            snapshot.firstUnreadMessageID = unread
+            snapshot.chatEntryReady = ready
+            return ChatRendererView(snapshot: snapshot, isChatVisible: visible, isChatSelected: selected)
                 .environment(\.scenePhase, .active)
         }
-        let host = UIHostingController(rootView: chat(visible: true, count: 24))
+        let host = UIHostingController(rootView: chat(visible: true, count: 24, ready: false))
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKey() }
@@ -791,14 +794,21 @@ final class ChatRendererTests: XCTestCase {
             throw NSError(domain: "ChatEntryScroll", code: 1)
         }
         try await waitFor(atBottom)
-        host.rootView = chat(visible: true, count: 32)
-        try await waitFor("document.querySelector('[data-message=\"m31\"]') && " + atBottom)
+        host.rootView = chat(visible: true, count: 32, unread: "m10")
+        try await waitFor("Math.abs(document.querySelector('[data-source-message=m10]').getBoundingClientRect().top - 16) < 3")
         _ = try await web.evaluateJavaScript("window.scrollTo(0,100); true")
         try await waitFor("scrollY === 100 && !document.querySelector('#jump').hidden")
-        host.rootView = chat(visible: true, count: 36)
-        try await waitFor("document.querySelector('[data-message=\"m35\"]') && scrollY === 100")
-        host.rootView = chat(visible: false, count: 40)
-        try await waitFor("document.querySelector('[data-message=\"m39\"]') && scrollY === 100")
+        host.rootView = chat(visible: false, count: 36)
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        host.rootView = chat(visible: true, count: 36, unread: "m32")
+        try await waitFor("document.querySelector('[data-source-message=m35]') && scrollY === 100 && document.querySelector('#jump').classList.contains('has-new')")
+        host.rootView = chat(visible: false, count: 36, selected: false)
+        try await Task.sleep(for: .milliseconds(80))
+        host.rootView = chat(visible: true, count: 40, unread: "m34")
+        try await waitFor("Math.abs(document.querySelector('[data-source-message=m34]').getBoundingClientRect().top - 16) < 3 || (" + atBottom + " && document.querySelector('[data-source-message=m34]').getBoundingClientRect().top >= 0)")
+        host.rootView = chat(visible: false, count: 40, selected: false)
+        try await Task.sleep(for: .milliseconds(80))
         host.rootView = chat(visible: true, count: 40)
         try await waitFor(atBottom)
     }

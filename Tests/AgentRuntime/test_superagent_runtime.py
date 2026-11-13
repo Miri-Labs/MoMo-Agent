@@ -388,6 +388,10 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
 
                 # 2. Shared conversation identity & history across engine switch
                 meta = await (await client.get("/momo/v1/conversation", headers=auth)).json()
+                self.assertIsNone(meta["read_through"])
+                gateway.push.read("phone-test", 7)
+                phone_meta = await (await client.get("/momo/v1/conversation", headers={**auth, "X-MoMo-Device": "phone-test"})).json()
+                self.assertEqual(phone_meta["read_through"], 7)
                 self.assertEqual(meta["conversation_id"], conv_id)
                 msgs = await (await client.get("/momo/v1/conversation/messages", headers=auth)).json()
                 self.assertEqual(msgs["data"][0]["id"], hermes_msg_id)

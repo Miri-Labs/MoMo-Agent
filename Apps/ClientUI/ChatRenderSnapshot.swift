@@ -47,6 +47,8 @@ struct ChatRenderSnapshot: Encodable, Equatable {
     let canRegenerate: Bool
     let contextState: String
     var waitingForReply: Bool? = nil
+    var firstUnreadMessageID: String?
+    var chatEntryReady = true
     let readingPosition: ChatReadingPosition?
 
     // Match the Web renderer even when a system event follows the last outgoing message.
@@ -137,6 +139,8 @@ struct ChatRenderSnapshot: Encodable, Equatable {
         stopped = false; contextState = "idle"; canRegenerate = false
         waitingForReply = store.waitingForReply
         self.readingPosition = readingPosition
+        firstUnreadMessageID = store.firstUnreadMessageID
+        chatEntryReady = store.chatEntryReady
         let confirmedOperations = Set(store.messages.compactMap(\.operationID))
         let confirmedRuns = Set(store.messages.compactMap(\.runID))
         let tasksByID = Dictionary(store.tasks.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })

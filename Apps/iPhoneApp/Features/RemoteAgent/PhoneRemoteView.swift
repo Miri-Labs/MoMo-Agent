@@ -13,6 +13,7 @@ struct PhoneRemoteView: View {
     var speech: SpeechEngine? = nil
     var stopPlayback: () async -> Void = {}
     var chatIsVisible = true
+    var chatIsSelected = true
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var showingTasks = false
     @State private var tasksSheetDetent: PresentationDetent = .medium
@@ -30,7 +31,7 @@ struct PhoneRemoteView: View {
                     requestWatchStatus: requestWatchStatus, openLibrary: openLibrary, reconnect: { reconnecting = true },
                     openDesktop: { showingDesktop = true }, openNotebook: openMemory,
                     speech: speech, stopPlayback: stopPlayback,
-                    chatIsVisible: chatIsVisible && !showingDesktop && !showingTasks && !reconnecting)
+                    chatIsVisible: chatIsVisible && !showingDesktop && !showingTasks && !reconnecting, chatIsSelected: chatIsSelected)
             } else {
                 VStack(spacing: 24) {
                     RemoteAvatar(size: 120, active: false, watchStatus: watchStatus,
@@ -154,6 +155,7 @@ private struct RemoteConversationView: View {
     let speech: SpeechEngine?
     let stopPlayback: () async -> Void
     let chatIsVisible: Bool
+    let chatIsSelected: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var parentOpenURL
     @State private var composeRevision = 0
@@ -285,7 +287,8 @@ private struct RemoteConversationView: View {
 
     private func transcript(_ snapshot: ChatRenderSnapshot, headerInset: CGFloat) -> some View {
         ChatRendererView(snapshot: snapshot,
-            scrollToBottomRequest: composeRevision, isChatVisible: chatIsVisible, headerInset: headerInset,
+            scrollToBottomRequest: composeRevision, isChatVisible: chatIsVisible && previewAttachment == nil && !showingBriefingDetail && previewingMemoryNote == nil,
+            isChatSelected: chatIsSelected, headerInset: headerInset,
             onReadingPosition: agent.rememberReadingPosition,
             onAttachment: { id in previewAttachment = store.attachment(id: id) },
             onRetryMessage: { id in Task { await store.checkAgain(id: id) } })

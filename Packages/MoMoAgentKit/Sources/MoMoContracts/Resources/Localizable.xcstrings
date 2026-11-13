@@ -28168,6 +28168,7 @@
       }
     },
     "新消息": {
+      "comment": "Chat renderer UI: Incoming messages below the current reading position.",
       "extractionState": "manual",
       "generatesSymbol": false,
       "localizations": {

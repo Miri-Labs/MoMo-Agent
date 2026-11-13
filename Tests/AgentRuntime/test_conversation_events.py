@@ -76,7 +76,9 @@ class ConversationEventsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_two_independent_posts_and_background_reply_share_one_subscription(self):
         async with self.session.get(self.public.make_url('/momo/v1/conversation/subscribe?after=0'),headers=self.headers) as stream:
-            self.assertEqual('ready',(await self.frame(stream))['kind'])
+            ready = await self.frame(stream)
+            self.assertEqual('ready', ready['kind'])
+            self.assertEqual(ready['head_cursor'], self.store.events.cursor)
             for content in ['first','second']:
                 operation=str(uuid.uuid4())
                 async with self.session.post(self.public.make_url('/momo/v1/conversation/messages'),

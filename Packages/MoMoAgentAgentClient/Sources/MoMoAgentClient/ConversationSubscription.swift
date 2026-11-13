@@ -18,6 +18,7 @@ struct ConversationSnapshot: Decodable, Sendable {
 struct ConversationEvent: Decodable, Sendable {
     let conversationID: String
     let cursor: Int?
+    let headCursor: Int?
     let kind: String
     let message: ConversationMessage?
     let run: AgentRun?
@@ -26,6 +27,7 @@ struct ConversationEvent: Decodable, Sendable {
     let messageStates: [String: String]?
     let providerNotice: ProviderServiceNotice?
     enum CodingKeys: String, CodingKey {
+        case headCursor = "head_cursor"
         case cursor, kind, message, run
         case conversationID = "conversation_id", runEvent = "run_event"
         case backgroundWork = "background_work", messageStates = "message_states"
