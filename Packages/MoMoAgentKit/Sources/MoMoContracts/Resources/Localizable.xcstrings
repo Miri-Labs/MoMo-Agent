@@ -337,6 +337,93 @@
         }
       }
     },
+    "创作模式": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creator mode"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリエイターモード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크리에이터 모드"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创作模式"
+          }
+        }
+      }
+    },
+    "对话模式": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversation mode"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話モード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화 모드"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对话模式"
+          }
+        }
+      }
+    },
+    "在创作模式下，可以让 MoMo 添加个人扩展。扩展保存在 Mac 上。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In Creator mode, ask MoMo to add personal extensions. They’re saved on your Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリエイターモードでは、MoMo に個人用の拡張機能を追加してもらえます。拡張機能は Mac に保存されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크리에이터 모드에서 MoMo에게 개인용 확장 기능을 추가해 달라고 할 수 있습니다. 확장 기능은 Mac에 저장됩니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在创作模式下，可以让 MoMo 添加个人扩展。扩展保存在 Mac 上。"
+          }
+        }
+      }
+    },
     "聊天模式": {
       "extractionState": "manual",
       "localizations": {
