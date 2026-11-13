@@ -3,7 +3,7 @@ import Observation
 import MoMoAgentClient
 import MoMoArchive
 
-/// Phone delivers original transcripts. Hermes owns memory; the phone only caches its current view.
+/// Phone delivers original transcripts. The Mac owns memory; the phone only caches its current view.
 @MainActor @Observable
 final class PhoneContextSync {
     var configurationFingerprint: String?
@@ -12,6 +12,7 @@ final class PhoneContextSync {
     private(set) var memories: [ContextMemory] = []
     private(set) var lastSynced: Date?
     private(set) var failure: String?
+    private(set) var sourceDeliveryFailure: String?
     private(set) var isSyncing = false
     private(set) var memoryPending = 0
     private(set) var memoryNeedsReview = 0
@@ -71,7 +72,9 @@ final class PhoneContextSync {
             state = try JSONDecoder().decode(State.self, from: Data(contentsOf: file))
             guard state.libraryID == archive.libraryInstanceID, state.connection.hasSameIdentity(as: connection) else { throw SyncError.identity }
         } else { state = State(libraryID: archive.libraryInstanceID, connection: connection) }
-        memories = state.memoryBackend == "Hermes" ? state.memories : []; lastSynced = state.memoryBackend == "Hermes" ? state.lastSynced : nil
+        // Migrate the marker used by older phone builds for the same Mac notebook.
+        if state.memoryBackend == "Hermes" { state.memoryBackend = "SuperAgent" }
+        memories = state.memoryBackend == "SuperAgent" ? state.memories : []; lastSynced = state.memoryBackend == "SuperAgent" ? state.lastSynced : nil
         do { recordingSummaries = try PhoneRecordingSummaries(directory: directory, archive: archive, connection: connection, client: client) }
         catch {
             recordingSummaries = nil
@@ -130,24 +133,36 @@ final class PhoneContextSync {
         if let inFlight { return try await inFlight.value }
         isSyncing = true
         let task = Task {
+            var uploadError: Error?
             repeat {
                 syncRequested = false
                 let includeMemories = memoriesRequested
                 memoriesRequested = false
-                try await synchronizeArchive(includeMemories: includeMemories)
+                do {
+                    uploadError = try await synchronizeArchive(includeMemories: includeMemories)
+                } catch {
+                    if !AgentTransportFailure.isCancelled(error) {
+                        if includeMemories {
+                            failure = AgentTransportFailure.isTransient(error)
+                                ? String(localized: "笔记暂未刷新，稍后自动重试。") : error.localizedDescription
+                        } else {
+                            sourceDeliveryFailure = sourceFailureMessage(error)
+                        }
+                    }
+                    throw error
+                }
             } while syncRequested && !Task.isCancelled
+            if let uploadError { throw uploadError }
         }
         inFlight = task
         defer { inFlight = nil; isSyncing = false }
-        do { try await task.value; failure = nil }
+        do { try await task.value }
         catch {
             if AgentTransportFailure.isCancelled(error) { throw error }
             if case AgentClientError.http(401, _, _, _) = error {
                 authenticationRequired = true; background(); onAuthenticationRequired?(error)
+                failure = error.localizedDescription
             }
-            failure = AgentTransportFailure.isTransient(error)
-                ? String(localized: "尚未同步到 Mac，连接后自动重试。")
-                : error.localizedDescription
             throw error
         }
     }
@@ -206,8 +221,7 @@ final class PhoneContextSync {
         defer { isDreamRequesting = false }
         do {
             _ = try await client.triggerDream()
-            try await synchronize(includeMemories: true)
-            failure = nil
+            await refresh()
         } catch {
             guard !AgentTransportFailure.isCancelled(error) else { return }
             if case AgentClientError.http(401, _, _, _) = error {
@@ -286,61 +300,78 @@ final class PhoneContextSync {
             updated.sources[source.envelope.sessionId]?.receipt = receipt; try commit(updated)
         }
     }
-    private func synchronizeArchive(includeMemories: Bool) async throws {
+    private func sourceFailureMessage(_ error: Error) -> String {
+        AgentTransportFailure.isTransient(error)
+            ? String(localized: "录音资料暂未上传，稍后自动重试。") : error.localizedDescription
+    }
+
+    // Return a delivery error separately so a waiting memory refresh still runs.
+    private func synchronizeArchive(includeMemories: Bool) async throws -> Error? {
         let status = try await client.contextStatus()
         guard status.workspaceId == state.connection.workspaceID, status.sourceSync,
-              ["Hermes", "SuperAgent"].contains(status.memoryWriter) else { throw SyncError.identity }
+              status.memoryWriter == "SuperAgent" else { throw SyncError.identity }
         memoryPending = status.memoryPending ?? 0; memoryNeedsReview = status.memoryNeedsReview ?? 0
         memoryReview = status.memoryReview
-        if let relabels = status.speakerRelabels, !relabels.isEmpty {
-            await applySpeakerRelabels(relabels)
+        var uploadError = await applySpeakerCorrections(status)
+        do {
+            try await uploadSources()
+            sourceDeliveryFailure = nil
+        } catch {
+            if AgentTransportFailure.isCancelled(error) { throw error }
+            if case AgentClientError.http(401, _, _, _) = error { throw error }
+            sourceDeliveryFailure = sourceFailureMessage(error)
+            uploadError = error
         }
-        var uploadError: Error?
-        do { try await uploadSources() }
-        catch is CancellationError { throw CancellationError() }
-        catch { uploadError = error }
-        if includeMemories { try await downloadMemories() }
-        if let uploadError { throw uploadError }
+        if includeMemories {
+            try await downloadMemories()
+            failure = nil
+        }
+        return uploadError
     }
-    private func applySpeakerRelabels(_ relabels: [SpeakerRelabelInstruction]) async {
+    private func speakerSources(session: String?, spans: [String]) async throws -> [SourceReference] {
+        guard let session, let sessionID = UUID(uuidString: session), !spans.isEmpty else { throw SyncError.identity }
+        let summary = try await archive.recordingSummary(sessionID: sessionID)
+        return try spans.map {
+            guard let id = UUID(uuidString: $0) else { throw SyncError.identity }
+            return SourceReference(sessionID: sessionID, spanID: id, transcriptVersion: summary.transcriptVersion, generation: summary.generation)
+        }
+    }
+
+    private func applySpeakerCorrections(_ status: ContextStatus) async -> Error? {
         var ackIDs: [String] = []
-        var anyModified = false
-        for item in relabels {
-            guard let sessionID = UUID(uuidString: item.sessionId) else {
-                ackIDs.append(item.id)
-                continue
-            }
+        var firstError: Error?
+        for item in status.speakerExclusions ?? [] {
             do {
-                let summary = try await archive.recordingSummary(sessionID: sessionID)
-                let refs: [SourceReference] = item.spanIds.compactMap { sid in
-                    guard let spanUUID = UUID(uuidString: sid) else { return nil }
-                    return SourceReference(
-                        sessionID: sessionID,
-                        spanID: spanUUID,
-                        transcriptVersion: summary.transcriptVersion,
-                        generation: summary.generation
-                    )
+                if let from = item.recordedFrom {
+                    try await archive.excludeSpeaker(named: item.speaker, from: Date(timeIntervalSince1970: from))
+                } else {
+                    let refs = try await speakerSources(session: item.sessionId, spans: item.spanIds)
+                    try await archive.excludeSpeaker(named: item.speaker, sources: refs, deliveryID: item.id)
                 }
-                guard !refs.isEmpty else {
-                    ackIDs.append(item.id)
-                    continue
-                }
-                let freshRefs = (try? await archive.resolveCurrentSpeakerSources(refs)) ?? refs
+                ackIDs.append(item.id)
+            } catch { firstError = firstError ?? error }
+        }
+        if status.retireUnknownSpeaker == true {
+            do { try await archive.retireLegacyUnknownSpeaker() }
+            catch { firstError = firstError ?? error }
+        }
+        for item in status.speakerRelabels ?? [] {
+            guard item.isOwner || item.newSpeaker != "身份待确认" else { continue }
+            do {
+                let refs = try await speakerSources(session: item.sessionId, spans: item.spanIds)
                 let feedback: SpeakerFeedback = item.isOwner ? .owner : .person(item.newSpeaker)
                 let scope: SpeakerFeedbackScope = item.scope == "cluster" ? .cluster : .selection
-                try await archive.correctSpeakers(freshRefs, feedback: feedback, scope: scope, deferGlobalRematch: true)
-                anyModified = true
+                try await archive.correctSpeakers(refs, feedback: feedback, scope: scope, deferGlobalRematch: true, deliveryID: item.id)
                 ackIDs.append(item.id)
-            } catch {
-                ackIDs.append(item.id)
-            }
-        }
-        if anyModified {
-            try? await archive.projectPendingDocuments(includeUnchanged: false)
+            } catch { firstError = firstError ?? error }
         }
         if !ackIDs.isEmpty {
-            try? await client.acknowledgeSpeakerRelabels(ids: ackIDs)
+            do {
+                try await archive.projectPendingDocuments(includeUnchanged: false)
+                try await client.acknowledgeSpeakerRelabels(ids: ackIDs)
+            } catch { firstError = firstError ?? error }
         }
+        return firstError
     }
     private func uploadSources() async throws {
         let changeRevision = state.sourceChangeRevision
@@ -401,13 +432,13 @@ final class PhoneContextSync {
             revision = page.revision; items += page.items; after = page.nextCursor
             if let after, !seen.insert(after).inserted { throw SyncError.invalidPagination }
         } while after != nil
-        var updated = state; updated.memories = items; updated.memoryBackend = "Hermes"; updated.lastSynced = Date(); try commit(updated)
+        var updated = state; updated.memories = items; updated.memoryBackend = "SuperAgent"; updated.lastSynced = Date(); try commit(updated)
     }
     private func commit(_ updated: State) throws {
         try JSONEncoder().encode(updated).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         state = updated
-        memories = updated.memoryBackend == "Hermes" ? updated.memories : []
-        lastSynced = updated.memoryBackend == "Hermes" ? updated.lastSynced : nil
+        memories = updated.memoryBackend == "SuperAgent" ? updated.memories : []
+        lastSynced = updated.memoryBackend == "SuperAgent" ? updated.lastSynced : nil
     }
     enum SyncError: LocalizedError {
         case unavailable, identity, missingSourceTime, sourceChanged, invalidPagination

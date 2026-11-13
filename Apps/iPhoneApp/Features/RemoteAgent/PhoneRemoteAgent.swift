@@ -150,7 +150,7 @@ final class PhoneRemoteAgent {
             let contextClient = try AgentClient(baseURL: dataURL, credential: key, assistantID: proposed.assistantID, transport: route)
             let status = try await contextClient.contextStatus()
             guard status.workspaceId == proposed.workspaceID, status.sourceSync,
-                  ["Hermes", "SuperAgent"].contains(status.memoryWriter) else { throw ConnectionError.identityChanged }
+                  status.memoryWriter == "SuperAgent" else { throw ConnectionError.identityChanged }
             let restored = try makeStore(proposed, key: key)
             let previousKey = try? Self.readKey(proposed.instanceID)
             try Self.writeKey(key, id: proposed.instanceID)
@@ -402,6 +402,7 @@ final class PhoneRemoteAgent {
             sources = nil; sourcesFailure = String(localized: "资料来源暂时无法读取，请解锁后重新打开 App。")
         }
         let tasks = try Self.openTaskStore(file: directory.appendingPathComponent("tasks.json"), connection: connection, client: client)
+        tasks.onConnectionDiagnostic = tailnet.diagnostics.recordChat
         tasks.onAuthenticationRequired = { [weak self, weak sync] in
             sync?.background(); self?.health?.background(); self?.sources?.background(); self?.network?.suspend(); self?.notifications.background()
             self?.lifeIllustrations.stopPolling()

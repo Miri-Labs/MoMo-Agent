@@ -55,11 +55,12 @@ public final class RemoteTaskStore {
     }
     /// Background reconciliation remains diagnostic state, not a chat banner.
     public var interactionFailure: String? { [FailureSource.storage, .control].compactMap { failures[$0] }.first }
-    public enum ConnectionState: Equatable, Sendable { case ready, retrying, authenticationRequired, unavailable }
+    public enum ConnectionState: String, Sendable { case ready, retrying, authenticationRequired, unavailable }
     public private(set) var connectionState: ConnectionState = .ready
     public private(set) var nextConnectionAttempt: Date?
     @ObservationIgnored public var onAuthenticationRequired: (() -> Void)?
     @ObservationIgnored public var onConnectionRestored: (() -> Void)?
+    @ObservationIgnored public var onConnectionDiagnostic: ((StaticString, ConnectionState, Error?, Date?) -> Void)?
     @ObservationIgnored private var connectionFailures = 0
     @ObservationIgnored private var connectionConfirmation: UInt64 = 0
     @ObservationIgnored private var absorbedInitialStreamSocketFailure = false
@@ -562,10 +563,10 @@ public final class RemoteTaskStore {
             if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
             refreshConversationOnRecovery = conversation != nil
             if case AgentClientError.http(let status, _, _, _) = error, [404, 405, 501].contains(status) {
-                connectionState = .unavailable
+                markUnavailable(error, operation: #function)
                 failures[.discovery] = StoreError.unsupportedServer.localizedDescription
             } else {
-                if case StoreError.unsupportedServer = error { connectionState = .unavailable }
+                if case StoreError.unsupportedServer = error { markUnavailable(error, operation: #function) }
                 failures[.discovery] = connectionErrorDescription(error)
             }
         }
@@ -648,6 +649,15 @@ public final class RemoteTaskStore {
         defer { controlsInFlight.remove(id) }
         await cancel(id: id, generation: generation)
     }
+    /// The paired Mac owns the default used when it admits a new chat task.
+    public func chatMode(setting mode: ChatMode? = nil) async throws -> ChatMode {
+        struct Preference: Codable { let mode: ChatMode }
+        let body = try mode.map { try JSONEncoder().encode(Preference(mode: $0)) }
+        let data = try await client.request(path: ["momo", "v1", "conversation", "mode"],
+                                            method: mode == nil ? "GET" : "POST", body: body)
+        return try JSONDecoder().decode(Preference.self, from: data).mode
+    }
+
     public func fetchWorkOverview(limit: Int = 15) async throws -> ConversationWorkOverview {
         guard canContactServer else { throw CancellationError() }
         return try await client.workOverview(limit: limit)
@@ -922,7 +932,7 @@ public final class RemoteTaskStore {
                 guard !Task.isCancelled else { return }
                 self?.flushPendingPersistence()
                 if case AgentClientError.http(401, _, _, _) = error { self?.recordConnectionFailure(error); return }
-                // Events are ephemeral on Hermes restart; status remains authoritative.
+                // Events are ephemeral on gateway restart; status remains authoritative.
                 if case AgentClientError.http(let status, _, _, _) = error, status == 404 {
                     do { try self?.update(id) { if $0.reply == nil { $0.reply = RemoteReply() }; $0.reply?.streamUnavailable = true } }
                     catch { self?.failures[.storage] = error.localizedDescription }
@@ -1008,22 +1018,34 @@ public final class RemoteTaskStore {
                 if !self.confirmedInCurrentForeground, !self.absorbedInitialStreamSocketFailure,
                    self.connectionState == .ready, AgentTransportFailure.isSocketOrLinkFailure(error) {
                     self.absorbedInitialStreamSocketFailure = true
+                    self.onConnectionDiagnostic?("conversationSubscription", .ready, error, nil)
                     self.failures[.synchronization] = self.connectionErrorDescription(error)
                     return
                 }
-                self.recordConnectionFailure(error)
+                self.recordConnectionFailure(error, operation: "conversationSubscription")
                 self.failures[.synchronization] = self.connectionErrorDescription(error)
-                if error is StoreError || error is DecodingError { self.connectionState = .unavailable }
+                if error is StoreError || error is DecodingError {
+                    self.markUnavailable(error, operation: "conversationSubscription")
+                }
             })
         loadOlderMessages()
     }
 
-    private func mergeConversationMessages(_ incoming: [ConversationMessage]) throws {
+    private func mergeConversationMessages(_ incoming: [ConversationMessage], fromHistory: Bool) throws {
         for message in incoming {
             guard message.seq > 0, !message.id.isEmpty, ["user", "assistant"].contains(message.role) else { throw StoreError.invalidResponse }
             if let index = messages.firstIndex(where: { $0.id == message.id }) {
                 let saved = messages[index]
-                guard saved.seq == message.seq, saved.role == message.role, saved.content == message.content else { throw StoreError.invalidResponse }
+                guard saved.seq == message.seq, saved.role == message.role else { throw StoreError.invalidResponse }
+                if saved.content != message.content {
+                    // Dream rewrites the same briefing row. A replayed creation event can still contain its old text.
+                    guard message.role == "assistant", message.sourceKey?.hasPrefix("dream-briefing:") == true,
+                          saved.sourceKey?.hasPrefix("dream-briefing:") != false,
+                          saved.createdAt == message.createdAt, saved.runID == nil, message.runID == nil,
+                          saved.operationID == nil, message.operationID == nil else { throw StoreError.invalidResponse }
+                    if fromHistory { messages[index] = message }
+                    continue
+                }
                 if saved.runID != message.runID || saved.operationID != message.operationID || saved.deliveryState != message.deliveryState || (message.attachments != nil && saved.attachments != message.attachments) {
                     messages[index] = message
                 }
@@ -1062,7 +1084,10 @@ public final class RemoteTaskStore {
         }
     }
 
-    private func markConnectionReady() {
+    private func markConnectionReady(operation: StaticString = #function) {
+        if connectionState != .ready || !confirmedInCurrentForeground {
+            onConnectionDiagnostic?(operation, .ready, nil, nil)
+        }
         confirmedInCurrentForeground = true
         connectionState = .ready; connectionFailures = 0; nextConnectionAttempt = nil
         onConnectionRestored?()
@@ -1080,7 +1105,7 @@ public final class RemoteTaskStore {
         let oldReplies = sharedRunReplies
         let oldCursor = eventCursor, oldMessageCursor = messageCursor, oldBefore = olderMessagesBefore
         do {
-            try mergeConversationMessages(value.messages.data)
+            try mergeConversationMessages(value.messages.data, fromHistory: true)
             sharedRuns.removeAll { !$0.isTerminal }
             for run in value.runs { try applyLiveRun(run) }
             applyLiveWork(value.backgroundWork, states: value.messageStates, notice: value.providerNotice)
@@ -1117,7 +1142,7 @@ public final class RemoteTaskStore {
             switch value.kind {
             case "message.created":
                 guard let message = value.message else { throw StoreError.invalidResponse }
-                try mergeConversationMessages([message])
+                try mergeConversationMessages([message], fromHistory: false)
                 if message.role == "assistant", let index = tasks.firstIndex(where: { $0.run?.runID == message.runID }), tasks[index].firstCommittedTextAt == nil {
                     tasks[index].firstCommittedTextAt = now()
                 }
@@ -1176,7 +1201,7 @@ public final class RemoteTaskStore {
                     try Task.checkCancellation()
                     guard page.data.allSatisfy({ $0.seq < before }),
                           !page.hasMore || page.nextCursor < before && !page.data.isEmpty else { throw StoreError.invalidResponse }
-                    try self.mergeConversationMessages(page.data)
+                    try self.mergeConversationMessages(page.data, fromHistory: true)
                     self.olderMessagesBefore = page.hasMore ? page.nextCursor : nil
                     try self.persist(tasks: self.tasks, draft: self.draft)
                 }
@@ -1220,7 +1245,7 @@ public final class RemoteTaskStore {
         } catch { failures[.storage] = error.localizedDescription; throw error }
     }
 
-    private func request<T>(_ operation: () async throws -> T) async throws -> T {
+    private func request<T>(source: StaticString = #function, _ operation: () async throws -> T) async throws -> T {
         guard canContactServer else { throw CancellationError() }
         let generation = lifetime
         let confirmation = connectionConfirmation
@@ -1233,7 +1258,7 @@ public final class RemoteTaskStore {
         } catch {
             guard generation == lifetime else { throw CancellationError() }
             if !AgentTransportFailure.isSocketOrLinkFailure(error) || confirmation == connectionConfirmation {
-                recordConnectionFailure(error)
+                recordConnectionFailure(error, operation: source)
             }
             throw error
         }
@@ -1260,7 +1285,14 @@ public final class RemoteTaskStore {
         AgentTransportFailure.isTransient(error)
     }
 
-    public func recordConnectionFailure(_ error: Error) {
+    private func markUnavailable(_ error: Error, operation: StaticString) {
+        if connectionState != .unavailable {
+            onConnectionDiagnostic?(operation, .unavailable, error, nil)
+        }
+        connectionState = .unavailable
+    }
+
+    public func recordConnectionFailure(_ error: Error, operation: StaticString = #function) {
         if AgentTransportFailure.isCancelled(error) { return }
         var delay: TimeInterval?; var transient = AgentTransportFailure.isSocketOrLinkFailure(error); var serverLimited = false
         if case AgentClientError.invalidResponse = error { transient = true }
@@ -1268,13 +1300,14 @@ public final class RemoteTaskStore {
             if status == 401 {
                 lifetime = UUID()
                 connectionState = .authenticationRequired; nextConnectionAttempt = nil
+                onConnectionDiagnostic?(operation, .authenticationRequired, error, nil)
                 onAuthenticationRequired?()
                 return
             }
             transient = status == 408 || status == 429 || (500...599).contains(status) && status != 501
             delay = retryAfter
             serverLimited = status == 429 || (retryAfter ?? 0) > 0
-            if [403, 405, 426, 501].contains(status) { connectionState = .unavailable; return }
+            if [403, 405, 426, 501].contains(status) { markUnavailable(error, operation: operation); return }
         }
         if transient {
             // Concurrent failures from the stream and polling share one retry window.
@@ -1285,6 +1318,7 @@ public final class RemoteTaskStore {
             if serverLimited, let deadline = nextConnectionAttempt {
                 serverRetryNotBefore = max(serverRetryNotBefore ?? deadline, deadline)
             }
+            onConnectionDiagnostic?(operation, .retrying, error, nextConnectionAttempt)
         }
     }
 
@@ -1306,4 +1340,8 @@ public final class RemoteTaskStore {
             }
         }
     }
+}
+
+public enum ChatMode: String, Codable, Sendable {
+    case standard, creator
 }

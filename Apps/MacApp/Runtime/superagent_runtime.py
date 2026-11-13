@@ -179,6 +179,7 @@ MOMO_PROMPT_CONFIG = {
             "- 读取健康步数与心率快照：`\"$DSH_SUPERAGENT_MOMO_CLI\" health`\n"
             "- 查看共享长期记忆（支持 Obsidian 式多级目录树，含晨间简报、多级项目目录、日志、人物与专题活页）：内置工具 `list_memory_notebooks` / `read_memory_notebook(path=...)`，或 `\"$DSH_SUPERAGENT_MOMO_CLI\" memories` / `\"$DSH_SUPERAGENT_MOMO_CLI\" notebook list` / `\"$DSH_SUPERAGENT_MOMO_CLI\" notebook read --path \"projects/AI访谈/双月OKR.md\"`\n"
             "- 写入或自由组织多级记忆目录：内置工具 `write_memory_notebook(path='projects/AI访谈/双月OKR.md', content=...)` / `move_memory_notebook(from_path=..., to_path=...)`，或 `\"$DSH_SUPERAGENT_MOMO_CLI\" remember --target memory \"事实或项目约定\"` / `\"$DSH_SUPERAGENT_MOMO_CLI\" notebook write --path \"projects/AI访谈/双月OKR.md\" --content \"# 标题\\n...\"`\n"
+            "- 用户排除某人但真实身份未定时使用 exclude_recording_speaker；传 speaker、source_id 和精确 span_ids。用户明确限定某时点以后的所有录音时，改传 speaker 和含时区的 recorded_from。仅在知道真实身份时使用 relabel_recording_speakers。\n"
             "- 根据对话语义修正录音中的匿名/误判说话人标签并同步至手机声纹库：内置工具 `relabel_recording_speakers(source_id=..., to_speaker=\"真实姓名\", from_speaker=\"说话人 1\", reason=\"对话中直接称呼确认\")`，或 `\"$DSH_SUPERAGENT_MOMO_CLI\" relabel-speakers <source_id> \"真实姓名\" --from-speaker \"说话人 1\" --reason \"对话中直接称呼确认\"`\n"
             "- 查看近期聊天上下文：`\"$DSH_SUPERAGENT_MOMO_CLI\" conversation --limit 20`\n"
             "- 落盘用户可见产物（仅用于深度调研/对比方案/原型，纯待办/日程操作无需落盘文档）：在 `\"$DSH_SUPERAGENT_MOMO_WORKSPACE/$DSH_SUPERAGENT_NAME/\"` 下生成结构化 `.md` 报告或自包含单文件 `.html`。\n"
@@ -492,6 +493,7 @@ def resolve_superagent_llm(data: Path) -> dict:
         _sys.path.insert(0, str(REPOSITORY / "Vendor/HermesAgent"))
     if str(REPOSITORY / "Apps/MacApp/Runtime") not in _sys.path:
         _sys.path.insert(0, str(REPOSITORY / "Apps/MacApp/Runtime"))
+    from momo_agent import credentials_directory, profile_directory
     from model_setup import load_config, resolve_credentials
 
     config = load_config(data)
@@ -499,18 +501,11 @@ def resolve_superagent_llm(data: Path) -> dict:
     provider = str(model_cfg.get("provider") or "").strip()
     model_id = str(model_cfg.get("default") or "").strip()
     if not provider or not model_id:
-        raise ValueError("Configure an explicit model and provider in hermes/config.yaml before serving")
+        raise ValueError("Configure an explicit model and provider in model settings before serving")
 
-    dotenv = _parse_dotenv(data / "hermes/.env")
-    # Point HERMES_HOME at <data>/hermes while allowing fallback to user's MoMoAgent/Codex login if needed.
-    old_hermes_home = os.environ.get("HERMES_HOME")
-    default_agent_hermes = Path.home() / "Library/Application Support/MoMoAgent/Agent/hermes"
-    if (data / "hermes/auth.json").is_file():
-        os.environ["HERMES_HOME"] = str(data / "hermes")
-    elif (default_agent_hermes / "auth.json").is_file():
-        os.environ["HERMES_HOME"] = str(default_agent_hermes)
-    else:
-        os.environ["HERMES_HOME"] = str(data / "hermes")
+    dotenv = _parse_dotenv(profile_directory(data) / ".env")
+    old_profile = os.environ.get("HERMES_HOME")
+    os.environ["HERMES_HOME"] = str(credentials_directory(data))
     try:
         if provider == "openai-codex":
             creds = resolve_credentials("codex", model_id)
@@ -619,10 +614,10 @@ def resolve_superagent_llm(data: Path) -> dict:
             },
         }
     finally:
-        if old_hermes_home is None:
+        if old_profile is None:
             os.environ.pop("HERMES_HOME", None)
         else:
-            os.environ["HERMES_HOME"] = old_hermes_home
+            os.environ["HERMES_HOME"] = old_profile
 
 
 def prepare_dsh_instance(
@@ -660,44 +655,42 @@ def prepare_dsh_instance(
     )
     _atomic_private(cli_wrapper, cli_script, 0o700)
 
-    runner = superagent_runner_dir(data)
-    node_modules = runner / "node_modules"
-    profile_nm = profile_dir / "node_modules"
-    if profile_nm.is_symlink() or profile_nm.exists():
-        if profile_nm.is_symlink() and profile_nm.resolve() == node_modules.resolve():
-            pass
-        else:
-            if profile_nm.is_symlink() or profile_nm.is_file():
-                profile_nm.unlink()
-            else:
-                shutil.rmtree(profile_nm)
-            profile_nm.symlink_to(node_modules)
-    else:
-        profile_nm.symlink_to(node_modules)
-
-    profile_pkg = {
-        "name": "dsh-profile-momo",
-        "private": True,
-        "dependencies": {
-            "dsh-superagent": f"file:{SUPERAGENT_SOURCE}",
-        },
-        "dsh": {
-            "profile": {
-                "bundles": [
-                    "@deepseek-ai/dsh-base",
-                    "@deepseek-ai/dsh-web-app",
-                    "dsh-superagent",
-                ]
-            }
-        },
-    }
-    _atomic_private(profile_dir / "package.json", json.dumps(profile_pkg, indent=2) + "\n", 0o600)
-    _atomic_private(profile_dir / "cordis.yml", "[]\n", 0o600)
-    _atomic_private(
-        profile_dir / "pnpm-workspace.yaml",
-        "packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n",
-        0o600,
-    )
+    # Keep plugin-manager installs in the user's profile. The prepared runner owns
+    # the bundled SuperAgent, while DSH resolves base and web from its installation.
+    installed = superagent_runner_dir(data) / "node_modules"
+    manifest = profile_dir / "package.json"
+    bundles = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "dsh-superagent"]
+    package = json.loads(manifest.read_text()) if manifest.exists() else {"name": "dsh-profile-momo", "private": True}
+    dependencies = package.setdefault("dependencies", {})
+    bundled_agent = f"link:{installed / 'dsh-superagent'}"
+    update_manifest = dependencies.get("dsh-superagent") != bundled_agent
+    dependencies["dsh-superagent"] = bundled_agent
+    profile = package.setdefault("dsh", {}).setdefault("profile", {})
+    selected = profile.get("bundles", [])
+    missing = [name for name in bundles if name not in selected]
+    profile["bundles"] = missing + selected
+    modules = profile_dir / "node_modules"
+    if modules.is_symlink() and modules.resolve() == installed.resolve():
+        # Older profiles shared the runner's whole directory. Preserve any links
+        # for previously installed user packages as we detach from it.
+        modules.unlink()
+    modules.mkdir(exist_ok=True, mode=0o700)
+    for name in dependencies:
+        parts = name.split("/")
+        scoped = len(parts) == 2 and parts[0].startswith("@")
+        if (len(parts) != 1 and not scoped) or any(part in ("", ".", "..") for part in parts):
+            raise ValueError(f"Invalid package name in Harness profile: {name}")
+        entry = modules / name
+        if not entry.exists() and not entry.is_symlink() and (name == "dsh-superagent" or (installed / name).exists()):
+            entry.parent.mkdir(exist_ok=True)
+            entry.symlink_to(installed / name, target_is_directory=True)
+    if update_manifest or missing:
+        _atomic_private(manifest, json.dumps(package, ensure_ascii=False, indent=2) + "\n", 0o600)
+    if not (profile_dir / "cordis.yml").exists():
+        _atomic_private(profile_dir / "cordis.yml", "[]\n", 0o600)
+    if not (profile_dir / "pnpm-workspace.yaml").exists():
+        _atomic_private(profile_dir / "pnpm-workspace.yaml",
+                        "packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n", 0o600)
 
     patch_entries = [
         {"id": "webserver", "config": {"host": "127.0.0.1", "port": dsh_port}},
@@ -712,7 +705,7 @@ def prepare_dsh_instance(
         {"id": "dsh-superagent-github", "disabled": False},
         {"id": "dsh-superagent-momo", "disabled": False},
     ]
-    _atomic_private(profile_dir / "cordis.patch.yml", json.dumps(patch_entries, ensure_ascii=False, indent=2) + "\n", 0o600)
+    _atomic_private(state_dir / "momo-runtime.patch.yml", json.dumps(patch_entries, ensure_ascii=False, indent=2) + "\n", 0o600)
 
     return {
         "dsh_home": dsh_home,

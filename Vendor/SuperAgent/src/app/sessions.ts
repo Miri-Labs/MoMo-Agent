@@ -8,7 +8,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { key, liveTicket, type Ticket } from '../core/index.ts'
-import { mandateInstructions, ticketOfSession } from '../executor/dsh.ts'
+import { isCreatorRequest, mandateInstructions, ticketOfSession } from '../executor/dsh.ts'
 import type { HealthEntry } from '../infra/health.ts'
 import { AgentDelivery, messageId } from './delivery.ts'
 import type { Effects } from './effects.ts'
@@ -26,7 +26,7 @@ import type { RegisterTool, Tool } from './tools/tool.ts'
 export interface SessionsHost {
   /** DSH Cordis context: sessions, agents, persistence, and their events. */
   readonly context: Context
-  readonly store: Pick<Store, 'tickets' | 'settings' | 'get' | 'set' | 'keys'>
+  readonly store: Pick<Store, 'tickets' | 'triggers' | 'settings' | 'get' | 'set' | 'keys'>
   readonly prompts: Pick<Prompts, 'current' | 'version' | 'compose' | 'skills'>
   readonly effects: Pick<Effects, 'enqueue' | 'handle' | 'idle' | 'pending'>
   /** The `models` health entry, which reports managed sessions waiting on a model-budget retry. */
@@ -124,7 +124,7 @@ function momoMemoryPromptBlock(): string {
     `### 记忆订正、说话人声纹回写与多级目录自由组织工作流\n`
     + `当用户指出某段记忆/日志总结有误，告知说话人归属，或要求整理记忆目录结构时：\n`
     + `1. 若涉及录音事实或说话人，立即使用 \`search_recordings\` / \`read_recording\` 找到对应录音 \`source_id\` 及精确的 \`span_ids\`；\n`
-    + `2. 调用 \`relabel_recording_speakers\` 修正录音说话人并同步回写 iPhone 声纹库（若原标签已是具名人或“我”仅局部串轨，必须传精确 \`span_ids\` + \`scope="selection"\` 避免误改同场其他发言；若原标签是整组匿名 \`[说话人 N]\` 可用 \`scope="cluster"\`）；\n`
+    + `2. 若用户仅排除一个人，调用 exclude_recording_speaker，按明确范围传片段或带时区的起始日期，并保留未知身份。已确认真实身份时调用 \`relabel_recording_speakers\` 修正录音说话人并同步回写 iPhone 声纹库（若原标签已是具名人或“我”仅局部串轨，必须传精确 \`span_ids\` + \`scope="selection"\` 避免误改同场其他发言；若原标签是整组匿名 \`[说话人 N]\` 可用 \`scope="cluster"\`）；\n`
     + `3. 全量排查并用 \`read_memory_notebook\` / \`write_memory_notebook\` / \`move_memory_notebook\` / \`remove_memory_notebook\` / \`update_core_memory\` 同步订正所有受影响的笔记与 \`BRIEFING.md\` / \`MEMORY.md\`，顺手清除笔记里残留的 \`remaining_parts\` / \`revision\` 等内部调试字样。\n`
     + `4. **多级目录自由组织与自治断舍离**：\`memories/\` 支持任意二级/三级目录及自定义目录（如 \`projects/AI访谈/overview.md\`、\`projects/AI访谈/双月OKR.md\`、\`people/核心团队/shengli.md\`、\`journal/2026-11/2026-11-10.md\`）。优先用 \`mode="replace"\` 重整结构、确保首行有清晰的 \`# 一级标题\`，主动合并重叠碎片、用 \`move_memory_notebook\` 归整子目录、用 \`remove_memory_notebook\` 删除过时/冗余活页。`
   )
@@ -181,7 +181,7 @@ export class Sessions {
     ctx.inject(['agentPresets'], child => {
       child.on('agent-preset/selected', (sessionId, preset) => {
         const ticketId = ticketOfSession(sessionId), agent = ctx.agents.get(sessionId as SessionId)
-        const ours = sessionId === this.host.masterId ? ROUTER_PRESET : ticketId && this.host.store.tickets.get(ticketId) ? WORKER_PRESET : undefined
+        const ours = sessionId === this.host.masterId ? ROUTER_PRESET : ticketId && this.host.store.tickets.get(ticketId) ? this.workerPreset(ticketId) : undefined
         if (!ours || preset === ours || !agent) return
         const presets = child.get('agentPresets') as { select(agent: Agent, preset: string): Promise<string> }
         presets.select(agent, ours).catch(() => {})
@@ -190,6 +190,11 @@ export class Sessions {
     ctx.on('agent/status', ({ agent, status }) => {
       if (status === 'idle' && !this.host.closing()) { this.retryHealth.clear(agent.id); this.updateModelHealth() }
     })
+  }
+  private workerPreset(ticketId: string | undefined): string {
+    const ticket = ticketId ? this.host.store.tickets.get(ticketId) : undefined
+    const origin = ticket && this.host.store.triggers.get(ticket.origin.triggerId)
+    return isCreatorRequest(origin) ? 'cordis' : WORKER_PRESET
   }
   private effectiveRoleModel(role: 'orchestrator' | 'worker'): RoleModel | null {
     const settings = this.host.store.settings()
@@ -224,7 +229,7 @@ export class Sessions {
       const workspace = await ctx.workspaceRegistry.create(cwd)
       // A Session keeps the preset it was created with, one of the bundle's own (cordis.patch.yml).
       await ctx.sessionController.create({ sessionId: id as SessionId, workspaceId: workspace.id,
-        agentPreset: role === 'worker' ? WORKER_PRESET : ROUTER_PRESET })
+        agentPreset: role === 'worker' ? this.workerPreset(ticketOfSession(id)) : ROUTER_PRESET })
       result = await ctx.sessionController.resolveAgent(id as SessionId)
     }
     if ('error' in result) throw result.error
@@ -334,7 +339,9 @@ export class Sessions {
       const current = ticket && host.store.tickets.get(ticket.id)
       const composed = host.prompts.compose(version.config, master ? 'orchestrator' : 'worker', current ? host.environment(current) : undefined)
       const mandate = current ? mandateInstructions(current.mandate, host.store.settings().policy.rules) : ''
-      return `[dsh-superagent prompt revision ${version.revision}]\n${composed}\n${mandate}${momoMemoryPromptBlock()}`
+      const creator = current && this.workerPreset(current.id) === 'cordis'
+        ? '\nThe owner selected Creator mode. For customization requests, use the Harness plugin development skill and plugin_manager. Keep extension sources under $MOMO_DATA_DIR/extensions, install from that local directory and verify activation. For tools needed in ordinary MoMo tasks, register in the worker agent scope. Report what actually runs and any restart or setup still needed. Publish only if explicitly requested.' : ''
+      return `[dsh-superagent prompt revision ${version.revision}]\n${composed}\n${mandate}${creator}${momoMemoryPromptBlock()}`
     }, ...(master ? { complete: true } : {}) }))
     // A recreated skill scope (e.g. after the skills service restarts) starts empty, so reset `binding.skills` before rebinding.
     const skillScope = agent.ctx.inject(['skills'], scope => {
@@ -353,7 +360,7 @@ export class Sessions {
         agent.ctx.tools.guard(execution => noWait(execution, () => this.routed(agent))))
     } else {
       // An Executor Session keeps the profile's work tools it has, which DSH requires to be known; its own tools are not masked.
-      binding.disposers.push(...this.workOnly(agent, ticket!.id))
+      binding.disposers.push(...this.workOnly(agent, ticket!.id, this.workerPreset(ticket!.id) === 'cordis'))
     }
   }
   /**
@@ -375,10 +382,11 @@ export class Sessions {
    * (see the executor). Read inherited tools through the parent scope, which includes the preset's tools. The global view
    * misses preset tools; the agent's own view also includes local tools such as subagent, which restrict refuses to name.
    */
-  private workOnly(agent: Agent, ticketId: string): (() => void)[] {
+  private workOnly(agent: Agent, ticketId: string, creator = false): (() => void)[] {
     const store = this.host.store
     const parent = scopeParentOf(agent)
-    const allow = WORK_TOOLS.filter(name => agent.ctx.tools.get(name, parent))
+    const candidates = creator ? [...WORK_TOOLS, 'plugin_manager', 'cordis_inspect_list', 'cordis_inspect_query'] : WORK_TOOLS
+    const allow = candidates.filter(name => agent.ctx.tools.get(name, parent))
     return [agent.ctx.tools.restrict({ allow }), agent.ctx.tools.guard(() => {
       const current = store.tickets.get(ticketId)
       return !current || !liveTicket(current) ? 'Ticket ended; new work needs a new authorized ticket' : undefined

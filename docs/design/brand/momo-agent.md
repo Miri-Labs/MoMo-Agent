@@ -1,12 +1,30 @@
 # MoMo Agent 品牌
 
+## 宣发视觉参考
+
+团队选定以下两张原图作为 MoMo Agent 的宣发视觉参考。两张均为 1774 × 887 像素横图，沿用 MoMo 睁眼的角色轮廓和 Pebble 字标。
+
+### 黑底白影 · 角色特写（01D）
+
+![黑底白影。白色 MoMo 从画面右下方探出，白色字标位于左上角。](promo-avatar-closeup.png)
+
+适合发布预告、社交分享卡和演示封面。大面积黑底衬出角色，左上角留给完整字标。改成方图或竖图时，可以让脸的下沿和侧边出画，同时保留一高一低的头顶轮廓和双眼，让小尺寸预览也认得出 MoMo。
+
+### 白纸墨线 · 手绘日常（03D）
+
+![白纸墨线。咖啡杯、车票、钥匙和腕表围绕中央的黑色 MoMo 图标与字标。](promo-daily-sketch.png)
+
+适合功能介绍、使用故事和日常场景海报。围绕一个具体时刻挑选物件，用带有疏密变化的黑色笔触从画面边缘画入，中央留白承托图标和字标。例如讲手腕记录时，可把佩戴 MoMo 的腕表放在前景，让咖啡杯交代谈话发生的场景。
+
+同一手绘形式的深色应用可参见 GitHub README 已采用的 [03E「炭纸夜绘」](../../assets/readme-cover.jpg)。
+
 ## 当前图标：正面睁眼 Avatar（2026-10-30）
 
 用户要求所有应用图标使用既有 MoMo Avatar 的正面、双眼睁开姿态，不再使用 M。角色形状直接复用 `Vendor/BibleStrongAvatar/momoagent-avatar.json` 与固定版本的几何引擎；头部三轴旋转归零，两眼尺寸与高度一致，不采样眨眼或动画帧。静态导出提高轮廓采样密度，避免大尺寸图标出现折线；动态角色实现不变。
 
 - `avatar-front.svg`：当前完整图标母版，沿用动态 Avatar 深色外观的 `#171717` 底色与 `#F4F4F4` 角色。
 - `avatar-front-template.svg`：同一正面轮廓与透明眼睛，用于 Mac 菜单栏模板。
-- README 使用 `docs/assets/readme-icon-rounded.png`：同一矢量母版的透明圆角导出，避免 GitHub 直接展示方形底板。从仓库根目录运行 `swift docs/design/brand/export-readme-icon.swift` 可重新生成；平台应用图标仍交给系统施加遮罩。
+- 中英文 README 首图共用 `docs/assets/readme-cover.jpg`（03E「炭纸夜绘」）。原圆角图标 `docs/assets/readme-icon-rounded.png` 由同一矢量母版导出。从仓库根目录运行 `swift docs/design/brand/export-readme-icon.swift` 可重新生成；平台应用图标仍交给系统施加遮罩。
 - iPhone、Watch：同源 1024 × 1024 不透明 PNG，由系统施加平台遮罩。
 - Mac：使用 Icon Composer 原生矢量包 `MacAppIcon.icon`（`#171717` 满版底色 + `#F4F4F4` 角色矢量前景），由 `actool` 同时编译 macOS Tahoe Liquid Glass 无灰框满版图标栈与向下兼容的 `MacAppIcon.icns`；菜单栏使用透明模板。
 - 应用内品牌入口、任务状态图、README 的 `app-icon.png` 与 `momo-avatar.png` 同步更新。Pebble 字标、Avatar 的动态表情、Bundle ID 与用户数据保持现有行为。

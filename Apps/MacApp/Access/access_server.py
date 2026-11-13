@@ -71,7 +71,7 @@ class AccessService:
     async def upstream(self, method, path, body=None, context=False, headers=None, streaming=False):
         url = self.connection['data_url' if context else 'base_url'] + path
         h = {'Authorization': 'Bearer ' + self.key, 'Content-Type': 'application/json',
-             'X-Hermes-Session-Key': 'momo:' + self.connection['assistant_id']}
+             'X-MoMo-Session-Key': 'momo:' + self.connection['assistant_id']}
         h.update(headers or {})
         timeout = ClientTimeout(total=None, sock_connect=10, sock_read=45) if streaming else ClientTimeout(total=60, sock_connect=10)
         return await self.session.request(method, url, data=body, headers=h, allow_redirects=False, timeout=timeout)
@@ -149,9 +149,14 @@ class AccessService:
         body = await request.read() if request.method == 'POST' else None
         async with await self.upstream(request.method, target, body, context, headers) as response:
             data = await response.read()
-            return web.Response(status=response.status, body=data, content_type=response.content_type,
+            outgoing = web.Response(status=response.status, body=data, content_type=response.content_type,
+                zlib_executor_size=64 * 1024,
                 headers={'Cache-Control': response.headers.get('Cache-Control', 'no-store'),
                          **({'Retry-After':response.headers['Retry-After']} if 'Retry-After' in response.headers else {})})
+            if target == '/momo/v1/conversation/snapshot' and response.status == 200:
+                outgoing.headers['Vary'] = 'Accept-Encoding'
+                outgoing.enable_compression()
+            return outgoing
 
     async def desktop_frames(self, request):
         feed = DesktopFrameFeed(self.desktop, self.token(request))

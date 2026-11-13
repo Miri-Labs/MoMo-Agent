@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """MoMo personal context & memory CLI for DeepSeek SuperAgent worker sessions.
 
-Invoked via $DSH_SUPERAGENT_MOMO_CLI inside isolated SuperAgent tickets so
-Hermes Agent and DeepSeek SuperAgent share the exact same ContextStore
-(recordings, calendar, reminders, visits, health) and HermesMemory (MEMORY.md / USER.md).
+Workers use the shared MoMo context store and Markdown memory notebook.
 """
 from __future__ import annotations
 
@@ -232,6 +230,16 @@ def _cmd_notebook(data: Path, args: argparse.Namespace) -> dict:
     raise ValueError(f"Unknown notebook action: {act}")
 
 
+def _cmd_exclude_speaker(data: Path, args: argparse.Namespace) -> dict:
+    store = _open_context(data)
+    try:
+        return store.exclude_speaker(args.speaker, source_id=args.source_id,
+                                     span_ids=args.span_ids.split(",") if args.span_ids else None,
+                                     recorded_from=args.recorded_from)
+    finally:
+        store.close()
+
+
 def _cmd_relabel_speakers(data: Path, args: argparse.Namespace) -> dict:
     store = _open_context(data)
     try:
@@ -419,17 +427,14 @@ def _stdlib_fetch_extract(urls: list[str], char_limit: int) -> dict:
     return {"results": results}
 
 
-def _configure_hermes_env(data: Path) -> None:
-    default_agent_hermes = Path.home() / "Library/Application Support/MoMoAgent/Agent/hermes"
-    if (data / "hermes").is_dir() or not default_agent_hermes.is_dir():
-        os.environ.setdefault("HERMES_HOME", str(data / "hermes"))
-    else:
-        os.environ.setdefault("HERMES_HOME", str(default_agent_hermes))
+def _configure_provider_env(data: Path) -> None:
+    from momo_agent import credentials_directory
+    os.environ.setdefault("HERMES_HOME", str(credentials_directory(data)))
 
 
 def _cmd_web_search(data: Path, args: argparse.Namespace) -> dict:
     limit = max(1, min(int(args.limit), 20))
-    _configure_hermes_env(data)
+    _configure_provider_env(data)
     try:
         with contextlib.redirect_stdout(sys.stderr):
             from tools import web_tools
@@ -465,7 +470,7 @@ def _cmd_web_search(data: Path, args: argparse.Namespace) -> dict:
 def _cmd_web_extract(data: Path, args: argparse.Namespace) -> dict:
     urls = [str(u).strip() for u in (args.urls or ()) if str(u).strip()][:8]
     char_limit = max(1000, min(int(args.char_limit), 60_000))
-    _configure_hermes_env(data)
+    _configure_provider_env(data)
     parsed: dict | None = None
     try:
         with contextlib.redirect_stdout(sys.stderr):
@@ -562,6 +567,12 @@ def main() -> int:
     nb.add_argument("--mode", choices=("replace", "append"), default="replace")
     nb.add_argument("--overwrite", action="store_true")
 
+    exclude = sub.add_parser("exclude-speaker", help="Exclude a known speaker from selected spans or from a timezone-qualified date forward")
+    exclude.add_argument("speaker")
+    exclude.add_argument("--source-id")
+    exclude.add_argument("--span-ids")
+    exclude.add_argument("--recorded-from")
+
     relabel = sub.add_parser("relabel-speakers", help="Relabel speaker tags on a recording based on dialogue semantics")
     relabel.add_argument("source_id")
     relabel.add_argument("target_speaker")
@@ -574,7 +585,7 @@ def main() -> int:
     conv = sub.add_parser("conversation", help="Read recent MoMo chat history")
     conv.add_argument("--limit", type=int, default=20)
 
-    wsearch = sub.add_parser("web-search", help="Search the public web via configured or keyless Hermes backends")
+    wsearch = sub.add_parser("web-search", help="Search the public web via configured or keyless search providers")
     wsearch.add_argument("query")
     wsearch.add_argument("--limit", type=int, default=5)
 
@@ -600,6 +611,7 @@ def main() -> int:
         "remember": _cmd_remember,
         "forget": _cmd_forget,
         "notebook": _cmd_notebook,
+        "exclude-speaker": _cmd_exclude_speaker,
         "relabel-speakers": _cmd_relabel_speakers,
         "conversation": _cmd_conversation,
         "web-search": _cmd_web_search,

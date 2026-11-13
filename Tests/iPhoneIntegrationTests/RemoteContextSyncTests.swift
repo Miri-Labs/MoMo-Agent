@@ -144,14 +144,42 @@ final class RemoteContextSyncTests: XCTestCase {
     func testNativeMemoryCacheSurvivesRestartAndFailedDeleteIsNotQueued() async throws {
         let (sync, root, archive, connection) = try fixture()
         await sync.refresh()
-        XCTAssertNil(sync.failure); XCTAssertEqual(sync.memories.first?.basis, "hermes")
+        XCTAssertNil(sync.failure); XCTAssertEqual(sync.memories.first?.basis, "momo")
         let memory = try XCTUnwrap(sync.memories.first)
         await sync.forget(memory)
         XCTAssertNotNil(sync.failure); XCTAssertEqual(sync.memories.count, 1)
-        XCTAssertFalse(sync.hasLegacyChanges, "This version edits Hermes online, without a second offline mutation engine")
+        XCTAssertFalse(sync.hasLegacyChanges, "This version edits MoMo memory online, without a second offline mutation engine")
         let restored = try PhoneContextSync(directory: root, archive: archive, deviceID: UUID(), connection: connection, key: "fixture", configuration: configuration())
         XCTAssertEqual(restored.memories.first?.id, memory.id)
         XCTAssertNotNil(restored.lastSourcesSent)
+    }
+
+    func testMemoryRefreshAndUploadReportIndependentFailures() async throws {
+        let (sync, root, archive, _) = try fixture()
+        _ = try await summaryWindow(archive: archive, root: root)
+        MemoryResponse.state.rejectSources = true
+        await sync.refresh()
+        let lastRead = try XCTUnwrap(sync.lastSynced)
+        let noteID = try XCTUnwrap(sync.memories.first?.id)
+        XCTAssertNil(sync.failure)
+        XCTAssertNotNil(sync.sourceDeliveryFailure)
+        XCTAssertGreaterThan(sync.pendingSources, 0)
+
+        MemoryResponse.state.rejectMemories = true
+        await sync.refresh()
+        XCTAssertNotNil(sync.failure)
+        XCTAssertNotNil(sync.sourceDeliveryFailure)
+        XCTAssertEqual(sync.memories.first?.id, noteID)
+        XCTAssertEqual(sync.lastSynced, lastRead)
+
+        MemoryResponse.state.rejectSources = false
+        try await sync.synchronize(includeMemories: false)
+        XCTAssertNil(sync.sourceDeliveryFailure)
+        XCTAssertEqual(sync.pendingSources, 0)
+        XCTAssertNotNil(sync.failure, "A recording receipt cannot confirm a memory refresh")
+        MemoryResponse.state.rejectMemories = false
+        await sync.refresh()
+        XCTAssertNil(sync.failure)
     }
     func testPendingUntranscribedRecordingDoesNotBlockOlderTranscriptDelivery() async throws {
         let (sync, root, archive, _) = try fixture()
@@ -250,6 +278,7 @@ private final class MemoryResponses: @unchecked Sendable {
     private var summaryRevision: String?
     private var payloads: [SourceEnvelope] = []
     private var rejected = false
+    private var memoriesRejected = false
     private var waitingForSource: XCTestExpectation?
     private var heldResponse: (@Sendable () -> Void)?
     func holdNextSource(_ waiting: XCTestExpectation) { lock.withLock { waitingForSource = waiting } }
@@ -270,10 +299,14 @@ private final class MemoryResponses: @unchecked Sendable {
         get { lock.withLock { rejected } }
         set { lock.withLock { rejected = newValue } }
     }
+    var rejectMemories: Bool {
+        get { lock.withLock { memoriesRejected } }
+        set { lock.withLock { memoriesRejected = newValue } }
+    }
     var requests: Int { lock.withLock { count } }
     var syncedSourceIDs: [String] { lock.withLock { synced } }
     var sourcePayloads: [SourceEnvelope] { lock.withLock { payloads } }
-    func reset(_ workspace: UUID) { lock.withLock { self.workspace = workspace; count = 0; synced = []; payloads = []; summaryRevision = nil; rejected = false } }
+    func reset(_ workspace: UUID) { lock.withLock { self.workspace = workspace; count = 0; synced = []; payloads = []; summaryRevision = nil; rejected = false; memoriesRejected = false } }
     func receive(_ request: URLRequest) -> (Int, String) {
         lock.withLock {
             count += 1
@@ -288,7 +321,7 @@ private final class MemoryResponses: @unchecked Sendable {
                 return (200, "{\"id\":\"summary-fixture\",\"revision\":\"\(revision)\",\"state\":\"done\",\"text\":\"团队决定周五交付。\"}")
             }
             if request.url?.path == "/v1/status" {
-                return (200, "{\"workspace_id\":\"\(workspace)\",\"source_sync\":true,\"memory_writer\":\"Hermes\"}")
+                return (200, "{\"workspace_id\":\"\(workspace)\",\"source_sync\":true,\"memory_writer\":\"SuperAgent\"}")
             }
             if request.url?.path == "/v1/sources", rejected { return (503, "{}") }
             if request.url?.path == "/v1/sources", request.httpMethod == "POST",
@@ -305,7 +338,8 @@ private final class MemoryResponses: @unchecked Sendable {
                 return (200, "{\"source_id\":\"\(sourceID)\",\"source_revision\":\"\(rev)\",\"revision\":1}")
             }
             if request.url?.path == "/v1/memories" {
-                return (200, #"{"revision":1,"next_cursor":null,"items":[{"id":"hermes-memory-fixture","text":"下周五发方案","kind":"memory","basis":"hermes","status":"current","revision":1,"evidence":[]}]}"#)
+                if memoriesRejected { return (503, "{}") }
+                return (200, #"{"revision":1,"next_cursor":null,"items":[{"id":"momo-memory-fixture","text":"下周五发方案","kind":"memory","basis":"momo","status":"current","revision":1,"evidence":[]}]}"#)
             }
             return (503, "{}")
         }

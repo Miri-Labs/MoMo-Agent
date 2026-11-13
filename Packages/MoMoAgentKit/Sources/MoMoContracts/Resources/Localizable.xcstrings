@@ -59,6 +59,29 @@
         }
       }
     },
+    "创作": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creator"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリエイター"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크리에이터"
+          }
+        }
+      }
+    },
     "已接收 %@ 原音": {
       "extractionState": "manual",
       "localizations": {
@@ -262,6 +285,29 @@
         }
       }
     },
+    "标准": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표준"
+          }
+        }
+      }
+    },
     "等待原音同步": {
       "extractionState": "manual",
       "localizations": {
@@ -287,6 +333,75 @@
           "stringUnit": {
             "state": "translated",
             "value": "等待原音同步"
+          }
+        }
+      }
+    },
+    "聊天模式": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat mode"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットモード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "채팅 모드"
+          }
+        }
+      }
+    },
+    "选择「创作」后，在聊天里告诉 MoMo 想加什么功能。个人扩展保存在 Mac 上。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Creator, then tell MoMo in chat what to add. Personal extensions are saved on your Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「クリエイター」を選んで、追加したい機能をチャットで MoMo に伝えてください。拡張機能はお使いの Mac に保存されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크리에이터를 선택한 뒤 채팅에서 MoMo에게 추가할 기능을 알려 주세요. 개인 확장 기능은 Mac에 저장됩니다."
+          }
+        }
+      }
+    },
+    "请更新 Mac 上的 MoMo 以使用创作模式。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update MoMo on your Mac to use Creator mode."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリエイターモードを使うには、Mac の MoMo をアップデートしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크리에이터 모드를 사용하려면 Mac의 MoMo를 업데이트하세요."
           }
         }
       }
@@ -21997,6 +22112,23 @@
         }
       }
     },
+    "录音资料暂未上传，稍后自动重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording uploads will retry shortly."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音资料暂未上传，稍后自动重试。"
+          }
+        }
+      }
+    },
     "录音片段缺少原始时间，尚未同步。": {
       "localizations": {
         "en": {
@@ -42051,6 +42183,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "稍后继续整理，回到 App 后会自动继续"
+          }
+        }
+      }
+    },
+    "笔记暂未刷新，稍后自动重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notes couldn’t refresh. Another attempt will follow shortly."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "笔记暂未刷新，稍后自动重试。"
           }
         }
       }
