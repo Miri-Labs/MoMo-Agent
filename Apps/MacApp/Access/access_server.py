@@ -135,7 +135,7 @@ class AccessService:
                 zlib_executor_size=64 * 1024,
                 headers={'Cache-Control': response.headers.get('Cache-Control', 'no-store'),
                          **({'Retry-After':response.headers['Retry-After']} if 'Retry-After' in response.headers else {})})
-            if target == '/momo/v1/conversation/snapshot' and response.status == 200:
+            if path in {'/momo/v1/conversation/snapshot', '/momo/v1/conversation/works'} and response.status == 200:
                 outgoing.headers['Vary'] = 'Accept-Encoding'
                 outgoing.enable_compression()
             return outgoing
@@ -260,7 +260,8 @@ def public_application(service):
     # or a subscription whose response stays open until the phone disconnects.
     routes = {'/v1/capabilities', '/pair/identity', '/momo/v1/conversation',
               '/momo/v1/conversation/snapshot', '/momo/v1/conversation/subscribe',
-              '/momo/v1/conversation/messages', '/momo/v1/conversation/runs', '/momo/v1/conversation/read'}
+              '/momo/v1/conversation/messages', '/momo/v1/conversation/runs', '/momo/v1/conversation/read',
+              '/momo/v1/conversation/works'}
     sink = RotatingFileHandler(service.data / 'access/phone-link.log', maxBytes=256 * 1024,
                                backupCount=2, delay=True, encoding='utf-8')
     log = logging.Logger('phone-link')

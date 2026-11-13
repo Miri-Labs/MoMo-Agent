@@ -811,6 +811,29 @@ import XCTest
         XCTAssertEqual(store.connectionState, .ready)
     }
 
+    func testWorkListLoadsWithoutChatSyncAndSurvivesAFailedRefreshAndRelaunch() async throws {
+        let (wire, connection, client, folder) = try fixture()
+        let file = folder.appendingPathComponent("list.json")
+        let store = try RemoteTaskStore(file: file, connection: connection, client: client)
+        XCTAssertNil(store.workOverview)
+        try await store.refreshWorkOverview()
+        let overview = try XCTUnwrap(store.workOverview)
+        let requests = await wire.requests
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(overview.recent.first?.id, "superagent:t-done")
+        store.background()
+        let restored = try RemoteTaskStore(file: file, connection: connection, client: client)
+        XCTAssertEqual(restored.workOverview, overview)
+        await wire.setHTTPStatus(503)
+        do {
+            try await restored.refreshWorkOverview()
+            XCTFail("Expected the failed request to reach the view")
+        } catch AgentClientError.http(let status, _, _, _) {
+            XCTAssertEqual(status, 503)
+        }
+        XCTAssertEqual(restored.workOverview, overview)
+    }
+
     func testWorkOverviewAndDetailDecodingAndFetching() async throws {
         let (_, connection, client, folder) = try fixture()
         let store = try RemoteTaskStore(file: folder.appendingPathComponent("works.json"), connection: connection, client: client)

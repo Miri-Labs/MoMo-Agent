@@ -25,11 +25,13 @@ class EmbeddedTests(unittest.IsolatedAsyncioTestCase):
             async with TestClient(TestServer(public_application(service))) as client:
                 response = await client.get('/v1/capabilities?private-query', headers=headers)
                 self.assertEqual(401, response.status)
+                await client.get('/momo/v1/conversation/works?limit=15', headers=headers)
                 await client.get('/private-path', headers=headers)
                 await client.get('/v1/capabilities', headers={'X-MoMo-Connection-Attempt': 'private-id'})
             lines = (root / 'access/phone-link.log').read_text().splitlines()
             self.assertEqual([line.split(' ', 1)[1] for line in lines],
-                             [f'{trace} received /v1/capabilities', f'{trace} response 401'])
+                             [f'{trace} received /v1/capabilities', f'{trace} response 401',
+                              f'{trace} received /momo/v1/conversation/works', f'{trace} response 401'])
 
     async def test_private_invitation_approval_and_receipt_keep_network_and_identity(self):
         await self.approval('tailscale')

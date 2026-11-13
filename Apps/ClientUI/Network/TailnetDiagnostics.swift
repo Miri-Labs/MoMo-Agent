@@ -171,6 +171,7 @@ final class TailnetDiagnostics: @unchecked Sendable {
         guard let path = url?.path else { return nil }
         switch path {
         case "/momo/v1/conversation/messages": return "messages"
+        case "/momo/v1/conversation/works": return "work-overview"
         case "/momo/v1/conversation/runs": return "runs"
         case "/momo/v1/conversation/read": return "read"
         case "/momo/v1/conversation/subscribe": return "conversation-events"

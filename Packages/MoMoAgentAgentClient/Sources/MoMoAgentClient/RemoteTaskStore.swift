@@ -91,6 +91,7 @@ public final class RemoteTaskStore {
     public private(set) var sharedRuns: [AgentRun] = []
     public private(set) var sharedRunReplies: [String: RemoteReply] = [:]
     public private(set) var backgroundWork: [ConversationWork] = []
+    public private(set) var workOverview: ConversationWorkOverview?
     public private(set) var providerNotice: ProviderServiceNotice?
     private var dismissedProviderNoticeIDs: [String] = UserDefaults.standard.stringArray(forKey: "MoMoDismissedProviderNoticeIDs") ?? []
     public var activeProviderNotice: ProviderServiceNotice? {
@@ -227,6 +228,7 @@ public final class RemoteTaskStore {
         var olderMessagesBefore: Int? = nil
         var sharedRuns: [AgentRun]? = nil
         var backgroundWork: [ConversationWork]? = nil
+        var workOverview: ConversationWorkOverview? = nil
         var steeringTarget: AgentRun? = nil
         var pendingCancellations: [String: Cancellation]? = nil
         var pendingReports: [String: UUID]? = nil
@@ -265,6 +267,7 @@ public final class RemoteTaskStore {
             lastSeenMessageSequence = saved.lastSeenMessageSequence
             eventCursor = saved.eventCursor; olderMessagesBefore = saved.olderMessagesBefore
             sharedRuns = saved.sharedRuns ?? []; backgroundWork = saved.backgroundWork ?? []
+            workOverview = saved.workOverview
             guard eventCursor.map({ $0 >= 0 }) ?? true else { throw StoreError.invalidJournal }
             if migratedLegacyPrefix { try persist(tasks: tasks, draft: draft) }
             // The composer no longer has a task-selection mode. Preserve the draft,
@@ -700,6 +703,17 @@ public final class RemoteTaskStore {
         guard canContactServer else { throw CancellationError() }
         return try await client.workOverview(limit: limit)
     }
+    public func refreshWorkOverview() async throws {
+        let generation = lifetime
+        let overview = try await fetchWorkOverview()
+        try Task.checkCancellation()
+        guard generation == lifetime else { throw CancellationError() }
+        if overview != workOverview {
+            workOverview = overview
+            scheduleCheckpointSave()
+        }
+    }
+
     public func fetchWorkDetail(id: String) async throws -> ConversationWorkDetail {
         guard canContactServer else { throw CancellationError() }
         let detail = try await client.workDetail(id: id)
@@ -1283,7 +1297,8 @@ public final class RemoteTaskStore {
             let data = try JSONEncoder().encode(Document(connection: connection, sessionID: sessionID, draft: draft,
                 draftAttachments: currentAttachments.isEmpty ? nil : currentAttachments, tasks: sanitizedTasks,
                 conversation: conversation, messages: messages, lastSeenMessageSequence: lastSeenMessageSequence, messageCursor: messageCursor,
-                eventCursor: eventCursor, olderMessagesBefore: olderMessagesBefore, sharedRuns: sharedRuns, backgroundWork: backgroundWork, steeringTarget: (draft.isEmpty && currentAttachments.isEmpty) ? nil : steeringTarget, pendingCancellations: pendingCancellations,
+                eventCursor: eventCursor, olderMessagesBefore: olderMessagesBefore, sharedRuns: sharedRuns, backgroundWork: backgroundWork,
+                workOverview: workOverview, steeringTarget: (draft.isEmpty && currentAttachments.isEmpty) ? nil : steeringTarget, pendingCancellations: pendingCancellations,
                 pendingReports: pendingReports, recoveredSupplements: recoveredSupplements))
             try data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             if sanitizedTasks != self.tasks, tasks == self.tasks {

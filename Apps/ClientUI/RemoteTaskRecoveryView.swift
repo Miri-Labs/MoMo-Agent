@@ -432,17 +432,11 @@ struct AgentActiveTasksSheet: View {
     var onDetailPresentedChange: ((Bool) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var selectedWork: ConversationWork?
-    @State private var overviewActive: [ConversationWork] = []
-    @State private var overviewRecent: [ConversationWork] = []
-    @State private var overviewSkipped: [ConversationWork] = []
     @State private var isSkippedExpanded = false
-    @State private var loadedOverviewOnce = false
-
-    private var snapshot: AgentActiveTasksSnapshot {
-        AgentActiveTasksSnapshot(store: store)
-    }
+    @State private var overviewFailed = false
 
     private var activeItems: [AgentActiveTasksSnapshot.Item] {
+        let overviewActive = store?.workOverview?.active ?? []
         let liveByID = Dictionary(uniqueKeysWithValues: overviewActive.map { ($0.id, $0) })
         let baseWorks = store?.backgroundWork.filter { work in
             work.isPending && !(work.state == "cancelled" && work.reportState == "cancelled")
@@ -466,7 +460,7 @@ struct AgentActiveTasksSheet: View {
 
     private var recentItems: [AgentActiveTasksSnapshot.Item] {
         let activeIDs = Set(activeItems.map { $0.work.id })
-        return overviewRecent
+        return (store?.workOverview?.recent ?? [])
             .filter { !activeIDs.contains($0.id) && $0.state != "dropped" }
             .map { AgentActiveTasksSnapshot.makeItem(from: $0, store: store, isRecent: true) }
     }
@@ -475,7 +469,8 @@ struct AgentActiveTasksSheet: View {
         let activeIDs = Set(activeItems.map { $0.work.id })
         var seen = Set<String>()
         var combined: [ConversationWork] = []
-        for work in overviewSkipped + overviewRecent.filter({ $0.state == "dropped" }) {
+        let overview = store?.workOverview
+        for work in (overview?.skipped ?? []) + (overview?.recent ?? []).filter({ $0.state == "dropped" }) {
             guard !activeIDs.contains(work.id), seen.insert(work.id).inserted else { continue }
             combined.append(work)
         }
@@ -561,13 +556,18 @@ struct AgentActiveTasksSheet: View {
             }
         }
         .phonePageSurface()
-        .task {
-            await store?.refresh(userInitiated: true)
-            await refreshOverview()
+        .task(id: store.map(ObjectIdentifier.init)) {
+            overviewFailed = false
+            guard let store else { return }
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(3200))
-                if Task.isCancelled { break }
-                await refreshOverview()
+                do {
+                    try await store.refreshWorkOverview()
+                    overviewFailed = false
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    overviewFailed = true
+                }
+                do { try await Task.sleep(for: .milliseconds(3200)) } catch { return }
             }
         }
     }
@@ -643,16 +643,6 @@ struct AgentActiveTasksSheet: View {
         }
     }
 
-    private func refreshOverview() async {
-        guard let store else { return }
-        if let fetched = try? await store.fetchWorkOverview(limit: 15) {
-            overviewActive = fetched.active
-            overviewRecent = fetched.recent
-            overviewSkipped = fetched.skipped
-        }
-        loadedOverviewOnce = true
-    }
-
     private func sectionTitle(_ title: LocalizedStringKey, count: Int?) -> some View {
         HStack(spacing: 6) {
             Text(title)
@@ -706,7 +696,11 @@ struct AgentActiveTasksSheet: View {
 
     private var emptyState: some View {
         VStack(spacing: 10) {
-            if !loadedOverviewOnce && store?.canContactServer == true {
+            if overviewFailed || store?.canContactServer != true {
+                Text("暂时无法同步")
+                    .font(.system(size: 14))
+                    .foregroundStyle(MoMoPalette.muted)
+            } else if store?.workOverview == nil {
                 ProgressView().controlSize(.regular)
                 Text("正在同步任务列表…")
                     .font(.system(size: 14, weight: .regular))

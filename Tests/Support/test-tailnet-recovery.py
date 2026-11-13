@@ -407,7 +407,7 @@ import MoMoAgentClient
         let endpoint = URL(string: "http://100.118.16.18:8767")!
         let transport = EmbeddedTailnetTransport(network: zombieNet, endpoint: endpoint)
         TransientPeerProtocol.reset(failures: 1)
-        var getReq = URLRequest(url: endpoint.appendingPathComponent("momo/v1/conversation"))
+        var getReq = URLRequest(url: endpoint.appendingPathComponent("momo/v1/conversation/works"))
         getReq.httpMethod = "GET"
         let getStream = try await transport.open(getReq)!
         var body = Data()
@@ -422,7 +422,7 @@ import MoMoAgentClient
                                  ("peerMap", "mapped"), ("TSMP", "peer-error"), ("TSMP", "reachable")] {
             precondition(link.contains { $0["stage"] as? String == stage && $0["outcome"] as? String == outcome })
         }
-        let attempts = (end["requests"] as! [[String: Any]]).filter { $0["category"] as? String == "conversation" }
+        let attempts = (end["requests"] as! [[String: Any]]).filter { $0["category"] as? String == "work-overview" }
         let ids = attempts.filter { $0["event"] as? String == "start" }.compactMap { $0["attempt"] as? String }
         precondition(ids.count == 2 && Set(ids).count == 2)
         precondition(attempts.contains { $0["event"] as? String == "failure" && $0["attempt"] as? String == ids[0] })
