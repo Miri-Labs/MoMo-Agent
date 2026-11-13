@@ -418,8 +418,9 @@ var Tickets = class extends EnginePart {
 		const ticket = this.require(id);
 		const report = latestAssignment(ticket)?.report;
 		if (this.policy().paused || !liveTicket(ticket) || ticket.attention || ticket.delivery || !report || !waitsForPerson(ticket) || ticket.updatedAt !== updatedAt || ticket.assignments.length !== count) return "unchanged";
-		if (recover && ticket.assignments.at(-2)?.endedReason !== "retried") {
-			this.retry(id);
+		const previous = ticket.assignments.at(-2)?.endedReason;
+		if (recover && previous !== "retried" && previous !== "autoRetried") {
+			this.retry(id, "autoRetried");
 			return "retried";
 		}
 		this.end(id, "executor", "failed", this.now(), report.summary);
@@ -429,16 +430,16 @@ var Tickets = class extends EnginePart {
 	* Ends the stalled assignment of a retryable open ticket (`failed`, `blocked`, or failed input delivery) and starts a new one.
 	* @throws UserError when the ticket is unknown or not retryable.
 	*/
-	retry(ticketId) {
+	retry(ticketId, reason = "retried") {
 		const ticket = this.require(ticketId);
 		const latest = latestAssignment(ticket);
 		if (!canRetry(ticket) || !latest) throw new UserError("notRetryable");
-		this.endAssignment(ticket, latest, "retried");
+		this.endAssignment(ticket, latest, reason);
 		this.requeueUntaken(ticket, latest);
 		const assignment = this.newAssignment(ticket);
 		ticket.updatedAt = this.now();
 		this.repo.tickets.save(ticket);
-		this.options.executor.stop(ticket, latest, "retried");
+		this.options.executor.stop(ticket, latest, reason);
 		this.options.executor.start(ticket, assignment);
 		return ticket;
 	}
@@ -5318,7 +5319,8 @@ const batchLine = (trigger) => ({
 /** Returns the other triggers in a ticket's origin batch (excluding the primary `origin.triggerId`), oldest first. */
 const batchOf = (host, ticket) => ticket.origin.triggerIds.filter((id) => id !== ticket.origin.triggerId).flatMap((id) => host.store.triggers.get(id) ?? []);
 const RESUMED = "This ticket ended earlier and the message that follows, on its thread, resumed it under the same mandate. If it asks for more within the original scope, inspect the worktree, git history and PR state and continue; if it asks for work beyond that scope or for another ticket, hand it back with orchestrator_trigger_handback and report dropped; if it needs nothing, such as thanks, report dropped without a message. Report ready when the follow-up is done. Do not repeat completed work.";
-const RETRIED = "Resume this ticket from its current workspace, receipts and existing results. Check what already happened before repeating an external action.";
+const RETRIED = "A person retried this ticket. Continue the assignment from the current worktree, git history and PR state.";
+const AUTO_RETRIED = "Resume this ticket from its current workspace, receipts and existing results. Check what already happened before repeating an external action.";
 /** Formats a policy-change input for the worker; inputs recorded before `effect` existed fall back to a general notice. */
 function policyMessage(effect) {
 	if (!effect) return "Policy change: the access or admission rules changed. Check that the remaining work stays within the assignment.";
@@ -5656,7 +5658,8 @@ var DshExecutor = class {
 		const later = ticket.assignments.length > 1;
 		const told = later && await this.host.sessions.holds(sessionId, first);
 		if (!current()) return;
-		const retried = ticket.assignments.at(-2)?.endedReason === "retried" ? { note: RETRIED } : {};
+		const replaced = ticket.assignments.at(-2)?.endedReason;
+		const retried = replaced === "retried" ? { note: RETRIED } : replaced === "autoRetried" ? { note: AUTO_RETRIED } : {};
 		const assignmentText = ticket.execution?.assignment ?? "";
 		const { text: brief, chars, read } = capped(assignmentText, ASSIGNMENT_CHARS, `ticket/${ticket.id}/assignment`);
 		const card = told || !source ? void 0 : await this.triggerCard(ticket, source.id);

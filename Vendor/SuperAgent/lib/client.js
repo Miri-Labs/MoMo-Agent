@@ -4007,6 +4007,7 @@ window.__ModuleLoader__.load({
 			"reason.dropped": ["无需处理，已关闭", "No action needed; closed"],
 			"reason.merged": ["PR 已合并", "PR merged"],
 			"reason.closed": ["PR 已关闭", "PR closed"],
+			"reason.autoRetried": ["自动恢复", "Automatic recovery"],
 			"reason.stopped": ["人工停止", "Stopped by a human"],
 			"reason.revoked": ["授权已失效", "Mandate no longer valid"],
 			"reason.humanStop": ["有人要求停止", "Someone asked to stop"],
