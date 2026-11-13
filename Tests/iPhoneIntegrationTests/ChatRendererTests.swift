@@ -755,23 +755,30 @@ final class ChatRendererTests: XCTestCase {
         XCTAssertEqual(renderer.openedAction, action)
     }
 
-    func testChatEntryUnreadResumeAndExplicitReentry() async throws {
+    func testChatEntryAndReturningFromTranscriptsAndMemory() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         let session = UUID()
-        let oldPosition = ChatReadingPosition(sessionID: session, following: false, top: 100, anchorID: nil, anchorOffset: 0)
         let messages = (0..<40).map { index in
             AgentChatMessage(id: "m\(index)", turnID: "t\(index)", role: "assistant",
                 blocks: [.init(id: "b\(index)", content: .text("消息 \(index)"))], state: .complete)
         }
-        func chat(visible: Bool, count: Int, selected: Bool = true, unread: String? = nil, ready: Bool = true) -> some View {
+        enum TabID { case chat, transcripts, memory }
+        var bookmark: ChatReadingPosition?
+        func chat(visible: Bool, count: Int, tab: TabID = .chat, unread: String? = nil, ready: Bool = true) -> some View {
             var snapshot = ChatRenderSnapshot(sessionID: session, messages: Array(messages.prefix(count)),
-                busy: false, readingPosition: oldPosition)
+                busy: false, readingPosition: bookmark)
             snapshot.firstUnreadMessageID = unread
             snapshot.chatEntryReady = ready
-            return ChatRendererView(snapshot: snapshot, isChatVisible: visible, isChatSelected: selected)
-                .environment(\.scenePhase, .active)
+            return TabView(selection: .constant(tab)) {
+                Tab("聊天", systemImage: "bubble.left.and.bubble.right", value: TabID.chat) {
+                    ChatRendererView(snapshot: snapshot, isChatVisible: visible && tab == .chat,
+                        isChatSelected: tab == .chat, onReadingPosition: { bookmark = $0 })
+                }
+                Tab("转录", systemImage: "doc.text", value: TabID.transcripts) { Text("转录") }
+                Tab("记忆", systemImage: "brain", value: TabID.memory) { Text("记忆") }
+            }.environment(\.scenePhase, .active)
         }
         let host = UIHostingController(rootView: chat(visible: true, count: 24, ready: false))
         window.rootViewController = host
@@ -782,11 +789,12 @@ final class ChatRendererTests: XCTestCase {
             if let web = view as? WKWebView { return web }
             return view.subviews.lazy.compactMap(findWeb).first
         }
-        let web = try XCTUnwrap(findWeb(host.view))
+        var web = try XCTUnwrap(findWeb(host.view))
         let atBottom = "scrollY > 200 && Math.abs(scrollY + innerHeight - document.documentElement.scrollHeight) < 2"
         func waitFor(_ expression: String) async throws {
             let deadline = ContinuousClock.now + .seconds(8)
             while ContinuousClock.now < deadline {
+                if let current = findWeb(host.view) { web = current }
                 if (try? await web.evaluateJavaScript(expression)) as? Bool == true { return }
                 try await Task.sleep(for: .milliseconds(30))
             }
@@ -803,13 +811,16 @@ final class ChatRendererTests: XCTestCase {
         host.view.layoutIfNeeded()
         host.rootView = chat(visible: true, count: 36, unread: "m32")
         try await waitFor("document.querySelector('[data-source-message=m35]') && scrollY === 100 && document.querySelector('#jump').classList.contains('has-new')")
-        host.rootView = chat(visible: false, count: 36, selected: false)
+        host.rootView = chat(visible: false, count: 36, tab: .transcripts)
         try await Task.sleep(for: .milliseconds(80))
         host.rootView = chat(visible: true, count: 40, unread: "m34")
-        try await waitFor("Math.abs(document.querySelector('[data-source-message=m34]').getBoundingClientRect().top - 16) < 3 || (" + atBottom + " && document.querySelector('[data-source-message=m34]').getBoundingClientRect().top >= 0)")
-        host.rootView = chat(visible: false, count: 40, selected: false)
+        try await waitFor("document.querySelector('[data-source-message=m39]') && scrollY === 100 && document.querySelector('#jump').classList.contains('has-new')")
+        host.rootView = chat(visible: false, count: 40, tab: .memory)
         try await Task.sleep(for: .milliseconds(80))
         host.rootView = chat(visible: true, count: 40)
+        try await Task.sleep(for: .milliseconds(250))
+        try await waitFor("scrollY === 100 && !document.querySelector('#jump').hidden")
+        _ = try await web.evaluateJavaScript("document.querySelector('#jump').click(); true")
         try await waitFor(atBottom)
     }
 
@@ -847,6 +858,9 @@ final class ChatRendererTests: XCTestCase {
         let beforeRecreation = reopened.readingSequence
         reopened.render(messages, busy: true, sessionID: first, readingPosition: saved)
         try await reopened.wait("Math.abs(scrollY - 500) < 2 && !document.querySelector('#jump').hidden")
+        _ = try await reopened.web.evaluateJavaScript("MoMoChat.openChat(); true")
+        try await Task.sleep(for: .milliseconds(100))
+        try await reopened.check("Math.abs(scrollY - 500) < 2")
         _ = try await reopened.waitForReadingPosition(first, following: false, after: beforeRecreation, top: 500)
         let longer = body + "\n\n请求完成后追加的结尾。"
         reopened.render([user("原问题"), assistant([.init(id: "body", content: .text(longer))])], sessionID: first)
@@ -1080,28 +1094,34 @@ final class ChatRendererTests: XCTestCase {
         defer { renderer.close() }
         try await renderer.ready()
         try await renderer.recordScrollEvents()
+        let session = UUID()
         let body = (1...60).map { "第\($0)段：这是已收到的录音整理内容。" }.joined(separator:"\n\n")
-        renderer.render([user("长内容"),assistant([.init(id:"body",content:.text(body))])])
+        renderer.render([user("长内容"),assistant([.init(id:"body",content:.text(body))])], sessionID: session)
         try await renderer.wait("window.scrollY > 500")
         _ = try await renderer.web.evaluateJavaScript("window.scrollTo(0,0); true")
         try await renderer.wait("!document.querySelector('#jump').hidden")
-        renderer.render([user("长内容"),assistant([.init(id:"body",content:.text(body + "\n\n新增内容。"))],state:.streaming)],busy:true)
+        renderer.render([user("长内容"),assistant([.init(id:"body",content:.text(body + "\n\n新增内容。"))],state:.streaming)],busy:true,sessionID:session)
         try await renderer.wait("document.querySelector('.prose').textContent.includes('新增内容')")
         try await renderer.check("window.scrollY < 10")
-        _ = try await renderer.web.evaluateJavaScript("document.querySelector('#jump').click(); true")
-        try await renderer.wait("document.querySelector('#jump').hidden && window.scrollY > 500")
-        // Replay the actual 0 -> bottom native offset sequence seen after a jump.
-        // Both moves go through WKWebView scrolling and the document's real scroll
-        // handlers, without changing PinState or dispatching a fabricated scroll event.
-        for _ in 0..<2 {
-            _ = try await renderer.web.evaluateJavaScript("window.scrollTo({ top:0, behavior:'auto' }); true")
-            try await renderer.wait("scrollY < 2 && !document.querySelector('#jump').hidden")
-            _ = try await renderer.web.evaluateJavaScript("window.scrollTo({ top:Math.max(0,document.documentElement.scrollHeight - innerHeight), behavior:'auto' }); true")
-            try await renderer.wait("document.querySelector('#jump').hidden && scrollY > 500 && Math.abs(document.documentElement.scrollHeight - innerHeight - scrollY) < 2")
+        // JavaScript scrollTo can return before WK's native scroll and scrollend.
+        // Start each move from a settled offset, as a real user would.
+        func move(_ script: String, to offset: Double, following: Bool) async throws {
+            let seq = renderer.readingSequence
+            let stamp = try await renderer.web.evaluateJavaScript("performance.now()")
+            _ = try await renderer.web.evaluateJavaScript(script)
+            _ = try await renderer.waitForReadingPosition(session, following: following, after: seq, top: offset,
+                nativeScrollAfter: try XCTUnwrap(stamp as? Double))
         }
-        renderer.render([user("长内容"),assistant([.init(id:"body",content:.text(body + "\n\n新增内容。\n\n回到底部后继续接收。"))],state:.streaming)],busy:true)
+        let maximum = try await renderer.web.evaluateJavaScript("document.documentElement.scrollHeight - innerHeight")
+        let bottom = try XCTUnwrap(maximum as? Double)
+        try await move("document.querySelector('#jump').click(); true", to: bottom, following: true)
+        for _ in 0..<2 {
+            try await move("window.scrollTo(0,0); true", to: 0, following: false)
+            try await move("window.scrollTo(0,document.documentElement.scrollHeight - innerHeight); true", to: bottom, following: true)
+        }
+        renderer.render([user("长内容"),assistant([.init(id:"body",content:.text(body + "\n\n新增内容。\n\n回到底部后继续接收。"))],state:.streaming)],busy:true,sessionID:session)
         try await renderer.wait("document.querySelector('.prose').textContent.includes('回到底部后继续接收') && document.querySelector('#jump').hidden && document.documentElement.scrollHeight - innerHeight - scrollY < 80")
-        renderer.render([user("长内容"),assistant([.init(id:"body",content:.text(body + "\n\n新增内容。\n\n回到底部后继续接收。"))],state:.stopped)],stopped:true)
+        renderer.render([user("长内容"),assistant([.init(id:"body",content:.text(body + "\n\n新增内容。\n\n回到底部后继续接收。"))],state:.stopped)],stopped:true,sessionID:session)
         try await renderer.wait("document.querySelector('.end-status').textContent === ''")
         try await renderer.check("document.querySelector('#announcer').textContent === '已停止回复'")
         try await renderer.attachScrollEvents(to:self)

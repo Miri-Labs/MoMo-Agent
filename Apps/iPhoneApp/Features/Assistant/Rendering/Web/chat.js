@@ -590,7 +590,9 @@
     if (showMessage(target.messageID)) focusedRequest = target.requestID;
   }
   function openChat() {
-    if (!latest || latest.focus) return;
+    // A tab return (or a recreated WebView with a session bookmark) resumes
+    // reading. A notification or the explicit jump button has its own intent.
+    if (!latest || latest.focus || !pin.pinned) return;
     openingChat = true; lastReading = null;
     stopRestoring();
     pin.pinned = true;
