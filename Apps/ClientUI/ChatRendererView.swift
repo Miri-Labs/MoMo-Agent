@@ -4,7 +4,7 @@ import OSLog
 import MoMoContracts
 
 struct ChatScrollRequest: Equatable {
-    enum Destination { case entry, latest }
+    enum Destination { case entry, resumeTab, latest }
     let destination: Destination
     let id = UUID()
 }
@@ -60,7 +60,7 @@ struct ChatRendererView: View {
         .background(MoMoPalette.canvas)
         .phoneSoftTopEdge()
         .onChange(of: isChatSelected) { _, selected in
-            if selected { scrollRequest = ChatScrollRequest(destination: .entry) }
+            if selected { scrollRequest = ChatScrollRequest(destination: .resumeTab) }
         }
         .onChange(of: scrollToBottomRequest) { scrollRequest = ChatScrollRequest(destination: .latest) }
         .onChange(of: snapshot.sessionID) { renderingFailed = false; scrollRequest = ChatScrollRequest(destination: .entry) }
@@ -188,7 +188,7 @@ struct ChatRendererView: View {
             #endif
             .accessibilityIdentifier("assistant.nativeTranscript")
             .onChange(of: scrollRequest, initial: true) {
-                nativeEntryPlaced = false
+                if scrollRequest.destination != .resumeTab { nativeEntryPlaced = false }
                 placeNativeChat(reader)
             }
             .onChange(of: snapshot.firstUnreadMessageID) { placeNativeChat(reader) }
@@ -202,7 +202,12 @@ struct ChatRendererView: View {
 
     private func placeNativeChat(_ reader: ScrollViewProxy) {
         guard !nativeEntryPlaced, isChatVisible, snapshot.focus == nil else { return }
-        if scrollRequest.destination == .entry, let id = snapshot.firstUnreadMessageID {
+        if scrollRequest.destination != .latest,
+           let position = snapshot.readingPosition, !position.following, let anchor = position.anchorID,
+           let message = snapshot.messages.first(where: { ($0.role == "assistant" ? "\($0.id):reply" : $0.id) == anchor }) {
+            reader.scrollTo(message.id, anchor: .top)
+            nativeEntryPlaced = true
+        } else if scrollRequest.destination != .latest, let id = snapshot.firstUnreadMessageID {
             reader.scrollTo(id, anchor: .top)
             nativeEntryPlaced = true
         } else {
@@ -560,7 +565,7 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
             let requestChanged = scroll != sentScroll
             let script = "if (payloadJSON) MoMoChat.render(JSON.parse(payloadJSON)); if (openChat) MoMoChat.openChat(); if (latest) MoMoChat.scrollToBottom();"
             webView.callAsyncJavaScript(script, arguments: ["payloadJSON": payloadJSON,
-                "openChat": requestChanged && scroll?.destination == .entry,
+                "openChat": requestChanged && (scroll?.destination == .entry || scroll?.destination == .resumeTab),
                 "latest": requestChanged && scroll?.destination == .latest && payload.snapshot.focus == nil],
                 in: nil, in: .page, completionHandler: { [weak self] result in
                 guard let self, self.webView === webView, document == self.documentID else { return }
