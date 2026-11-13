@@ -137,7 +137,21 @@ import MoMoAgentClient
         try Data(#"{"schema":1,"requests":[{"category":"messages"}],"routes":[]}"#.utf8).write(to: log)
         let failure = AgentClientError.http(status: 503, code: "private-code", message: "private-message")
         let recorder = TailnetDiagnostics(directory: diagnosticsDir)
+        recorder.observePeer("100.64.0.2")
+        for candidate in [peer, relayed, relayed] {
+            recorder.recordStatus(try JSONSerialization.data(withJSONObject: [
+                "BackendState": "Running", "Peer": ["private-key": candidate],
+                "Health": ["coordination server at private-host"]]))
+        }
+        let socket = NSError(domain: NSPOSIXErrorDomain, code: 61, userInfo: [NSLocalizedDescriptionKey: "private-address"])
+        let wrapped = NSError(domain: NSURLErrorDomain, code: -1000,
+                              userInfo: [NSUnderlyingErrorKey: socket, "_kCFStreamErrorDomainKey": 4])
+        var failed = URLRequest(url: URL(string: "http://100.64.0.2/v1/capabilities?private-query")!)
+        let attempt = UUID().uuidString
+        failed.setValue(attempt, forHTTPHeaderField: TailnetDiagnostics.attemptHeader)
+        recorder.recordFailure(wrapped, request: failed)
         recorder.recordChat("conversationSubscription", state: .retrying, error: failure, retryAt: Date())
+        recorder.recordLink("localProxy", "reachable")
         recorder.recordChat("conversationSubscription", state: .retrying, error: failure, retryAt: Date())
         let reopened = TailnetDiagnostics(directory: diagnosticsDir)
         reopened.recordChat("liveConnectionConfirmed", state: .ready, error: nil, retryAt: nil)
@@ -147,7 +161,17 @@ import MoMoAgentClient
         let incidents = saved["chat"] as! [[String: Any]]
         precondition(incidents.count == 2 && incidents[0]["code"] as? Int == 503)
         precondition(incidents[0]["count"] as? Int == 2 && incidents[1]["state"] as? String == "ready")
-        precondition((saved["requests"] as? [[String: String]])?.first?["category"] == "messages")
+        precondition((saved["requests"] as? [[String: Any]])?.first?["category"] as? String == "messages")
+        let routes = saved["routes"] as! [[String: Any]]
+        precondition(routes.count == 2 && routes[1]["health"] as? [String] == ["coordination-server"])
+        let firstEvidence = incidents[0]["evidence"] as! [String: Any]
+        let requestFailure = firstEvidence["lastRequestFailure"] as! [String: Any]
+        let chain = requestFailure["causes"] as! [[String: String]]
+        precondition(chain.map { $0["code"] } == ["-1000", "61"] && chain[0]["_kCFStreamErrorDomainKey"] == "4")
+        precondition(requestFailure["attempt"] as? String == attempt)
+        let pathAtOnset = firstEvidence["link"] as! [String: Any]
+        precondition(pathAtOnset["localProxy"] == nil && incidents[0]["lastEvidence"] != nil)
+        precondition(!String(decoding: recorded, as: UTF8.self).contains("100.64.0.2"))
         precondition(!String(decoding: recorded, as: UTF8.self).contains("private-"))
         let network = EmbeddedTailnet(directory: directory, device: "fixture")
         async let a = network.connectedSession()
@@ -383,13 +407,27 @@ import MoMoAgentClient
         let endpoint = URL(string: "http://100.118.16.18:8767")!
         let transport = EmbeddedTailnetTransport(network: zombieNet, endpoint: endpoint)
         TransientPeerProtocol.reset(failures: 1)
-        var getReq = URLRequest(url: endpoint.appendingPathComponent("momo/v1/conversation"))
+        var getReq = URLRequest(url: endpoint.appendingPathComponent("momo/v1/conversation/works"))
         getReq.httpMethod = "GET"
         let getStream = try await transport.open(getReq)!
         var body = Data()
         for try await chunk in getStream.chunks { body.append(chunk) }
         precondition(getStream.status == 200 && TransientPeerProtocol.attempts == 2,
                      "GET must transparently recover from one SOCKS5 -1000 cutoff")
+        zombieNet.diagnostics.recordChat("fixture", state: .retrying, error: URLError(.badURL), retryAt: nil)
+        let incidentLog = try Data(contentsOf: recoveryDir.appendingPathComponent("network-timing.json"))
+        let end = try JSONSerialization.jsonObject(with: incidentLog) as! [String: Any]
+        let link = end["link"] as! [[String: Any]]
+        for (stage, outcome) in [("localProxy", "reachable"), ("peerMap", "timed-out"),
+                                 ("peerMap", "mapped"), ("TSMP", "peer-error"), ("TSMP", "reachable")] {
+            precondition(link.contains { $0["stage"] as? String == stage && $0["outcome"] as? String == outcome })
+        }
+        let attempts = (end["requests"] as! [[String: Any]]).filter { $0["category"] as? String == "work-overview" }
+        let ids = attempts.filter { $0["event"] as? String == "start" }.compactMap { $0["attempt"] as? String }
+        precondition(ids.count == 2 && Set(ids).count == 2)
+        precondition(attempts.contains { $0["event"] as? String == "failure" && $0["attempt"] as? String == ids[0] })
+        precondition(attempts.contains { $0["status"] as? Int == 200 && $0["attempt"] as? String == ids[1] })
+        print("PASS: missing peer, LocalAPI, ping failure/recovery, distinct HTTP attempts and headers persisted")
 
         TransientPeerProtocol.reset(failures: 1)
         var unsafePost = URLRequest(url: endpoint.appendingPathComponent("momo/v1/custom"))

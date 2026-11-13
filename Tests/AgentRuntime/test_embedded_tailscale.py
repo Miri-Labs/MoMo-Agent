@@ -7,12 +7,32 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'Apps/MacApp/Access'))
 from tunnel import TunnelLifecycle, EmbeddedTailscale
-from access_server import AccessService, errors
+from access_server import AccessService, errors, public_application
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 
 class EmbeddedTests(unittest.IsolatedAsyncioTestCase):
+    async def test_phone_attempt_is_recorded_on_arrival_and_at_headers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'access').mkdir()
+            async def unauthorized(request):
+                raise web.HTTPUnauthorized()
+            service = type('Service', (), {'data': root, 'public': staticmethod(unauthorized)})()
+            trace = '72273700-f778-4ab7-b309-05b42fe1417e'
+            headers = {'X-MoMo-Connection-Attempt': trace, 'Authorization': 'Bearer private-token'}
+            async with TestClient(TestServer(public_application(service))) as client:
+                response = await client.get('/v1/capabilities?private-query', headers=headers)
+                self.assertEqual(401, response.status)
+                await client.get('/momo/v1/conversation/works?limit=15', headers=headers)
+                await client.get('/private-path', headers=headers)
+                await client.get('/v1/capabilities', headers={'X-MoMo-Connection-Attempt': 'private-id'})
+            lines = (root / 'access/phone-link.log').read_text().splitlines()
+            self.assertEqual([line.split(' ', 1)[1] for line in lines],
+                             [f'{trace} received /v1/capabilities', f'{trace} response 401',
+                              f'{trace} received /momo/v1/conversation/works', f'{trace} response 401'])
+
     async def test_private_invitation_approval_and_receipt_keep_network_and_identity(self):
         await self.approval('tailscale')
 
