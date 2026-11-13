@@ -11,6 +11,7 @@ struct PhoneUITestConfiguration {
     let rootURL: URL
     let importFixture: Bool
     var remoteFixture = false
+    var recordingReferenceFixture = false
     var timelineFixture = false
     var timelineScrollFixture = false
     var timelineTurnsFixture = false
@@ -45,8 +46,9 @@ struct PhoneUITestConfiguration {
         result.timelineScrollFixture = timelineFixture == "scroll"
         result.timelineTurnsFixture = timelineFixture == "turns"
         result.playerInteractionFixture = timelineFixture == "player"
-        result.remoteFixture = timelineFixture == "remote" || timelineFixture == "chat"
-        result.timelineFixture = result.lifeIllustrationsFixture || timelineFixture == "1" || result.timelineScrollFixture || result.timelineTurnsFixture || result.playerInteractionFixture || timelineFixture == "remote"
+        result.recordingReferenceFixture = timelineFixture == "recording-reference"
+        result.remoteFixture = timelineFixture == "remote" || timelineFixture == "chat" || result.recordingReferenceFixture
+        result.timelineFixture = result.lifeIllustrationsFixture || timelineFixture == "1" || result.timelineScrollFixture || result.timelineTurnsFixture || result.playerInteractionFixture || timelineFixture == "remote" || result.recordingReferenceFixture
         result.useSilentAudio = fixture == "silence"
         result.padSpeechForPlayback = fixture == "speech-playback"
         result.showStatusFailure = environment["MOMO_UI_TEST_STATUS_FAILURE"] == "1"
@@ -137,7 +139,15 @@ struct PhoneUITestConfiguration {
                 sourceDeviceID: runID, endFrame: audio.length, reason: .stopped))
             let claimed = try await archive.claimAnalysisJob(configurationHash: fingerprint ?? "timeline-ui")
             guard let ticket = claimed else { throw FixtureError.invalidAudio }
-            if playerInteractionFixture {
+            if recordingReferenceFixture {
+                let spans = try (0..<500).map { index in
+                    let start = audio.length * Int64(index) / 500
+                    let end = audio.length * Int64(index + 1) / 500
+                    return TranscriptSpan(chunkID: ticket.chunkID, frames: try FrameRange(start: start, count: end - start),
+                        text: "用于引用回归的第 \(index + 1) 个合成片段。")
+                }
+                _ = try await archive.commitTranscript(ticket: ticket, spans: spans)
+            } else if playerInteractionFixture {
                 let firstEnd = audio.length / 3
                 let spans = try (0..<36).map { index in
                     let start = index == 0 ? 0 : firstEnd + (audio.length - firstEnd) * Int64(index - 1) / 35

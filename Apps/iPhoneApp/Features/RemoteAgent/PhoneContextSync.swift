@@ -232,7 +232,23 @@ final class PhoneContextSync {
                 : error.localizedDescription
         }
     }
-    func prepareSubmission(input: String) async throws {
+    func prepareSubmission(input: String, attachments: [AgentAttachment] = []) async throws {
+        for reference in attachments.compactMap(\.recording) {
+            guard reference.libraryID == archive.libraryInstanceID else { throw SyncError.sourceChanged }
+            for selection in reference.sessions {
+                let summary: RecordingSummary
+                do { summary = try await archive.recordingSummary(sessionID: selection.sessionID) }
+                catch ArchiveError.sessionDeleted { throw SyncError.sourceChanged }
+                let source = try await stage(summary)
+                let available = Set(source.envelope.spans.map(\.id))
+                guard source.envelope.generation == selection.generation,
+                      source.envelope.version == selection.version,
+                      selection.spanIDs.allSatisfy({ available.contains($0.uuidString.lowercased()) }) else {
+                    throw SyncError.sourceChanged
+                }
+                if source.receipt == nil { try await deliver(source) }
+            }
+        }
         let expression = try NSRegularExpression(pattern: "momoagent://source/[^\\s)\\]>]+")
         for match in expression.matches(in: input, range: NSRange(input.startIndex..., in: input)) {
             guard let range = Range(match.range, in: input), let url = URLComponents(string: String(input[range])) else { throw SyncError.sourceChanged }

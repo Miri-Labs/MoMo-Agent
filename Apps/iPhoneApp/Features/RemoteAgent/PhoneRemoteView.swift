@@ -211,7 +211,9 @@ private struct RemoteConversationView: View {
             RemoteTaskControlsView(store: store, viewport: viewport, onControlVisibility: agent.notifications.controlVisible,
                                    openDesktop: openDesktop)
             RemoteTaskRecoveryView(store: store, reconnect: reconnect, retry: { await agent.reconnect() })
-            if let failure = sendFailure ?? store.interactionFailure { Text(failure).foregroundStyle(.red).font(.footnote) }
+            if let failure = agent.recordingReferenceFailure ?? sendFailure ?? store.interactionFailure {
+                Text(failure).foregroundStyle(.red).font(.footnote)
+            }
         }
         .onChange(of: agent.notifications.navigationRevision) { _, _ in
             if agent.notifications.focusedTarget?.messageID == nil { composeRevision += 1 }
@@ -272,7 +274,7 @@ private struct RemoteConversationView: View {
             return .handled
         })
         .safeAreaInset(edge: .bottom) {
-            ClientComposer(text: Binding(get: { store.draft }, set: store.setDraft),
+            ClientComposer(text: Binding(get: { store.draft }, set: { store.setDraft($0) }),
                            store: store,
                            prompt: "发消息给 MoMo",
                            onCompose: { composeRevision += 1 },

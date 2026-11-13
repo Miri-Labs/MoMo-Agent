@@ -2,6 +2,47 @@ import XCTest
 import UIKit
 
 @MainActor final class ChatInteractionTests: XCTestCase {
+    func testLongRecordingDiscussionShowsOneRemovableCard() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["MOMO_UI_TEST_RUN_ID"] = "5F12C378-A804-4E20-A46D-213FE37495AB"
+        app.launchEnvironment["MOMO_UI_TEST_TIMELINE_FIXTURE"] = "recording-reference"
+        app.launchEnvironment["MOMO_UI_TEST_INITIAL_TAB"] = "transcripts"
+        app.launchEnvironment["MOMO_UI_TEST_AVATAR_UNAVAILABLE"] = "1"
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        defer { app.terminate() }
+        if app.buttons["welcome.skip"].waitForExistence(timeout: 5) { app.buttons["welcome.skip"].tap() }
+        if app.buttons["welcome.start"].waitForExistence(timeout: 5) { app.buttons["welcome.start"].tap() }
+        if app.buttons["onboarding.finish"].waitForExistence(timeout: 5) { app.buttons["onboarding.finish"].tap() }
+        let window = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "timeline.window.")).firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 25), app.debugDescription)
+        window.tap()
+        let discuss = app.buttons["transcript.discuss"]
+        XCTAssertTrue(discuss.waitForExistence(timeout: 10), app.debugDescription)
+        discuss.tap()
+        let cards = app.descendants(matching: .any).matching(identifier: "assistant.recording-reference")
+        XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 10))
+        let remove = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "移除录音"))
+        XCTAssertEqual(remove.count, 1)
+        let input = app.textFields["remote.input"]
+        XCTAssertTrue(input.exists)
+        XCTAssertFalse((input.value as? String ?? "").contains("momoagent://source/"))
+        remove.firstMatch.tap()
+        XCTAssertFalse(cards.firstMatch.exists)
+        app.tabBars.buttons["转录"].tap()
+        if !discuss.exists { window.tap() }
+        discuss.tap()
+        XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 10))
+        input.tap()
+        input.typeText("Summarize this recording")
+        XCTAssertEqual(input.value as? String, "Summarize this recording")
+        capture(app, "One recording card for 500 selected spans")
+        app.buttons["remote.send"].tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Summarize this recording")).firstMatch.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["请输入不超过 16 KB 的文字。"].exists)
+    }
+
     func testVoiceInputKeepsDraftWhenCancelledOrLeavingChat() async throws {
         continueAfterFailure = false
         let app = XCUIApplication()

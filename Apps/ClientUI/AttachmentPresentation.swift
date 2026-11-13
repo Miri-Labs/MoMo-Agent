@@ -13,13 +13,17 @@ import UIKit
 
 extension AgentAttachment {
     var displayFormat: String {
+        if recording != nil { return String(localized: "录音引用") }
         if kind == .image { return String(localized: "照片") }
         if isHTMLDocument { return "HTML" }
         if isMarkdownDocument { return "MD" }
         let suffix = (name as NSString).pathExtension.uppercased()
         return suffix.isEmpty ? String(localized: "文本") : String(suffix.prefix(8))
     }
-    var displaySize: String { ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file) }
+    var displaySize: String {
+        if let recording { return String(localized: "\(recording.sessions.reduce(0) { $0 + $1.spanIDs.count }) 个片段") }
+        return ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)
+    }
     var supportsRichDocumentPreview: Bool { text != nil && (isHTMLDocument || isMarkdownDocument) }
 
     var safeExportFilename: String {
@@ -163,28 +167,37 @@ struct ClientAttachmentStrip: View {
             HStack(spacing: 12) {
                 ForEach(attachments) { item in
                     ZStack(alignment: .topTrailing) {
-                        Button { preview(item) } label: {
-                            Group {
-                                if let bytes = item.preview ?? item.data, let image = platformImage(from: bytes) {
-                                    image.resizable().scaledToFit()
-                                        .frame(width: 96, height: 96).accessibilityHidden(true)
-                                } else {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(item.name).font(.system(size: 12)).lineLimit(2)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                        Text(item.displaySize).font(.system(size: 11)).foregroundStyle(MoMoPalette.muted)
-                                        Spacer(minLength: 0)
-                                        Text(item.displayFormat).font(.system(size: 10, weight: .medium))
-                                            .foregroundStyle(MoMoPalette.muted).padding(.horizontal, 6).padding(.vertical, 2)
-                                            .background(MoMoPalette.canvas, in: RoundedRectangle(cornerRadius: 5))
-                                    }.padding(10).frame(width: 96, height: 96)
+                        if item.recording != nil {
+                            Label(item.name, systemImage: "waveform")
+                                .font(.system(size: 12, weight: .medium))
+                                .padding(.leading, 12).padding(.trailing, 20)
+                                .frame(height: 44)
+                                .background(MoMoPalette.surface, in: RoundedRectangle(cornerRadius: 12))
+                                .accessibilityIdentifier("assistant.recording-reference")
+                        } else {
+                            Button { preview(item) } label: {
+                                Group {
+                                    if let bytes = item.preview ?? item.data, let image = platformImage(from: bytes) {
+                                        image.resizable().scaledToFit()
+                                            .frame(width: 96, height: 96).accessibilityHidden(true)
+                                    } else {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(item.name).font(.system(size: 12)).lineLimit(2)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                            Text(item.displaySize).font(.system(size: 11)).foregroundStyle(MoMoPalette.muted)
+                                            Spacer(minLength: 0)
+                                            Text(item.displayFormat).font(.system(size: 10, weight: .medium))
+                                                .foregroundStyle(MoMoPalette.muted).padding(.horizontal, 6).padding(.vertical, 2)
+                                                .background(MoMoPalette.canvas, in: RoundedRectangle(cornerRadius: 5))
+                                        }.padding(10).frame(width: 96, height: 96)
+                                    }
                                 }
+                                .background(MoMoPalette.surface, in: RoundedRectangle(cornerRadius: 12))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(MoMoPalette.muted.opacity(0.2), lineWidth: 0.5) }
                             }
-                            .background(MoMoPalette.surface, in: RoundedRectangle(cornerRadius: 12))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(MoMoPalette.muted.opacity(0.2), lineWidth: 0.5) }
+                            .buttonStyle(.plain).accessibilityLabel("预览\(item.name)")
                         }
-                        .buttonStyle(.plain).accessibilityLabel("预览\(item.name)")
                         Button { remove(item.id) } label: {
                             Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
                                 .frame(width: 20, height: 20)
@@ -199,7 +212,7 @@ struct ClientAttachmentStrip: View {
                     .accessibilityIdentifier("assistant.attachment.\(item.id)")
                 }
             }.padding(.horizontal, 12).padding(.vertical, 10)
-        }.scrollIndicators(.hidden).frame(height: 116)
+        }.scrollIndicators(.hidden).frame(height: attachments.allSatisfy { $0.recording != nil } ? 64 : 116)
     }
 
     private func platformImage(from data: Data) -> Image? {
@@ -212,6 +225,19 @@ struct ClientAttachmentStrip: View {
         #endif
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("录音引用 · 500 个片段") {
+    @Previewable @State var attachments = [
+        AgentAttachment(name: "录音 · 17:21–18:59", kind: .document,
+                        mediaType: "application/vnd.momo.recording-reference", byteCount: 0,
+                        recording: .init(libraryID: UUID(), sessions: [
+                            .init(sessionID: UUID(), version: 1, generation: 0, spanIDs: (0..<500).map { _ in UUID() })
+                        ]))
+    ]
+    ClientAttachmentStrip(attachments: attachments, remove: { id in attachments.removeAll { $0.id == id } })
+}
+#endif
 
 struct ClientAttachmentPreview: View {
     private enum DocumentDisplayMode: String, CaseIterable, Identifiable {

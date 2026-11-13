@@ -119,6 +119,71 @@ final class RemoteTaskStoreTests: XCTestCase {
         XCTAssertEqual(state.submissions.count, 1)
     }
 
+    func testRecordingReferenceSurvivesDraftAndOutboxAndCanBeRemoved() async throws {
+        let state = DeliveryScenario(supportsRecordingReferences: true)
+        DeliveryProtocol.install(state)
+        let (file, connection, client, store) = try setup()
+        let spanIDs = (0..<500).map { _ in UUID() }
+        let reference = AgentAttachment.RecordingReference(libraryID: UUID(), sessions: [
+            .init(sessionID: UUID(), version: 1, generation: 0, spanIDs: spanIDs)
+        ])
+        let attachment = AgentAttachment(name: "录音 · 17:21–18:59", kind: .document,
+                                         mediaType: "application/vnd.momo.recording-reference", byteCount: 0, recording: reference)
+        store.setDraft("请总结这段录音")
+        try store.setRecordingAttachment(attachment)
+        let reopened = try RemoteTaskStore(file: file, connection: connection, client: client)
+        XCTAssertEqual(reopened.draft, "请总结这段录音")
+        XCTAssertEqual(reopened.draftAttachments, [attachment])
+        let operation = try reopened.enqueue()
+        let outbox = try RemoteTaskStore(file: file, connection: connection, client: client)
+        XCTAssertEqual(outbox.tasks.first?.attachments, [attachment])
+        XCTAssertTrue(outbox.draftAttachments.isEmpty)
+        await outbox.refresh()
+        let first = try XCTUnwrap(state.submissions.first)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: first) as? [String: Any])
+        XCTAssertEqual(body["content"] as? String, "请总结这段录音")
+        XCTAssertEqual(body["operation_id"] as? String, operation.uuidString.lowercased())
+        let files = try XCTUnwrap(body["attachments"] as? [[String: Any]])
+        let encoded = try JSONSerialization.data(withJSONObject: try XCTUnwrap(files.first?["recording"]))
+        XCTAssertEqual(try JSONDecoder().decode(AgentAttachment.RecordingReference.self, from: encoded), reference)
+
+        try outbox.setRecordingAttachment(attachment)
+        outbox.removeAttachment(attachment.id)
+        outbox.setDraft("只发送这个问题")
+        try outbox.enqueue()
+        await outbox.refresh()
+        XCTAssertEqual(state.submissions.count, 2)
+        let second = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(state.submissions.last)) as? [String: Any])
+        XCTAssertEqual(second["content"] as? String, "只发送这个问题")
+        XCTAssertNil(second["attachments"])
+    }
+
+    func testRecordingReferenceWaitsForMacUpgradeWithoutSubmittingOrUploading() async throws {
+        let oldMac = DeliveryScenario()
+        DeliveryProtocol.install(oldMac)
+        let (_, connection, _, store) = try setup()
+        let attachment = AgentAttachment(name: "录音引用", kind: .document, mediaType: "application/vnd.momo.recording-reference",
+            byteCount: 0, recording: .init(libraryID: UUID(), sessions: [
+                .init(sessionID: UUID(), version: 1, generation: 0, spanIDs: [UUID()])
+            ]))
+        var prepared = false
+        store.prepareSubmission = { _ in prepared = true }
+        try store.setRecordingAttachment(attachment)
+        let id = try store.enqueue()
+        await store.refresh()
+        XCTAssertFalse(prepared)
+        XCTAssertTrue(oldMac.submissions.isEmpty)
+        XCTAssertEqual(store.tasks.first?.lastError, RemoteTaskStore.StoreError.unsupportedRecordingReferences.localizedDescription)
+        XCTAssertNil(store.tasks.first?.firstAttemptAt)
+
+        let upgradedMac = DeliveryScenario(supportsRecordingReferences: true)
+        DeliveryProtocol.install(upgradedMac)
+        DeliveryProtocol.configure(connection)
+        await store.checkAgain(id: id)
+        XCTAssertTrue(prepared)
+        XCTAssertEqual(upgradedMac.submissions.count, 1)
+    }
+
     func testCorruptOrDifferentIdentityJournalIsPreserved() throws {
         let (file, connection, client, store) = try setup()
         store.setDraft("Keep this draft")
@@ -265,9 +330,12 @@ private final class DeliveryScenario: @unchecked Sendable {
     let status: String
     let missingRun: Bool
     let loseFirstStatus: Bool
-    init(receiptsToLose: Int = 0, status: String = "running", missingRun: Bool = false, loseFirstStatus: Bool = false) {
+    let supportsRecordingReferences: Bool
+    init(receiptsToLose: Int = 0, status: String = "running", missingRun: Bool = false, loseFirstStatus: Bool = false,
+         supportsRecordingReferences: Bool = false) {
         self.receiptsToLose = receiptsToLose; self.status = status; self.missingRun = missingRun
         self.loseFirstStatus = loseFirstStatus
+        self.supportsRecordingReferences = supportsRecordingReferences
     }
     var requests: [URLRequest] { lock.withLock { recorded } }
     var submissions: [Data] { lock.withLock { bodies } }
@@ -280,7 +348,7 @@ private final class DeliveryScenario: @unchecked Sendable {
                 session = "momo-main-" + c.assistantID.uuidString.lowercased()
                 return try JSONSerialization.data(withJSONObject: ["conversation_id": "fixture", "session_id": session,
                     "assistant_id": c.assistantID.uuidString, "instance_id": c.instanceID.uuidString,
-                    "capabilities": ["shared_conversation": true, "server_owned_completion": true, "durable_steering": true, "independent_chat_while_waiting": false, "system_push": false]])
+                    "capabilities": ["shared_conversation": true, "server_owned_completion": true, "durable_steering": true, "independent_chat_while_waiting": false, "system_push": false, "recording_references": supportsRecordingReferences]])
             }
             if request.httpMethod == "GET", request.url!.path == "/momo/v1/conversation/messages" { return Data(#"{"data":[],"next_cursor":0,"has_more":false}"#.utf8) }
             if request.url!.path == "/momo/v1/conversation/runs" { return Data(#"{"data":[]}"#.utf8) }

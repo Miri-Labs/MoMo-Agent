@@ -173,6 +173,60 @@ class SharedContextAndMemoryCLITests(unittest.TestCase):
 
 
 class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_long_recording_reference_preserves_exact_selection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            conn = momo_agent.initialize(data, 19830)
+            gateway = SuperAgentGateway(data, conn, python_executable=Path(sys.executable),
+                                        base_env=momo_agent.child_environment(data), manage_dsh=False)
+            payload = make_source_payload("Synthetic", [f"span {i}" for i in range(502)])
+            context = ContextStore(data / "context")
+            try:
+                context.sync_source(payload)
+            finally:
+                context.close()
+            selected = [span["id"] for span in payload["spans"][1:-1]]
+            reference = {"library_id": payload["library_id"], "sessions": [{
+                "session_id": payload["session_id"], "version": 1, "generation": 1, "span_ids": selected,
+            }]}
+            attachment = {"id": str(uuid.uuid4()), "name": "录音 · 17:21–18:59", "kind": "document",
+                          "media_type": "application/vnd.momo.recording-reference", "byte_count": 0,
+                          "recording": reference}
+            operation = str(uuid.uuid4())
+            request = {"operation_id": operation, "content": "请总结这段录音", "attachments": [attachment]}
+            path = "/momo/v1/conversation/messages"
+            headers = {"Authorization": f"Bearer {gateway.api_key}"}
+            async with TestClient(TestServer(gateway.create_app())) as client:
+                discovery = await (await client.get("/momo/v1/conversation", headers=headers)).json()
+                self.assertTrue(discovery["capabilities"]["recording_references"])
+                response = await client.post(path, headers=headers, json=request)
+                self.assertEqual(response.status, 200, await response.text())
+                snapshot = data / "workspace/attachments" / f"recording-{operation}.jsonl"
+                rows = [json.loads(line) for line in snapshot.read_text().splitlines()]
+                self.assertEqual([row["id"] for row in rows], selected)
+                self.assertTrue(all(row["citation_url"].startswith("momoagent://source/") for row in rows))
+                self.assertEqual(snapshot.stat().st_mode & 0o777, 0o600)
+                events, _, _ = gateway.bridge.list_triggers(0)
+                self.assertIn(str(snapshot), events[0]["text"])
+                self.assertNotIn("span 501", events[0]["text"])
+                message = gateway.store.db.execute("SELECT content FROM messages WHERE operation_id=?", (operation,)).fetchone()
+                self.assertEqual(message["content"], request["content"])
+                retry = await client.post(path, headers=headers, json=request)
+                self.assertEqual((await retry.json())["run_id"], (await response.json())["run_id"])
+                self.assertEqual((await client.post(path, headers=headers, json={
+                    "operation_id": operation, "content": request["content"],
+                })).status, 409)
+                reference["sessions"][0]["version"] = 2
+                stale = str(uuid.uuid4())
+                self.assertEqual((await client.post(path, headers=headers, json={
+                    **request, "operation_id": stale,
+                })).status, 409)
+                self.assertIsNone(gateway.store.db.execute("SELECT 1 FROM inputs WHERE operation_id=?", (stale,)).fetchone())
+                self.assertEqual((await client.post(path, headers=headers, json={
+                    "operation_id": str(uuid.uuid4()), "content": request["content"],
+                })).status, 200)
+                self.assertEqual(list(snapshot.parent.glob("recording-*.jsonl")), [snapshot])
+
     async def test_chat_mode_is_authenticated_and_captured_when_each_chat_is_admitted(self):
         with tempfile.TemporaryDirectory() as tmp:
             data = Path(tmp)
