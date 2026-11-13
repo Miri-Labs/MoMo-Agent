@@ -1008,9 +1008,13 @@ final class DesktopModel {
         }
         failure = String(localized: "MoMo 尚未就绪，请检查模型配置后重试。")
     }
+    func inviteForPairing() async -> Bool {
+        if status?.tunnel.state == "connected" { return await control("pair/invite") }
+        return await control("pair/invite", body: ["lan": true])
+    }
     func beginPairing() async {
-        if status?.tunnel.state == "connected", status?.invitation == nil, !pairingAccepted {
-            _ = await control("pair/invite")
+        if status?.invitation == nil, !pairingAccepted {
+            _ = await inviteForPairing()
         }
     }
     func rememberReadingPosition(_ position: ChatReadingPosition) { readingPosition = position }

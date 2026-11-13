@@ -226,7 +226,7 @@ struct DesktopDevices: View {
                 Button("配对手机", systemImage: "qrcode") {
                     model.isPairingDevice = true
                     Task {
-                        if model.status?.tunnel.state == "connected" { _ = await model.control("pair/invite") }
+                        if model.status?.invitation == nil { _ = await model.inviteForPairing() }
                         showingPairing = true
                     }
                 }

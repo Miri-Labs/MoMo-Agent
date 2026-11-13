@@ -98,7 +98,7 @@ struct DesktopOnboardingPairing: View {
                     HStack(spacing: 10) {
                         Text(remaining > 0 ? "有效期 \(remaining / 60):\(String(format: "%02d", remaining % 60))" : "配对码已过期")
                             .monospacedDigit()
-                        Button { Task { await model.control("pair/invite") } } label: {
+                        Button { Task { await model.inviteForPairing() } } label: {
                             Image(systemName: "arrow.clockwise").frame(width: 24, height: 24).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain).help("刷新二维码").accessibilityLabel("刷新二维码")
@@ -112,7 +112,7 @@ struct DesktopOnboardingPairing: View {
         } else if model.status?.tunnel.state == "connected" {
             VStack(spacing: 20) {
                 ProgressView("正在生成配对码…").controlSize(.small).frame(height: 160)
-                Button("重新生成") { Task { await model.control("pair/invite") } }.buttonStyle(.plain)
+                Button("重新生成") { Task { await model.inviteForPairing() } }.buttonStyle(.plain)
                     .font(.system(size: 13)).foregroundStyle(.secondary).disabled(model.busy != nil)
             }
         } else {
