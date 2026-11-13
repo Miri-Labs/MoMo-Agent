@@ -163,6 +163,11 @@ struct DesktopRoot: View {
 }
 
 struct DesktopDevices: View {
+    private enum RowLayout {
+        static let symbolColumn: CGFloat = 22
+        static let labelSpacing: CGFloat = 9
+    }
+
     @Bindable var model: DesktopModel
     @State private var revoking: AccessStatus.Device?
     @State private var showingPairing = false
@@ -212,16 +217,16 @@ struct DesktopDevices: View {
                 showingPairing = true
             }
         } label: {
-            HStack(spacing: 11) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.title3)
-                    .frame(width: 36)
+            HStack(spacing: RowLayout.labelSpacing) {
+                Image(systemName: "plus")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: RowLayout.symbolColumn)
                     .accessibilityHidden(true)
                 Text("配对手机").fontWeight(.medium)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Color.accentColor)
-            .frame(minHeight: 26)
+            .frame(minHeight: 20)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -232,10 +237,10 @@ struct DesktopDevices: View {
         let paired = model.status?.devices.filter { $0.state == "approved" } ?? []
         return Section {
             ForEach(paired) { device in
-                HStack(spacing: 11) {
-                    Image(systemName: "iphone").font(.system(size: 22))
-                        .frame(width: 36, height: 40).accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: RowLayout.labelSpacing) {
+                    Image(systemName: "iphone").font(.system(size: 19, weight: .regular))
+                        .frame(width: RowLayout.symbolColumn).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: device.name).font(.body.weight(.medium))
                         if let seen = device.lastSeen, seen > 0 {
                             HStack(spacing: 4) {
@@ -250,14 +255,15 @@ struct DesktopDevices: View {
                     Menu {
                         Button("移除设备", role: .destructive) { revoking = device }
                     } label: {
-                        Image(systemName: "ellipsis.circle").imageScale(.large).frame(width: 26, height: 26)
+                        Image(systemName: "ellipsis").font(.body.weight(.medium))
+                            .foregroundStyle(.secondary).frame(width: 24, height: 24)
                     }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .accessibilityLabel(Text("更多") + Text(verbatim: " · " + device.name))
                     .disabled(model.busy != nil)
                     .accessibilityIdentifier("desktop.deviceActions")
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 1)
             }
             pairPhone
         } header: {
@@ -277,28 +283,28 @@ struct DesktopDevices: View {
                 DesktopNetworkProxy(model: model)
             }.padding(.top, 12).padding(.leading, 5)
         } label: {
-            Text("连接详情").font(.callout.weight(.medium))
+            Text("连接详情")
         }
         .accessibilityIdentifier("desktop.connectionDetails")
     }
 
     private var network: some View {
         Section("这台 Mac") {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("远程访问").fontWeight(.medium)
-                    Text(tunnelLabel).font(.system(size: 12)).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 16)
-                Toggle("远程访问", isOn: Binding(get: { model.status?.tunnel.state != "stopped" }, set: { enabled in
-                    Task { await model.control(enabled ? "tunnel/start" : "tunnel/stop") }
-                })).labelsHidden().toggleStyle(.switch)
+            LabeledContent {
+                HStack(spacing: 8) {
+                    Text(tunnelLabel).foregroundStyle(.secondary)
+                    Toggle("远程访问", isOn: Binding(get: { model.status?.tunnel.state != "stopped" }, set: { enabled in
+                        Task { await model.control(enabled ? "tunnel/start" : "tunnel/stop") }
+                    }))
+                    .labelsHidden().toggleStyle(.switch)
                     .accessibilityHint(tunnelLabel)
                     .disabled(model.busy != nil).accessibilityIdentifier("desktop.remoteAccess")
-            }
+                }
+            } label: { Text("远程访问") }
             Button { showingMethod = true } label: {
                 HStack {
-                    Text("连接方式").fontWeight(.medium); Spacer()
+                    Text("连接方式")
+                    Spacer()
                     Text(["tailscale", "embedded"].contains(model.status?.tunnel.mode ?? "") ? "Tailscale 私网" : model.status?.tunnel.mode == "external" ? "自建服务器" : model.status?.tunnel.mode == "relay" ? "加密中继" : "待选择").foregroundStyle(.secondary)
                     Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(.secondary).accessibilityHidden(true)
                 }.contentShape(Rectangle())
@@ -307,7 +313,7 @@ struct DesktopDevices: View {
             if let error = model.status?.tunnel.error {
                 Text(error).font(.system(size: 12)).foregroundStyle(MoMoPalette.failure).textSelection(.enabled)
             }
-        }.font(.system(size: 14))
+        }
     }
 
     private var tunnelLabel: String {
@@ -499,20 +505,11 @@ struct DesktopSettings: View {
         var id: Self { self }
         var icon: String {
             switch self {
-            case .general: "gearshape.fill"
+            case .general: "gearshape"
             case .model: "sparkles"
             case .pairing: "iphone"
-            case .controls: "cursorarrow"
+            case .controls: "cursorarrow.click"
             case .runtime: "cpu"
-            }
-        }
-        var color: Color {
-            switch self {
-            case .general: .gray
-            case .model: .purple
-            case .pairing: .blue
-            case .controls: .indigo
-            case .runtime: .teal
             }
         }
     }
@@ -553,16 +550,9 @@ struct DesktopSettings: View {
         NavigationSplitView(columnVisibility: .constant(.all)) {
             List(selection: Binding(get: { page }, set: { navigate(.pane($0)) })) {
                 ForEach(matchingPages) { destination in
-                    Label {
-                        Text(LocalizedStringKey(destination.rawValue))
-                    } icon: {
-                        Image(systemName: destination.icon)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 21, height: 21)
-                            .background(destination.color.gradient, in: .rect(cornerRadius: 5))
-                            .accessibilityHidden(true)
-                    }
+                    Label(LocalizedStringKey(destination.rawValue), systemImage: destination.icon)
+                        .symbolVariant(.none)
+                        .symbolRenderingMode(.monochrome)
                     .tag(destination)
                     .accessibilityIdentifier("settings." + destination.rawValue)
                 }
@@ -574,7 +564,7 @@ struct DesktopSettings: View {
             .toolbar(removing: .sidebarToggle)
             .searchable(text: $search, placement: .sidebar, prompt: Text("搜索"))
             .onSubmit(of: .search) { if let first = matchingPages.first { navigate(.pane(first)) } }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 215, max: 250)
+            .navigationSplitViewColumnWidth(min: 172, ideal: 196, max: 240)
         } detail: {
             Group {
                 switch page {
