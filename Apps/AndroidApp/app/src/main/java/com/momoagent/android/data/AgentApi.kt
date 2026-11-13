@@ -1,6 +1,7 @@
 package com.momoagent.android.data
 
 import java.io.IOException
+import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
@@ -159,9 +160,16 @@ class AgentApi {
     fun contextMemories(
         connection: AgentConnection,
         credential: String,
-        limit: Int = 100,
+        after: String? = null,
+        revision: Long? = null,
+        limit: Int = 200,
     ): MemoryPage {
-        val request = authenticated(connection, credential, join(connection.dataURL, "v1/memories?limit=$limit"))
+        val query = buildString {
+            append("?limit=").append(limit)
+            if (after != null) append("&after=").append(URLEncoder.encode(after, "UTF-8"))
+            if (revision != null) append("&revision=").append(revision)
+        }
+        val request = authenticated(connection, credential, join(connection.dataURL, "v1/memories$query"))
             .get()
             .build()
         return execute(request, clientFor(connection.tlsSHA256))
@@ -170,12 +178,17 @@ class AgentApi {
     fun contextSources(
         connection: AgentConnection,
         credential: String,
-        limit: Int = 50,
+        after: String? = null,
+        limit: Int = 200,
     ): SourcePage {
+        val query = buildString {
+            append("?limit=").append(limit).append("&summarize=1")
+            if (after != null) append("&after=").append(URLEncoder.encode(after, "UTF-8"))
+        }
         val request = authenticated(
             connection,
             credential,
-            join(connection.dataURL, "v1/sources?limit=$limit&summarize=1"),
+            join(connection.dataURL, "v1/sources$query"),
         )
             .get()
             .build()
@@ -186,8 +199,11 @@ class AgentApi {
         connection: AgentConnection,
         credential: String,
         source: ContextSource,
+        offset: Int = 0,
+        limit: Int = 24_000,
     ): SourceTextPage {
-        val path = "v1/source?source_id=${source.id}&revision=${source.revision}&offset=0&limit=12000"
+        val path = "v1/source?source_id=${URLEncoder.encode(source.id, "UTF-8")}" +
+            "&revision=${URLEncoder.encode(source.revision, "UTF-8")}&offset=$offset&limit=$limit"
         val request = authenticated(connection, credential, join(connection.dataURL, path))
             .get()
             .build()

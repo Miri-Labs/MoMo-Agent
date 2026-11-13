@@ -59,6 +59,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.momoagent.android.R
 import com.momoagent.android.data.DesktopInputEvent
@@ -75,9 +78,21 @@ fun DesktopScreen(store: ConversationStore, onClose: () -> Unit) {
     var scrollMode by rememberSaveable(state.controlling) { mutableStateOf(false) }
     var lastPoint by remember { mutableStateOf(Offset(0.5f, 0.5f)) }
 
-    DisposableEffect(session) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, session) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> session.pause()
+                Lifecycle.Event.ON_START -> session.open()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         session.open()
-        onDispose { session.close() }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            session.close()
+        }
     }
 
     Dialog(

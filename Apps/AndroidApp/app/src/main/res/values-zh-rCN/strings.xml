@@ -112,6 +112,21 @@
     <string name="transcripts_failed">无法加载转录。</string>
     <string name="transcripts_detail_failed">无法加载这条转录。</string>
     <string name="transcripts_back">返回</string>
+    <string name="transcripts_no_day">这一天还没有转录。</string>
+    <string name="transcripts_search_hint">搜索全部转录</string>
+    <string name="transcripts_search_empty">没有匹配的转录</string>
+    <string name="transcripts_searching">正在搜索全部转录…</string>
+    <string name="transcripts_search_failed">无法搜索转录。</string>
+    <string name="transcripts_close_search">关闭搜索</string>
+    <string name="transcripts_clear_search">清空搜索</string>
+    <string name="transcripts_previous_day">前一天</string>
+    <string name="transcripts_next_day">后一天</string>
+    <string name="transcripts_pick_date">选择日期</string>
+    <string name="transcripts_detail_title">转录详情</string>
+    <string name="transcripts_discuss">围绕这段时间提问</string>
+    <string name="transcripts_discuss_prompt">请根据这些录音稿帮我梳理要做的事：</string>
+    <string name="transcripts_speaker_me">我</string>
+    <string name="transcripts_partial_failed">后续内容读取失败，已保留已读部分。</string>
 
     <string name="settings_title">设置</string>
     <string name="settings_done">完成</string>

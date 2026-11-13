@@ -212,6 +212,20 @@ data class MemoryPage(
 )
 
 @Serializable
+data class ContextWindow(
+    val id: String,
+    @SerialName("source_id") val sourceID: String = "",
+    @SerialName("source_revision") val sourceRevision: String = "",
+    @SerialName("recorded_at") val recordedAt: Double? = null,
+    @SerialName("end_at") val endAt: Double? = null,
+    val offset: Int = 0,
+    val end: Int = 0,
+    @SerialName("total_characters") val totalCharacters: Int = 0,
+    val preview: String? = null,
+    val summary: String? = null,
+)
+
+@Serializable
 data class ContextSource(
     val id: String,
     val revision: String = "",
@@ -219,6 +233,19 @@ data class ContextSource(
     @SerialName("total_characters") val totalCharacters: Int = 0,
     val summary: String? = null,
     val preview: String? = null,
+    @SerialName("recorded_summary") val recordedSummary: String? = null,
+    val windows: List<ContextWindow> = emptyList(),
+)
+
+@Serializable
+data class ContextSpan(
+    val id: String,
+    @SerialName("recorded_at") val recordedAt: Double? = null,
+    val text: String = "",
+    @SerialName("citation_url") val citationURL: String? = null,
+    @SerialName("is_owner") val isOwner: Boolean? = null,
+    val speaker: String? = null,
+    @SerialName("speaker_inferred_by_dream") val speakerInferredByDream: Boolean? = null,
 )
 
 @Serializable
@@ -229,12 +256,16 @@ data class SourcePage(
 
 @Serializable
 data class SourceTextPage(
+    @SerialName("source_id") val sourceID: String = "",
     @SerialName("source_revision") val sourceRevision: String = "",
+    @SerialName("text_sha256") val textSHA256: String = "",
     val text: String = "",
     val offset: Int = 0,
     val end: Int = 0,
     @SerialName("total_characters") val totalCharacters: Int = 0,
+    val truncated: Boolean = false,
     @SerialName("next_offset") val nextOffset: Int? = null,
+    val spans: List<ContextSpan> = emptyList(),
 )
 
 @Serializable

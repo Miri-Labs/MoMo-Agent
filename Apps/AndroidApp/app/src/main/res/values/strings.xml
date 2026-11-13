@@ -112,6 +112,21 @@
     <string name="transcripts_failed">Could not load transcripts.</string>
     <string name="transcripts_detail_failed">Could not load this transcript.</string>
     <string name="transcripts_back">Back</string>
+    <string name="transcripts_no_day">No transcripts for this day.</string>
+    <string name="transcripts_search_hint">Search all transcripts</string>
+    <string name="transcripts_search_empty">No matching transcripts</string>
+    <string name="transcripts_searching">Searching all transcripts…</string>
+    <string name="transcripts_search_failed">Could not search transcripts.</string>
+    <string name="transcripts_close_search">Close search</string>
+    <string name="transcripts_clear_search">Clear search</string>
+    <string name="transcripts_previous_day">Previous day</string>
+    <string name="transcripts_next_day">Next day</string>
+    <string name="transcripts_pick_date">Choose date</string>
+    <string name="transcripts_detail_title">Transcript detail</string>
+    <string name="transcripts_discuss">Ask about this section</string>
+    <string name="transcripts_discuss_prompt">Please review these transcripts and organize what I need to do:</string>
+    <string name="transcripts_speaker_me">Me</string>
+    <string name="transcripts_partial_failed">The rest of this transcript could not be loaded. Read text is kept.</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_done">Done</string>

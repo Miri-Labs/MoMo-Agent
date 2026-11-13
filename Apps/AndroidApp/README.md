@@ -21,8 +21,13 @@ Welcome experience → Connection flow → Chat / Transcripts / Memory tabs → 
   The avatar, settings and task/desktop controls float over the scroll view;
   the composer has its own space below the conversation. The tab bar hides while
   the IME is open so the composer sits above the keyboard.
-- Transcripts: read-only list of sources synced to the paired Mac. Android has no
-  local recording/ASR yet; local transcripts are a separate slice.
+- Transcripts: a day/window timeline grouped by recording day with previous/next
+  day, a date picker and full-text search. A recording with several windows
+  produces one row per window; opening a row scrolls the detail to that window.
+  Details render each span's time and known speaker, load every server page
+  instead of stopping at 12,000 characters, and offer "Ask about this section"
+  citations. Android has no local recording/ASR yet; local transcripts are a
+  separate slice.
 - Memory: read-only long-term memory from the Mac context API.
 - Settings: Mac connection state, reconnect, re-pair, manual configuration,
   network route/address, version and unpair. Unpair first calls `POST /pair/revoke`
@@ -81,7 +86,7 @@ gradle :app:lintDebug
 ```
 
 Current results: `assembleDebug` produces `app-debug.apk` (`com.momoagent.android`,
-version 0.6.0, versionCode 8, minSdk 26, targetSdk 35); 28/28 JVM tests pass;
+version 0.6.0, versionCode 8, minSdk 26, targetSdk 35); 32/32 JVM tests pass;
 lint reports 0 errors and 30 warnings. There is no device/emulator end-to-end
 run yet.
 

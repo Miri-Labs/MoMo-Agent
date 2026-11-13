@@ -30,6 +30,7 @@ data class DesktopState(
     val status: DesktopStatus? = null,
     val picture: Bitmap? = null,
     val loading: Boolean = true,
+    val streaming: Boolean = false,
     val claiming: Boolean = false,
     val failure: DesktopFailure? = null,
 ) {
@@ -54,6 +55,8 @@ class DesktopStore(
     private var streamJob: Job? = null
     private var heartbeatJob: Job? = null
     private var inputJob: Job? = null
+    private var watchdogJob: Job? = null
+    private var lastFrameAt = 0L
     private val inputSignal = Channel<Unit>(Channel.CONFLATED)
     private val inputQueue = ArrayDeque<DesktopInputEvent>()
     private val inputLock = Mutex()
@@ -61,9 +64,11 @@ class DesktopStore(
 
     fun open() {
         if (pollJob?.isActive == true) return
+        lastFrameAt = 0L
         _state.value = DesktopState()
         pollJob = scope.launch { pollLoop() }
         streamJob = scope.launch { streamLoop() }
+        watchdogJob = scope.launch { frameWatchdog() }
         if (inputJob == null) inputJob = scope.launch { inputLoop() }
     }
 
@@ -77,8 +82,8 @@ class DesktopStore(
     fun close() {
         val status = _state.value.status
         val controlling = _state.value.controlling
-        pollJob?.cancel(); streamJob?.cancel(); heartbeatJob?.cancel(); inputJob?.cancel()
-        pollJob = null; streamJob = null; heartbeatJob = null; inputJob = null
+        pollJob?.cancel(); streamJob?.cancel(); heartbeatJob?.cancel(); inputJob?.cancel(); watchdogJob?.cancel()
+        pollJob = null; streamJob = null; heartbeatJob = null; inputJob = null; watchdogJob = null
         if (controlling && status?.session != null) {
             val session = status.session
             CoroutineScope(Dispatchers.IO).launch {
@@ -94,6 +99,7 @@ class DesktopStore(
 
     fun claim() {
         if (_state.value.claiming || _state.value.controlling) return
+        if (!_state.value.streaming || _state.value.picture == null) return
         _state.update { it.copy(claiming = true, failure = null) }
         scope.launch {
             try {
@@ -128,6 +134,7 @@ class DesktopStore(
     fun send(event: DesktopInputEvent) {
         val status = _state.value.status ?: return
         if (status.session == null) return
+        if (!_state.value.streaming || _state.value.picture == null) return
         if (!_state.value.controlling || !status.screen || !status.input) return
         inputSequence += 1
         val sequenced = event.copy(sequence = inputSequence)
@@ -149,7 +156,9 @@ class DesktopStore(
             try {
                 val next = api.desktopStatus(connection, credential)
                 applyStatus(next)
-                _state.update { it.copy(loading = false, failure = null) }
+                _state.update {
+                    it.copy(loading = false, failure = if (it.streaming) null else it.failure)
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -166,7 +175,10 @@ class DesktopStore(
                 api.desktopFrames(connection, credential).collect { frame ->
                     val bitmap = BitmapFactory.decodeByteArray(frame.jpeg, 0, frame.jpeg.size)
                     if (bitmap != null) {
-                        _state.update { it.copy(picture = bitmap, loading = false, failure = null) }
+                        lastFrameAt = System.currentTimeMillis()
+                        _state.update {
+                            it.copy(picture = bitmap, streaming = true, loading = false, failure = null)
+                        }
                         runCatching {
                             api.desktopFrameAck(connection, credential, frame.streamID, frame.sequence)
                         }
@@ -176,8 +188,9 @@ class DesktopStore(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                if (_state.value.picture == null) fail(error)
+                loseFrames(error)
             }
+            if (_state.value.streaming) loseFrames(null)
             delay(backoff)
             backoff = (backoff * 2).coerceAtMost(4_000)
         }
@@ -205,7 +218,11 @@ class DesktopStore(
     private fun applyStatus(next: DesktopStatus) {
         inputSequence = maxOf(inputSequence, next.inputSequence ?: 0)
         _state.update { it.copy(status = next, loading = false) }
-        if (next.owner == "you" && next.active && next.session != null) startHeartbeat() else stopHeartbeat()
+        if (next.owner == "you" && next.active && next.session != null && _state.value.streaming) {
+            startHeartbeat()
+        } else {
+            stopHeartbeat()
+        }
     }
 
     private fun startHeartbeat() {
@@ -215,7 +232,7 @@ class DesktopStore(
                 delay(5_000)
                 val status = _state.value.status ?: break
                 val session = status.session ?: break
-                if (!_state.value.controlling) break
+                if (!_state.value.controlling || !_state.value.streaming) break
                 try {
                     applyStatus(api.desktopControl(connection, credential, "heartbeat", session = session))
                 } catch (error: CancellationException) {
@@ -234,8 +251,47 @@ class DesktopStore(
         heartbeatJob = null
     }
 
+    private fun loseFrames(error: Throwable?) {
+        stopHeartbeat()
+        _state.update {
+            it.copy(
+                picture = null,
+                streaming = false,
+                loading = true,
+                failure = error?.let(::classify) ?: DesktopFailure.Network,
+            )
+        }
+    }
+
+    private suspend fun frameWatchdog() {
+        while (scope.isActive) {
+            delay(2_000)
+            if (_state.value.streaming && System.currentTimeMillis() - lastFrameAt > 4_000) {
+                loseFrames(null)
+            }
+        }
+    }
+
     private fun fail(error: Throwable) {
         _state.update { it.copy(loading = false, failure = classify(error)) }
+    }
+
+    fun pause() {
+        val status = _state.value.status
+        val controlling = _state.value.controlling
+        pollJob?.cancel(); streamJob?.cancel(); heartbeatJob?.cancel(); inputJob?.cancel(); watchdogJob?.cancel()
+        pollJob = null; streamJob = null; heartbeatJob = null; inputJob = null; watchdogJob = null
+        if (controlling && status?.session != null) {
+            val session = status.session
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    val reset = DesktopInputEvent(kind = "reset", sequence = ++inputSequence)
+                    api.desktopInput(connection, credential, session, reset, UUID.randomUUID().toString())
+                }
+                runCatching { api.desktopControl(connection, credential, "release", session = session) }
+            }
+        }
+        _state.value = DesktopState()
     }
 
     private fun classify(error: Throwable): DesktopFailure {

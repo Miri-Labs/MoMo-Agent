@@ -70,7 +70,7 @@ fun MemoryScreen(
         } else {
             val state by contextStore.state.collectAsStateWithLifecycle()
             when {
-                state.loading && state.memories.isEmpty() -> {
+                state.memoriesLoading && state.memories.isEmpty() -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(22.dp),
@@ -79,10 +79,10 @@ fun MemoryScreen(
                         )
                     }
                 }
-                state.failure != null && state.memories.isEmpty() -> {
+                state.memoriesFailure != null && state.memories.isEmpty() -> {
                     EmptyPanel(
                         title = stringResource(R.string.memory_failed),
-                        body = state.failure.orEmpty(),
+                        body = state.memoriesFailure.orEmpty(),
                         action = stringResource(R.string.memory_refresh),
                         onAction = { contextStore.loadMemories() },
                     )
@@ -98,7 +98,8 @@ fun MemoryScreen(
                     val filtered = state.memories.filter { memory ->
                         query.isBlank() ||
                             memory.text.contains(query, ignoreCase = true) ||
-                            memory.kind.contains(query, ignoreCase = true)
+                            memory.kind.contains(query, ignoreCase = true) ||
+                            memory.path?.contains(query, ignoreCase = true) == true
                     }
                     Column(modifier = Modifier.fillMaxSize()) {
                         MemorySearch(query = query, onQueryChange = { query = it })
@@ -167,6 +168,9 @@ private fun MemoryCard(memory: ContextMemory, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        memory.path?.takeIf { it.isNotBlank() }?.let {
+            Text(it, style = MoMoType.caption, color = palette.muted)
+        }
         Text(memory.text, style = MoMoType.body, color = palette.ink, maxLines = 4, overflow = TextOverflow.Ellipsis)
         val metadata = listOfNotNull(
             memory.kind.takeIf { it.isNotBlank() },
@@ -192,6 +196,9 @@ private fun MemoryDetail(memory: ContextMemory, onClose: () -> Unit) {
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            memory.path?.takeIf { it.isNotBlank() }?.let {
+                Text(it, style = MoMoType.caption, color = palette.muted)
+            }
             Text(memory.text, style = MoMoType.body, color = palette.ink)
             if (memory.evidence.isNotEmpty()) {
                 Text(stringResource(R.string.memory_evidence), style = MoMoType.section, color = palette.ink)

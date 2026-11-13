@@ -53,6 +53,7 @@ fun MainScreen(viewModel: AppViewModel) {
 
     val conversation = viewModel.conversationStore
     val context = viewModel.contextStore
+    val discussPrompt = stringResource(R.string.transcripts_discuss_prompt)
     val density = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
     val tabs = listOf(
@@ -100,6 +101,13 @@ fun MainScreen(viewModel: AppViewModel) {
                     contextStore = context,
                     onConnect = { viewModel.advance(SetupStep.Connect) },
                     onSettings = { settings = true },
+                    onDiscuss = { citations ->
+                        val store = conversation
+                        if (store != null && citations.isNotEmpty()) {
+                            store.setDraft(discussPrompt + "\n" + citations.joinToString("\n"))
+                            tab = 0
+                        }
+                    },
                 )
                 else -> MemoryScreen(
                     contextStore = context,
