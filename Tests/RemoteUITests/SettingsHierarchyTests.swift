@@ -21,6 +21,7 @@ final class SettingsHierarchyTests: XCTestCase {
         }
         continueAfterFailure = false
         let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launchEnvironment["MOMO_UI_TEST_RUN_ID"] = runID
         app.launchEnvironment["MOMO_UI_TEST_TIMELINE_FIXTURE"] = "chat"
         app.launch()
@@ -30,20 +31,31 @@ final class SettingsHierarchyTests: XCTestCase {
         if app.buttons["onboarding.finish"].waitForExistence(timeout: 30) {
             app.buttons["onboarding.finish"].tap()
         }
-        try inspectSettings(app)
+        try inspectSettings(app, exerciseMode: true)
 #else
         throw XCTSkip("Synthetic acceptance is simulator-only")
 #endif
     }
 
-    private func inspectSettings(_ app: XCUIApplication) throws {
+    private func inspectSettings(_ app: XCUIApplication, exerciseMode: Bool = false) throws {
         if app.tabBars.buttons["聊天"].exists { app.tabBars.buttons["聊天"].tap() }
         let entry = app.buttons["remote.settings"]
         XCTAssertTrue(entry.waitForExistence(timeout: 30), app.debugDescription)
         entry.tap()
         XCTAssertTrue(app.buttons["settings.mac"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["settings.advanced"].exists)
-        capture(app, "Settings — original phone surfaces")
+        if exerciseMode {
+            let picker = app.segmentedControls["settings.chatMode"]
+            XCTAssertTrue(picker.waitForExistence(timeout: 10), app.debugDescription)
+            let chat = picker.buttons["聊天模式"], creator = picker.buttons["创作模式"]
+            XCTAssertTrue(chat.isSelected)
+            creator.tap()
+            XCTAssertTrue(creator.isSelected)
+            capture(app, "Settings — Creator mode")
+            chat.tap()
+            XCTAssertTrue(chat.isSelected)
+        }
+        capture(app, "Settings — Chat mode")
         app.buttons["settings.mac"].tap()
         XCTAssertTrue(app.navigationBars["Mac 连接"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.descendants(matching: .any)["remote.deviceState"].exists)

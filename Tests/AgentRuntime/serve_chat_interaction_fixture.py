@@ -14,12 +14,18 @@ memories = [
  dict(id='memory-layout-3',text='准备下周的产品评审：先验证主要流程，再整理反馈。原来的讨论有更新，需要核对后再执行。',kind='memory',basis='inferred',status='stale',revision=1,evidence=[dict(source_id='synthetic-source',source_revision='1',quote='先把主要流程测试一遍，再收集问题。',recorded_at=1793318400)]),
  dict(id='memory-layout-4',text='一段需要完整阅读的长记忆。'+'具体内容保留原始措辞，不把推断当作事实。'*80+'全文末尾保留标记。',kind='memory',basis='hermes',status='current',revision=1,evidence=[])
 ] if '--memory' in sys.argv else []
+chat_mode = 'standard'
 operations={};attempts=0;inputs=[];owner='agent';session=None;epoch=0
 async def serve(r):
- global attempts,owner,session,epoch
+ global attempts,owner,session,epoch,chat_mode
  p=r.path;b=await r.json() if r.can_read_body else {}
  if p=='/test/status':return web.json_response(dict(submission_attempts=attempts,unique_operations=len(operations),input_count=len(inputs),owner=owner))
  if r.headers.get('Authorization')!='Bearer synthetic-local-only-fixture-credential':return web.json_response({'error':{'code':'auth','message':'fixture credential required'}},status=401)
+ if p=='/momo/v1/conversation/mode':
+  if r.method=='POST':
+   if b.get('mode') not in ('standard','creator'):return web.json_response({'error':{'code':'invalid_mode'}},status=400)
+   chat_mode=b['mode']
+  return web.json_response({'mode':chat_mode})
  if p=='/transport/v1/config':return web.json_response(dict(enabled=False))
  if p=='/v1/capabilities':return web.json_response(dict(features=dict(run_submission=True,runs_idempotency=dict(supported=True,durable=True,retention_seconds=86400))))
  if p=='/context/v1/status':return web.json_response(dict(workspace_id=ids['workspace_id'],source_sync=True,memory_writer='SuperAgent',memory_pending=0,memory_needs_review=0))
