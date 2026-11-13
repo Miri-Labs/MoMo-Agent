@@ -9,7 +9,6 @@ struct EmbeddedTailnetTransport: AgentTransport {
     func open(_ request: URLRequest) async throws -> AgentByteStream? {
         guard TailnetEndpoint.isOrigin(endpoint), let url = request.url, TailnetEndpoint.accepts(url),
               url.host == endpoint.host, url.port == endpoint.port else { throw TailnetError.invalidEndpoint }
-        await network.diagnostics.observePeer(endpoint.host)
         let desktop = url.path.hasPrefix("/desktop/")
         let media = desktop && ["frame", "frames"].contains(url.lastPathComponent)
         do {
@@ -22,11 +21,23 @@ struct EmbeddedTailnetTransport: AgentTransport {
     }
 
     private func openOnce(_ request: URLRequest, url: URL, desktop: Bool, media: Bool) async throws -> AgentByteStream {
-        let session = try await network.connectedSession(peer: endpoint.host, interactive: request.networkServiceType == .responsiveData,
-                                                          desktopControl: desktop && !media, media: media)
+        var tagged = request
+        let diagnostics = network.diagnostics
+        if !desktop, TailnetDiagnostics.category(url) != nil {
+            tagged.setValue(UUID().uuidString, forHTTPHeaderField: TailnetDiagnostics.attemptHeader)
+            diagnostics.recordAttempt(tagged, event: "start")
+        }
+        let request = tagged
+        let session: URLSession
+        do {
+            session = try await network.connectedSession(peer: endpoint.host, interactive: request.networkServiceType == .responsiveData,
+                                                         desktopControl: desktop && !media, media: media)
+        } catch {
+            diagnostics.recordFailure(error, request: request, stage: "session-setup")
+            throw error
+        }
         do {
             if url.path == "/desktop/v1/frames" {
-                let diagnostics = await network.diagnostics
                 return try await AgentHTTPStream.open(request, configuration: session.configuration) { metrics in
                     diagnostics.record(metrics, request: request)
                 }
@@ -210,6 +221,9 @@ final class TailnetChunkStream: NSObject, URLSessionDataDelegate, @unchecked Sen
             return
         }
         let lifetime = TailnetStreamLifetime { self.cancelConsumer() }
+        if let request = dataTask.originalRequest {
+            diagnostics.recordAttempt(request, event: "response-headers", http: response.statusCode)
+        }
         let chunks = AsyncThrowingStream<Data, Error>(unfolding: {
             _ = lifetime
             return try await self.nextChunk()

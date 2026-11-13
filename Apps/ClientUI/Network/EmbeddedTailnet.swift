@@ -79,6 +79,7 @@ final class EmbeddedTailnet {
         if let startup { task = startup }
         else {
             state = "starting"; message = nil
+            diagnostics.recordLink("node", "starting", details: ["proxyMode": proxySettings.mode.rawValue])
             let directory = directory, hostname = hostname, controlURL = controlURL, proxySettings = proxySettings
             task = Task.detached {
                 try TailscaleNode.configureProxy(mode: proxySettings.mode.rawValue, address: proxySettings.address)
@@ -106,12 +107,16 @@ final class EmbeddedTailnet {
             guard attempt == generation else { throw CancellationError() }
             if node != nil { return }
             node = created; startup = nil
+            diagnostics.recordLink("node", "created")
             ensureNodeUp(created, attempt: attempt)
             ensureWatchRunning(attempt: attempt)
             startPathMonitor(attempt: attempt)
             await refreshStatus()
         } catch {
-            if attempt == generation { startup = nil; state = "failed"; message = String(localized: "无法启动 Tailscale，请重试。") }
+            if attempt == generation {
+                diagnostics.recordLink("node", "creation-failed", error: error)
+                startup = nil; state = "failed"; message = String(localized: "无法启动 Tailscale，请重试。")
+            }
             throw error
         }
     }
@@ -127,6 +132,7 @@ final class EmbeddedTailnet {
             do { try await target.up() }
             catch {
                 guard !Task.isCancelled, let self, self.generation == attempt else { return }
+                self.diagnostics.recordLink("node", "up-failed", error: error)
                 self.needsRestart = true
                 self.state = "failed"
                 self.message = String(localized: "Tailscale 暂未连接，请重试。")
@@ -181,11 +187,8 @@ final class EmbeddedTailnet {
                 try Self.parseStatusJSON(data)
             }.value
             guard attempt == generation else { return }
-            let stateChanged = state != parsed.backendState || address != parsed.address
             mappedAddresses = parsed.mappedAddresses
-            if stateChanged {
-                diagnostics.recordStatus(data)
-            }
+            diagnostics.recordStatus(data)
             if state != parsed.backendState { state = parsed.backendState }
             if address != parsed.address { address = parsed.address }
             if authURL != parsed.authURL { authURL = parsed.authURL }
@@ -196,6 +199,7 @@ final class EmbeddedTailnet {
             }
         } catch {
             if attempt == generation {
+                diagnostics.recordLink("node", "status-failed", error: error)
                 if state != "failed" { state = "failed" }
                 let failedMessage = String(localized: "无法读取连接状态，请重试。")
                 if message != failedMessage { message = failedMessage }
@@ -245,6 +249,7 @@ final class EmbeddedTailnet {
     }
 
     func connectedSession(peer: String? = nil, interactive: Bool = false, desktopControl: Bool = false, media: Bool = false) async throws -> URLSession {
+        if let peer { diagnostics.observePeer(peer) }
         try await start()
         ensureWatchRunning(attempt: generation)
         let attempt = generation
@@ -265,6 +270,7 @@ final class EmbeddedTailnet {
             // A node wedged in Stopped/Starting/NoState/failed after startup wait
             // must be recycled on the next attempt instead of trapping reconnect forever.
             needsRestart = true
+            diagnostics.recordLink("startupWait", "node-unavailable")
             throw URLError(.notConnectedToInternet)
         }
         // Running describes the local node. Its first netmap can still omit the
@@ -273,12 +279,14 @@ final class EmbeddedTailnet {
             await refreshStatus()
             guard attempt == generation else { throw CancellationError() }
             if !mappedAddresses.contains(peer) {
+                diagnostics.recordLink("peerMap", "waiting")
                 let deadline = ContinuousClock.now.advanced(by: peerMapTimeout)
                 while !mappedAddresses.contains(peer) {
                     guard attempt == generation else { throw CancellationError() }
                     guard state == "Running", ContinuousClock.now < deadline else {
                         // A missing remote peer is not evidence that the local listener failed.
                         needsProxyCheck = true
+                        diagnostics.recordLink("peerMap", state == "Running" ? "timed-out" : "node-not-running")
                         throw URLError(.notConnectedToInternet)
                     }
                     try await Task.sleep(for: .milliseconds(200))
@@ -288,6 +296,7 @@ final class EmbeddedTailnet {
             }
         }
         if let peer {
+            diagnostics.recordLink("peerMap", "mapped")
             await warmPeerIfNeeded(peer, node: node)
             guard attempt == generation else { throw CancellationError() }
         }
@@ -333,6 +342,14 @@ final class EmbeddedTailnet {
                 guard let self, self.generation == attempt else { return }
                 let previous = self.lastPathSignature
                 self.lastPathSignature = signature
+                let types = [NWInterface.InterfaceType.wifi, .cellular, .wiredEthernet, .loopback, .other]
+                    .filter { path.usesInterfaceType($0) }.map { String(describing: $0) }
+                var details = [
+                    "interfaces": types.joined(separator: ","), "expensive": String(path.isExpensive),
+                    "constrained": String(path.isConstrained)
+                ]
+                if path.status == .unsatisfied { details["reason"] = String(describing: path.unsatisfiedReason) }
+                self.diagnostics.recordLink("networkPath", String(describing: path.status), details: details)
                 guard previous != nil, previous != signature else { return }
                 self.invalidateCachedSessions(finishTasks: true)
                 if self.node != nil {
@@ -355,6 +372,7 @@ final class EmbeddedTailnet {
     }
 
     func suspendSessions() {
+        diagnostics.recordLink("activity", "suspended")
         watch?.cancel(); watch = nil
         peerWarmup?.cancel(); peerWarmup = nil
         invalidateCachedSessions(finishTasks: false)
@@ -373,6 +391,7 @@ final class EmbeddedTailnet {
     }
 
     func prepareForForeground(peer: String? = nil) {
+        diagnostics.recordLink("activity", "foreground-check")
         // iOS can reclaim the SOCKS listener while suspended even if LocalAPI says Running.
         // A brief inactive scene does not mean that listener was reclaimed.
         if let existing = node {
@@ -453,7 +472,8 @@ final class EmbeddedTailnet {
         lastPeerWarmupAt = .now
         let timeout = peerWarmupTimeout
         let attempt = generation
-        let task = Task { [weak self] in
+        let diagnostics = self.diagnostics
+        let task = Task {
             do {
                 let (configuration, loopback) = try await URLSessionConfiguration.tailscaleSession(node)
                 var proxies = configuration.proxyConfigurations
@@ -475,15 +495,28 @@ final class EmbeddedTailnet {
                     request.cachePolicy = .reloadIgnoringLocalCacheData
                     request.setValue(auth, forHTTPHeaderField: "Authorization")
                     request.setValue("localapi", forHTTPHeaderField: "Sec-Tailscale")
-                    guard let (data, response) = try? await probe.data(for: request),
-                          let http = response as? HTTPURLResponse else {
+                    let data: Data, response: URLResponse
+                    do { (data, response) = try await probe.data(for: request) }
+                    catch {
+                        if !Task.isCancelled { diagnostics.recordLink(kind, "probe-request-failed", error: error) }
+                        return .unsupported
+                    }
+                    guard let http = response as? HTTPURLResponse else {
+                        diagnostics.recordLink(kind, "invalid-response")
                         return .unsupported
                     }
                     guard http.statusCode == 200,
                           let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        diagnostics.recordLink(kind, "invalid-response", details: ["http": String(http.statusCode)])
                         return .unsupported
                     }
                     let err = payload["Err"] as? String ?? ""
+                    let route: String
+                    if (payload["DERPRegionID"] as? Int ?? 0) > 0 { route = "derp" }
+                    else if !(payload["Endpoint"] as? String ?? "").isEmpty { route = "direct" }
+                    else { route = "unknown" }
+                    diagnostics.recordLink(kind, err.isEmpty ? "reachable" : "peer-error",
+                                           details: err.isEmpty ? ["route": route] : [:])
                     return err.isEmpty ? .reachable : .retryableFailure
                 }
                 let seconds = max(0.2, Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18)
@@ -507,7 +540,9 @@ final class EmbeddedTailnet {
                         }
                     }
                     group.addTask {
-                        try? await Task.sleep(for: timeout)
+                        do { try await Task.sleep(for: timeout) }
+                        catch { return false }
+                        diagnostics.recordLink("peerWarmup", "deadline")
                         return true
                     }
                     while let finished = await group.next() {
@@ -517,9 +552,9 @@ final class EmbeddedTailnet {
                         }
                     }
                 }
-            } catch {}
-            _ = self
-            _ = attempt
+            } catch {
+                if !Task.isCancelled { diagnostics.recordLink("peerWarmup", "setup-failed", error: error) }
+            }
         }
         peerWarmup = task
         await task.value
@@ -546,7 +581,14 @@ final class EmbeddedTailnet {
                 request.setValue("Basic " + Data("tsnet:\(loopback.localAPIKey)".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
                 request.setValue("localapi", forHTTPHeaderField: "Sec-Tailscale")
                 let (data, response) = try await probe.data(for: request)
-                guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.cannotConnectToHost) }
+                guard self?.generation == attempt else { return }
+                let code = (response as? HTTPURLResponse)?.statusCode
+                guard code == 200 else {
+                    self?.diagnostics.recordLink("localProxyHTTP", "unexpected-response",
+                                                 details: ["http": code.map(String.init) ?? "none"])
+                    throw URLError(.cannotConnectToHost)
+                }
+                self?.diagnostics.recordLink("localProxy", "reachable")
                 if let self, self.generation == attempt,
                    let status = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let backendState = status["BackendState"] as? String {
@@ -556,7 +598,10 @@ final class EmbeddedTailnet {
                     }
                 }
             } catch {
-                if self?.generation == attempt { self?.needsRestart = true }
+                if self?.generation == attempt {
+                    self?.diagnostics.recordLink("localProxy", "restart-required", error: error)
+                    self?.needsRestart = true
+                }
             }
         }
         proxyCheck = task
@@ -566,6 +611,7 @@ final class EmbeddedTailnet {
 
     func close() async {
         if let closing { await closing.value; return }
+        diagnostics.recordLink("node", "closing")
         generation = UUID(); watch?.cancel(); watch = nil; up?.cancel(); up = nil
         pathMonitor?.cancel(); pathMonitor = nil; lastPathSignature = nil
         needsRestart = false; needsProxyCheck = false; proxyCheck = nil

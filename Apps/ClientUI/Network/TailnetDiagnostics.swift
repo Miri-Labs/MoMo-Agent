@@ -11,7 +11,9 @@ final class TailnetDiagnostics: @unchecked Sendable {
     private var requests: [[String: Any]] = []
     private var chat: [[String: Any]] = []
     private var needsRestore = true
-    private var lastRoutes: [[String: String]] = []
+    private var link: [[String: Any]] = []
+    private var latest: [String: [String: Any]] = [:]
+    private var lastFailure: [String: Any]?
     private var scheduled = false
 
     init(directory: URL) {
@@ -30,10 +32,47 @@ final class TailnetDiagnostics: @unchecked Sendable {
             Logger(subsystem: "app.momoagent", category: "network").error("Cannot decode previous network diagnostics")
             return
         }
-        routes = Array(((saved["routes"] as? [[String: Any]] ?? []) + routes).suffix(24))
-        lastRoutes = routes.last?["peers"] as? [[String: String]] ?? []
+        routes = Array(((saved["routes"] as? [[String: Any]] ?? []) + routes).suffix(48))
+        link = Array(((saved["link"] as? [[String: Any]] ?? []) + link).suffix(160))
         requests = Array(((saved["requests"] as? [[String: Any]] ?? []) + requests).suffix(96))
         chat = Array(((saved["chat"] as? [[String: Any]] ?? []) + chat).suffix(128))
+    }
+
+    // Only caller-owned stage names, outcomes and allowlisted fields belong here.
+    func recordLink(_ stage: String, _ outcome: String, details: [String: String] = [:], error: Error? = nil) {
+        let causes = error.map(Self.causes)
+        let at = Date().timeIntervalSince1970
+        queue.async {
+            var entry: [String: Any] = ["stage": stage, "outcome": outcome]
+            if !details.isEmpty { entry["details"] = details }
+            entry["causes"] = causes
+            if var previous = self.latest[stage] {
+                previous.removeValue(forKey: "at")
+                if NSDictionary(dictionary: previous).isEqual(to: entry) { return }
+            }
+            entry["at"] = at
+            self.latest[stage] = entry
+            self.link.append(entry)
+            self.link = Array(self.link.suffix(160))
+            self.scheduleWrite()
+        }
+    }
+
+    // CFNetwork often wraps a POSIX or CFStream failure in a generic URL error.
+    private static func causes(_ error: Error) -> [[String: String]] {
+        var result: [[String: String]] = []
+        var current: NSError? = error as NSError
+        let domains = [NSURLErrorDomain, NSPOSIXErrorDomain, NSCocoaErrorDomain,
+                       NSOSStatusErrorDomain, "kCFErrorDomainCFNetwork", "kCFErrorDomainNetwork"]
+        while let item = current, result.count < 5 {
+            var row = ["domain": domains.contains(item.domain) ? item.domain : "other", "code": String(item.code)]
+            for key in ["_kCFStreamErrorDomainKey", "_kCFStreamErrorCodeKey"] {
+                if let value = item.userInfo[key] as? NSNumber { row[key] = value.stringValue }
+            }
+            result.append(row)
+            current = item.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return result
     }
 
     func recordChat(_ operation: StaticString, state: RemoteTaskStore.ConnectionState, error: Error?, retryAt: Date?) {
@@ -49,17 +88,25 @@ final class TailnetDiagnostics: @unchecked Sendable {
                 } else {
                     entry["error"] = String(reflecting: type(of: error))
                     entry["code"] = nsError.code
+                    entry["causes"] = Self.causes(error)
                     if [NSURLErrorDomain, NSPOSIXErrorDomain, NSCocoaErrorDomain, "kCFErrorDomainCFNetwork"].contains(nsError.domain) {
                         entry["domain"] = nsError.domain
                     }
                 }
             }
+            // Keep the onset even if the request/route rings wrap during a long outage.
+            var evidence: [String: Any] = ["link": latest]
+            evidence["route"] = routes.last
+            evidence["lastRequestFailure"] = lastFailure
+            entry["evidence"] = evidence
             entry["retryAt"] = retryAt?.timeIntervalSince1970
             if let last = chat.last, error != nil,
                last["state"] as? String == state.rawValue, last["operation"] as? String == operation.description,
                last["error"] as? String == entry["error"] as? String, last["code"] as? Int == entry["code"] as? Int,
                last["domain"] as? String == entry["domain"] as? String {
                 entry["lastAt"] = entry["at"]
+                entry["lastEvidence"] = entry["evidence"]
+                entry["evidence"] = last["evidence"]
                 entry["at"] = last["at"]
                 entry["count"] = (last["count"] as? Int ?? 1) + 1
                 chat.removeLast()
@@ -76,10 +123,25 @@ final class TailnetDiagnostics: @unchecked Sendable {
         queue.async {
             guard let status = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
             let summary = Self.routeSummary(status, target: self.target)
-            guard summary != self.lastRoutes || self.routes.isEmpty else { return }
-            self.lastRoutes = summary
-            self.routes.append(["at": Date().timeIntervalSince1970, "peers": summary])
-            self.routes = Array(self.routes.suffix(24))
+            let states = ["Running", "NeedsLogin", "NeedsMachineAuth", "Starting", "Stopped", "NoState", "InUseOtherUser"]
+            let state = status["BackendState"] as? String ?? ""
+            let health = (status["Health"] as? [String] ?? []).map { warning -> String in
+                let text = warning.lowercased()
+                if text.contains("coordination server") { return "coordination-server" }
+                if text.contains("relay") || text.contains("derp") { return "relay" }
+                if text.contains("logged out") { return "logged-out" }
+                return "other"
+            }
+            var observation: [String: Any] = ["backend": states.contains(state) ? state : "unknown",
+                "scope": self.target == nil ? "activePeers" : "pairedPeer", "peers": summary,
+                "health": Array(Set(health)).sorted()]
+            if var previous = self.routes.last {
+                previous.removeValue(forKey: "at")
+                if NSDictionary(dictionary: previous).isEqual(to: observation) { return }
+            }
+            observation["at"] = Date().timeIntervalSince1970
+            self.routes.append(observation)
+            self.routes = Array(self.routes.suffix(48))
             self.scheduleWrite()
         }
     }
@@ -96,8 +158,13 @@ final class TailnetDiagnostics: @unchecked Sendable {
             let derp = peer["Relay"] as? String ?? ""
             // Relay is the peer's home DERP even when traffic is direct. Match status CLI precedence.
             let route = !active ? "idle" : !direct.isEmpty ? "direct" : !relay.isEmpty ? "peer-relay" : !derp.isEmpty ? "derp" : "unknown"
-            return ["route": route, "online": peer["Online"] as? Bool == true ? "yes" : "no"]
-        }.sorted { $0["route", default: ""] < $1["route", default: ""] }
+            var summary = ["route": route, "online": peer["Online"] as? Bool == true ? "yes" : "no"]
+            if let mapped = peer["InNetworkMap"] as? Bool { summary["mapped"] = mapped ? "yes" : "no" }
+            return summary
+        }.sorted { lhs, rhs in
+            let keys = ["route", "online", "mapped"]
+            return keys.map { lhs[$0] ?? "" }.lexicographicallyPrecedes(keys.map { rhs[$0] ?? "" })
+        }
     }
 
     static func category(_ url: URL?) -> String? {
@@ -130,13 +197,32 @@ final class TailnetDiagnostics: @unchecked Sendable {
         }
     }
 
-    func recordFailure(_ error: Error, request: URLRequest?) {
-        guard let category = Self.category(request?.url) else { return }
-        let error = error as NSError
-        let domain = error.domain, code = error.code
+    static let attemptHeader = "X-MoMo-Connection-Attempt"
+
+    func recordAttempt(_ request: URLRequest, event: String, http: Int? = nil) {
+        guard let category = Self.category(request.url),
+              let attempt = request.value(forHTTPHeaderField: Self.attemptHeader) else { return }
+        let at = Date().timeIntervalSince1970
         queue.async {
-            self.requests.append(["at": Date().timeIntervalSince1970, "category": category,
-                                  "event": "failure", "errorDomain": domain, "errorCode": code])
+            var entry: [String: Any] = ["at": at, "category": category, "attempt": attempt, "event": event]
+            entry["status"] = http
+            self.requests.append(entry)
+            self.requests = Array(self.requests.suffix(96))
+            self.scheduleWrite()
+        }
+    }
+
+    func recordFailure(_ error: Error, request: URLRequest?, stage: String = "request") {
+        guard let category = Self.category(request?.url) else { return }
+        let causes = Self.causes(error)
+        let code = (error as NSError).code
+        let attempt = request?.value(forHTTPHeaderField: Self.attemptHeader)
+        queue.async {
+            var entry: [String: Any] = ["at": Date().timeIntervalSince1970, "category": category,
+                "event": "failure", "stage": stage, "errorDomain": causes[0]["domain"]!, "errorCode": code, "causes": causes]
+            entry["attempt"] = attempt
+            self.lastFailure = entry
+            self.requests.append(entry)
             self.requests = Array(self.requests.suffix(96))
             self.scheduleWrite()
         }
@@ -165,11 +251,13 @@ final class TailnetDiagnostics: @unchecked Sendable {
             return values
         }
         // Encode before crossing the queue; Foundation's heterogeneous dictionary is not Sendable.
-        guard let data = try? JSONSerialization.data(withJSONObject: [
+        var sample: [String: Any] = [
             "at": metrics.taskInterval.start.timeIntervalSince1970,
             "category": category, "method": request?.httpMethod == "POST" ? "POST" : "GET",
             "totalMs": metrics.taskInterval.duration * 1_000, "transactions": transactions
-        ]) else { return }
+        ]
+        sample["attempt"] = request?.value(forHTTPHeaderField: Self.attemptHeader)
+        guard let data = try? JSONSerialization.data(withJSONObject: sample) else { return }
         queue.async {
             guard let sample = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
             self.requests.append(sample); self.requests = Array(self.requests.suffix(96))
@@ -191,8 +279,8 @@ final class TailnetDiagnostics: @unchecked Sendable {
         guard !needsRestore else { return }
         do {
             let data = try JSONSerialization.data(withJSONObject: [
-                "schema": 2, "updatedAt": Date().timeIntervalSince1970,
-                "routes": routes, "requests": requests, "chat": chat
+                "schema": 3, "updatedAt": Date().timeIntervalSince1970,
+                "routes": routes, "requests": requests, "chat": chat, "link": link
             ], options: [.sortedKeys])
             let manager = FileManager.default
             try manager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true,

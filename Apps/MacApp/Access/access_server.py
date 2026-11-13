@@ -4,6 +4,8 @@ import base64
 import asyncio
 import hmac
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import re
 import sys
@@ -253,6 +255,41 @@ def control_application(service):
     return local
 
 
+def public_application(service):
+    # Both endpoints log the same random attempt ID, even for a rejected request
+    # or a subscription whose response stays open until the phone disconnects.
+    routes = {'/v1/capabilities', '/pair/identity', '/momo/v1/conversation',
+              '/momo/v1/conversation/snapshot', '/momo/v1/conversation/subscribe',
+              '/momo/v1/conversation/messages', '/momo/v1/conversation/runs', '/momo/v1/conversation/read'}
+    sink = RotatingFileHandler(service.data / 'access/phone-link.log', maxBytes=256 * 1024,
+                               backupCount=2, delay=True, encoding='utf-8')
+    log = logging.Logger('phone-link')
+    log.addHandler(sink)
+
+    attempt_key = web.RequestKey('phone-link-attempt', str)
+
+    @web.middleware
+    async def record_arrival(request, handler):
+        attempt = request.headers.get('X-MoMo-Connection-Attempt', '')
+        if request.path in routes and re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', attempt):
+            request[attempt_key] = attempt
+            log.info('%.3f %s received %s', time.time(), attempt, request.path)
+        return await handler(request)
+
+    async def record_headers(request, response):
+        if attempt := request.get(attempt_key):
+            log.info('%.3f %s response %d', time.time(), attempt, response.status)
+
+    async def close_log(app):
+        sink.close()
+
+    public = web.Application(middlewares=[record_arrival, errors], client_max_size=8_000_000)
+    public.router.add_route('*', '/{tail:.*}', service.public)
+    public.on_response_prepare.append(record_headers)
+    public.on_cleanup.append(close_log)
+    return public
+
+
 async def serve(data):
     service = AccessService(data)
     # A lock prevents a second desktop window/process from taking over the same runtime.
@@ -261,8 +298,7 @@ async def serve(data):
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     async with ClientSession(timeout=ClientTimeout(total=60, sock_connect=10), trust_env=False) as session:
         service.session = session
-        public = web.Application(middlewares=[errors], client_max_size=8_000_000)
-        public.router.add_route('*', '/{tail:.*}', service.public)
+        public = public_application(service)
         local = control_application(service)
         runners = []; maintenance = None
         try:
