@@ -167,17 +167,20 @@ struct DesktopDevices: View {
     @State private var revoking: AccessStatus.Device?
     @State private var showingPairing = false
     @State private var showingMethod = false
+    @State private var detailsExpanded = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 HStack {
-                    Text(showingMethod ? "连接方式" : "设备").font(.system(size: 22, weight: .medium)).accessibilityAddTraits(.isHeader)
+                    DesktopSettingsTitle(title: showingMethod ? "连接方式" : "设备")
                     Spacer()
                     if showingMethod {
                         Button("返回") { showingMethod = false }.buttonStyle(.plain).font(.system(size: 13)).foregroundStyle(.secondary)
                             .keyboardShortcut(.cancelAction).disabled(model.busy != nil)
                             .accessibilityIdentifier("desktop.connectionBack")
+                    } else if model.status != nil {
+                        pairPhone
                     }
                 }
                 if showingMethod {
@@ -198,9 +201,10 @@ struct DesktopDevices: View {
                         network
                     }
                 }
+                if !showingMethod { connectionDetails }
                 if !showingMethod, let busy = model.busy { ProgressView(busy).controlSize(.small) }
                 if !showingMethod, let failure = model.failure { Text(failure).font(.system(size: 12)).foregroundStyle(MoMoPalette.failure).textSelection(.enabled) }
-            }.padding(20).frame(maxWidth: 808).frame(maxWidth: .infinity)
+            }.desktopSettingsPage()
         }
         .sheet(isPresented: $showingPairing, onDismiss: { model.isPairingDevice = false }) {
             DesktopPairingSheet(model: model, onFinish: { showingPairing = false })
@@ -211,39 +215,72 @@ struct DesktopDevices: View {
         } message: { Text("它将无法访问这台电脑，已有任务会继续。") }
     }
 
+    private var pairPhone: some View {
+        Button("配对手机", systemImage: "qrcode") {
+            model.isPairingDevice = true
+            Task {
+                if model.status?.tunnel.state == "connected" { _ = await model.control("pair/invite") }
+                showingPairing = true
+            }
+        }
+        .controlSize(.regular)
+        .disabled(model.busy != nil).accessibilityIdentifier("desktop.addDevice")
+    }
+
     private var devices: some View {
-        DesktopSettingsGroup("已配对设备") {
-            HStack {
-                Spacer()
-                Button("配对手机", systemImage: "qrcode") {
-                    model.isPairingDevice = true
-                    Task {
-                        if model.status?.tunnel.state == "connected" { _ = await model.control("pair/invite") }
-                        showingPairing = true
+        let paired = model.status?.devices.filter { $0.state == "approved" } ?? []
+        return DesktopSettingsGroup("已配对设备") {
+            ForEach(paired) { device in
+                HStack(spacing: 11) {
+                    Image(systemName: "iphone").font(.system(size: 22))
+                        .frame(width: 36, height: 40).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(verbatim: device.name).font(.body.weight(.semibold))
+                        if let seen = device.lastSeen, seen > 0 {
+                            LabeledContent("上次联系") { Text(Date(timeIntervalSince1970: seen), style: .relative) }
+                                .labeledContentStyle(.automatic).fixedSize()
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
+                    .accessibilityElement(children: .combine)
+                    Spacer(minLength: 10)
+                    Menu {
+                        Button("移除设备", role: .destructive) { revoking = device }
+                    } label: {
+                        Image(systemName: "ellipsis").frame(width: 25, height: 24)
+                    }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .accessibilityLabel(Text("更多") + Text(verbatim: " · " + device.name))
+                    .disabled(model.busy != nil)
+                    .accessibilityIdentifier("desktop.deviceActions")
                 }
-                .buttonStyle(DesktopSettingsButtonStyle())
-                .disabled(model.busy != nil).accessibilityIdentifier("desktop.addDevice")
+                .padding(.vertical, 4)
             }
-            Divider()
-            ForEach(model.status?.devices.filter { $0.state == "approved" } ?? []) { device in
-                HStack {
-                    Label(device.name, systemImage: "iphone").font(.system(size: 14, weight: .medium))
-                    Spacer(minLength: 16)
-                    Button("移除", role: .destructive) { revoking = device }
-                        .buttonStyle(.plain).font(.system(size: 13)).foregroundStyle(MoMoPalette.failure)
-                        .frame(minWidth: 44, minHeight: 36).disabled(model.busy != nil)
-                        .accessibilityLabel("移除 \(device.name)")
-                }.desktopSettingsRow()
-            }
-            if model.status?.devices.contains(where: { $0.state == "approved" }) != true {
-                Text("尚未配对手机").font(.system(size: 14)).foregroundStyle(.secondary).padding(.vertical, 12)
+            if paired.isEmpty {
+                Text("尚未配对手机").foregroundStyle(.secondary).desktopSettingsRow()
             }
         }
     }
 
+    private var connectionDetails: some View {
+        DisclosureGroup(isExpanded: $detailsExpanded) {
+            VStack(alignment: .leading, spacing: 8) {
+                if let url = model.status?.tunnel.endpoint {
+                    LabeledContent("当前地址") {
+                        Text(verbatim: url).font(.callout.monospaced()).foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                DesktopNetworkProxy(model: model)
+            }.padding(.top, 12).padding(.leading, 5)
+        } label: {
+            Text("连接详情").font(.callout.weight(.medium))
+        }
+        .accessibilityIdentifier("desktop.connectionDetails")
+    }
+
     private var network: some View {
-        DesktopSettingsGroup("网络") {
+        DesktopSettingsGroup("这台 Mac") {
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("远程访问").fontWeight(.medium)
@@ -256,7 +293,6 @@ struct DesktopDevices: View {
                     .accessibilityHint(tunnelLabel)
                     .disabled(model.busy != nil).accessibilityIdentifier("desktop.remoteAccess")
             }.desktopSettingsRow()
-            Divider()
             Button { showingMethod = true } label: {
                 HStack {
                     Text("连接方式").fontWeight(.medium); Spacer()
@@ -264,15 +300,6 @@ struct DesktopDevices: View {
                     Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(.secondary).accessibilityHidden(true)
                 }.desktopSettingsRow().contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(model.busy != nil).accessibilityIdentifier("desktop.connectionMethod")
-            if let url = model.status?.tunnel.endpoint {
-                Divider()
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    Text("当前地址").fontWeight(.medium).fixedSize()
-                    Spacer(minLength: 0)
-                    Text(url).font(.system(size: 13)).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing).textSelection(.enabled)
-                }.desktopSettingsRow().accessibilityElement(children: .combine)
-            }
             if let error = model.status?.tunnel.error {
                 Text(error).font(.system(size: 12)).foregroundStyle(MoMoPalette.failure).textSelection(.enabled)
             }
@@ -460,22 +487,23 @@ struct DesktopChat: View {
 
 struct DesktopSettings: View {
     private enum Page: String, CaseIterable, Identifiable {
-        case model = "模型", pairing = "设备", advanced = "通用"
-        var id: String { rawValue }
+        case general = "通用", model = "模型", pairing = "设备", controls = "电脑控制", runtime = "运行环境"
+        var id: Self { self }
         var icon: String {
             switch self {
+            case .general: "sun.horizon"
             case .model: "sparkles"
-            case .pairing: "iphone"
-            case .advanced: "gearshape"
+            case .pairing: "iphone.and.arrow.forward"
+            case .controls: "cursorarrow"
+            case .runtime: "gearshape.2"
             }
         }
     }
     @Bindable var model: DesktopModel
-    @State private var page = Page.advanced
+    @State private var page = Page.general
     @State private var search = ""
     @State private var permissions = DesktopPermissionsController()
     @State private var showingEngineTasks = false
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         if #available(macOS 15.0, *) {
@@ -487,10 +515,14 @@ struct DesktopSettings: View {
 
     private var settingsContent: some View {
         HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("设置").font(.system(size: 16, weight: .semibold))
-                    .padding(.horizontal, 10).padding(.bottom, 18)
-                HStack(spacing: 7) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 8) {
+                    PhoneBrandIcon(size: 23)
+                    PhoneBrandWordmark(size: 16)
+                }
+                .accessibilityElement(children: .combine)
+                .padding(.horizontal, 14)
+                HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
                     TextField("搜索", text: $search).textFieldStyle(.plain)
                         .accessibilityIdentifier("settings.search")
@@ -500,45 +532,39 @@ struct DesktopSettings: View {
                             .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("清除搜索")
                     }
                 }
-                .font(.system(size: 14)).padding(.horizontal, 12).frame(height: 34)
-                .background(Color.primary.opacity(0.045), in: Capsule())
-                .padding(.bottom, 20)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 3) {
-                        if !search.isEmpty {
-                            ForEach(matchingPages) { sidebarRow($0) }
-                            if matchingPages.isEmpty {
-                                Text("没有匹配的设置").font(.system(size: 12)).foregroundStyle(.secondary).padding(10)
-                            }
-                        } else {
-                            Text("个人").font(.system(size: 12)).foregroundStyle(.tertiary)
-                                .padding(.horizontal, 10).padding(.bottom, 5)
-                            sidebarRow(.advanced)
-                            sidebarRow(.model)
-                            Text("设备").font(.system(size: 12)).foregroundStyle(.tertiary)
-                                .padding(.horizontal, 10).padding(.top, 22).padding(.bottom, 5)
-                            sidebarRow(.pairing)
+                .font(.callout).padding(.horizontal, 8).frame(height: 27)
+                .background(MoMoPalette.paper, in: .rect(cornerRadius: 6))
+                .padding(.horizontal, 10)
+                List(selection: $page) {
+                    Section {
+                        ForEach(matchingPages) { destination in
+                            Label(LocalizedStringKey(destination.rawValue), systemImage: destination.icon)
+                                .font(.body).padding(.vertical, 3)
+                                .tag(destination)
+                                .accessibilityIdentifier("settings." + destination.rawValue)
                         }
-                    }
+                        if matchingPages.isEmpty {
+                            Text("没有匹配的设置").font(.caption).foregroundStyle(.secondary)
+                        }
+                    } header: { Text("设置") }
+                    .collapsible(false)
                 }
-                Spacer(minLength: 0)
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
             }
-            .padding(.horizontal, 8).padding(.top, 44).frame(width: 240)
-            .background {
-                (colorScheme == .dark ? Color(nsColor: .windowBackgroundColor) : Color(.sRGB, white: 0.985, opacity: 1))
-                    .ignoresSafeArea(.container)
-            }
-            Divider().ignoresSafeArea(.container)
+            .padding(.top, 44).frame(width: 184)
+            .background { MoMoPalette.surface.ignoresSafeArea(.container) }
             Group {
                 switch page {
                 case .model: modelSettings
                 case .pairing: DesktopDevices(model: model)
-                case .advanced: advancedSettings
+                case .general, .controls, .runtime: preferences
                 }
             }
-            .padding(.top, 28)
+            .id(page)
+            .padding(.top, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background { Color(nsColor: .textBackgroundColor).ignoresSafeArea(.container) }
+            .background { MoMoPalette.canvas.ignoresSafeArea(.container) }
         }
         .ignoresSafeArea(.container)
         .frame(minWidth: 720, idealWidth: 820, maxWidth: .infinity, minHeight: 500, idealHeight: 560, maxHeight: .infinity)
@@ -548,49 +574,37 @@ struct DesktopSettings: View {
         .toolbarBackground(.hidden, for: .windowToolbar)
         .tint(MoMoPalette.ink).foregroundStyle(MoMoPalette.ink)
         .onAppear {
-            if model.managingModel { page = .model; model.managingModel = false }
-            else if model.managingConnection { page = .pairing; model.managingConnection = false }
+            if model.managingModel { search = ""; page = .model; model.managingModel = false }
+            else if model.managingConnection { search = ""; page = .pairing; model.managingConnection = false }
         }
         .onChange(of: model.managingConnection) { _, show in
-            if show { page = .pairing; model.managingConnection = false }
+            if show { search = ""; page = .pairing; model.managingConnection = false }
         }
         .onChange(of: model.managingModel) { _, show in
-            if show { page = .model; model.managingModel = false }
+            if show { search = ""; page = .model; model.managingModel = false }
         }
     }
 
     private var matchingPages: [Page] {
-        [Page.advanced, .model, .pairing].filter { destination in
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return Page.allCases }
+        return Page.allCases.filter { destination in
             let terms: [String]
             switch destination {
-            case .advanced: terms = [String(localized: "通用"), String(localized: "网络代理"), String(localized: "电脑控制"), String(localized: "运行环境"), String(localized: "智能体引擎"), String(localized: "时间线"), String(localized: "每天起点"), String(localized: "生活插画"), "DeepSeek Harness", "SuperAgent", "Proactive"]
+            case .general: terms = [String(localized: "通用"), String(localized: "时间线"), String(localized: "每天起点"), String(localized: "生活插画")]
+            case .controls: terms = [String(localized: "电脑控制"), String(localized: "屏幕与控制权限"), String(localized: "连接与权限")]
+            case .runtime: terms = [String(localized: "运行环境"), String(localized: "智能体引擎"), String(localized: "应用更新"), String(localized: "结果文件夹"), "DeepSeek Harness", "SuperAgent", "Proactive"]
             case .model: terms = [String(localized: "模型"), String(localized: "聊天模式"), String(localized: "创作"), "Creator", "API", "Codex", "Claude", "Antigravity", "Gemini"]
-            case .pairing: terms = [String(localized: "设备"), String(localized: "配对手机"), String(localized: "远程访问")]
+            case .pairing: terms = [String(localized: "设备"), String(localized: "配对手机"), String(localized: "网络代理"), "Tailscale", String(localized: "远程访问")]
             }
-            return terms.contains { $0.localizedStandardContains(search.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            return terms.contains { $0.localizedStandardContains(query) }
         }
-    }
-
-    private func sidebarRow(_ destination: Page) -> some View {
-        Button { page = destination } label: {
-            HStack(spacing: 9) {
-                Image(systemName: destination.icon).font(.system(size: 14, weight: .regular))
-                    .frame(width: 18).accessibilityHidden(true)
-                Text(LocalizedStringKey(destination.rawValue)).font(.system(size: 14, weight: .regular))
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10).frame(height: 30)
-            .background(page == destination ? Color.primary.opacity(0.055) : .clear, in: RoundedRectangle(cornerRadius: 8))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain).accessibilityIdentifier("settings." + destination.id)
-        .accessibilityAddTraits(page == destination ? .isSelected : [])
     }
 
     private var modelSettings: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Text("模型").font(.system(size: 22, weight: .medium)).accessibilityAddTraits(.isHeader)
+                DesktopSettingsTitle(title: "模型")
                 if let notice = model.taskStore?.providerNotice {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "info.circle.fill")
@@ -632,124 +646,139 @@ struct DesktopSettings: View {
                 }
                 if let busy = model.busy { ProgressView(busy).controlSize(.small) }
                 if let failure = model.failure { Text(failure).font(.callout).foregroundStyle(MoMoPalette.failure).textSelection(.enabled) }
-            }.padding(20).frame(maxWidth: 808).frame(maxWidth: .infinity, alignment: .center)
+            }.desktopSettingsPage()
         }
     }
 
-    private var advancedSettings: some View {
+    private var preferences: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                Text("通用").font(.system(size: 22, weight: .medium)).accessibilityAddTraits(.isHeader)
-                DesktopNetworkProxy(model: model)
-                DesktopSettingsGroup("电脑控制") {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("屏幕与控制权限").font(.system(size: 14))
-                            Text("在系统设置「隐私与安全性」开启辅助功能与屏幕录制后，MoMo 与配对手机可查看和操作电脑")
-                                .font(.system(size: 12)).foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 16)
-                        Button("管理") { permissions.present() }
-                            .buttonStyle(DesktopSettingsButtonStyle())
-                            .accessibilityIdentifier("settings.permissions")
-                    }.desktopSettingsRow()
-                    Divider().opacity(0.45)
-                    HStack {
-                        Text("电脑控制权").fontWeight(.regular)
-                        Spacer()
-                        if model.desktopHost?.humanHasControl == true {
-                            Button("交还 MoMo") {
-                                do { try model.desktopHost?.returnControl() }
-                                catch { model.desktopFailure = error.localizedDescription }
-                            }
-                            .buttonStyle(DesktopSettingsButtonStyle())
-                            .accessibilityIdentifier("settings.returnControl")
-                        } else {
-                            Text(model.desktopHost == nil ? "尚未连接" : "MoMo").foregroundStyle(.secondary)
-                        }
-                    }.font(.system(size: 14)).desktopSettingsRow()
-                    if let error = model.desktopFailure { Text(error).font(.system(size: 12)).foregroundStyle(MoMoPalette.failure) }
+            VStack(alignment: .leading, spacing: 24) {
+                DesktopSettingsTitle(title: LocalizedStringKey(page.rawValue))
+                switch page {
+                case .general: dailyPreferences
+                case .controls: controlPreferences
+                case .runtime: runtimePreferences
+                case .model, .pairing: EmptyView()
                 }
-                DesktopSettingsGroup("智能体引擎") {
-                    HStack {
-                        Text("Agent Runtime").font(.system(size: 14))
-                        Spacer(minLength: 16)
-                        Text("DeepSeek Harness").foregroundStyle(.secondary)
-                    }.desktopSettingsRow()
-                    if let snap = model.proactiveSnapshot {
-                        Divider().opacity(0.45)
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("引擎状态").font(.system(size: 14))
-                                Text(snap.dshReady
-                                     ? String(localized: "已就绪 · 进行中 \(snap.activeTickets) · 已分析 \(snap.totalDecisions)")
-                                     : String(localized: "正在启动 DeepSeek SuperAgent…"))
-                                    .font(.system(size: 12)).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button("查看任务") { showingEngineTasks.toggle() }
-                                .buttonStyle(DesktopSettingsButtonStyle())
-                                .accessibilityIdentifier("settings.superagentTasks")
-                                .popover(isPresented: $showingEngineTasks, arrowEdge: .bottom) {
-                                    AgentActiveTasksSheet(store: model.taskStore, isPopover: true)
-                                        .frame(width: 420)
-                                        .frame(minHeight: 300, maxHeight: 540)
-                                }
-                        }.desktopSettingsRow()
+            }.desktopSettingsPage()
+        }
+    }
+
+    @ViewBuilder private var dailyPreferences: some View {
+        DesktopSettingsGroup("时间线") {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("每天起点").font(.system(size: 14))
+                    Text("早于该时间的凌晨录音会归入前一天。默认 08:00。")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 16)
+                if model.dayStartHour != DayStartBoundary.defaultHour {
+                    Button("恢复默认") { model.selectDayStartHour(DayStartBoundary.defaultHour) }
+                        .buttonStyle(DesktopSettingsButtonStyle())
+                        .accessibilityIdentifier("settings.dayStartHour.reset")
+                }
+                Picker("每天起点", selection: Binding(
+                    get: { model.dayStartHour },
+                    set: { model.selectDayStartHour($0) }
+                )) {
+                    ForEach(Array(DayStartBoundary.hourRange), id: \.self) { hour in
+                        Text(DayStartBoundary.label(for: hour)).tag(hour)
                     }
                 }
-                DesktopSettingsGroup("时间线") {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("每天起点").font(.system(size: 14))
-                            Text("早于该时间的凌晨录音会归入前一天。默认 08:00。")
-                                .font(.system(size: 12)).foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 16)
-                        if model.dayStartHour != DayStartBoundary.defaultHour {
-                            Button("恢复默认") { model.selectDayStartHour(DayStartBoundary.defaultHour) }
-                                .buttonStyle(DesktopSettingsButtonStyle())
-                                .accessibilityIdentifier("settings.dayStartHour.reset")
-                        }
-                        Picker("每天起点", selection: Binding(
-                            get: { model.dayStartHour },
-                            set: { model.selectDayStartHour($0) }
-                        )) {
-                            ForEach(Array(DayStartBoundary.hourRange), id: \.self) { hour in
-                                Text(DayStartBoundary.label(for: hour)).tag(hour)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 112)
-                        .accessibilityIdentifier("settings.dayStartHour")
-                    }.desktopSettingsRow()
+                .labelsHidden()
+                .frame(width: 112)
+                .accessibilityIdentifier("settings.dayStartHour")
+            }.desktopSettingsRow()
+            DayBoundaryRuler(hour: model.dayStartHour)
+        }
+        DesktopSettingsGroup("生活插画") {
+            VStack(alignment: .leading, spacing: 7) {
+                LifeIllustrationSettingsControls(store: model.lifeIllustrations)
+            }
+            .toggleStyle(.switch).controlSize(.small)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .desktopSettingsRow()
+        }
+    }
+
+    @ViewBuilder private var controlPreferences: some View {
+        DesktopSettingsGroup("电脑控制") {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("屏幕与控制权限").font(.system(size: 14))
+                    Text("在系统设置「隐私与安全性」开启辅助功能与屏幕录制后，MoMo 与配对手机可查看和操作电脑")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
-                DesktopSettingsGroup("生活插画") {
-                    LifeIllustrationSettingsControls(store: model.lifeIllustrations)
-                        .desktopSettingsRow()
-                }
-                DesktopSettingsGroup("运行环境") {
-                    if model.hasBundledRuntime {
-                        HStack {
-                            Text("运行组件")
-                            Spacer()
-                            Text("已内置").foregroundStyle(.secondary)
-                        }.font(.system(size: 14)).desktopSettingsRow()
-                    } else {
-                        settingsAction("运行组件", action: "准备", id: "settings.prepareRuntime", disabled: model.busy != nil) {
-                            Task { await model.prepare() }
-                        }
+                Spacer(minLength: 16)
+                Button("管理") { permissions.present() }
+                    .buttonStyle(DesktopSettingsButtonStyle())
+                    .accessibilityIdentifier("settings.permissions")
+            }.desktopSettingsRow()
+            HStack {
+                Text("电脑控制权").fontWeight(.regular)
+                Spacer()
+                if model.desktopHost?.humanHasControl == true {
+                    Button("交还 MoMo") {
+                        do { try model.desktopHost?.returnControl() }
+                        catch { model.desktopFailure = error.localizedDescription }
                     }
-                    Divider().opacity(0.45)
-                    settingsAction("应用更新", action: "获取更新", id: "settings.getUpdates") {
-                        NSWorkspace.shared.open(URL(string: "https://github.com/Miri-Labs/MoMo-Agent/releases/latest")!)
-                    }
-                    Divider().opacity(0.45)
-                    settingsAction("结果文件夹", action: "打开", id: "settings.openResults") { model.showFiles() }
-                    if let busy = model.busy { ProgressView(busy).controlSize(.small) }
-                    if let failure = model.failure { Text(failure).font(.system(size: 12)).foregroundStyle(MoMoPalette.failure) }
+                    .buttonStyle(DesktopSettingsButtonStyle())
+                    .accessibilityIdentifier("settings.returnControl")
+                } else {
+                    Text(model.desktopHost == nil ? "尚未连接" : "MoMo").foregroundStyle(.secondary)
                 }
-            }.padding(20).frame(maxWidth: 808).frame(maxWidth: .infinity, alignment: .center)
+            }.font(.system(size: 14)).desktopSettingsRow()
+            if let error = model.desktopFailure { Text(error).font(.system(size: 12)).foregroundStyle(MoMoPalette.failure) }
+        }
+    }
+
+    @ViewBuilder private var runtimePreferences: some View {
+        DesktopSettingsGroup("智能体引擎") {
+            HStack {
+                Text("Agent Runtime").font(.system(size: 14))
+                Spacer(minLength: 16)
+                Text("DeepSeek Harness").foregroundStyle(.secondary)
+            }.desktopSettingsRow()
+            if let snap = model.proactiveSnapshot {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("引擎状态").font(.system(size: 14))
+                        Text(snap.dshReady
+                             ? String(localized: "已就绪 · 进行中 \(snap.activeTickets) · 已分析 \(snap.totalDecisions)")
+                             : String(localized: "正在启动 DeepSeek SuperAgent…"))
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("查看任务") { showingEngineTasks.toggle() }
+                        .buttonStyle(DesktopSettingsButtonStyle())
+                        .accessibilityIdentifier("settings.superagentTasks")
+                        .popover(isPresented: $showingEngineTasks, arrowEdge: .bottom) {
+                            AgentActiveTasksSheet(store: model.taskStore, isPopover: true)
+                                .frame(width: 420)
+                                .frame(minHeight: 300, maxHeight: 540)
+                        }
+                }.desktopSettingsRow()
+            }
+        }
+        DesktopSettingsGroup("运行环境") {
+            if model.hasBundledRuntime {
+                HStack {
+                    Text("运行组件")
+                    Spacer()
+                    Text("已内置").foregroundStyle(.secondary)
+                }.font(.system(size: 14)).desktopSettingsRow()
+            } else {
+                settingsAction("运行组件", action: "准备", id: "settings.prepareRuntime", disabled: model.busy != nil) {
+                    Task { await model.prepare() }
+                }
+            }
+            settingsAction("应用更新", action: "获取更新", id: "settings.getUpdates") {
+                NSWorkspace.shared.open(URL(string: "https://github.com/Miri-Labs/MoMo-Agent/releases/latest")!)
+            }
+            settingsAction("结果文件夹", action: "打开", id: "settings.openResults") { model.showFiles() }
+            if let busy = model.busy { ProgressView(busy).controlSize(.small) }
+            if let failure = model.failure { Text(failure).font(.system(size: 12)).foregroundStyle(MoMoPalette.failure) }
         }
     }
 
@@ -796,8 +825,51 @@ private struct PairingPresentationSize: PresentationSizing {
     }
 }
 
+private struct DesktopSettingsTitle: View {
+    let title: LocalizedStringKey
+    var body: some View {
+        Text(title).font(.system(size: 24, weight: .semibold))
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+// Midnight to midnight. The shaded interval belongs to the previous recording day.
+private struct DayBoundaryRuler: View {
+    let hour: Int
+    var body: some View {
+        VStack(spacing: 5) {
+            Canvas { context, size in
+                let width = max(0, size.width - 2)
+                let x = 1 + width * CGFloat(hour) / 24
+                let track = CGRect(x: 1, y: 7, width: width, height: 3)
+                context.fill(Path(track), with: .color(MoMoPalette.line))
+                context.fill(Path(CGRect(x: 1, y: 7, width: x - 1, height: 3)), with: .color(MoMoPalette.muted))
+                for tick in [0, 12, 24] {
+                    let mark = CGRect(x: 1 + CGFloat(tick) * width / 24 - 0.5, y: 5, width: 1, height: 7)
+                    context.fill(Path(mark), with: .color(MoMoPalette.muted))
+                }
+                context.fill(Path(ellipseIn: CGRect(x: x - 3, y: 5.5, width: 6, height: 6)), with: .color(MoMoPalette.ink))
+            }.frame(height: 16).padding(.horizontal, 3)
+            HStack {
+                Text(verbatim: "00:00")
+                Spacer()
+                Text(verbatim: "12:00")
+                Spacer()
+                Text(verbatim: "24:00")
+            }
+            .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+        }
+        .padding(.bottom, 12)
+        .accessibilityHidden(true)
+    }
+}
+
 // Open rows size from their content; controls keep their native hit targets.
 extension View {
+    fileprivate func desktopSettingsPage() -> some View {
+        padding(.horizontal, 30).padding(.top, 29).padding(.bottom, 32)
+            .frame(maxWidth: 780).frame(maxWidth: .infinity)
+    }
     func desktopSettingsRow() -> some View {
         frame(minHeight: 20).padding(.vertical, 12)
     }
@@ -807,7 +879,6 @@ extension View {
 struct DesktopSettingsGroup<Content: View>: View {
     let title: LocalizedStringKey
     @ViewBuilder var content: Content
-    @Environment(\.colorSchemeContrast) private var contrast
 
     init(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) {
         self.title = title
@@ -815,16 +886,10 @@ struct DesktopSettingsGroup<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(title).font(.system(size: 13, weight: .regular)).accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary).accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: 0) { content }
-                .padding(.horizontal, 16)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14)
-                        .strokeBorder(Color.primary.opacity(contrast == .increased ? 0.35 : 0.05), lineWidth: 1)
-                        .allowsHitTesting(false).accessibilityHidden(true)
-                }
         }
     }
 }
