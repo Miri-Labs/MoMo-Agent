@@ -83,6 +83,7 @@
 		37F4754D96709CBF92D9B4E0 /* ReplayOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A233C59D5F12A74EECCCA86 /* ReplayOptions.swift */; };
 		394682E0615FA262E258E859 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A14E196A6A6C5C8D76C31A /* SettingsView.swift */; };
 		3BFABC4F7D4C60589110054A /* PhoneContextSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 643B0D1D7941D25FE7EFFFE4 /* PhoneContextSync.swift */; };
+		3E110BB3EC71DCF3215DE2FC /* EmbeddedAccessHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5197C5C89197D1D6A84856C5 /* EmbeddedAccessHealth.swift */; };
 		3EBA953B1A6E04A4F2CAC65F /* BrandAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0E312367766F383027CB5062 /* BrandAssets.xcassets */; };
 		3EF6C7EF8AB36F9E4606C83F /* EarphoneLocalDeliveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8091B31BE421511B1D741407 /* EarphoneLocalDeliveryTests.swift */; };
 		3F02E1702A48E050661CF0FF /* MarkdownDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FE06418D3C569AF302F4591 /* MarkdownDocument.swift */; };
@@ -589,6 +590,7 @@
 		50F599FA6E3A17CC1473DC78 /* PhoneThroughputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneThroughputTests.swift; sourceTree = "<group>"; };
 		513D8E755734D80C5815200D /* AttachmentPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentPresentation.swift; sourceTree = "<group>"; };
 		518E51262BE3E52EA0DA9C1C /* PhoneRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneRootView.swift; sourceTree = "<group>"; };
+		5197C5C89197D1D6A84856C5 /* EmbeddedAccessHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedAccessHealth.swift; sourceTree = "<group>"; };
 		546B97FE38233ECA361D0FEF /* MoMoAgentUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MoMoAgentUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		55312D79D74F85EED56716ED /* model.int8.onnx */ = {isa = PBXFileReference; path = model.int8.onnx; sourceTree = "<group>"; };
 		55C8F00C7670E16B91C8B7C0 /* DesktopWindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWindowChrome.swift; sourceTree = "<group>"; };
@@ -902,6 +904,7 @@
 				4F730386459CD44FED3F7E10 /* DesktopVideoHost.swift */,
 				740026FE32D7CCDE6E05020B /* DesktopViews.swift */,
 				55C8F00C7670E16B91C8B7C0 /* DesktopWindowChrome.swift */,
+				5197C5C89197D1D6A84856C5 /* EmbeddedAccessHealth.swift */,
 				2138CF40BC1562055724C2B2 /* Info.plist */,
 				B9AE3666B077EC5391711021 /* MacAppIcon.icon */,
 				5E2F4FAF9041458D88F383C9 /* MoMoAgentMacApp.swift */,
@@ -2202,6 +2205,7 @@
 				C7C4B07EE5F81027A5C11816 /* DesktopVideoHost.swift in Sources */,
 				E7CFFDAD37D8ABE38D00054F /* DesktopViews.swift in Sources */,
 				B080EF745B2F9E48DD390CDD /* DesktopWindowChrome.swift in Sources */,
+				3E110BB3EC71DCF3215DE2FC /* EmbeddedAccessHealth.swift in Sources */,
 				ADCDD850626B8A54D4453030 /* EmbeddedTailnet.swift in Sources */,
 				576F6F68B0E09351942E4EB1 /* EmbeddedTailnetTransport.swift in Sources */,
 				51D700C29D7D66F51EE4CC0B /* LifeIllustrationJourney.swift in Sources */,

@@ -297,8 +297,7 @@ final class EmbeddedTailnet {
         }
         if let peer {
             diagnostics.recordLink("peerMap", "mapped")
-            await warmPeerIfNeeded(peer, node: node)
-            guard attempt == generation else { throw CancellationError() }
+            startPeerWarmupIfNeeded(peer, node: node)
         }
         func cached() -> URLSession? { media ? desktopMediaSession : desktopControl ? desktopControlSession : interactive ? interactiveSession : session }
         if let cached = cached() { return cached }
@@ -409,7 +408,7 @@ final class EmbeddedTailnet {
                     await self.checkProxyIfNeeded()
                     guard self.generation == attempt, self.state == "Running",
                           let currentNode = self.node, self.mappedAddresses.contains(peer) else { return }
-                    await self.warmPeerIfNeeded(peer, node: currentNode)
+                    self.startPeerWarmupIfNeeded(peer, node: currentNode)
                 }
             }
         }
@@ -458,12 +457,8 @@ final class EmbeddedTailnet {
         case unsupported
     }
 
-    private func warmPeerIfNeeded(_ peer: String, node: TailscaleNode) async {
-        if let peerWarmup {
-            await peerWarmup.value
-            return
-        }
-        guard needsPeerWarmup, TailnetEndpoint.isAddress(peer) else { return }
+    private func startPeerWarmupIfNeeded(_ peer: String, node: TailscaleNode) {
+        guard peerWarmup == nil, needsPeerWarmup, TailnetEndpoint.isAddress(peer) else { return }
         if let last = lastPeerWarmupAt, last.duration(to: .now) < .seconds(5) {
             needsPeerWarmup = false
             return
@@ -471,10 +466,15 @@ final class EmbeddedTailnet {
         needsPeerWarmup = false
         lastPeerWarmupAt = .now
         let timeout = peerWarmupTimeout
-        let attempt = generation
         let diagnostics = self.diagnostics
-        let task = Task {
+        // The mapped peer can accept HTTP while discovery looks for a faster route.
+        peerWarmup = Task { [weak self] in
+            defer {
+                // Suspension can replace this task without replacing the node.
+                if !Task.isCancelled { self?.peerWarmup = nil }
+            }
             do {
+                try Task.checkCancellation()
                 let (configuration, loopback) = try await URLSessionConfiguration.tailscaleSession(node)
                 var proxies = configuration.proxyConfigurations
                 for i in proxies.indices { proxies[i].allowFailover = false }
@@ -556,9 +556,6 @@ final class EmbeddedTailnet {
                 if !Task.isCancelled { diagnostics.recordLink("peerWarmup", "setup-failed", error: error) }
             }
         }
-        peerWarmup = task
-        await task.value
-        if generation == attempt { peerWarmup = nil }
     }
 
     private func checkProxyIfNeeded() async {

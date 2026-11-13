@@ -116,7 +116,7 @@ final class DesktopModel {
     @ObservationIgnored private var lastEmbeddedEndpoint: String?
     @ObservationIgnored private var embeddedProbeFailures = 0
     @ObservationIgnored private var servedEmbeddedNode: (generation: UUID, port: Int32)?
-    @ObservationIgnored private var lastEmbeddedProbeAt = Date.distantPast
+    @ObservationIgnored private var embeddedHealth = EmbeddedAccessHealth()
     @ObservationIgnored private var lastProactiveRefreshAt = Date.distantPast
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
     @ObservationIgnored private var accessProcess: Process?
@@ -185,7 +185,7 @@ final class DesktopModel {
                     guard let self, !self.shuttingDown else { return }
                     self.embeddedProbeFailures = 0
                     self.servedEmbeddedNode = nil
-                    self.lastEmbeddedProbeAt = .distantPast
+                    self.embeddedHealth = EmbeddedAccessHealth()
                     self.tailnet.prepareForForeground()
                     await self.refresh()
                     await self.taskStore?.retryConnection()
@@ -746,7 +746,7 @@ final class DesktopModel {
 
     func applyNetworkProxy(_ settings: TailnetProxySettings) async throws {
         servedEmbeddedNode = nil
-        lastEmbeddedProbeAt = .distantPast
+        embeddedHealth = EmbeddedAccessHealth()
         try await tailnet.updateProxy(settings)
         await refreshEmbeddedAccess()
     }
@@ -755,7 +755,7 @@ final class DesktopModel {
         guard busy == nil else { return }
         guard status?.tunnel.mode == "embedded", status?.tunnel.state != "stopped" else {
             servedEmbeddedNode = nil
-            lastEmbeddedProbeAt = .distantPast
+            embeddedHealth = EmbeddedAccessHealth()
             if tailnet.node != nil { await tailnet.close() }
             return
         }
@@ -763,6 +763,7 @@ final class DesktopModel {
         if lastEmbeddedEndpoint == nil, let knownEndpoint { lastEmbeddedEndpoint = knownEndpoint }
         var body: [String: Any] = ["state": "needs_setup", "error": String(localized: "请登录 Tailscale。")]
         var probeSession: URLSession?
+        var probe: (endpoint: URL, generation: UUID)?
         do {
             try await tailnet.start()
             if tailnet.state == "Running", let host = tailnet.address, let node = tailnet.node,
@@ -777,27 +778,28 @@ final class DesktopModel {
                     && embeddedProbeFailures == 0
                     && tailnetAccessError == nil
                 let needsInteractiveCheck = setupStep == .pair || isPairingDevice
-                if alreadyConnected && !needsInteractiveCheck && Date().timeIntervalSince(lastEmbeddedProbeAt) < 30 {
-                    return
-                }
                 if !alreadyServing {
+                    embeddedHealth = EmbeddedAccessHealth()
                     try await node.serveLoopbackHTTP(port: targetPort)
                     servedEmbeddedNode = (currentGen, targetPort)
                 }
-                let session = try await tailnet.connectedSession()
-                probeSession = session
-                var request = URLRequest(url: url.appendingPathComponent("pair/identity")); request.timeoutInterval = 5
-                let response = try await TailnetChunkStream.read(request, session: session, network: tailnet, limit: 64 * 1024)
-                let instanceID = try await Task.detached(priority: .utility) {
-                    (try? JSONSerialization.jsonObject(with: response.data) as? [String: String])?["instance_id"]
-                }.value
-                guard response.status == 200,
-                      instanceID?.lowercased() == connection?.instanceID.uuidString.lowercased() else { throw TailnetError.unavailable }
-                embeddedProbeFailures = 0
-                lastEmbeddedProbeAt = Date()
-                lastEmbeddedEndpoint = url.absoluteString
-                if tailnetAccessError != nil { tailnetAccessError = nil }
-                if status?.tunnel.state == "connected", status?.tunnel.endpoint == url.absoluteString, status?.tunnel.error == nil {
+                if !alreadyConnected || needsInteractiveCheck || embeddedHealth.needsProbe(url) {
+                    let session = try await tailnet.connectedSession()
+                    probeSession = session
+                    probe = (url, currentGen)
+                    var request = URLRequest(url: url.appendingPathComponent("pair/identity")); request.timeoutInterval = 5
+                    let response = try await TailnetChunkStream.read(request, session: session, network: tailnet, limit: 64 * 1024)
+                    let instanceID = try await Task.detached(priority: .utility) {
+                        (try? JSONSerialization.jsonObject(with: response.data) as? [String: String])?["instance_id"]
+                    }.value
+                    guard tailnet.generation == currentGen, servedEmbeddedNode?.generation == currentGen else { return }
+                    guard response.status == 200, let instanceID,
+                          instanceID.lowercased() == connection?.instanceID.uuidString.lowercased() else { throw TailnetError.unavailable }
+                    embeddedProbeFailures = 0
+                    embeddedHealth.confirm(url)
+                    lastEmbeddedEndpoint = url.absoluteString
+                    if tailnetAccessError != nil { tailnetAccessError = nil }
+                } else if !embeddedHealth.needsReport() {
                     return
                 }
                 body = ["state": "connected", "endpoint": url.absoluteString]
@@ -811,9 +813,23 @@ final class DesktopModel {
                     body["error"] = tailnet.state == "Running" ? String(localized: "正在连接…") : tailnet.message ?? String(localized: "请登录 Tailscale。")
                 }
             }
+        } catch let error as URLError where probe != nil && error.code == .appTransportSecurityRequiresSecureConnection {
+            // A local policy rejection supplies no evidence about the serving node.
+            tailnet.diagnostics.recordLink("identityProbe", "blocked-by-ats", error: error)
+            guard let probe, probe.generation == tailnet.generation,
+                  servedEmbeddedNode?.generation == probe.generation else { return }
+            let url = probe.endpoint
+            if embeddedHealth.recentlyVerified(url) {
+                body = ["state": "connected", "endpoint": url.absoluteString]
+            } else {
+                tailnetAccessError = error.localizedDescription
+                body = ["state": "reconnecting", "endpoint": url.absoluteString, "error": error.localizedDescription]
+            }
         } catch {
+            guard !AgentTransportFailure.isCancelled(error) else { return }
+            if let probe, probe.generation != tailnet.generation { return }
             servedEmbeddedNode = nil
-            lastEmbeddedProbeAt = .distantPast
+            embeddedHealth = EmbeddedAccessHealth()
             if let probeSession { tailnet.failedRequest(error, session: probeSession) }
             if let knownEndpoint, !["NeedsLogin", "NeedsMachineAuth"].contains(tailnet.state) {
                 embeddedProbeFailures += 1
@@ -831,7 +847,10 @@ final class DesktopModel {
                 body["error"] = errText
             }
         }
-        do { updateStatus(try await controlRequest("tunnel/embedded", body: body)) }
+        do {
+            updateStatus(try await controlRequest("tunnel/embedded", body: body))
+            embeddedHealth.lastReport = .now
+        }
         catch { if !AgentTransportFailure.isTransient(error) { failure = error.localizedDescription } }
     }
 
@@ -841,7 +860,7 @@ final class DesktopModel {
         do {
             updateStatus(try await controlRequest("tunnel/stop", body: [:]))
             lastEmbeddedEndpoint = nil; embeddedProbeFailures = 0
-            servedEmbeddedNode = nil; lastEmbeddedProbeAt = .distantPast
+            servedEmbeddedNode = nil; embeddedHealth = EmbeddedAccessHealth()
             try await tailnet.logout()
         } catch { failure = error.localizedDescription }
     }
