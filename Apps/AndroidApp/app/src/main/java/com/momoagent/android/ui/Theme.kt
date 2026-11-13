@@ -39,7 +39,7 @@ private val LightPalette = MoMoPalette(
 private val DarkPalette = MoMoPalette(
     canvas = Color(0xFF161616),
     surface = Color(0xFF292929),
-    paper = Color(0xFF161616),
+    paper = Color(0xFF202020),
     ink = Color(0xFFF2F2F2),
     muted = Color(0xFFAAAAAA),
     line = Color(0xFF454545),
@@ -50,8 +50,8 @@ private val DarkPalette = MoMoPalette(
 val LocalMoMoPalette = staticCompositionLocalOf { LightPalette }
 
 object MoMoType {
-    val body = TextStyle(fontSize = 16.sp, lineHeight = 21.sp)
-    val title = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium)
+    val body = TextStyle(fontSize = 16.sp, lineHeight = 23.sp)
+    val title = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
     val subheading = TextStyle(fontSize = 17.sp, lineHeight = 22.sp)
     val section = TextStyle(fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium)
     val navigation = TextStyle(fontSize = 16.sp, lineHeight = 20.sp)
@@ -66,6 +66,10 @@ private fun scheme(palette: MoMoPalette, dark: Boolean) = if (dark) {
     darkColorScheme(
         primary = palette.ink,
         onPrimary = palette.canvas,
+        secondaryContainer = palette.ink,
+        onSecondaryContainer = palette.canvas,
+        surfaceContainerLow = palette.paper,
+        surfaceContainerHigh = palette.paper,
         background = palette.canvas,
         onBackground = palette.ink,
         surface = palette.paper,
@@ -81,6 +85,10 @@ private fun scheme(palette: MoMoPalette, dark: Boolean) = if (dark) {
     lightColorScheme(
         primary = palette.ink,
         onPrimary = palette.canvas,
+        secondaryContainer = palette.ink,
+        onSecondaryContainer = palette.canvas,
+        surfaceContainerLow = palette.paper,
+        surfaceContainerHigh = palette.paper,
         background = palette.canvas,
         onBackground = palette.ink,
         surface = palette.paper,

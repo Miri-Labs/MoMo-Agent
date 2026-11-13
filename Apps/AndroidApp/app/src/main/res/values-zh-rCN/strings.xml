@@ -80,7 +80,7 @@
     <string name="desktop_scroll_mode">滚动</string>
     <string name="desktop_right_click">右键</string>
     <string name="desktop_retry">重试</string>
-    <string name="desktop_hint">轻点点击 · 双击打开 · 拖动移动 · 打开「滚动」后拖动可滚动</string>
+    <string name="desktop_hint">轻点选择 · 双击打开 · 拖动移动</string>
     <string name="desktop_pairing_lost">配对已失效，请重新扫描 Mac 上的二维码。</string>
     <string name="desktop_busy">Mac 正在读取桌面，请稍后重试。</string>
     <string name="desktop_ownership">电脑控制权已变化，请重新接管。</string>
@@ -182,4 +182,14 @@
     <string name="settings_data">数据</string>
     <string name="settings_unpair_failed">无法在 Mac 上移除这台设备，请检查连接后重试。</string>
     <string name="connect_confirm_hint">确认 Mac 显示相同数字，再在 Mac 点击允许连接。</string>
+    <string name="connect_scan_instructions">在 Mac 上打开 MoMo Agent 设置，扫描「设备」里的配对码。</string>
+    <string name="memory_no_notes">还没有记忆</string>
+    <string name="memory_synced_empty">Mac 上保存的记忆会显示在这里。</string>
+    <string name="memory_evidence_count">依据 %1$d 条</string>
+    <string name="transcripts_no_recordings">还没有转录</string>
+    <string name="transcripts_synced_empty">录音同步到 Mac 后，就能在这里阅读。</string>
+    <string name="transcripts_characters">%1$d 字</string>
+    <string name="desktop_scroll_hint">拖动可滚动 Mac 画面</string>
+    <string name="desktop_screen_permission">在 Mac 的「隐私与安全性」中允许 MoMo Agent 录制屏幕。</string>
+    <string name="desktop_input_permission">在 Mac 的「隐私与安全性」中允许 MoMo Agent 使用辅助功能，即可接管。</string>
 </resources>

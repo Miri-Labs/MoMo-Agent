@@ -80,7 +80,7 @@
     <string name="desktop_scroll_mode">Scroll</string>
     <string name="desktop_right_click">Right click</string>
     <string name="desktop_retry">Retry</string>
-    <string name="desktop_hint">Tap to click · double tap to open · drag to move · turn on Scroll to drag-scroll</string>
+    <string name="desktop_hint">Tap to click · double tap to open · drag to move</string>
     <string name="desktop_pairing_lost">Pairing expired. Scan the Mac QR code again.</string>
     <string name="desktop_busy">The Mac is busy reading the screen. Try again.</string>
     <string name="desktop_ownership">Control changed on the Mac. Take control again.</string>
@@ -182,4 +182,14 @@
     <string name="settings_data">Data</string>
     <string name="settings_unpair_failed">Could not remove this device from the Mac. Check the connection and retry.</string>
     <string name="connect_confirm_hint">Confirm the same number on the Mac, then allow the connection.</string>
+    <string name="connect_scan_instructions">On your Mac, open MoMo Agent settings and scan the device pairing code.</string>
+    <string name="memory_no_notes">No memories yet</string>
+    <string name="memory_synced_empty">Memories saved on your Mac will appear here.</string>
+    <string name="memory_evidence_count">Evidence · %1$d</string>
+    <string name="transcripts_no_recordings">No transcripts yet</string>
+    <string name="transcripts_synced_empty">Recordings will appear here after they sync to your Mac.</string>
+    <string name="transcripts_characters">%1$d characters</string>
+    <string name="desktop_scroll_hint">Drag to scroll the Mac screen</string>
+    <string name="desktop_screen_permission">Allow Screen Recording for MoMo Agent in the privacy settings on your Mac.</string>
+    <string name="desktop_input_permission">Allow Accessibility for MoMo Agent in the privacy settings on your Mac to take control.</string>
 </resources>

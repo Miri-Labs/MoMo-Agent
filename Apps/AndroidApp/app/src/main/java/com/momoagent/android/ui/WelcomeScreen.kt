@@ -2,7 +2,6 @@ package com.momoagent.android.ui
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,46 +9,36 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Restaurant
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.momoagent.android.BuildConfig
 import com.momoagent.android.R
-import kotlinx.coroutines.delay
 
 private data class WelcomeScenario(
     val title: Int,
@@ -99,184 +88,95 @@ private val welcomeScenarios = listOf(
 fun WelcomeScreen(onFinish: () -> Unit) {
     val palette = LocalMoMoPalette.current
     var index by rememberSaveable { mutableIntStateOf(0) }
-    var ready by rememberSaveable { mutableStateOf(false) }
-
-    fun advance() {
-        if (ready) onFinish() else if (index < welcomeScenarios.lastIndex) index += 1 else ready = true
-    }
-
-    LaunchedEffect(index, ready) {
-        if (!ready) {
-            delay(4_000)
-            if (index < welcomeScenarios.lastIndex) index += 1 else ready = true
-        }
-    }
-
+    val ready = index == welcomeScenarios.size
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+        modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
+            .padding(horizontal = 24.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             BrandIcon(size = 28.dp)
             Spacer(Modifier.width(10.dp))
             BrandWordmark("PhoneWordmark", height = 17.dp)
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onFinish) {
-                Text(stringResource(R.string.welcome_skip), color = palette.muted, style = MoMoType.metadata)
+            if (!ready) TextButton(onClick = onFinish) {
+                Text(stringResource(R.string.welcome_skip), style = MoMoType.menu, color = palette.muted)
             }
         }
-        Spacer(Modifier.height(18.dp))
-        Crossfade(targetState = ready, label = "welcome-ready") { settled ->
-            if (settled) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    AvatarView(size = 220.dp, expression = "greeting", active = true)
-                    Spacer(Modifier.height(10.dp))
-                    BrandWordmark("MoMoWordmark", height = 24.dp)
-                    Spacer(Modifier.height(18.dp))
-                    Text(
-                        text = stringResource(R.string.brand_tagline),
-                        style = MoMoType.title,
-                        color = palette.ink,
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(Modifier.height(28.dp))
-                    Button(
-                        onClick = onFinish,
-                        shape = CircleShape,
-                        colors = ButtonDefaults.buttonColors(containerColor = palette.ink, contentColor = palette.canvas),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                    ) {
-                        Text(stringResource(R.string.welcome_start_pairing), style = MoMoType.body, fontWeight = FontWeight.Medium)
-                    }
-                }
-            } else {
-                val scenario = welcomeScenarios[index]
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    AvatarView(
-                        size = 200.dp,
-                        expression = when (index) {
-                            0 -> "listening"
-                            1 -> "thinking"
-                            else -> "speaking"
-                        },
-                        active = true,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    BrandWordmark("MoMoWordmark", height = 20.dp)
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        text = stringResource(scenario.title),
-                        style = MoMoType.title,
-                        color = palette.ink,
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(Modifier.height(18.dp))
-                    scenario.moments.forEach { moment ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 3.dp),
-                        ) {
-                            Box(Modifier.size(6.dp).background(palette.muted, CircleShape))
-                            Spacer(Modifier.width(10.dp))
-                            Text(stringResource(moment), style = MoMoType.body, color = palette.muted)
-                        }
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        scenario.sources.forEach { source ->
-                            Surface(
-                                color = palette.surface,
-                                shape = CircleShape,
-                            ) {
-                                Text(
-                                    text = stringResource(source),
-                                    style = MoMoType.caption,
-                                    color = palette.muted,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(20.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            Surface(color = palette.ink, shape = RoundedCornerShape(20.dp)) {
-                                Text(
-                                    text = stringResource(scenario.request),
-                                    style = MoMoType.body,
-                                    color = palette.canvas,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                )
-                            }
-                        }
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                            Surface(color = palette.surface, shape = RoundedCornerShape(20.dp)) {
-                                Text(
-                                    text = stringResource(scenario.reply),
-                                    style = MoMoType.body,
-                                    color = palette.ink,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                )
-                            }
-                        }
-                        GlassSurface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
-                            contentPadding = PaddingValues(14.dp),
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Surface(color = palette.surface, shape = CircleShape) {
-                                    Icon(
-                                        imageVector = scenario.icon,
-                                        contentDescription = null,
-                                        tint = palette.ink,
-                                        modifier = Modifier.padding(9.dp).size(18.dp),
-                                    )
-                                }
-                                Spacer(Modifier.width(12.dp))
-                                Column {
-                                    Text(stringResource(scenario.result), style = MoMoType.section, color = palette.ink)
-                                    Text(stringResource(scenario.detail), style = MoMoType.metadata, color = palette.muted)
-                                }
-                                Spacer(Modifier.weight(1f))
-                                Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = palette.success)
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(28.dp))
-                    Button(
-                        onClick = { advance() },
-                        shape = CircleShape,
-                        colors = ButtonDefaults.buttonColors(containerColor = palette.ink, contentColor = palette.canvas),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                    ) {
-                        Text(stringResource(R.string.welcome_continue), style = MoMoType.body, fontWeight = FontWeight.Medium)
+        Crossfade(targetState = index, modifier = Modifier.weight(1f).widthIn(max = 480.dp).fillMaxWidth(), label = "scenario") { page ->
+            val scenario = welcomeScenarios.getOrNull(page)
+            Column(
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                AvatarView(
+                    size = if (scenario == null) 180.dp else 112.dp,
+                    expression = when (page) {
+                        0 -> "listening"
+                        1 -> "thinking"
+                        2 -> "speaking"
+                        else -> "greeting"
+                    },
+                    active = true,
+                )
+                BrandWordmark("MoMoWordmark", height = 18.dp)
+                Spacer(Modifier.height(20.dp))
+                Text(stringResource(scenario?.title ?: R.string.brand_tagline), style = MoMoType.title,
+                    color = palette.ink, textAlign = TextAlign.Center)
+                if (scenario != null) ScenarioConversation(scenario)
+            }
+        }
+        Column(
+            modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (!ready) {
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(vertical = 12.dp)) {
+                    welcomeScenarios.indices.forEach { page ->
+                        Box(Modifier.size(if (index == page) 20.dp else 6.dp, 6.dp)
+                            .background(if (page == index) palette.ink else palette.line, CircleShape))
                     }
                 }
             }
+            ClientPrimaryButton(
+                title = stringResource(if (ready) R.string.welcome_start_pairing else R.string.welcome_continue),
+                onClick = { if (ready) onFinish() else index++ },
+            )
+            Spacer(Modifier.height(8.dp))
         }
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = "MoMo Agent ${BuildConfig.VERSION_NAME}",
-            style = MoMoType.caption,
-            color = palette.muted,
-        )
+    }
+}
+
+@Composable
+private fun ScenarioConversation(scenario: WelcomeScenario) {
+    val palette = LocalMoMoPalette.current
+    Column(Modifier.fillMaxWidth().padding(top = 22.dp)) {
+        scenario.moments.zip(scenario.sources).forEach { (moment, source) ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(source), style = MoMoType.caption, color = palette.muted,
+                    modifier = Modifier.width(88.dp))
+                Text(stringResource(moment), style = MoMoType.menu, color = palette.ink)
+            }
+        }
+        HorizontalDivider(Modifier.padding(vertical = 16.dp), color = palette.line)
+        Text(stringResource(scenario.request), style = MoMoType.body, color = palette.canvas,
+            modifier = Modifier.align(Alignment.End)
+                .background(palette.ink, RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp))
+                .padding(horizontal = 14.dp, vertical = 9.dp))
+        Spacer(Modifier.height(12.dp))
+        Text(stringResource(scenario.reply), style = MoMoType.body, color = palette.ink)
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().background(palette.surface, RoundedCornerShape(14.dp)).padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(scenario.icon, null, tint = palette.ink, modifier = Modifier.size(22.dp))
+            Column {
+                Text(stringResource(scenario.result), style = MoMoType.section, color = palette.ink)
+                Text(stringResource(scenario.detail), style = MoMoType.metadata, color = palette.muted)
+            }
+        }
     }
 }

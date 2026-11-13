@@ -27,7 +27,7 @@
     }
   },
   "files": {
-    "marked.js": "b82b9334406d8bdd16b6236c08de1cb65b2a859873ca9503d9cc0b292ca3c12a",
+    "marked.js": "6351ca418d80fdecc7466ef8c9941970e91cdef2ea3b8e48da3e3120c570f035",
     "licenses/marked.txt": "8e3a3f82f59a60958f56ca08f445647c32a4733dc7ca6c2c46f6eb898471ab9c",
     "purify.js": "cd37898f9782adf54820c413191b5691803f0f137c799d6edcfd38523b4c2c31",
     "licenses/dompurify.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",

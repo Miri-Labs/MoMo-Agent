@@ -67,9 +67,9 @@ fun Composer(
         modifier = modifier
             .fillMaxWidth()
             .imePadding()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(28.dp),
-        contentPadding = PaddingValues(6.dp),
+        contentPadding = PaddingValues(4.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             if (attachments.isNotEmpty()) {
@@ -82,27 +82,10 @@ fun Composer(
                     }
                 }
             }
-            Row(verticalAlignment = Alignment.Bottom) {
-                Box(
-                    modifier = Modifier
-                        .padding(bottom = 2.dp)
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(palette.surface.copy(alpha = 0.55f))
-                        .border(0.75.dp, palette.line.copy(alpha = 0.75f), CircleShape)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onAdd,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Add,
-                        contentDescription = stringResource(R.string.chat_add_attachment),
-                        tint = palette.ink,
-                        modifier = Modifier.size(21.dp),
-                    )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onAdd) {
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.chat_add_attachment),
+                        tint = palette.ink, modifier = Modifier.size(22.dp))
                 }
                 BasicTextField(
                     value = draft,
@@ -114,7 +97,7 @@ fun Composer(
                     keyboardActions = KeyboardActions(onSend = { onSend() }),
                     modifier = Modifier
                         .weight(1f)
-                        .padding(horizontal = 10.dp, vertical = 12.dp),
+                        .padding(horizontal = 4.dp, vertical = 12.dp),
                     decorationBox = { inner ->
                         Box {
                             if (draft.isEmpty()) {
@@ -128,46 +111,17 @@ fun Composer(
                         }
                     },
                 )
-                IconButton(
-                    onClick = onMic,
-                    modifier = Modifier
-                        .padding(bottom = 2.dp)
-                        .size(38.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Mic,
-                        contentDescription = stringResource(R.string.chat_voice),
-                        tint = palette.muted,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .padding(bottom = 2.dp)
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (canSend) palette.ink else palette.surface.copy(alpha = 0.7f),
-                        )
-                        .border(
-                            0.75.dp,
-                            if (canSend) palette.ink else palette.line.copy(alpha = 0.8f),
-                            CircleShape,
-                        )
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            enabled = canSend,
-                            onClick = onSend,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.ArrowUpward,
-                        contentDescription = stringResource(R.string.chat_send),
-                        tint = if (canSend) palette.canvas else palette.muted,
-                        modifier = Modifier.size(20.dp),
-                    )
+                if (canSend) {
+                    IconButton(onClick = onSend) {
+                        Icon(Icons.Filled.ArrowUpward, contentDescription = stringResource(R.string.chat_send),
+                            tint = palette.canvas,
+                            modifier = Modifier.background(palette.ink, CircleShape).padding(9.dp).size(20.dp))
+                    }
+                } else {
+                    IconButton(onClick = onMic) {
+                        Icon(Icons.Filled.Mic, contentDescription = stringResource(R.string.chat_voice),
+                            tint = palette.muted, modifier = Modifier.size(22.dp))
+                    }
                 }
             }
         }

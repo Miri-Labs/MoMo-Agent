@@ -1,12 +1,11 @@
 package com.momoagent.android.ui
 
-import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,14 +16,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Surface
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.momoagent.android.R
@@ -44,7 +48,8 @@ fun TranscriptsScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             PageHeader(stringResource(R.string.transcripts_title), onSettings = onSettings)
             EmptyPanel(
-                title = stringResource(R.string.transcripts_title),
+                title = stringResource(R.string.transcripts_no_recordings),
+                icon = Icons.Outlined.GraphicEq,
                 body = stringResource(R.string.transcripts_empty),
                 action = stringResource(R.string.memory_connect),
                 onAction = onConnect,
@@ -57,6 +62,7 @@ fun TranscriptsScreen(
     val detail = state.sourceDetailSource
     Column(modifier = Modifier.fillMaxSize()) {
         if (detail != null) {
+            androidx.activity.compose.BackHandler { contextStore.closeDetail() }
             PageHeader(
                 title = sourceTime(detail.recordedAt),
                 onBack = { contextStore.closeDetail() },
@@ -108,13 +114,13 @@ fun TranscriptsScreen(
                         onAction = { contextStore.loadSources() },
                     )
                     state.sources.isEmpty() -> EmptyPanel(
-                        title = stringResource(R.string.transcripts_title),
-                        body = stringResource(R.string.transcripts_empty),
+                        title = stringResource(R.string.transcripts_no_recordings),
+                        icon = Icons.Outlined.GraphicEq,
+                        body = stringResource(R.string.transcripts_synced_empty),
                     )
                     else -> LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 12.dp),
                     ) {
                         item {
                             Text(
@@ -148,37 +154,24 @@ private fun Loading() {
 @Composable
 private fun SourceCard(source: ContextSource, onClick: () -> Unit) {
     val palette = LocalMoMoPalette.current
-    GlassSurface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        onClick = onClick,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = sourceTime(source.recordedAt),
-                    style = MoMoType.section,
-                    color = palette.ink,
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = "${source.totalCharacters}",
-                    style = MoMoType.caption,
-                    color = palette.muted,
-                )
-            }
+        Icon(Icons.Outlined.GraphicEq, null, tint = palette.ink,
+            modifier = Modifier.background(palette.surface, RoundedCornerShape(12.dp)).padding(10.dp).size(22.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(sourceTime(source.recordedAt), style = MoMoType.section, color = palette.ink)
             val preview = source.summary?.takeIf { it.isNotBlank() } ?: source.preview
             if (!preview.isNullOrBlank()) {
-                Text(
-                    text = preview,
-                    style = MoMoType.metadata,
-                    color = palette.muted,
-                    maxLines = 3,
-                )
+                Text(preview, style = MoMoType.menu, color = palette.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
+            Text(stringResource(R.string.transcripts_characters, source.totalCharacters), style = MoMoType.caption, color = palette.muted)
         }
+        Icon(Icons.Filled.ChevronRight, null, tint = palette.muted, modifier = Modifier.size(18.dp))
     }
+    HorizontalDivider(color = palette.line)
 }
 
 private fun sourceTime(seconds: Double?): String {

@@ -40,14 +40,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -64,7 +62,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -161,116 +158,97 @@ fun ChatScreen(store: ConversationStore, onSettings: () -> Unit) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        if (isEmpty) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-            ) {
-                GlassIconButton(
-                    icon = Icons.Filled.Settings,
-                    label = stringResource(R.string.chat_settings),
-                    onClick = onSettings,
-                    modifier = Modifier.align(Alignment.CenterStart),
-                )
-                Row(
-                    modifier = Modifier.align(Alignment.CenterEnd),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    GlassTasksButton(state.works.size, onClick = { showingTasks = true })
-                    GlassIconButton(
-                        icon = Icons.Filled.Computer,
-                        label = stringResource(R.string.chat_desktop),
-                        onClick = { showingDesktop = true },
-                    )
-                }
-            }
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .offset(y = (-36).dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Box {
-                    AvatarView(
-                        size = 144.dp,
-                        expression = if (state.busy) "working" else "present",
-                        active = true,
-                        conversationID = store.connection.assistantID,
-                    )
-                    StatusBadge(
-                        status = state.connection,
-                        onClick = { showingStatus = true },
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                if (isEmpty) {
+                    Box(
                         modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .offset(x = 6.dp, y = 6.dp),
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                    ) {
+                        GlassIconButton(
+                            icon = Icons.Filled.Settings,
+                            label = stringResource(R.string.chat_settings),
+                            onClick = onSettings,
+                            modifier = Modifier.align(Alignment.CenterStart),
+                        )
+                        Row(
+                            modifier = Modifier.align(Alignment.CenterEnd),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            GlassTasksButton(state.works.size, onClick = { showingTasks = true })
+                            GlassIconButton(
+                                icon = Icons.Filled.Computer,
+                                label = stringResource(R.string.chat_desktop),
+                                onClick = { showingDesktop = true },
+                            )
+                        }
+                    }
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(top = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Box {
+                            AvatarView(
+                                size = 144.dp,
+                                expression = if (state.busy) "working" else "present",
+                                active = true,
+                                conversationID = store.connection.assistantID,
+                            )
+                            StatusBadge(
+                                status = state.connection,
+                                onClick = { showingStatus = true },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .offset(x = 6.dp, y = 6.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        BrandWordmark("MoMoWordmark", height = 22.dp)
+                        if (state.loading) {
+                            Spacer(Modifier.height(20.dp))
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = palette.muted)
+                        }
+                    }
+                } else {
+                    ChatWebView(
+                        payload = payload,
+                        onEvent = onEvent,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .height((statusBarDp + 128f).dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        palette.canvas.copy(alpha = 0.97f),
+                                        palette.canvas.copy(alpha = 0.78f),
+                                        Color.Transparent,
+                                    ),
+                                ),
+                            ),
+                    )
+                    ChatHeader(
+                        state = state,
+                        conversationID = store.connection.assistantID,
+                        onSettings = onSettings,
+                        onTasks = { showingTasks = true },
+                        onDesktop = { showingDesktop = true },
+                        onStatus = { showingStatus = true },
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
                     )
                 }
-                Spacer(Modifier.height(6.dp))
-                BrandWordmark("MoMoWordmark", height = 22.dp)
-                if (state.loading) {
-                    Spacer(Modifier.height(20.dp))
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = palette.muted)
-                }
             }
-        } else {
-            ChatWebView(
-                payload = payload,
-                onEvent = onEvent,
-                modifier = Modifier.fillMaxSize(),
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .height((statusBarDp + 128f).dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                palette.canvas.copy(alpha = 0.97f),
-                                palette.canvas.copy(alpha = 0.78f),
-                                Color.Transparent,
-                            ),
-                        ),
-                    ),
-            )
-            ChatHeader(
-                state = state,
-                conversationID = store.connection.assistantID,
-                onSettings = onSettings,
-                onTasks = { showingTasks = true },
-                onDesktop = { showingDesktop = true },
-                onStatus = { showingStatus = true },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(180.dp)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            Color.Transparent,
-                            palette.canvas.copy(alpha = 0.88f),
-                            palette.canvas.copy(alpha = 0.96f),
-                        ),
-                    ),
-                ),
-        )
-
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth(),
-        ) {
             ChatBanners(
                 state = state,
                 onRefresh = store::refresh,
@@ -457,6 +435,17 @@ private fun ChatHeader(
 }
 
 @Composable
+private fun statusTitle(status: ConnectionState): String = stringResource(
+        when (status) {
+            ConnectionState.Ready -> R.string.chat_status_ready
+            ConnectionState.Connecting -> R.string.chat_status_connecting
+            ConnectionState.Retrying -> R.string.chat_status_retrying
+            ConnectionState.AuthenticationRequired -> R.string.chat_status_auth
+            ConnectionState.Unavailable -> R.string.chat_status_unavailable
+        },
+    )
+
+@Composable
 private fun StatusBadge(
     status: ConnectionState,
     onClick: () -> Unit,
@@ -469,15 +458,12 @@ private fun StatusBadge(
         ConnectionState.AuthenticationRequired, ConnectionState.Unavailable -> palette.failure
     }
     GlassSurface(
-        modifier = modifier.size(26.dp),
+        modifier = modifier.size(32.dp),
         shape = CircleShape,
         onClick = onClick,
         content = {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .background(color, CircleShape),
-            )
+            Icon(Icons.Filled.Computer, contentDescription = statusTitle(status), tint = color,
+                modifier = Modifier.size(17.dp))
         },
     )
 }
@@ -494,15 +480,7 @@ private fun StatusPopover(
         ConnectionState.Connecting, ConnectionState.Retrying -> Color(0xFFE0A63A)
         ConnectionState.AuthenticationRequired, ConnectionState.Unavailable -> palette.failure
     }
-    val title = stringResource(
-        when (status) {
-            ConnectionState.Ready -> R.string.chat_status_ready
-            ConnectionState.Connecting -> R.string.chat_status_connecting
-            ConnectionState.Retrying -> R.string.chat_status_retrying
-            ConnectionState.AuthenticationRequired -> R.string.chat_status_auth
-            ConnectionState.Unavailable -> R.string.chat_status_unavailable
-        },
-    )
+    val title = statusTitle(status)
     val hint = when (status) {
         ConnectionState.Retrying -> stringResource(R.string.chat_reconnecting)
         ConnectionState.AuthenticationRequired -> stringResource(R.string.settings_auth_required)

@@ -3,8 +3,10 @@
   'use strict';
   const t = (key, ...args) => globalThis.MoMoChatLocalization ? MoMoChatLocalization.text(key, ...args) : key.replace(/\{(\d+)\}/g, (_, i) => String(args[Number(i)] ?? ''));
   let currentLocale = 'zh-Hans';
-  let segmenter = new Intl.Segmenter('zh', { granularity: 'grapheme' });
-  const graphemes = text => [...segmenter.segment(text)].map(item => item.segment);
+  const makeSegmenter = locale => typeof Intl.Segmenter === 'function'
+    ? new Intl.Segmenter(locale, { granularity: 'grapheme' }) : null;
+  let segmenter = makeSegmenter('zh');
+  const graphemes = text => segmenter ? [...segmenter.segment(text)].map(item => item.segment) : Array.from(text);
   const TIMESTAMP_GROUP_WINDOW_MS = 30 * 60 * 1000;
 
   function sameCalendarDay(first, second) {
@@ -74,7 +76,7 @@
   // Text is never queued: only the newly received tail fades for 100 ms in the DOM.
   function advance(shown, target) { return { text: target, delay: 0 }; }
   function stablePrefix(previous, next) {
-    if (!next.startsWith(previous)) return '';
+    if (!segmenter || !next.startsWith(previous)) return '';
     let end = 0;
     for (const item of segmenter.segment(next)) {
       const boundary = item.index + item.segment.length;
@@ -350,7 +352,7 @@
     const language = String(locale || 'en').toLowerCase().split(/[-_]/)[0];
     currentLocale = globalThis.MoMoChatLocalization?.locale ||
       (language === 'zh' ? 'zh-Hans' : ['en', 'ja', 'ko'].includes(language) ? language : 'en');
-    segmenter = new Intl.Segmenter(locale || 'en', {granularity:'grapheme'});
+    segmenter = makeSegmenter(locale || 'en');
   }
   globalThis.MoMoChatCore = { setLocale, advance, stablePrefix, graphemes, PinState, turns, shouldShowTimestampMarker, formatTimestampMarker, toolLabel, toolPreview, toolOutcome, responseActivity, contextActivityLabel, actionReceipt, actionCard, toolDisplayState, processSummary, replyFinished, MarkdownStream, isRecordingSourceURL, installRecordingSourceLinks };
 })();

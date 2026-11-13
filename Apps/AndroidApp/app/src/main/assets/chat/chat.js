@@ -311,7 +311,8 @@
       previousTurnCount = items.length;
     }
     let previousMarkerSentAtMs = null;
-    const receiptIndex = items.findLastIndex(turn => turn.role === 'user');
+    let receiptIndex = items.length - 1;
+    while (receiptIndex >= 0 && items[receiptIndex].role !== 'user') receiptIndex--;
     const finishing = items.some((turn,index) => core.replyFinished(turn,latest.busy && index === items.length - 1) &&
       [...(views.get(turn.id)?.pieces.values() || [])].some(piece => piece.type === 'process' && !piece.completed));
     const anchor = finishing && !pin.pinned && !restoring && !userScrolling && !wheelScrolling ?

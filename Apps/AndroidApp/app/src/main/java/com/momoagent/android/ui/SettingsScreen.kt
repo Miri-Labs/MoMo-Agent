@@ -1,25 +1,21 @@
 package com.momoagent.android.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -83,22 +79,13 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 12.dp),
         ) {
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(stringResource(R.string.settings_title), style = MoMoType.subheading, color = palette.ink)
-                    Text(version, style = MoMoType.caption, color = palette.muted)
-                }
-                TextButton(
-                    onClick = onClose,
-                    modifier = Modifier.align(Alignment.CenterEnd),
-                ) {
-                    Text(stringResource(R.string.settings_done), style = MoMoType.body, color = palette.ink)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.settings_title), style = MoMoType.title, color = palette.ink,
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = onClose) {
+                    Text(stringResource(R.string.settings_done), style = MoMoType.menu, color = palette.ink)
                 }
             }
-            Spacer(Modifier.padding(top = 6.dp))
             SettingsSection(stringResource(R.string.settings_mac)) {
                 SettingsSurface {
                     SettingsValue(
@@ -112,10 +99,10 @@ fun SettingsScreen(
                         value = connectionLabel,
                     )
                     Divider()
-                    SettingsAction(stringResource(R.string.settings_reconnect)) {
-                        viewModel.reconnect()
+                    if (saved != null) {
+                        SettingsAction(stringResource(R.string.settings_reconnect), viewModel::reconnect)
+                        Divider()
                     }
-                    Divider()
                     SettingsAction(stringResource(R.string.settings_repair), onRepair)
                     Divider()
                     SettingsAction(stringResource(R.string.connect_manual)) { manual = true }
@@ -141,7 +128,7 @@ fun SettingsScreen(
                     SettingsValue(stringResource(R.string.settings_version), version)
                 }
             }
-            SettingsSection(stringResource(R.string.settings_data)) {
+            if (saved != null) SettingsSection(stringResource(R.string.settings_data)) {
                 SettingsSurface {
                     Row(
                         modifier = Modifier
@@ -201,9 +188,10 @@ private fun SettingsSection(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun SettingsSurface(content: @Composable () -> Unit) {
-    GlassSurface(
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        color = LocalMoMoPalette.current.surface,
+        shape = RoundedCornerShape(14.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) { content() }
     }
@@ -242,5 +230,5 @@ private fun SettingsAction(title: String, onClick: () -> Unit) {
 
 @Composable
 private fun Divider() {
-    HorizontalDivider(color = LocalMoMoPalette.current.line, thickness = 0.75.dp)
+    HorizontalDivider(Modifier.padding(start = 16.dp), color = LocalMoMoPalette.current.line, thickness = 0.75.dp)
 }

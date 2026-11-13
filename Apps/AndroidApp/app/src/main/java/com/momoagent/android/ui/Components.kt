@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -105,48 +106,16 @@ fun PageHeader(
     onSettings: (() -> Unit)? = null,
 ) {
     val palette = LocalMoMoPalette.current
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+    Row(
+        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (onBack != null) {
-            GlassIconButton(
-                icon = Icons.Filled.ArrowBack,
-                label = stringResource(R.string.transcripts_back),
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.CenterStart),
-            )
-        }
-        Text(
-            text = title,
-            style = MoMoType.subheading,
-            color = palette.ink,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(horizontal = 56.dp),
-        )
-        Row(
-            modifier = Modifier.align(Alignment.CenterEnd),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (onRefresh != null) {
-                GlassIconButton(
-                    icon = Icons.Filled.Refresh,
-                    label = stringResource(R.string.memory_refresh),
-                    onClick = onRefresh,
-                )
-            }
-            if (onSettings != null) {
-                GlassIconButton(
-                    icon = Icons.Filled.Settings,
-                    label = stringResource(R.string.chat_settings),
-                    onClick = onSettings,
-                )
-            }
-        }
+        if (onBack != null) GlassIconButton(Icons.Filled.ArrowBack, stringResource(R.string.transcripts_back), onBack)
+        Text(title, style = if (onBack == null) MoMoType.title else MoMoType.subheading,
+            color = palette.ink, modifier = Modifier.weight(1f))
+        if (onRefresh != null) GlassIconButton(Icons.Filled.Refresh, stringResource(R.string.memory_refresh), onRefresh)
+        if (onSettings != null) GlassIconButton(Icons.Filled.Settings, stringResource(R.string.chat_settings), onSettings)
     }
 }
 
@@ -154,6 +123,7 @@ fun PageHeader(
 fun EmptyPanel(
     title: String,
     body: String,
+    icon: ImageVector? = null,
     action: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
@@ -165,7 +135,12 @@ fun EmptyPanel(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(title, style = MoMoType.title, color = palette.ink, textAlign = TextAlign.Center)
+        if (icon != null) {
+            Icon(icon, contentDescription = null, tint = palette.muted,
+                modifier = Modifier.background(palette.surface, CircleShape).padding(18.dp).size(32.dp))
+            Spacer(Modifier.height(20.dp))
+        }
+        Text(title, style = MoMoType.subheading, color = palette.ink, textAlign = TextAlign.Center)
         Spacer(Modifier.height(10.dp))
         Text(body, style = MoMoType.body, color = palette.muted, textAlign = TextAlign.Center)
         if (action != null && onAction != null) {

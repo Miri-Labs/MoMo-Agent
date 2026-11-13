@@ -3,6 +3,8 @@ package com.momoagent.android.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -12,6 +14,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.momoagent.android.R
 
@@ -28,7 +31,7 @@ fun ManualConnectionDialog(viewModel: AppViewModel, onClose: () -> Unit) {
         confirmEnabled = configuration.isNotBlank() && credential.isNotBlank(),
         onConfirm = { viewModel.manualConnect(configuration, credential) },
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(
                 value = configuration,
                 onValueChange = { configuration = it },
@@ -42,6 +45,7 @@ fun ManualConnectionDialog(viewModel: AppViewModel, onClose: () -> Unit) {
                 onValueChange = { credential = it },
                 label = { Text(stringResource(R.string.manual_credential)) },
                 singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(

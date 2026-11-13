@@ -1,6 +1,5 @@
 package com.momoagent.android.ui
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -31,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.momoagent.android.R
 
@@ -41,6 +39,7 @@ fun MainScreen(viewModel: AppViewModel) {
     var settings by rememberSaveable { mutableStateOf(false) }
 
     if (settings) {
+        androidx.activity.compose.BackHandler { settings = false }
         SettingsScreen(
             viewModel = viewModel,
             onClose = { settings = false },
@@ -71,7 +70,7 @@ fun MainScreen(viewModel: AppViewModel) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
-                        .padding(horizontal = 48.dp, vertical = 8.dp),
+                        .padding(horizontal = 24.dp, vertical = 6.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     GlassTabBar(
@@ -79,7 +78,7 @@ fun MainScreen(viewModel: AppViewModel) {
                         selected = tab,
                         onSelect = { tab = it },
                         modifier = Modifier
-                            .widthIn(max = 340.dp)
+                            .widthIn(max = 360.dp)
                             .fillMaxWidth(),
                     )
                 }
@@ -131,7 +130,7 @@ private fun EmptyChat(onStartPairing: () -> Unit, onSettings: () -> Unit) {
             )
         }
         Box(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().weight(1f),
             contentAlignment = Alignment.Center,
         ) {
             Column(
@@ -141,16 +140,10 @@ private fun EmptyChat(onStartPairing: () -> Unit, onSettings: () -> Unit) {
                 AvatarView(size = 144.dp, expression = "present", active = true)
                 Spacer(Modifier.height(6.dp))
                 BrandWordmark("MoMoWordmark", height = 22.dp)
+                Spacer(Modifier.height(16.dp))
+                Text(stringResource(R.string.brand_tagline), style = MoMoType.subheading, color = palette.muted)
             }
         }
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = stringResource(R.string.brand_tagline),
-            style = MoMoType.title,
-            color = palette.ink,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(24.dp))
         ClientPrimaryButton(stringResource(R.string.chat_start_pairing), onStartPairing)
         Spacer(Modifier.height(20.dp))
     }

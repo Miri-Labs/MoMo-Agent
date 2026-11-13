@@ -7,28 +7,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <link rel="stylesheet" href="vendor/katex.css">
   <link rel="stylesheet" href="chat.css">
-  <style>
-    /* Android: keep the page transparent so the app's glass backdrop and the
-       native floating composer/tab bar read as one surface. */
-    html, body { background: transparent !important; }
-    body { padding-bottom: 152px !important; }
-    #jump {
-      bottom: 156px;
-      border-color: rgba(255, 255, 255, .7);
-      background: linear-gradient(180deg, rgba(255, 255, 255, .95), rgba(255, 255, 255, .7));
-      -webkit-backdrop-filter: blur(18px);
-      backdrop-filter: blur(18px);
-      box-shadow: 0 10px 26px rgba(20, 20, 20, .14), inset 0 1px 0 rgba(255, 255, 255, .95);
-    }
-    :root[data-dark=true] #jump {
-      border-color: rgba(255, 255, 255, .22);
-      background: linear-gradient(180deg, rgba(76, 76, 80, .95), rgba(44, 44, 48, .78));
-      box-shadow: 0 10px 26px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .16);
-    }
-    @media (prefers-reduced-transparency: reduce) {
-      #jump { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--paper); }
-    }
-  </style>
+  <script src="webview-compat.js"></script>
   <script defer src="vendor/marked.js"></script>
   <script defer src="vendor/purify.js"></script>
   <script defer src="vendor/katex.js"></script>

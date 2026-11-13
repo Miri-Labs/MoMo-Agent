@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.momoagent.android.R
@@ -49,7 +50,11 @@ fun BrandWordmark(
     }
     Image(
         painter = painterResource(resource),
-        contentDescription = null,
+        contentDescription = when (name) {
+            "PhoneWordmark" -> stringResource(R.string.brand_momo_agent)
+            "MoMoWordmark" -> stringResource(R.string.brand_momo)
+            else -> null
+        },
         colorFilter = ColorFilter.tint(color),
         contentScale = ContentScale.Fit,
         modifier = modifier.height(height),
@@ -80,10 +85,11 @@ fun AvatarView(
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
     var greeting by remember { mutableIntStateOf(0) }
     val controller = remember { AvatarWebController() }
-    val appearance = remember(dark, active, expression, conversationID, greeting, playful) {
+    val reduceMotion = !android.animation.ValueAnimator.areAnimatorsEnabled()
+    val appearance = remember(dark, active, expression, conversationID, greeting, playful, reduceMotion) {
         JSONObject().apply {
             put("dark", dark)
-            put("reduceMotion", false)
+            put("reduceMotion", reduceMotion)
             put("active", active)
             put("greeting", greeting)
             put("playful", playful)
@@ -93,9 +99,8 @@ fun AvatarView(
         }.toString()
     }
     Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
-        // Keep the still behind the live web actor. If the WebView cannot paint
-        // the SVG actor on this device, the character still has a visible body.
-        BrandWordmark("MoMoStill", height = size, modifier = Modifier.height(size))
+        // Keep one silhouette on screen while the WebView initializes.
+        if (!controller.painted) BrandWordmark("MoMoStill", height = size)
         AndroidView(
             factory = { context ->
                 WebView(context).apply {
@@ -148,6 +153,8 @@ fun AvatarView(
 private class AvatarWebController {
     var web: WebView? = null
     var ready = false
+    var painted by androidx.compose.runtime.mutableStateOf(false)
+        private set
     private var pending: String? = null
 
     fun attach(value: WebView) {
@@ -162,8 +169,8 @@ private class AvatarWebController {
     fun applyPending() {
         val value = pending ?: return
         web?.evaluateJavascript(
-            "window.agentAvatar && window.agentAvatar.update($value)",
-            null,
+            "Boolean(window.agentAvatar && (window.agentAvatar.update($value), true))",
+            { rendered -> if (rendered == "true") painted = true },
         )
     }
 

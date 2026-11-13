@@ -3,17 +3,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'">
 <style>
-html,body,#agent{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
+html,body,#agent{margin:0;width:100%;height:100vw;overflow:hidden;background:transparent}
 svg.life-avatar{display:block}
 body{color:#252525;--eyes:#fafafa}body.dark{color:#f4f4f4;--eyes:#171717}
 .life-avatar path{fill:currentColor!important}.life-avatar .avatar-eyes path{fill:var(--eyes)!important}
 </style></head><body><div id="agent" aria-hidden="true"></div>
+<script src="webview-compat.js"></script>
 <script src="vendor/momoagent-avatar.js"></script>
 <script>
 const actor = MoMoAvatar.create(document.getElementById('agent'), {size:'100%'});
 const svg = document.querySelector('svg.life-avatar');
-// Match the native 1.5x viewport without changing the character's resting size.
-svg.setAttribute('viewBox','-225 -225 450 450');
+// Leave room for the greeting pose inside the square native view.
+svg.setAttribute('viewBox','-150 -150 300 300');
 const greetingLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
 greetingLayer.classList.add('avatar-greeting');
 greetingLayer.append(svg.querySelector('g'));

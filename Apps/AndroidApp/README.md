@@ -4,12 +4,6 @@ Version 0.6.0. This is the iPhone app's Android port, not a second design:
 the welcome/connection/chat structure, chat renderer, avatar, wordmark, receipts,
 composer and settings follow the iPhone client. It talks to the Mac hub over the
 existing access contract; the Mac keeps running the Agent and the memory vault.
-Version 0.3.x adds the iOS 26-style liquid-glass treatment from the reference
-video to the floating controls and cards; 0.3.1 fixes the version display.
-
-Status: **built and unit-tested; not yet run on a physical device or emulator in
-this checkout.**
-
 ## Flow
 
 ```text
@@ -17,7 +11,7 @@ Welcome experience → Connection flow → Chat / Transcripts / Memory tabs → 
 ```
 
 - Welcome: the same three scenarios and copy as the iPhone introduction, with the
-  live MoMo avatar and a static `MoMoStill` rendered behind it. Brand SVGs are
+  live MoMo avatar, a static fallback and a Continue button for each scene. Brand SVGs are
   pre-rendered to tintable PNGs because AndroidSVG clipped the outlined wordmark
   and the still on device.
 - Connection: scan the Mac pairing QR; pending pairing survives restarts and
@@ -25,7 +19,7 @@ Welcome experience → Connection flow → Chat / Transcripts / Memory tabs → 
 - Chat: the iPhone's Web renderer is reused from `assets/chat`, fed by the same
   snapshot fields (Markdown, tools, attachments, `已送达`/`已读`, waiting dots).
   The avatar, settings and task/desktop controls float over the scroll view;
-  the composer and the tab capsule are glass surfaces. The tab bar hides while
+  the composer has its own space below the conversation. The tab bar hides while
   the IME is open so the composer sits above the keyboard.
 - Transcripts: read-only list of sources synced to the paired Mac. Android has no
   local recording/ASR yet; local transcripts are a separate slice.
@@ -72,6 +66,10 @@ app/src/main/java/com/momoagent/android/
 
 The renderer and brand assets are copied from the iPhone target so both clients
 render the same content. Update both when the iPhone Web renderer changes.
+For Android, transform the shared `vendor/marked.js` with esbuild 0.25.12
+(`--target=chrome83 --minify --legal-comments=inline`), wrap the output in an IIFE to isolate compiler helpers, retain the upstream
+license header and update the Android vendor manifest hash. The WebView
+compatibility script runs before the renderer and avatar.
 
 ## Build and verify
 
@@ -108,20 +106,13 @@ viewer stays read-only. Screen Recording or Accessibility permissions are
 checked by the Mac when claiming; failures stay visible in the viewer instead
 of falling back to the old "not available" dialog.
 
-## Liquid glass
+## Interface
 
-`ui/Glass.kt` draws the translucent gradient, top specular bloom, bright rim and
-soft ambient shadow; pressed controls use a spring scale and highlight bloom.
-The floating header, tasks capsule, desktop button, tab capsule, composer,
-connection popover, banners, page headers, memory search, cards and dialogs use
-it. The chat page is transparent and passes a `headerInset` so messages start
-below the floating avatar and scroll under it.
-
-Android Compose has no backdrop-filter equivalent. The app therefore uses a
-low-contrast ambient backdrop plus a fade scrim behind the floating controls
-instead of a true blur of the content underneath. Chat bubbles, attachments and
-transcript/memory content stay solid, matching the reference video; only the
-chrome is glass.
+The Android client uses the shared neutral canvas, paper, ink and divider colors
+in light and dark mode. Transcripts and memories use reading rows. Navigation,
+the composer and the connection popover use a paper fill and a thin outline.
+The desktop viewer fits the Mac frame above its controls in portrait and places
+the tools beside the frame in wide landscape windows.
 
 ## Known gaps
 

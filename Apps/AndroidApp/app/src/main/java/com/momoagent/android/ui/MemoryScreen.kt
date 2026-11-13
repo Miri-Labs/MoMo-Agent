@@ -1,6 +1,6 @@
 package com.momoagent.android.ui
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,20 +9,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.momoagent.android.R
@@ -55,12 +56,13 @@ fun MemoryScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         PageHeader(
             title = stringResource(R.string.memory_title),
-            onRefresh = { contextStore?.loadMemories() },
+            onRefresh = contextStore?.let { { it.loadMemories() } },
             onSettings = onSettings,
         )
         if (contextStore == null) {
             EmptyPanel(
-                title = stringResource(R.string.memory_title),
+                title = stringResource(R.string.memory_no_notes),
+                icon = Icons.Outlined.AutoStories,
                 body = stringResource(R.string.memory_empty),
                 action = stringResource(R.string.memory_connect),
                 onAction = onConnect,
@@ -87,8 +89,9 @@ fun MemoryScreen(
                 }
                 state.memories.isEmpty() -> {
                     EmptyPanel(
-                        title = stringResource(R.string.memory_title),
-                        body = stringResource(R.string.memory_empty),
+                        title = stringResource(R.string.memory_no_notes),
+                        icon = Icons.Outlined.AutoStories,
+                        body = stringResource(R.string.memory_synced_empty),
                     )
                 }
                 else -> {
@@ -106,8 +109,7 @@ fun MemoryScreen(
                         } else {
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
                             ) {
                                 items(filtered, key = { it.id }) { memory ->
                                     MemoryCard(memory) { selected = memory }
@@ -161,41 +163,19 @@ private fun MemorySearch(query: String, onQueryChange: (String) -> Unit) {
 @Composable
 private fun MemoryCard(memory: ContextMemory, onClick: () -> Unit) {
     val palette = LocalMoMoPalette.current
-    GlassSurface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        onClick = onClick,
-        contentPadding = PaddingValues(16.dp),
+    Column(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(memory.text, style = MoMoType.body, color = palette.ink)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                memory.kind.takeIf { it.isNotBlank() }?.let { Chip(it) }
-                memory.basis.takeIf { it.isNotBlank() }?.let { Chip(it) }
-                Spacer(Modifier.weight(1f))
-                if (memory.evidence.isNotEmpty()) {
-                    Text(
-                        text = "${stringResource(R.string.memory_evidence)} ${memory.evidence.size}",
-                        style = MoMoType.caption,
-                        color = palette.muted,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun Chip(value: String) {
-    val palette = LocalMoMoPalette.current
-    Surface(color = palette.surface.copy(alpha = 0.7f), shape = CircleShape) {
-        Text(
-            text = value,
-            style = MoMoType.caption,
-            color = palette.muted,
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+        Text(memory.text, style = MoMoType.body, color = palette.ink, maxLines = 4, overflow = TextOverflow.Ellipsis)
+        val metadata = listOfNotNull(
+            memory.kind.takeIf { it.isNotBlank() },
+            memory.basis.takeIf { it.isNotBlank() },
+            if (memory.evidence.isEmpty()) null else stringResource(R.string.memory_evidence_count, memory.evidence.size),
         )
+        if (metadata.isNotEmpty()) Text(metadata.joinToString(" · "), style = MoMoType.metadata, color = palette.muted)
     }
+    HorizontalDivider(color = palette.line)
 }
 
 @Composable

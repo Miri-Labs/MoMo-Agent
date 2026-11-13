@@ -1,5 +1,6 @@
 package com.momoagent.android.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -25,8 +26,7 @@ fun MoMoApp(viewModel: AppViewModel = viewModel()) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        LiquidBackdrop()
+    Box(modifier = Modifier.fillMaxSize().background(LocalMoMoPalette.current.canvas)) {
         when (viewModel.setup) {
             SetupStep.Welcome -> WelcomeScreen(onFinish = { viewModel.advance(SetupStep.Connect) })
             SetupStep.Connect -> ConnectionScreen(viewModel)
