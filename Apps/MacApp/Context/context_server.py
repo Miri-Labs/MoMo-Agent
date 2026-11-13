@@ -355,7 +355,14 @@ class ContextService:
                     if not guarantee.get('durable') or not guarantee.get('supported') or guarantee.get('retention_seconds', 0) <= 120:
                         raise Conflict('Gateway lacks durable memory admission')
                     first = time.time(); deadline = first + guarantee['retention_seconds'] - 60
-                    store.db.execute("UPDATE memory_reviews SET first_attempt=?,replay_before=? WHERE id=?", (first,deadline,job['id']))
+                    with store.write():
+                        job = store.db.execute("""UPDATE memory_reviews SET first_attempt=?,replay_before=?
+                            WHERE id=? AND state='pending' AND first_attempt IS NULL RETURNING *""",
+                            (first, deadline, job['id'])).fetchone()
+                        if job is None:
+                            return
+                        if json.loads(job['input']).get('daily'):
+                            job = daily_review.skip_superseded_in_transaction(store, job)
                 if time.time() >= deadline:
                     raise Conflict('Memory review admission receipt expired; inspect the original run')
                 prompt = daily_review.prompt(store, job) if json.loads(job['input']).get('daily') else memory_review.prompt(job)
