@@ -14,10 +14,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -86,17 +89,23 @@ fun QrScanner(onResult: (String) -> Unit, onClose: () -> Unit) {
                     .size(260.dp)
                     .border(2.dp, Color.White.copy(alpha = 0.85f), RoundedCornerShape(24.dp)),
             )
-            Text(
-                text = stringResource(
-                    if (cameraFailure) R.string.scanner_unavailable else R.string.scanner_hint,
-                ),
-                color = Color.White,
-                textAlign = TextAlign.Center,
+            GlassSurface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(start = 32.dp, end = 32.dp, bottom = 64.dp),
-                style = MaterialTheme.typography.bodyMedium,
-            )
+                    .navigationBarsPadding()
+                    .padding(start = 32.dp, end = 32.dp, bottom = 56.dp),
+                shape = RoundedCornerShape(50),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+            ) {
+                Text(
+                    text = stringResource(
+                        if (cameraFailure) R.string.scanner_unavailable else R.string.scanner_hint,
+                    ),
+                    color = LocalMoMoPalette.current.ink,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         } else {
             Column(
                 modifier = Modifier
@@ -115,18 +124,16 @@ fun QrScanner(onResult: (String) -> Unit, onClose: () -> Unit) {
                 }
             }
         }
-        IconButton(
+        GlassIconButton(
+            icon = Icons.Filled.Close,
+            label = stringResource(R.string.scanner_close),
             onClick = onClose,
+            tint = Color.White,
             modifier = Modifier
                 .align(Alignment.TopEnd)
+                .statusBarsPadding()
                 .padding(16.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Close,
-                contentDescription = stringResource(R.string.scanner_close),
-                tint = Color.White,
-            )
-        }
+        )
     }
 }
 

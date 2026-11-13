@@ -51,15 +51,24 @@ object PairingCode {
         ) {
             throw PairingCodeException(PairingFailure.InvalidCode)
         }
-        if (uri.scheme == "http" && !isLoopback(uri.host)) {
+        val tailnet = invitation.network == "tailscale"
+        if (uri.scheme == "http" &&
+            !isLoopback(uri.host) &&
+            !(tailnet && isTailnetHost(uri.host) && uri.port == 8767)
+        ) {
             throw PairingCodeException(PairingFailure.HttpsRequired)
         }
         when (invitation.network) {
             null -> if (invitation.relayCode != null || invitation.tlsSHA256 != null) {
                 throw PairingCodeException(PairingFailure.InvalidCode)
             }
-            "tailscale" -> if (invitation.relayCode != null || invitation.tlsSHA256 != null) {
-                throw PairingCodeException(PairingFailure.InvalidCode)
+            "tailscale" -> {
+                if (uri.scheme != "http" || !isTailnetHost(uri.host) || uri.port != 8767) {
+                    throw PairingCodeException(PairingFailure.InvalidCode)
+                }
+                if (invitation.relayCode != null || invitation.tlsSHA256 != null) {
+                    throw PairingCodeException(PairingFailure.InvalidCode)
+                }
             }
             "relay" -> if (invitation.relayCode.isNullOrEmpty() || invitation.tlsSHA256 != null) {
                 throw PairingCodeException(PairingFailure.InvalidCode)
@@ -93,9 +102,23 @@ object PairingCode {
             (octets[0] == 192 && octets[1] == 168)
     }
 
-    fun isSecureBaseURL(value: String): Boolean {
+    fun isAllowedBaseURL(value: String, network: String?): Boolean {
         val uri = runCatching { URI(value) }.getOrNull() ?: return false
-        return uri.scheme == "https" || (uri.scheme == "http" && isLoopback(uri.host))
+        return when {
+            uri.scheme == "https" -> true
+            uri.scheme == "http" && isLoopback(uri.host) -> true
+            uri.scheme == "http" && network == "tailscale" &&
+                isTailnetHost(uri.host) && uri.port == 8767 -> true
+            else -> false
+        }
+    }
+
+    fun isTailnetHost(host: String?): Boolean {
+        val parts = host?.split('.') ?: return false
+        if (parts.size != 4) return false
+        val octets = parts.map { it.toIntOrNull() ?: return false }
+        if (octets.any { it !in 0..255 } || octets.map { it.toString() } != parts) return false
+        return octets[0] == 100 && octets[1] in 64..127
     }
 
     fun isLoopback(host: String?): Boolean =

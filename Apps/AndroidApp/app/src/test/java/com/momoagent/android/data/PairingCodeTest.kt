@@ -12,7 +12,7 @@ class PairingCodeTest {
     private val now = 1_800_000_000.0
 
     private fun code(
-        endpoint: String = "https://momo.tailnet.ts.net",
+        endpoint: String = "http://100.64.0.1:8767",
         network: String? = "tailscale",
         relay: String? = null,
         tls: String? = null,
@@ -36,7 +36,43 @@ class PairingCodeTest {
     fun acceptsTailscaleInvitation() {
         val invitation = PairingCode.parse(code(), now)
         assertEquals("tailscale", invitation.network)
-        assertEquals("https://momo.tailnet.ts.net", invitation.endpoint)
+        assertEquals("http://100.64.0.1:8767", invitation.endpoint)
+    }
+
+    @Test
+    fun tailscaleRequiresTailnetHttpOrigin() {
+        val httpsError = assertThrows(PairingCodeException::class.java) {
+            PairingCode.parse(code(endpoint = "https://100.64.0.1:8767"), now)
+        }
+        assertEquals(PairingFailure.InvalidCode, httpsError.failure)
+
+        val publicError = assertThrows(PairingCodeException::class.java) {
+            PairingCode.parse(code(endpoint = "http://100.200.0.1:8767"), now)
+        }
+        assertEquals(PairingFailure.HttpsRequired, publicError.failure)
+
+        val portError = assertThrows(PairingCodeException::class.java) {
+            PairingCode.parse(code(endpoint = "http://100.64.0.1:80"), now)
+        }
+        assertEquals(PairingFailure.HttpsRequired, portError.failure)
+    }
+
+    @Test
+    fun allowedBaseURLFollowsTheNetworkType() {
+        assertTrue(PairingCode.isAllowedBaseURL("http://100.64.0.1:8767", "tailscale"))
+        assertFalse(PairingCode.isAllowedBaseURL("http://100.64.0.1:8767", null))
+        assertTrue(PairingCode.isAllowedBaseURL("https://example.com", null))
+        assertTrue(PairingCode.isAllowedBaseURL("http://127.0.0.1:8769", null))
+        assertFalse(PairingCode.isAllowedBaseURL("http://100.64.0.1:80", "tailscale"))
+    }
+
+    @Test
+    fun tailnetAddressesAreRecognized() {
+        assertTrue(PairingCode.isTailnetHost("100.64.0.1"))
+        assertTrue(PairingCode.isTailnetHost("100.127.255.254"))
+        assertFalse(PairingCode.isTailnetHost("100.63.0.1"))
+        assertFalse(PairingCode.isTailnetHost("100.128.0.1"))
+        assertFalse(PairingCode.isTailnetHost("192.168.1.1"))
     }
 
     @Test
@@ -94,7 +130,7 @@ class PairingCodeTest {
             assistantID = "a",
             instanceID = invitation.instanceID,
             baseURL = invitation.endpoint,
-            dataURL = "https://momo.tailnet.ts.net/context",
+            dataURL = "http://100.64.0.1:8767/context",
             eventTransport = "sse",
             network = "tailscale",
             relayCode = null,
@@ -200,7 +236,7 @@ class PairingCodeTest {
 
     @Test
     fun messageBodyUsesWireNames() {
-        val json = Json { encodeDefaults = true }
+        val json = Json { encodeDefaults = true; explicitNulls = false }
         assertEquals(
             """{"operation_id":"op","content":"hi","intent":"new"}""",
             json.encodeToString(MessageBody("op", "hi")),

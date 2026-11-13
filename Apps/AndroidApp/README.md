@@ -1,90 +1,120 @@
-# MoMo Agent for Android (Preview)
+# MoMo Agent for Android
 
-This is the first Android slice of MoMo Agent. It is a client for the Mac hub,
-not a second agent runtime. It pairs with an existing Mac installation, loads
-the shared conversation, sends a message, and renders the same server-sent
-events the Apple clients already consume.
+Version 0.3.1. This is the iPhone app's Android port, not a second design:
+the welcome/connection/chat structure, chat renderer, avatar, wordmark, receipts,
+composer and settings follow the iPhone client. It talks to the Mac hub over the
+existing access contract; the Mac keeps running the Agent and the memory vault.
+Version 0.3.x adds the iOS 26-style liquid-glass treatment from the reference
+video to the floating controls and cards; 0.3.1 fixes the version display.
 
-Status: **preview, not device-verified yet**. The current slice covers pairing,
-secure credential storage, conversation snapshot, sending, streaming replies,
-and unpairing. Recording, on-device transcription, memory, illustrations,
-proactive notifications, attachments, relay transport, and Wear OS are not
-implemented. See `docs/todos/android-client.md`.
+Status: **built and unit-tested; not yet run on a physical device or emulator in
+this checkout.**
 
-## Requirements
+## Flow
 
-- JDK 17 or newer.
-- Android SDK Platform 35 and Build Tools 35.
-- A Mac running MoMo Agent with a LAN or remote pairing entry enabled.
-- For `network: "lan"`, the phone and Mac must be on the same local network.
-  The app pins the self-signed certificate fingerprint from the QR code, so no
-  Tailscale account is needed.
-- For the `tailscale` network invitation, the Android device must be connected
-  to the same tailnet through the Tailscale app. Relay invitations are rejected
-  in this preview.
+```text
+Welcome experience → Connection flow → Chat / Transcripts / Memory tabs → Settings
+```
 
-## Build
+- Welcome: the same three scenarios and copy as the iPhone introduction, with the
+  live MoMo avatar and a static `MoMoStill` rendered behind it. Brand SVGs are
+  pre-rendered to tintable PNGs because AndroidSVG clipped the outlined wordmark
+  and the still on device.
+- Connection: scan the Mac pairing QR; pending pairing survives restarts and
+  resumes on foreground. A manual connection form lives in Settings.
+- Chat: the iPhone's Web renderer is reused from `assets/chat`, fed by the same
+  snapshot fields (Markdown, tools, attachments, `已送达`/`已读`, waiting dots).
+  The avatar, settings and task/desktop controls float over the scroll view;
+  the composer and the tab capsule are glass surfaces. The tab bar hides while
+  the IME is open so the composer sits above the keyboard.
+- Transcripts: read-only list of sources synced to the paired Mac. Android has no
+  local recording/ASR yet; local transcripts are a separate slice.
+- Memory: read-only long-term memory from the Mac context API.
+- Settings: Mac connection state, reconnect, re-pair, manual configuration,
+  network route/address, version and unpair. Unpair first calls `POST /pair/revoke`
+  so the Mac also drops the device grant; the local credential is cleared only
+  after the Mac confirms (401/404 is treated as already revoked).
+
+## Pairing modes
+
+- `lan`: the Mac's self-signed TLS endpoint; the app pins the `tls_sha256`
+  fingerprint from the QR and rejects plaintext or public LAN addresses.
+- `tailscale`: an embedded-Tailscale `http://100.64.0.0/10:8767` invitation; the
+  phone must have the system Tailscale app signed into the same tailnet.
+- `relay`: intentionally rejected in this preview.
+
+The debug build allows cleartext only for the Tailscale system-VPN case; the
+release network policy must be narrowed before shipping (tracked in the todos).
+
+## Chat contract
+
+- `GET /momo/v1/conversation/snapshot` loads server messages, runs, background
+  work, message states and provider notices.
+- `GET /momo/v1/conversation/subscribe?after=` keeps a cursor-based SSE
+  subscription with reconnect backoff.
+- `POST /momo/v1/conversation/messages` sends `{operation_id, content, intent}`
+  plus optional attachments; optimistic messages are replaced by the server echo.
+- Receipts resolve to `delivered`/`read` from message states and run generation;
+  the Web renderer owns the three-dot waiting bubble.
+- Attachments: images (JPEG/PNG, 1 MB, 64 KB preview) and plain text documents
+  (256 KB), up to four.
+
+## Source layout
+
+```text
+app/src/main/assets/chat/        # copied iPhone Web renderer + avatar
+app/src/main/assets/brand/       # Pebble wordmarks and MoMoStill SVG
+app/src/main/java/com/momoagent/android/
+├── data/                        # wire models, HTTP/SSE, pinned TLS, Keystore
+├── remote/                      # PairingManager, ConversationStore, ContextStore
+└── ui/                          # Welcome, Connection, Chat, Memory, Transcripts, Settings
+```
+
+The renderer and brand assets are copied from the iPhone target so both clients
+render the same content. Update both when the iPhone Web renderer changes.
+
+## Build and verify
 
 ```sh
 cd Apps/AndroidApp
-./gradlew :app:assembleDebug
+gradle :app:assembleDebug
+gradle :app:testDebugUnitTest
+gradle :app:lintDebug
 ```
 
-The APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+Current results: `assembleDebug` produces `app-debug.apk` (`com.momoagent.android`,
+version 0.3.1, versionCode 6, minSdk 26, targetSdk 35); 24/24 JVM tests pass;
+lint reports 0 errors and 30 warnings. There is no device/emulator end-to-end
+run yet.
 
-Install on a connected device:
+The Settings header and About row read `BuildConfig.VERSION_NAME`; the
+`0.1.0` fallback is gone. The Welcome and Connect screens also show the version
+at the bottom. If a phone keeps displaying an old version after an install, the
+old package is still the one running: uninstall it and install the new APK
+(unpairing is local to the phone; scan the Mac QR to pair again).
 
-```sh
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
+## Liquid glass
 
-`local.properties` is ignored. Point it at your SDK when Gradle cannot find one:
+`ui/Glass.kt` draws the translucent gradient, top specular bloom, bright rim and
+soft ambient shadow; pressed controls use a spring scale and highlight bloom.
+The floating header, tasks capsule, desktop button, tab capsule, composer,
+connection popover, banners, page headers, memory search, cards and dialogs use
+it. The chat page is transparent and passes a `headerInset` so messages start
+below the floating avatar and scroll under it.
 
-```properties
-sdk.dir=/path/to/Android/sdk
-```
+Android Compose has no backdrop-filter equivalent. The app therefore uses a
+low-contrast ambient backdrop plus a fade scrim behind the floating controls
+instead of a true blur of the content underneath. Chat bubbles, attachments and
+transcript/memory content stay solid, matching the reference video; only the
+chrome is glass.
 
-## Pairing
+## Known gaps
 
-1. On the Mac, open MoMo Agent, choose **LAN direct** for the same Wi-Fi, or
-   Tailscale/relay, and show the pairing code.
-2. On Android, tap **Scan pairing code** and point the camera at the QR code,
-   or paste the JSON payload into the text field.
-3. Confirm the numeric code shown on both devices, then approve on the Mac.
-4. The credential and connection are stored in
-   `EncryptedSharedPreferences`, backed by the Android Keystore.
-
-A LAN invitation carries `network: "lan"` and a `tls_sha256` certificate
-fingerprint. The app trusts only that certificate, still validates its dates,
-and rejects plaintext HTTP LAN endpoints.
-
-The client accepts HTTPS endpoints and loopback HTTP for local development.
-Cleartext traffic is disabled by default and allowed only for `localhost` and
-`127.0.0.1` in the network security config.
-
-## Layout
-
-```text
-app/src/main/java/com/momoagent/android/
-├── MainActivity.kt
-├── data/
-│   ├── AgentApi.kt        HTTPS and SSE client
-│   ├── AgentModels.kt     Wire models (mirrors MoMoAgentClient)
-│   ├── PairingCode.kt     Invitation and connection validation
-│   ├── PairingStore.kt    Keystore-backed credential storage
-│   └── PinnedTls.kt       LAN certificate pinning for OkHttp
-└── ui/
-    ├── AppViewModel.kt    Pairing and conversation state
-    ├── ChatScreen.kt      Conversation and composer
-    ├── MoMoApp.kt         Screen routing
-    ├── PairingScreen.kt   Scan or paste a pairing code
-    ├── QrScanner.kt       CameraX + ML Kit QR scanner
-    └── Theme.kt           Brand palette
-```
-
-The wire contract is owned by `Packages/MoMoAgentAgentClient`. Do not add a new
-server route for Android without updating the Swift client, the Mac access
-allowlist, and this app together.
+- Local recording, on-device ASR, speaker diarization and local transcripts.
+- Watch/earphone capture status, desktop control, life illustrations and dream
+  briefing cards.
+- Chat voice dictation, push notifications, relay transport and an iOS LAN client.
+- Release signing and a narrowed production network policy.
 
 ## License
 

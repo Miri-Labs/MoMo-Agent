@@ -116,6 +116,9 @@ class AccessService:
                 row = self.store.db.execute('SELECT endpoint FROM devices WHERE id=?', (result['id'],)).fetchone()
                 result['connection'] = self.public_connection(row['endpoint'])
             return web.json_response(result)
+        if path == '/pair/revoke' and request.method == 'POST':
+            if not self.store.revoke_by_token(self.token(request)): raise web.HTTPUnauthorized()
+            return web.json_response({'revoked': True})
         if not self.store.authorized(self.token(request)): raise web.HTTPUnauthorized()
         if path == '/transport/v1/config' and request.method == 'GET':
             return web.json_response(self.rtc.configuration())
@@ -291,6 +294,11 @@ async def serve(data):
         lan_public = web.Application(middlewares=[errors], client_max_size=8_000_000)
         lan_public.router.add_route('*', '/{tail:.*}', service.public)
         service.public_app = lan_public
+        if service.store.has_approved_lan_device():
+            try:
+                await service.lan.start(service.public_app)
+            except ValueError:
+                pass
         local = control_application(service)
         runners = []; maintenance = None
         try:

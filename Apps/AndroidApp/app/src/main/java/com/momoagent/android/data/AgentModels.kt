@@ -40,6 +40,18 @@ data class AgentConnection(
 )
 
 @Serializable
+data class AgentAttachment(
+    val id: String,
+    val name: String,
+    val kind: String,
+    @SerialName("media_type") val mediaType: String,
+    @SerialName("byte_count") val byteCount: Int,
+    val data: String? = null,
+    val text: String? = null,
+    val preview: String? = null,
+)
+
+@Serializable
 data class ConversationMessage(
     val id: String,
     val seq: Int,
@@ -48,6 +60,9 @@ data class ConversationMessage(
     @SerialName("created_at") val createdAt: Double = 0.0,
     @SerialName("operation_id") val operationID: String? = null,
     @SerialName("run_id") val runID: String? = null,
+    @SerialName("source_session") val sourceSession: String? = null,
+    @SerialName("delivery_state") val deliveryState: String? = null,
+    val attachments: List<AgentAttachment>? = null,
 )
 
 @Serializable
@@ -60,10 +75,21 @@ data class ConversationPage(
 @Serializable
 data class AgentRun(
     @SerialName("run_id") val runID: String,
+    @SerialName("session_id") val sessionID: String? = null,
     val status: String = "",
     val output: String? = null,
     val error: String? = null,
-)
+    @SerialName("delivery_state") val deliveryState: String? = null,
+    @SerialName("execution_generation") val executionGeneration: Int? = null,
+    @SerialName("work_id") val workID: String? = null,
+    val title: String? = null,
+    @SerialName("created_at") val createdAt: Double? = null,
+    val cancellable: Boolean? = null,
+    @SerialName("cancel_requested") val cancelRequested: Boolean? = null,
+) {
+    val isTerminal: Boolean
+        get() = status in setOf("completed", "failed", "cancelled", "interrupted", "not_applied")
+}
 
 @Serializable
 data class ConversationSnapshot(
@@ -71,6 +97,9 @@ data class ConversationSnapshot(
     val cursor: Int = 0,
     val messages: ConversationPage = ConversationPage(),
     val runs: List<AgentRun> = emptyList(),
+    @SerialName("background_work") val backgroundWork: List<ConversationWork> = emptyList(),
+    @SerialName("message_states") val messageStates: Map<String, String> = emptyMap(),
+    @SerialName("provider_notice") val providerNotice: ProviderServiceNotice? = null,
 )
 
 @Serializable
@@ -81,6 +110,9 @@ data class ConversationEvent(
     val message: ConversationMessage? = null,
     val run: AgentRun? = null,
     @SerialName("run_event") val runEvent: AgentRunEvent? = null,
+    @SerialName("background_work") val backgroundWork: List<ConversationWork>? = null,
+    @SerialName("message_states") val messageStates: Map<String, String>? = null,
+    @SerialName("provider_notice") val providerNotice: ProviderServiceNotice? = null,
 )
 
 @Serializable
@@ -91,8 +123,118 @@ data class AgentRunEvent(
     val delta: String? = null,
     val text: String? = null,
     val tool: String? = null,
+    @SerialName("tool_call_id") val toolCallID: String? = null,
     val message: ConversationMessage? = null,
+    val input: ConversationMessage? = null,
     val receipt: AgentRun? = null,
+)
+
+@Serializable
+data class ConversationWork(
+    val id: String,
+    val state: String = "",
+    @SerialName("report_state") val reportState: String = "",
+    @SerialName("work_id") val workID: String? = null,
+    val title: String? = null,
+    @SerialName("wait_reason") val waitReason: String? = null,
+    val cancellable: Boolean? = null,
+    @SerialName("created_at") val createdAt: Double? = null,
+)
+
+@Serializable
+data class ProviderServiceNotice(
+    val id: String,
+    val kind: String = "",
+    val provider: String = "",
+    @SerialName("provider_label") val providerLabel: String = "",
+    val title: String = "",
+    val message: String = "",
+    @SerialName("short_error") val shortError: String? = null,
+    @SerialName("created_at") val createdAt: Double = 0.0,
+    @SerialName("updated_at") val updatedAt: Double? = null,
+)
+
+@Serializable
+data class AgentCapabilities(
+    val features: Features = Features(),
+) {
+    @Serializable
+    data class Features(
+        @SerialName("run_submission") val runSubmission: Boolean? = null,
+        @SerialName("run_status") val runStatus: Boolean? = null,
+        @SerialName("run_stop") val runStop: Boolean? = null,
+        @SerialName("session_resources") val sessionResources: Boolean? = null,
+        @SerialName("runs_idempotency") val runsIdempotency: Idempotency? = null,
+        @SerialName("conversation_events") val conversationEvents: Boolean? = null,
+        @SerialName("message_streaming") val messageStreaming: Boolean? = null,
+    )
+
+    @Serializable
+    data class Idempotency(
+        val supported: Boolean? = null,
+        val durable: Boolean? = null,
+        @SerialName("retention_seconds") val retentionSeconds: Int? = null,
+    )
+}
+
+@Serializable
+data class ContextStatus(
+    @SerialName("workspace_id") val workspaceID: String = "",
+    @SerialName("source_sync") val sourceSync: Boolean = false,
+    @SerialName("memory_writer") val memoryWriter: String = "",
+)
+
+@Serializable
+data class ContextMemory(
+    val id: String,
+    val text: String,
+    val kind: String,
+    val basis: String = "",
+    val status: String = "",
+    val revision: Long = 0,
+    val evidence: List<Evidence> = emptyList(),
+    val path: String? = null,
+) {
+    @Serializable
+    data class Evidence(
+        @SerialName("source_id") val sourceID: String = "",
+        @SerialName("source_revision") val sourceRevision: String = "",
+        val quote: String = "",
+        @SerialName("recorded_at") val recordedAt: Double? = null,
+    )
+}
+
+@Serializable
+data class MemoryPage(
+    val revision: Long = 0,
+    val items: List<ContextMemory> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
+@Serializable
+data class ContextSource(
+    val id: String,
+    val revision: String = "",
+    @SerialName("recorded_at") val recordedAt: Double? = null,
+    @SerialName("total_characters") val totalCharacters: Int = 0,
+    val summary: String? = null,
+    val preview: String? = null,
+)
+
+@Serializable
+data class SourcePage(
+    val items: List<ContextSource> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
+@Serializable
+data class SourceTextPage(
+    @SerialName("source_revision") val sourceRevision: String = "",
+    val text: String = "",
+    val offset: Int = 0,
+    val end: Int = 0,
+    @SerialName("total_characters") val totalCharacters: Int = 0,
+    @SerialName("next_offset") val nextOffset: Int? = null,
 )
 
 @Serializable
@@ -106,4 +248,11 @@ data class MessageBody(
     @SerialName("operation_id") val operationID: String,
     val content: String,
     val intent: String = "new",
+    @SerialName("target_run_id") val targetRunID: String? = null,
+    @SerialName("execution_generation") val executionGeneration: Int? = null,
+    @SerialName("work_id") val workID: String? = null,
+    val attachments: List<AgentAttachment>? = null,
 )
+
+@Serializable
+data class RevokeResponse(val revoked: Boolean = false)

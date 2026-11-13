@@ -153,6 +153,16 @@ class PairingStore:
         self._last_seen_written.pop(ident, None)
         with self.db: self.db.execute("UPDATE devices SET state='revoked' WHERE id=?", (ident,))
 
+    def revoke_by_token(self, token):
+        try: hashed = digest(token)
+        except ValueError: return False
+        row = self.db.execute("SELECT id FROM devices WHERE token_hash=? AND state='approved'", (hashed,)).fetchone()
+        if row is None: return False
+        self.revoke(row['id']); return True
+
     def devices(self):
         with self.db: self.db.execute("UPDATE devices SET state='expired' WHERE state='pending' AND expires<=?", (self.now(),))
         return [dict(r) for r in self.db.execute('SELECT id,name,code,state,expires,created,last_seen,endpoint FROM devices ORDER BY created DESC LIMIT 100')]
+
+    def has_approved_lan_device(self):
+        return any(is_lan_endpoint(row['endpoint']) for row in self.db.execute("SELECT endpoint FROM devices WHERE state='approved'"))

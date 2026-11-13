@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <link rel="stylesheet" href="vendor/katex.css">
+  <link rel="stylesheet" href="chat.css">
+  <style>
+    /* Android: keep the page transparent so the app's glass backdrop and the
+       native floating composer/tab bar read as one surface. */
+    html, body { background: transparent !important; }
+    body { padding-bottom: 152px !important; }
+    #jump {
+      bottom: 156px;
+      border-color: rgba(255, 255, 255, .7);
+      background: linear-gradient(180deg, rgba(255, 255, 255, .95), rgba(255, 255, 255, .7));
+      -webkit-backdrop-filter: blur(18px);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 10px 26px rgba(20, 20, 20, .14), inset 0 1px 0 rgba(255, 255, 255, .95);
+    }
+    :root[data-dark=true] #jump {
+      border-color: rgba(255, 255, 255, .22);
+      background: linear-gradient(180deg, rgba(76, 76, 80, .95), rgba(44, 44, 48, .78));
+      box-shadow: 0 10px 26px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .16);
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      #jump { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--paper); }
+    }
+  </style>
+  <script defer src="vendor/marked.js"></script>
+  <script defer src="vendor/purify.js"></script>
+  <script defer src="vendor/katex.js"></script>
+  <script defer src="vendor/remend.js"></script>
+  <script defer src="vendor/highlight.js"></script>
+  <script defer src="chat-localization.js"></script>
+  <script defer src="chat-core.js"></script>
+  <script defer src="brand-motion.js"></script>
+  <script src="android-bridge.js"></script>
+  <script defer src="chat.js"></script>
+  <title>聊天</title>
+</head>
+<body>
+  <main id="transcript" aria-label="聊天记录"></main>
+  <div id="response-slot">
+  <div id="working" aria-hidden="true" data-animating="false" hidden>
+    <span class="typing-bubble" aria-hidden="true"><span class="typing-dots"><span></span><span></span><span></span></span></span>
+    <span class="activity-mark" aria-hidden="true"><img class="brand-thinking" src="brand-thinking.png" alt=""><canvas class="brand-pebbles" width="64" height="56"></canvas></span>
+    <span class="working-label activity-shimmer">正在准备回复</span>
+  </div>
+  </div>
+  <div id="bottom"></div>
+  <button id="jump" aria-label="回到最新消息" hidden>↓</button>
+  <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
+</body>
+</html>

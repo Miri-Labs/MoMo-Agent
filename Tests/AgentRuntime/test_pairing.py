@@ -92,6 +92,20 @@ class PairingTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.store.invite(invalid, network='tailscale')
         self.assertTrue(self.store.authorized(self.token))
 
+    def test_approved_lan_device_is_detected_for_startup(self):
+        self.invite = self.store.invite('https://192.168.1.10:8769', network='lan')
+        req = self.request(); self.store.decide(req['id'], True)
+        self.assertTrue(self.store.has_approved_lan_device())
+        self.store.revoke(req['id'])
+        self.assertFalse(self.store.has_approved_lan_device())
+
+    def test_device_can_revoke_its_own_grant(self):
+        req = self.request(); self.store.decide(req['id'], True)
+        self.assertTrue(self.store.authorized(self.token))
+        self.assertTrue(self.store.revoke_by_token(self.token))
+        self.assertFalse(self.store.authorized(self.token))
+        self.assertFalse(self.store.revoke_by_token(self.token))
+
     def test_authorized_throttles_last_seen_writes_without_delaying_revocation(self):
         req = self.request(); self.store.decide(req['id'], True)
         self.assertTrue(self.store.authorized(self.token))

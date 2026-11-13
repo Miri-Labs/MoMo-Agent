@@ -30,6 +30,7 @@ class AgentApi {
         ignoreUnknownKeys = true
         isLenient = true
         encodeDefaults = true
+        explicitNulls = false
     }
     private val mediaType = "application/json; charset=utf-8".toMediaType()
 
@@ -60,9 +61,58 @@ class AgentApi {
         return execute(request, clientFor(invitation.tlsSHA256))
     }
 
-    fun snapshot(connection: AgentConnection, credential: String): ConversationSnapshot {
+    fun capabilities(connection: AgentConnection, credential: String): AgentCapabilities {
+        val request = authenticated(connection, credential, join(connection.baseURL, "v1/capabilities"))
+            .get()
+            .build()
+        return execute(request, clientFor(connection.tlsSHA256))
+    }
+
+    fun conversationSnapshot(connection: AgentConnection, credential: String): ConversationSnapshot {
         val request = authenticated(connection, credential, join(connection.baseURL, "momo/v1/conversation/snapshot"))
             .get()
+            .build()
+        return execute(request, clientFor(connection.tlsSHA256))
+    }
+
+    fun snapshot(connection: AgentConnection, credential: String): ConversationSnapshot =
+        conversationSnapshot(connection, credential)
+
+    fun subscribe(
+        connection: AgentConnection,
+        credential: String,
+        after: Int,
+    ): Flow<ConversationEvent> {
+        val request = authenticated(
+            connection,
+            credential,
+            join(connection.baseURL, "momo/v1/conversation/subscribe") + "?after=$after",
+        )
+            .header("Accept", "text/event-stream")
+            .get()
+            .build()
+        return events(request, streamClientFor(connection.tlsSHA256))
+            .map { json.decodeFromString<ConversationEvent>(it) }
+    }
+
+    fun sendMessage(
+        connection: AgentConnection,
+        credential: String,
+        content: String,
+        operationID: String,
+        attachments: List<AgentAttachment> = emptyList(),
+    ): AgentRun {
+        val body = json.encodeToString(
+            MessageBody(
+                operationID = operationID,
+                content = content,
+                intent = "new",
+                attachments = attachments.takeIf { it.isNotEmpty() },
+            ),
+        )
+        val request = authenticated(connection, credential, join(connection.baseURL, "momo/v1/conversation/messages"))
+            .header("Accept", "application/json")
+            .post(body.toRequestBody(mediaType))
             .build()
         return execute(request, clientFor(connection.tlsSHA256))
     }
@@ -80,6 +130,61 @@ class AgentApi {
             .build()
         return events(request, streamClientFor(connection.tlsSHA256))
             .map { json.decodeFromString<AgentRunEvent>(it) }
+    }
+
+    fun revoke(connection: AgentConnection, credential: String) {
+        val request = Request.Builder()
+            .url(join(connection.baseURL, "pair/revoke"))
+            .header("Authorization", "Bearer $credential")
+            .header("Content-Type", "application/json")
+            .post("{}".toRequestBody(mediaType))
+            .build()
+        execute<RevokeResponse>(request, clientFor(connection.tlsSHA256))
+    }
+
+    fun contextStatus(connection: AgentConnection, credential: String): ContextStatus {
+        val request = authenticated(connection, credential, join(connection.dataURL, "v1/status"))
+            .get()
+            .build()
+        return execute(request, clientFor(connection.tlsSHA256))
+    }
+
+    fun contextMemories(
+        connection: AgentConnection,
+        credential: String,
+        limit: Int = 100,
+    ): MemoryPage {
+        val request = authenticated(connection, credential, join(connection.dataURL, "v1/memories?limit=$limit"))
+            .get()
+            .build()
+        return execute(request, clientFor(connection.tlsSHA256))
+    }
+
+    fun contextSources(
+        connection: AgentConnection,
+        credential: String,
+        limit: Int = 50,
+    ): SourcePage {
+        val request = authenticated(
+            connection,
+            credential,
+            join(connection.dataURL, "v1/sources?limit=$limit&summarize=1"),
+        )
+            .get()
+            .build()
+        return execute(request, clientFor(connection.tlsSHA256))
+    }
+
+    fun contextSource(
+        connection: AgentConnection,
+        credential: String,
+        source: ContextSource,
+    ): SourceTextPage {
+        val path = "v1/source?source_id=${source.id}&revision=${source.revision}&offset=0&limit=12000"
+        val request = authenticated(connection, credential, join(connection.dataURL, path))
+            .get()
+            .build()
+        return execute(request, clientFor(connection.tlsSHA256))
     }
 
     private fun authenticated(connection: AgentConnection, credential: String, url: String): Request.Builder =

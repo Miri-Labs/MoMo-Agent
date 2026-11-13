@@ -7,7 +7,8 @@
 | 文档 | 内容 |
 | --- | --- |
 | [Android 客户端（预览切片）](android-client.md) | 2026-11-12：复用 Mac Access 的配对与 SSE 契约，先交付扫码配对、历史与流式对话；录音、记忆、Relay 与 Wear OS 单列待办 |
-| [局域网直连](lan-access.md) | 2026-11-12：Mac 自签名 TLS + 二维码证书指纹固定，同一 Wi-Fi 不依赖 Tailscale；协议层与 Android 已验证，Mac UI 与 iOS 待补 |
+| [Android 对齐 iPhone App](android-parity.md) | 2026-11-12：以 iPhone 结构、Web 渲染器、回执和状态机为基准的全量 Android 对齐；核心已实现，本地录音/ASR 与真机验证待补 |
+| [局域网直连](lan-access.md) | 2026-11-12：Mac 自签名 TLS + 二维码证书指纹固定，同一 Wi-Fi 不依赖 Tailscale；Mac App 与 Android 已验证，iOS 待补 |
 | [分类记忆与自动整理](dream-memory.md) | Hermes 源码对照、个人经历与稳定偏好的区别、承诺状态、来源核对、后台处理及验证边界 |
 | [Omi 跨模块设计研究](omi-design-review-20261017.md) | 固定源码版本核对同步恢复、记忆、中文检索、纠错、派生索引与主动执行；区分本轮实现和后续建议 |
 | [全天录音、持续整理与积压恢复](continuous-recording-processing.md) | 2026-10-17：不依赖录制结束，明确分片/同步/识别边界、独立状态、进度口径与待实施项 |

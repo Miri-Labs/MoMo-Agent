@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -14,7 +15,14 @@ data class StoredPairing(
     val credential: String,
 )
 
-/** Stores the Mac connection and its bearer credential behind an Android Keystore key. */
+@Serializable
+data class StoredPending(
+    val invitation: PairingInvitation,
+    val credential: String,
+    val requestID: String? = null,
+)
+
+/** Stores the Mac connection and pending pairing behind an Android Keystore key. */
 class PairingStore(context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -47,11 +55,44 @@ class PairingStore(context: Context) {
     }
 
     fun clear() {
-        prefs.edit { clear() }
+        prefs.edit {
+            remove(KEY_CONNECTION)
+            remove(KEY_CREDENTIAL)
+            remove(KEY_PENDING)
+        }
+    }
+
+    fun loadPending(): StoredPending? {
+        val raw = prefs.getString(KEY_PENDING, null) ?: return null
+        return runCatching { json.decodeFromString<StoredPending>(raw) }.getOrNull()
+    }
+
+    fun savePending(pending: StoredPending) {
+        prefs.edit { putString(KEY_PENDING, json.encodeToString(pending)) }
+    }
+
+    fun clearPending() {
+        prefs.edit { remove(KEY_PENDING) }
+    }
+
+    fun loadSetupStep(): String? = prefs.getString(KEY_SETUP, null)
+
+    fun saveSetupStep(step: String) {
+        prefs.edit { putString(KEY_SETUP, step) }
+    }
+
+    fun loadReadingPosition(sessionID: String): String? = prefs.getString("reading.$sessionID", null)
+
+    fun saveReadingPosition(sessionID: String, value: String?) {
+        prefs.edit {
+            if (value == null) remove("reading.$sessionID") else putString("reading.$sessionID", value)
+        }
     }
 
     private companion object {
         const val KEY_CONNECTION = "connection"
         const val KEY_CREDENTIAL = "credential"
+        const val KEY_PENDING = "pending"
+        const val KEY_SETUP = "setup"
     }
 }
