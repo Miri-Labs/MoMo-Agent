@@ -30,7 +30,7 @@ struct PhoneRemoteView: View {
                     requestWatchStatus: requestWatchStatus, openLibrary: openLibrary, reconnect: { reconnecting = true },
                     openDesktop: { showingDesktop = true }, openNotebook: openMemory,
                     speech: speech, stopPlayback: stopPlayback,
-                    voiceInputEnabled: chatIsVisible && !showingDesktop && !showingTasks && !reconnecting)
+                    chatIsVisible: chatIsVisible && !showingDesktop && !showingTasks && !reconnecting)
             } else {
                 VStack(spacing: 24) {
                     RemoteAvatar(size: 120, active: false, watchStatus: watchStatus,
@@ -153,7 +153,7 @@ private struct RemoteConversationView: View {
     let openNotebook: () -> Void
     let speech: SpeechEngine?
     let stopPlayback: () async -> Void
-    let voiceInputEnabled: Bool
+    let chatIsVisible: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var parentOpenURL
     @State private var composeRevision = 0
@@ -276,7 +276,7 @@ private struct RemoteConversationView: View {
                            onCompose: { composeRevision += 1 },
                            onPreviewAttachment: { previewAttachment = $0 },
                            onError: { sendFailure = $0 }, speech: speech, stopPlayback: stopPlayback,
-                           voiceInputEnabled: voiceInputEnabled && previewAttachment == nil) {
+                           voiceInputEnabled: chatIsVisible && previewAttachment == nil) {
                 do { try store.enqueue(); sendFailure = nil; Task { await store.refresh(userInitiated: true) } }
                 catch { sendFailure = error.localizedDescription }
             }.padding(.horizontal, 16).padding(.vertical, 8)
@@ -285,7 +285,7 @@ private struct RemoteConversationView: View {
 
     private func transcript(_ snapshot: ChatRenderSnapshot, headerInset: CGFloat) -> some View {
         ChatRendererView(snapshot: snapshot,
-            scrollToBottomRequest: composeRevision, headerInset: headerInset,
+            scrollToBottomRequest: composeRevision, isChatVisible: chatIsVisible, headerInset: headerInset,
             onReadingPosition: agent.rememberReadingPosition,
             onAttachment: { id in previewAttachment = store.attachment(id: id) },
             onRetryMessage: { id in Task { await store.checkAgain(id: id) } })

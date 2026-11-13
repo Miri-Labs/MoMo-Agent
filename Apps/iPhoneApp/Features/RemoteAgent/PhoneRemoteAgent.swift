@@ -109,12 +109,6 @@ final class PhoneRemoteAgent {
         } else if FileManager.default.fileExists(atPath: directory.appendingPathComponent("connection.json").path) {
             setupStep = .completed
         }
-        let readingFile = directory.appendingPathComponent("reading.json")
-        if FileManager.default.fileExists(atPath: readingFile.path) {
-            let value = try JSONDecoder().decode(ChatReadingPosition.self, from: Data(contentsOf: readingFile))
-            try? FileManager.default.setAttributes(protection, ofItemAtPath: readingFile.path)
-            if value.isValid { readingPosition = value }
-        }
         let file = directory.appendingPathComponent("connection.json")
         if FileManager.default.fileExists(atPath: file.path) {
             // Invalid configuration is not permission to forget the journal or use a local Agent.
@@ -371,15 +365,9 @@ final class PhoneRemoteAgent {
 
     func rememberReadingPosition(_ position: ChatReadingPosition) {
         guard position.isValid, position.sessionID == connection?.assistantID else { return }
-        do {
-            try JSONEncoder().encode(position).write(
-                to: directory.appendingPathComponent("reading.json"),
-                options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
-            )
-            readingPosition = position
-            let visible = Set(position.visibleMessageIDs ?? [])
-            notifications.rendered(messageIDs: visible, failedRunIDs: Set(visible.filter { $0.hasPrefix("run-status-") }.map { String($0.dropFirst(11)) }))
-        } catch { failure = error.localizedDescription }
+        readingPosition = position
+        let visible = Set(position.visibleMessageIDs ?? [])
+        notifications.rendered(messageIDs: visible, failedRunIDs: Set(visible.filter { $0.hasPrefix("run-status-") }.map { String($0.dropFirst(11)) }))
     }
 
     func selectSources(_ sources: [SourceReference]) {
