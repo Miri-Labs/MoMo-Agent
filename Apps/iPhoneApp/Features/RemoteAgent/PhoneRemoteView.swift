@@ -175,7 +175,7 @@ private struct RemoteConversationView: View {
         let snapshot = ChatRenderSnapshot(store: store, readingPosition: agent.readingPosition,
             notificationTarget: agent.notifications.focusedTarget)
         let isEmpty = store.isEmpty || snapshot.messages.isEmpty
-        let draftEmpty = store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let draftEmpty = store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && store.draftAttachments.isEmpty
         VStack(spacing: 0) {
             if isEmpty {
                 identityHeader(isEmpty: true)
@@ -192,9 +192,8 @@ private struct RemoteConversationView: View {
                     dismissedIDs: $dismissedBriefingCardIDs,
                     compact: !isEmpty,
                     onSelectCard: { card in
-                        store.setDraft(card.prompt)
                         do {
-                            try store.enqueue()
+                            try store.enqueueIndependentMessage(card.prompt)
                             sendFailure = nil
                             composeRevision += 1
                             Task { await store.refresh(userInitiated: true) }
@@ -293,7 +292,14 @@ private struct RemoteConversationView: View {
             isChatSelected: chatIsSelected, headerInset: headerInset,
             onReadingPosition: agent.rememberReadingPosition,
             onAttachment: { id in previewAttachment = store.attachment(id: id) },
-            onRetryMessage: { id in Task { await store.checkAgain(id: id) } })
+            onRetryMessage: { id in
+                do {
+                    if try store.reselectRecording(id: id) {
+                        sendFailure = nil
+                        openLibrary()
+                    } else { Task { await store.checkAgain(id: id) } }
+                } catch { sendFailure = error.localizedDescription }
+            })
     }
 
     private func identityHeader(isEmpty: Bool) -> some View {

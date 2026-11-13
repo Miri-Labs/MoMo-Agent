@@ -265,6 +265,27 @@ class ContextStore:
             raise Conflict("Source changed; read the current version before continuing")
         return row
 
+    def recording_reference_spans(self, reference):
+        selected = []
+        # One read snapshot for all sessions and speaker overrides on this page.
+        with self.db:
+            self.db.execute("BEGIN")
+            for session in reference["sessions"]:
+                session_id = session["session_id"]
+                source_id = f'{reference["library_id"]}/{session_id}'
+                row = self.source(source_id)
+                version, generation = session["version"], session["generation"]
+                if row["version"] != version or row["generation"] != generation:
+                    raise Conflict("Recording reference changed")
+                wanted = set(session["span_ids"])
+                matches = [span for span in json.loads(row["payload"])["spans"] if span["id"].lower() in wanted]
+                if len(matches) != len(wanted) or {span["id"].lower() for span in matches} != wanted:
+                    raise Conflict("Recording reference changed")
+                for span in self._apply_speaker_overrides(source_id, matches):
+                    citation = f'momoagent://source/{session_id}/{span["id"]}?version={version}&generation={generation}'
+                    selected.append(dict(span, citation_url=citation))
+        return sorted(selected, key=lambda span: span["recorded_at"])
+
     def build_windows(self, source_id, source_revision, payload, excluded, done_by_fp, done_by_window, active_fps, summarize=False, cutoff=0.0):
         spans = payload.get("spans") or []
         if not spans:

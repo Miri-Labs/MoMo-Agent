@@ -2,6 +2,10 @@ import Foundation
 import Observation
 
 public struct RemoteTask: Codable, Sendable, Identifiable, Equatable {
+    public enum DeliveryFailure: String, Codable, Sendable {
+        case macUpgradeRequired, recordingReferenceChanged
+    }
+
     public let id: UUID
     public let sessionID: String
     public let input: String
@@ -17,6 +21,7 @@ public struct RemoteTask: Codable, Sendable, Identifiable, Equatable {
     public fileprivate(set) var needsReview: Bool = false
     public fileprivate(set) var stopRequested: Bool = false
     public fileprivate(set) var lastError: String?
+    public fileprivate(set) var deliveryFailure: DeliveryFailure? = nil
     public fileprivate(set) var retryableDeliveryError: Bool?
     public fileprivate(set) var lastConfirmedAt: Date?
     public fileprivate(set) var reply: RemoteReply?
@@ -136,7 +141,9 @@ public final class RemoteTaskStore {
         steeringTarget = nil
         var updated = tasks
         if let index = updated.firstIndex(where: { $0.id == task.id }) { updated[index].steeringRecovered = true; updated[index].needsReview = false }
-        let attachments = current.attachments ?? []
+        let attachments = (current.attachments ?? []).filter {
+            current.deliveryFailure != .recordingReferenceChanged || $0.recording == nil
+        }
         do {
             try persist(tasks: updated, draft: current.input, draftAttachments: attachments)
             tasks = updated; draft = current.input; draftAttachments = attachments
@@ -144,6 +151,13 @@ public final class RemoteTaskStore {
         }
         catch { steeringTarget = oldTarget; failures[.storage] = error.localizedDescription; return false }
     }
+    @discardableResult public func reselectRecording(id: UUID) throws -> Bool {
+        guard let task = tasks.first(where: { $0.id == id }),
+              task.deliveryFailure == .recordingReferenceChanged, task.deliveryFailed else { return false }
+        guard draft.isEmpty, draftAttachments.isEmpty else { throw StoreError.draftOccupied }
+        return restoreAsNewMessage(task)
+    }
+
     public var rejectedSharedSupplements: [ConversationMessage] {
         messages.filter { message in message.deliveryState == "not_applied" && !recoveredSupplements.contains(message.id) &&
             !tasks.contains(where: { $0.id == message.operationID && $0.steeringRecovered == true }) }
@@ -266,6 +280,11 @@ public final class RemoteTaskStore {
                 throw StoreError.invalidJournal
             }
             sessionID = saved.sessionID; tasks = saved.tasks; draft = saved.draft
+            // Journals from the first recording-reference release saved only this error text.
+            for index in tasks.indices where tasks[index].deliveryFailure == nil && tasks[index].needsReview &&
+                tasks[index].firstAttemptAt == nil && tasks[index].lastError == "Mac 端尚不支持录音引用，请更新 Mac 上的 MoMo Agent 后重试。" {
+                tasks[index].deliveryFailure = .macUpgradeRequired
+            }
             draftAttachments = saved.draftAttachments ?? []
             pendingCancellations = saved.pendingCancellations ?? [:]
             pendingReports = saved.pendingReports ?? [:]; recoveredSupplements = saved.recoveredSupplements ?? []
@@ -404,22 +423,30 @@ public final class RemoteTaskStore {
     }
 
     @discardableResult public func enqueue() throws -> UUID {
-        let hasText = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        guard (hasText || !draftAttachments.isEmpty),
-              draft.utf8.count <= 16_384 else { throw StoreError.invalidSubmission }
-        if !draftAttachments.isEmpty {
-            try AgentAttachment.validate(draftAttachments)
-        }
-        var task = RemoteTask(id: UUID(), sessionID: sharedSessionID, input: draft, createdAt: now(),
-                              attachments: draftAttachments.isEmpty ? nil : draftAttachments)
-        if draftAttachments.isEmpty {
+        try enqueueMessage(draft, attachments: draftAttachments, consumingDraft: true)
+    }
+
+    @discardableResult public func enqueueIndependentMessage(_ text: String) throws -> UUID {
+        try enqueueMessage(text, attachments: [], consumingDraft: false)
+    }
+
+    private func enqueueMessage(_ text: String, attachments: [AgentAttachment], consumingDraft: Bool) throws -> UUID {
+        let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard (hasText || !attachments.isEmpty), text.utf8.count <= 16_384 else { throw StoreError.invalidSubmission }
+        if !attachments.isEmpty { try AgentAttachment.validate(attachments) }
+        var task = RemoteTask(id: UUID(), sessionID: sharedSessionID, input: text, createdAt: now(),
+                              attachments: attachments.isEmpty ? nil : attachments)
+        if consumingDraft && attachments.isEmpty {
             task.targetWorkID = steeringTarget?.workID
             task.targetRunID = steeringTarget?.runID; task.targetGeneration = steeringTarget?.executionGeneration
         }
         let updated = tasks + [task]
         // Commit intent and immutable payload before the first network request or clearing input.
-        try persist(tasks: updated, draft: "", draftAttachments: [])
-        tasks = updated; draft = ""; draftAttachments = []; steeringTarget = nil
+        try persist(tasks: updated, draft: consumingDraft ? "" : draft, draftAttachments: consumingDraft ? [] : draftAttachments)
+        tasks = updated
+        if consumingDraft {
+            draft = ""; draftAttachments = []; steeringTarget = nil
+        }
         return task.id
     }
 
@@ -572,10 +599,18 @@ public final class RemoteTaskStore {
         guard let task = tasks.first(where: { $0.id == id }), !task.isFinished else { return }
         // A review state without a run ID must not silently turn into another admission.
         let awaitingUpgrade = task.firstAttemptAt == nil &&
-            task.lastError == StoreError.unsupportedRecordingReferences.localizedDescription
+            task.deliveryFailure == .macUpgradeRequired
         guard !task.needsReview || task.run != nil || awaitingUpgrade else { return }
         if task.run == nil {
-            do { try update(id) { $0.lastError = nil; if awaitingUpgrade { $0.needsReview = false } } }
+            do {
+                try update(id) {
+                    $0.lastError = nil
+                    if awaitingUpgrade {
+                        $0.needsReview = false
+                        $0.deliveryFailure = nil
+                    }
+                }
+            }
             catch { failures[.storage] = error.localizedDescription; return }
             await deliverPending()
         }
@@ -1074,9 +1109,20 @@ public final class RemoteTaskStore {
             try update(id) {
                 $0.lastError = error.localizedDescription
                 $0.retryableDeliveryError = Self.isTransientConnectionFailure(error)
-                if case AgentClientError.http(let status, _, _, _) = error,
-                   [400, 403, 404, 409, 410, 422].contains(status) { $0.needsReview = true }
-                if error is StoreError { $0.needsReview = true }
+                switch error {
+                case StoreError.unsupportedRecordingReferences:
+                    $0.deliveryFailure = .macUpgradeRequired
+                    $0.needsReview = true
+                case StoreError.recordingReferenceChanged, AgentClientError.http(409, "recording_reference_changed", _, _):
+                    $0.deliveryFailure = .recordingReferenceChanged
+                    $0.lastError = StoreError.recordingReferenceChanged.localizedDescription
+                    $0.needsReview = true
+                case AgentClientError.http(let status, _, _, _) where [400, 403, 404, 409, 410, 422].contains(status):
+                    $0.needsReview = true
+                case is StoreError:
+                    $0.needsReview = true
+                default: break
+                }
             }
             if tasks.first(where: { $0.id == id }).map({ $0.backgroundMessageIDs != nil && $0.needsReview }) == true {
                 failures[.delivery] = error.localizedDescription
@@ -1420,13 +1466,15 @@ public final class RemoteTaskStore {
     }
 
     public enum StoreError: Error, LocalizedError {
-        case invalidJournal, invalidSubmission, unsupportedServer, unsupportedRecordingReferences, invalidResponse, expiredReceipt, unknownOutcome
+        case invalidJournal, invalidSubmission, unsupportedServer, unsupportedRecordingReferences, recordingReferenceChanged, draftOccupied, invalidResponse, expiredReceipt, unknownOutcome
         public var errorDescription: String? {
             switch self {
             case .invalidJournal: "任务记录无法读取或属于另一台 Mac，原文件已保留。"
             case .invalidSubmission: "请输入不超过 16 KB 的文字。"
             case .unsupportedServer: "Mac 尚不支持持久任务投递，请检查运行版本。"
             case .unsupportedRecordingReferences: "Mac 端尚不支持录音引用，请更新 Mac 上的 MoMo Agent 后重试。"
+            case .recordingReferenceChanged: "引用的录音已变化或被删除，请重新选择录音。"
+            case .draftOccupied: "请先处理当前聊天草稿，再重新选择录音。"
             case .invalidResponse: "Mac 返回的任务身份不一致，需要核对原任务。"
             case .expiredReceipt: "接收回执已超过安全重试时间，请在 Mac 核对原任务；不会自动重新执行。"
             case .unknownOutcome: "Mac 尚不能确认任务结果；请核对原任务，不会自动重新执行。"

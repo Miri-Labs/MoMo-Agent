@@ -196,19 +196,32 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
             request = {"operation_id": operation, "content": "请总结这段录音", "attachments": [attachment]}
             path = "/momo/v1/conversation/messages"
             headers = {"Authorization": f"Bearer {gateway.api_key}"}
+            attachments_dir = data / "workspace/attachments"
+            attachments_dir.mkdir()
+            snapshot = attachments_dir / f"recording-{operation}.jsonl"
+            snapshot.write_text("legacy transcript")
+            other_file = attachments_dir / "recording-notes.jsonl"
+            other_file.write_text("unrelated file")
             async with TestClient(TestServer(gateway.create_app())) as client:
+                self.assertFalse(snapshot.exists())
                 discovery = await (await client.get("/momo/v1/conversation", headers=headers)).json()
                 self.assertTrue(discovery["capabilities"]["recording_references"])
                 response = await client.post(path, headers=headers, json=request)
                 self.assertEqual(response.status, 200, await response.text())
-                snapshot = data / "workspace/attachments" / f"recording-{operation}.jsonl"
-                rows = [json.loads(line) for line in snapshot.read_text().splitlines()]
+                cli = [sys.executable, "-B", str(REPOSITORY / "Apps/MacApp/Runtime/momo_cli.py"),
+                       "--data-dir", str(data), "recording-reference", operation]
+                rows, offset = [], 0
+                while offset is not None:
+                    page = json.loads(subprocess.check_output([*cli, "--offset", str(offset), "--limit", "100"], text=True))
+                    rows.extend(page["spans"])
+                    offset = page["next_offset"]
                 self.assertEqual([row["id"] for row in rows], selected)
-                self.assertTrue(all(row["citation_url"].startswith("momoagent://source/") for row in rows))
-                self.assertEqual(snapshot.stat().st_mode & 0o777, 0o600)
+                self.assertEqual([row["text"] for row in rows], [f"span {i}" for i in range(1, 501)])
+                self.assertEqual(rows[0]["citation_url"],
+                                 f'momoagent://source/{payload["session_id"]}/{selected[0]}?version=1&generation=1')
                 events, _, _ = gateway.bridge.list_triggers(0)
-                self.assertIn(str(snapshot), events[0]["text"])
-                self.assertNotIn("span 501", events[0]["text"])
+                self.assertIn(f"recording-reference {operation}", events[0]["text"])
+                self.assertNotIn("span 1", events[0]["text"])
                 message = gateway.store.db.execute("SELECT content FROM messages WHERE operation_id=?", (operation,)).fetchone()
                 self.assertEqual(message["content"], request["content"])
                 retry = await client.post(path, headers=headers, json=request)
@@ -225,7 +238,19 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await client.post(path, headers=headers, json={
                     "operation_id": str(uuid.uuid4()), "content": request["content"],
                 })).status, 200)
-                self.assertEqual(list(snapshot.parent.glob("recording-*.jsonl")), [snapshot])
+                reference["sessions"][0]["version"] = 1
+                context = ContextStore(data / "context")
+                try:
+                    context.sync_source(dict(payload, version=2, deleted=True, spans=[], text_sha256=digest("")))
+                finally:
+                    context.close()
+                revoked = subprocess.run([*cli, "--offset", "100"], capture_output=True, text=True)
+                self.assertEqual(revoked.returncode, 1)
+                self.assertEqual(json.loads(revoked.stderr), {"error": "recording_reference_changed"})
+                self.assertEqual(revoked.stdout, "")
+                accepted_retry = await client.post(path, headers=headers, json=request)
+                self.assertEqual((await accepted_retry.json())["run_id"], (await response.json())["run_id"])
+                self.assertEqual(list(attachments_dir.iterdir()), [other_file])
 
     async def test_chat_mode_is_authenticated_and_captured_when_each_chat_is_admitted(self):
         with tempfile.TemporaryDirectory() as tmp:

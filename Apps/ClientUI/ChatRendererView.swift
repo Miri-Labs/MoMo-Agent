@@ -114,12 +114,6 @@ struct ChatRendererView: View {
                                             .padding(.horizontal, 16).padding(.vertical, 10)
                                             .background(MoMoPalette.ink, in: .rect(cornerRadius: 22))
                                             .frame(maxWidth: max(0, geometry.size.width - 40) * 0.85, alignment: .trailing)
-                                        if message.delivery == "failed", let id = UUID(uuidString: message.turnID) {
-                                            Button { onRetryMessage(id) } label: {
-                                                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(MoMoPalette.failure)
-                                                    .frame(width: 28, height: 44)
-                                            }.buttonStyle(.plain).accessibilityLabel("发送失败，点击重试")
-                                        }
                                     }
                                     .overlay(alignment: .bottomTrailing) {
                                         let delivered = snapshot.deliveryReceiptMessageID == message.id
@@ -132,6 +126,19 @@ struct ChatRendererView: View {
                                             .animation(reduceMotion ? nil : .timingCurve(0.19, 1, 0.22, 1, duration: 0.3), value: delivered)
                                     }
                                     .padding(.trailing, -8).padding(.bottom, 2)
+                                    if message.delivery == "failed", let id = UUID(uuidString: message.turnID) {
+                                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                            Spacer(minLength: 0)
+                                            Text(message.deliveryError ?? String(localized: "发送失败", bundle: AppLanguage.resourceBundle))
+                                                .multilineTextAlignment(.trailing)
+                                            Button { onRetryMessage(id) } label: {
+                                                Text(message.deliveryAction ?? String(localized: "重试", bundle: AppLanguage.resourceBundle))
+                                                    .underline().frame(minHeight: 44)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .accessibilityLabel(message.deliveryAction ?? String(localized: "发送失败，点击重试", bundle: AppLanguage.resourceBundle))
+                                        }.font(.footnote).foregroundStyle(MoMoPalette.failure)
+                                    }
                                 } else if message.role == "system" {
                                     Text(text).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
                                         .padding(.leading, 10).padding(.vertical, 4)

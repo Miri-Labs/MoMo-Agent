@@ -108,14 +108,7 @@ struct DesktopMemory: View {
         guard let store = model.taskStore else {
             throw NSError(domain: "MoMoMemory", code: 1, userInfo: [NSLocalizedDescriptionKey: "MoMo 尚未连接，暂时无法发送修改指令"])
         }
-        let previousDraft = store.draft
-        store.setDraft(fullPrompt)
-        defer {
-            if !previousDraft.isEmpty {
-                store.setDraft(previousDraft)
-            }
-        }
-        try store.enqueue()
+        try store.enqueueIndependentMessage(fullPrompt)
         Task {
             await store.refresh(userInitiated: true)
             for delay in [6, 9, 12, 15, 20] {

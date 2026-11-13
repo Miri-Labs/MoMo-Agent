@@ -158,14 +158,77 @@ final class RemoteTaskStoreTests: XCTestCase {
         XCTAssertNil(second["attachments"])
     }
 
+    private func recordingAttachment() -> AgentAttachment {
+        AgentAttachment(name: "录音引用", kind: .document, mediaType: "application/vnd.momo.recording-reference",
+                        byteCount: 0, recording: .init(libraryID: UUID(), sessions: [
+                            .init(sessionID: UUID(), version: 1, generation: 0, spanIDs: [UUID()])
+                        ]))
+    }
+
+    func testIndependentMessagesLeaveAttachmentOnlyDraftIntact() async throws {
+        let state = DeliveryScenario(supportsRecordingReferences: true)
+        DeliveryProtocol.install(state)
+        let (file, connection, client, store) = try setup()
+        let attachment = recordingAttachment()
+        try store.setRecordingAttachment(attachment)
+        for prompt in ["打开简报", "更新记忆"] { try store.enqueueIndependentMessage(prompt) }
+        XCTAssertThrowsError(try store.enqueueIndependentMessage(String(repeating: "字", count: 6_000)))
+        let reopened = try RemoteTaskStore(file: file, connection: connection, client: client)
+        XCTAssertEqual(reopened.draft, "")
+        XCTAssertEqual(reopened.draftAttachments, [attachment])
+        await reopened.refresh()
+        let shortcuts = try state.submissions.map { try XCTUnwrap(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        XCTAssertEqual(shortcuts.compactMap { $0["content"] as? String }, ["打开简报", "更新记忆"])
+        XCTAssertTrue(shortcuts.allSatisfy { $0["attachments"] == nil && $0["intent"] as? String == "new" })
+        let chat = try reopened.enqueue()
+        XCTAssertEqual(reopened.tasks.last?.id, chat)
+        XCTAssertEqual(reopened.tasks.last?.attachments, [attachment])
+        XCTAssertTrue(reopened.draftAttachments.isEmpty)
+    }
+
+    func testStaleRecordingFromLocalPreparationOrGatewayStopsRetryAndRestoresOtherAttachments() async throws {
+        for gatewayRejects in [false, true] {
+            let state = DeliveryScenario(supportsRecordingReferences: true, rejectsRecordingReference: gatewayRejects)
+            DeliveryProtocol.install(state)
+            let (file, connection, client, store) = try setup()
+            let recording = recordingAttachment()
+            let note = AgentAttachment(name: "note.txt", kind: .document, mediaType: "text/plain", byteCount: 4, text: "note")
+            store.setDraft("这段录音说了什么？")
+            try store.addAttachments([note])
+            try store.setRecordingAttachment(recording)
+            let id = try store.enqueue()
+            var preparations = 0
+            store.prepareSubmission = { _ in
+                preparations += 1
+                if !gatewayRejects { throw RemoteTaskStore.StoreError.recordingReferenceChanged }
+            }
+            for _ in 0..<3 { await store.refresh() }
+            XCTAssertEqual(preparations, 1)
+            let reopened = try RemoteTaskStore(file: file, connection: connection, client: client)
+            XCTAssertEqual(reopened.tasks.first?.deliveryFailure, .recordingReferenceChanged)
+            XCTAssertEqual(reopened.tasks.first?.deliveryFailed, true)
+            await reopened.refresh()
+            await reopened.checkAgain(id: id)
+            XCTAssertEqual(state.submissions.count, gatewayRejects ? 1 : 0)
+
+            reopened.setDraft("另一条草稿")
+            XCTAssertThrowsError(try reopened.reselectRecording(id: id))
+            XCTAssertEqual(reopened.draft, "另一条草稿")
+            reopened.setDraft("")
+            XCTAssertTrue(try reopened.reselectRecording(id: id))
+            XCTAssertEqual(reopened.draft, "这段录音说了什么？")
+            XCTAssertEqual(reopened.draftAttachments, [note])
+            XCTAssertFalse(try reopened.reselectRecording(id: id))
+            try reopened.setRecordingAttachment(recordingAttachment())
+            XCTAssertNotEqual(try reopened.enqueue(), id)
+        }
+    }
+
     func testRecordingReferenceWaitsForMacUpgradeWithoutSubmittingOrUploading() async throws {
         let oldMac = DeliveryScenario()
         DeliveryProtocol.install(oldMac)
-        let (_, connection, _, store) = try setup()
-        let attachment = AgentAttachment(name: "录音引用", kind: .document, mediaType: "application/vnd.momo.recording-reference",
-            byteCount: 0, recording: .init(libraryID: UUID(), sessions: [
-                .init(sessionID: UUID(), version: 1, generation: 0, spanIDs: [UUID()])
-            ]))
+        let (file, connection, client, store) = try setup()
+        let attachment = recordingAttachment()
         var prepared = false
         store.prepareSubmission = { _ in prepared = true }
         try store.setRecordingAttachment(attachment)
@@ -179,9 +242,15 @@ final class RemoteTaskStoreTests: XCTestCase {
         let upgradedMac = DeliveryScenario(supportsRecordingReferences: true)
         DeliveryProtocol.install(upgradedMac)
         DeliveryProtocol.configure(connection)
-        await store.checkAgain(id: id)
+        let reopened = try RemoteTaskStore(file: file, connection: connection, client: client)
+        XCTAssertEqual(reopened.tasks.first?.deliveryFailure, .macUpgradeRequired)
+        reopened.prepareSubmission = { _ in prepared = true }
+        await reopened.checkAgain(id: id)
+        await reopened.refresh()
         XCTAssertTrue(prepared)
         XCTAssertEqual(upgradedMac.submissions.count, 1)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(upgradedMac.submissions.first)) as? [String: Any])
+        XCTAssertEqual(body["operation_id"] as? String, id.uuidString.lowercased())
     }
 
     func testCorruptOrDifferentIdentityJournalIsPreserved() throws {
@@ -331,11 +400,13 @@ private final class DeliveryScenario: @unchecked Sendable {
     let missingRun: Bool
     let loseFirstStatus: Bool
     let supportsRecordingReferences: Bool
+    let rejectsRecordingReference: Bool
     init(receiptsToLose: Int = 0, status: String = "running", missingRun: Bool = false, loseFirstStatus: Bool = false,
-         supportsRecordingReferences: Bool = false) {
+         supportsRecordingReferences: Bool = false, rejectsRecordingReference: Bool = false) {
         self.receiptsToLose = receiptsToLose; self.status = status; self.missingRun = missingRun
         self.loseFirstStatus = loseFirstStatus
         self.supportsRecordingReferences = supportsRecordingReferences
+        self.rejectsRecordingReference = rejectsRecordingReference
     }
     var requests: [URLRequest] { lock.withLock { recorded } }
     var submissions: [Data] { lock.withLock { bodies } }
@@ -364,6 +435,9 @@ private final class DeliveryScenario: @unchecked Sendable {
                     if count <= 0 { break }; body.append(buffer, count: count)
                 }
                 bodies.append(body)
+                if rejectsRecordingReference {
+                    return Data(#"{"error":{"code":"recording_reference_changed","message":"recording_reference_changed"}}"#.utf8)
+                }
                 if bodies.count <= receiptsToLose { throw URLError(.timedOut) }
                 return try JSONSerialization.data(withJSONObject: ["run_id": "run-one", "status": "started"])
             }
@@ -386,7 +460,10 @@ private final class DeliveryProtocol: URLProtocol, @unchecked Sendable {
         do {
             let state = Self.lock.withLock { Self.scenario! }
             let data = try state.reply(request)
-            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: state.missingRun && request.httpMethod == "GET" && request.url!.path.contains("/runs/") ? 404 : 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+            var status = 200
+            if state.missingRun && request.httpMethod == "GET" && request.url!.path.contains("/runs/") { status = 404 }
+            if state.rejectsRecordingReference && request.httpMethod == "POST" { status = 409 }
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data); client?.urlProtocolDidFinishLoading(self)
         } catch { client?.urlProtocol(self, didFailWithError: error) }
     }

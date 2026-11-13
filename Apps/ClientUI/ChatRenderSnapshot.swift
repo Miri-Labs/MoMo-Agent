@@ -38,6 +38,7 @@ struct ChatRenderSnapshot: Encodable, Equatable {
         var sentAtMs: Double? = nil
         var delivery: String? = nil
         var deliveryError: String? = nil
+        var deliveryAction: String? = nil
     }
     let sessionID: String
     let locale: String
@@ -177,7 +178,12 @@ struct ChatRenderSnapshot: Encodable, Equatable {
         }.flatMap { task -> [(Date, Message)] in
             let turn = task.id.uuidString
             var rows: [(Date, Message)] = []
-            if task.backgroundMessageIDs == nil {
+            if task.backgroundMessageIDs == nil && !(task.steeringRecovered == true && task.deliveryFailure == .recordingReferenceChanged) {
+                let deliveryAction: String? = switch task.deliveryFailure {
+                case .macUpgradeRequired: String(localized: "更新后重试", bundle: AppLanguage.resourceBundle)
+                case .recordingReferenceChanged: String(localized: "重新选择录音", bundle: AppLanguage.resourceBundle)
+                case nil: nil
+                }
                 var blocks: [Message.Block] = (task.attachments ?? []).map { item in
                     .init(id: turn + ":attachment:\(item.id.uuidString)", type: "attachment", name: item.name,
                         preview: AttachmentPreviewDataURLCache.dataURL(for: item.id, preview: item.preview), kind: item.kind.rawValue,
@@ -188,7 +194,7 @@ struct ChatRenderSnapshot: Encodable, Equatable {
                 }
                 rows.append((task.createdAt, Message(id: turn + ":user", turnID: turn, role: "user", state: "complete",
                 blocks: blocks, sentAtMs: Self.epochMilliseconds(task.createdAt),
-                delivery: task.deliveryFailed ? "failed" : receipt(runID: task.run?.runID, operationID: task.id), deliveryError: task.lastError)))
+                delivery: task.deliveryFailed ? "failed" : receipt(runID: task.run?.runID, operationID: task.id), deliveryError: task.lastError, deliveryAction: deliveryAction)))
             }
             for (index, text) in (task.reply?.messages ?? []).enumerated() {
                 let date = task.replyReceivedAt.flatMap { index < $0.count ? $0[index] : nil } ?? task.createdAt

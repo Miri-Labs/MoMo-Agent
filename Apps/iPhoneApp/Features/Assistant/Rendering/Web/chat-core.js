@@ -275,7 +275,7 @@
       }
       turn.messageIDs.push(message.id);
       turn.state = message.state; turn.messageID = message.id;
-      turn.delivery = message.delivery; turn.deliveryError = message.deliveryError;
+      turn.delivery = message.delivery; turn.deliveryError = message.deliveryError; turn.deliveryAction = message.deliveryAction;
       let messageText = '';
       message.blocks.forEach((block, index) => {
         if (block.type === 'text') {

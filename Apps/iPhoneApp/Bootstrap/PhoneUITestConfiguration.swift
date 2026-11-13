@@ -143,7 +143,9 @@ struct PhoneUITestConfiguration {
                 let spans = try (0..<500).map { index in
                     let start = audio.length * Int64(index) / 500
                     let end = audio.length * Int64(index + 1) / 500
-                    return TranscriptSpan(chunkID: ticket.chunkID, frames: try FrameRange(start: start, count: end - start),
+                    let suffix = String(repeating: "0", count: 12 - String(index + 1).count) + String(index + 1)
+                    guard let id = UUID(uuidString: "5F12C378-A804-4E20-A46D-\(suffix)") else { throw FixtureError.invalidAudio }
+                    return TranscriptSpan(id: id, chunkID: ticket.chunkID, frames: try FrameRange(start: start, count: end - start),
                         text: "用于引用回归的第 \(index + 1) 个合成片段。")
                 }
                 _ = try await archive.commitTranscript(ticket: ticket, spans: spans)

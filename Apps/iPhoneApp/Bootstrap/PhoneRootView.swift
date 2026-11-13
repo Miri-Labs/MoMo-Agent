@@ -97,8 +97,7 @@ struct PhoneRootView: View {
                         RemoteMemoryView(sync: sync, taskStore: runtime.remoteAgent.store) { card in
                             selectedTab = .chat
                             if let store = runtime.remoteAgent.store {
-                                store.setDraft(card.prompt)
-                                try? store.enqueue()
+                                try? store.enqueueIndependentMessage(card.prompt)
                                 Task { await store.refresh(userInitiated: true) }
                             }
                         }

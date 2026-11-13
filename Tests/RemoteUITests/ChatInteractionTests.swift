@@ -2,10 +2,11 @@ import XCTest
 import UIKit
 
 @MainActor final class ChatInteractionTests: XCTestCase {
-    func testLongRecordingDiscussionShowsOneRemovableCard() throws {
+    // Use serve_recording_reference_ui_fixture.py and seed its pairing file in the app's Documents directory.
+    func testLongRecordingDiscussionShowsOneRemovableCard() async throws {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchEnvironment["MOMO_UI_TEST_RUN_ID"] = "5F12C378-A804-4E20-A46D-213FE37495AB"
+        app.launchEnvironment["MOMO_UI_TEST_RUN_ID"] = "5F12C378-A804-4E20-A46D-213FE37495AC"
         app.launchEnvironment["MOMO_UI_TEST_TIMELINE_FIXTURE"] = "recording-reference"
         app.launchEnvironment["MOMO_UI_TEST_INITIAL_TAB"] = "transcripts"
         app.launchEnvironment["MOMO_UI_TEST_AVATAR_UNAVAILABLE"] = "1"
@@ -34,13 +35,23 @@ import UIKit
         if !discuss.exists { window.tap() }
         discuss.tap()
         XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 10))
-        input.tap()
-        input.typeText("Summarize this recording")
-        XCTAssertEqual(input.value as? String, "Summarize this recording")
+        XCTAssertFalse((input.value as? String ?? "").contains("momoagent://source/"))
         capture(app, "One recording card for 500 selected spans")
         app.buttons["remote.send"].tap()
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Summarize this recording")).firstMatch.waitForExistence(timeout: 15))
         XCTAssertFalse(app.staticTexts["请输入不超过 16 KB 的文字。"].exists)
+
+        // Wait for Mac admission. The local echo alone does not establish that any attachment was sent.
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:19317/test/recording-selection"))
+        var selection: [String] = []
+        for _ in 0..<30 {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            selection = try JSONDecoder().decode([String].self, from: data)
+            if !selection.isEmpty { break }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        let expected = (1...500).map { "5f12c378-a804-4e20-a46d-" + String(format: "%012d", $0) }
+        XCTAssertEqual(selection.count, expected.count)
+        XCTAssertEqual(Set(selection), Set(expected))
     }
 
     func testVoiceInputKeepsDraftWhenCancelledOrLeavingChat() async throws {

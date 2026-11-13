@@ -234,19 +234,27 @@ final class PhoneContextSync {
     }
     func prepareSubmission(input: String, attachments: [AgentAttachment] = []) async throws {
         for reference in attachments.compactMap(\.recording) {
-            guard reference.libraryID == archive.libraryInstanceID else { throw SyncError.sourceChanged }
+            guard reference.libraryID == archive.libraryInstanceID else { throw RemoteTaskStore.StoreError.recordingReferenceChanged }
             for selection in reference.sessions {
-                let summary: RecordingSummary
-                do { summary = try await archive.recordingSummary(sessionID: selection.sessionID) }
-                catch ArchiveError.sessionDeleted { throw SyncError.sourceChanged }
-                let source = try await stage(summary)
+                let source: Source
+                do {
+                    let summary = try await archive.recordingSummary(sessionID: selection.sessionID)
+                    source = try await stage(summary)
+                } catch ArchiveError.sessionDeleted, ArchiveError.missingRecording, ArchiveError.missingTranscript {
+                    throw RemoteTaskStore.StoreError.recordingReferenceChanged
+                }
                 let available = Set(source.envelope.spans.map(\.id))
                 guard source.envelope.generation == selection.generation,
                       source.envelope.version == selection.version,
                       selection.spanIDs.allSatisfy({ available.contains($0.uuidString.lowercased()) }) else {
-                    throw SyncError.sourceChanged
+                    throw RemoteTaskStore.StoreError.recordingReferenceChanged
                 }
-                if source.receipt == nil { try await deliver(source) }
+                if source.receipt == nil {
+                    do { try await deliver(source) }
+                    catch AgentClientError.http(409, "revision_conflict", _, _) {
+                        throw RemoteTaskStore.StoreError.recordingReferenceChanged
+                    }
+                }
             }
         }
         let expression = try NSRegularExpression(pattern: "momoagent://source/[^\\s)\\]>]+")
