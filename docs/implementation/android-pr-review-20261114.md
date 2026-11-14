@@ -54,7 +54,10 @@
 
 ## PR 状态
 
-PR #51 目前 `mergeable_state` 为 `dirty`。原因是 fork 的 `main` 已被整理成单一根提交 `fb205d16`，与上游 `main` 无共同祖先；GitHub 无法把该分支直接合并。后续需要从最新上游 `main` 新建分支并应用本分支的 Android 内容与 Mac 配对修复，再重新提交 PR。按用户要求，本轮未提交、未重写分支。
+- 原 PR #51 的 fork `main` 已被整理成单一根提交 `fb205d16`，与上游 `main` 无共同祖先，`mergeable_state` 为 `dirty`，无法合并。
+- 2026-11-14 已完成移植：`feat/android-desktop-control-clean` 基于上游 `main` `011a8a91`，包含 Android 客户端、Mac LAN 配对修复、Xcode `Resources` 修复、本轮评审跟进和 Android 设计/待办/实施记录。
+- 新 PR：[#71 Add the Android client with Mac desktop control](https://github.com/Miri-Labs/MoMo-Agent/pull/71)，`MERGEABLE`，当前 `BLOCKED` 来自上游分支保护的评审要求。
+- 旧 PR #51 已留言说明并由 #71 取代后关闭；原分支保留为备份（`687ed58e`）。
 
 ## 待验收
 
