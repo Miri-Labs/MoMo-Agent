@@ -43,6 +43,7 @@ data class OutgoingMessage(
 )
 
 data class ConversationState(
+    val conversationID: String = "",
     val messages: List<ConversationMessage> = emptyList(),
     val outgoing: List<OutgoingMessage> = emptyList(),
     val runs: Map<String, AgentRun> = emptyMap(),
@@ -201,6 +202,7 @@ class ConversationStore(
             val echoed = snapshot.messages.data.mapNotNull { it.operationID }.toSet()
             _state.update { current ->
                 current.copy(
+                    conversationID = snapshot.conversationID,
                     messages = snapshot.messages.data.sortedBy { it.seq },
                     runs = snapshot.runs.associateBy { it.runID },
                     works = snapshot.backgroundWork,

@@ -13,14 +13,6 @@ import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,25 +27,34 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Watch
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -64,30 +65,50 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.scale
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.momoagent.android.BuildConfig
 import com.momoagent.android.R
 import com.momoagent.android.data.AgentAttachment
-import com.momoagent.android.data.AgentConnection
+import com.momoagent.android.data.AgentLink
+import com.momoagent.android.data.ContextMemory
+import com.momoagent.android.data.ConversationWork
+import com.momoagent.android.data.parseAgentLink
 import com.momoagent.android.remote.ConnectionState
+import com.momoagent.android.remote.ContextStore
 import com.momoagent.android.remote.ConversationState
 import com.momoagent.android.remote.ConversationStore
+import com.momoagent.android.remote.MemoryLinkResult
+import com.momoagent.android.remote.RecordingLinkResult
 import java.io.ByteArrayOutputStream
+import java.text.DateFormat
+import java.util.Date
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 @Composable
-fun ChatScreen(store: ConversationStore, onSettings: () -> Unit) {
+fun ChatScreen(
+    store: ConversationStore,
+    contextStore: ContextStore?,
+    onSettings: () -> Unit,
+    onOpenTranscripts: () -> Unit,
+    onOpenMemory: () -> Unit,
+) {
     val palette = LocalMoMoPalette.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -98,7 +119,10 @@ fun ChatScreen(store: ConversationStore, onSettings: () -> Unit) {
         AndroidSettings.Global.getFloat(context.contentResolver, AndroidSettings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
     val statusBarDp = with(density) { WindowInsets.statusBars.getTop(this).toDp().value }
-    val headerInset = statusBarDp + 108.0
+    var headerHeightPx by remember { mutableIntStateOf(0) }
+    val measuredHeaderDp = with(density) { headerHeightPx.toDp().value.toDouble() }
+    // The measured child excludes the status bar and the header's 4 dp vertical padding.
+    val headerInset = if (headerHeightPx > 0) statusBarDp + 8.0 + measuredHeaderDp else statusBarDp + 108.0
     val payload = remember(state, dark, density.fontScale, reduceMotion, headerInset) {
         store.renderPayload(dark, density.fontScale.toDouble(), reduceMotion, headerInset)
     }
@@ -109,7 +133,99 @@ fun ChatScreen(store: ConversationStore, onSettings: () -> Unit) {
     var showingVoice by rememberSaveable { mutableStateOf(false) }
     var attachmentFailure by remember { mutableStateOf<String?>(null) }
     var preview by remember { mutableStateOf<AgentAttachment?>(null) }
+    var linkRecording by remember { mutableStateOf<RecordingLinkResult.Found?>(null) }
+    var linkMemory by remember { mutableStateOf<ContextMemory?>(null) }
+    var linkFailure by remember { mutableStateOf<LinkFailure?>(null) }
     val isEmpty = state.messages.isEmpty() && state.outgoing.isEmpty()
+    val avatarActive = !showingStatus && !showingTasks && !showingAdd && !showingDesktop &&
+        !showingVoice && preview == null && attachmentFailure == null &&
+        linkRecording == null && linkMemory == null && linkFailure == null &&
+        state.providerNotice == null
+    var settled by remember { mutableStateOf(false) }
+    var previousBusy by remember { mutableStateOf(state.busy) }
+    LaunchedEffect(state.busy) {
+        if (state.busy) {
+            settled = false
+        } else if (previousBusy) {
+            settled = true
+            delay(1_700)
+            settled = false
+        }
+        previousBusy = state.busy
+    }
+    val avatarExpression = when {
+        state.busy -> "working"
+        settled -> "settled"
+        else -> "present"
+    }
+
+    fun openAgentLink(value: String) {
+        when (val link = parseAgentLink(value)) {
+            is AgentLink.Web -> {
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, link.url.toUri())) }
+                    .onFailure {
+                        linkFailure = LinkFailure(
+                            context.getString(R.string.link_web_failed),
+                            LinkFailureKind.Web,
+                        )
+                    }
+            }
+            is AgentLink.Recording -> {
+                val store = contextStore
+                if (store == null) {
+                    linkFailure = LinkFailure(
+                        context.getString(R.string.link_requires_mac),
+                        LinkFailureKind.Source,
+                    )
+                    return
+                }
+                scope.launch {
+                    when (val result = store.resolveRecordingLink(link.link)) {
+                        is RecordingLinkResult.Found -> linkRecording = result
+                        RecordingLinkResult.Missing -> linkFailure = LinkFailure(
+                            context.getString(R.string.link_source_missing),
+                            LinkFailureKind.Source,
+                        )
+                        RecordingLinkResult.Changed -> linkFailure = LinkFailure(
+                            context.getString(R.string.link_source_changed),
+                            LinkFailureKind.Source,
+                        )
+                        is RecordingLinkResult.Failed -> linkFailure = LinkFailure(
+                            context.getString(R.string.link_open_failed),
+                            LinkFailureKind.Source,
+                        )
+                    }
+                }
+            }
+            is AgentLink.Memory -> {
+                val store = contextStore
+                if (store == null) {
+                    linkFailure = LinkFailure(
+                        context.getString(R.string.link_requires_mac),
+                        LinkFailureKind.Memory,
+                    )
+                    return
+                }
+                scope.launch {
+                    when (val result = store.resolveMemoryLink(link.path)) {
+                        is MemoryLinkResult.Found -> linkMemory = result.memory
+                        MemoryLinkResult.Missing -> linkFailure = LinkFailure(
+                            context.getString(R.string.link_memory_missing),
+                            LinkFailureKind.Memory,
+                        )
+                        is MemoryLinkResult.Failed -> linkFailure = LinkFailure(
+                            context.getString(R.string.link_open_failed),
+                            LinkFailureKind.Memory,
+                        )
+                    }
+                }
+            }
+            AgentLink.Unavailable -> linkFailure = LinkFailure(
+                context.getString(R.string.link_unavailable),
+                LinkFailureKind.Web,
+            )
+        }
+    }
 
     fun addImage(uri: Uri) {
         if (store.state.value.attachments.size >= 4) {
@@ -142,11 +258,11 @@ fun ChatScreen(store: ConversationStore, onSettings: () -> Unit) {
         uri?.let(::addDocument)
     }
 
-    val onEvent: (String, JSONObject) -> Unit = remember(state, context) {
+    val onEvent: (String, JSONObject) -> Unit = remember(state, context, contextStore) {
         { type, value ->
             when (type) {
                 "readingPosition" -> store.saveReadingPosition(value.toString())
-                "link" -> value.optString("value").takeIf { it.isNotBlank() }?.let { openLink(context, it) }
+                "link" -> value.optString("value").takeIf { it.isNotBlank() }?.let(::openAgentLink)
                 "copy" -> value.optString("value").takeIf { it.isNotBlank() }?.let { copyText(context, it) }
                 "retryMessage" -> value.optString("turnID").takeIf { it.isNotBlank() }?.let(store::retry)
                 "attachment" -> {
@@ -194,16 +310,15 @@ fun ChatScreen(store: ConversationStore, onSettings: () -> Unit) {
                         Box {
                             AvatarView(
                                 size = 144.dp,
-                                expression = if (state.busy) "working" else "present",
-                                active = true,
-                                conversationID = store.connection.assistantID,
+                                expression = avatarExpression,
+                                active = avatarActive,
+                                conversationID = state.conversationID.ifBlank { store.connection.assistantID },
                             )
-                            StatusBadge(
-                                status = state.connection,
+                            CaptureStatusBadge(
                                 onClick = { showingStatus = true },
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
-                                    .offset(x = 6.dp, y = 6.dp),
+                                    .offset(x = 8.dp, y = 8.dp),
                             )
                         }
                         Spacer(Modifier.height(6.dp))
@@ -223,7 +338,7 @@ fun ChatScreen(store: ConversationStore, onSettings: () -> Unit) {
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .fillMaxWidth()
-                            .height((statusBarDp + 128f).dp)
+                            .height((headerInset + 24.0).toFloat().dp)
                             .background(
                                 Brush.verticalGradient(
                                     listOf(
@@ -236,11 +351,14 @@ fun ChatScreen(store: ConversationStore, onSettings: () -> Unit) {
                     )
                     ChatHeader(
                         state = state,
-                        conversationID = store.connection.assistantID,
+                        conversationID = state.conversationID.ifBlank { store.connection.assistantID },
+                        expression = avatarExpression,
+                        active = avatarActive,
                         onSettings = onSettings,
                         onTasks = { showingTasks = true },
                         onDesktop = { showingDesktop = true },
                         onStatus = { showingStatus = true },
+                        onMeasured = { headerHeightPx = it },
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .fillMaxWidth()
@@ -266,39 +384,21 @@ fun ChatScreen(store: ConversationStore, onSettings: () -> Unit) {
             )
         }
 
-        if (showingStatus) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { showingStatus = false },
-            )
-        }
-        AnimatedVisibility(
-            visible = showingStatus,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(top = 112.dp, start = 24.dp, end = 24.dp),
-            enter = fadeIn(tween(160)) + scaleIn(
-                initialScale = 0.9f,
-                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 500f),
-                transformOrigin = TransformOrigin(0.5f, 0f),
-            ),
-            exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.96f, transformOrigin = TransformOrigin(0.5f, 0f)),
-        ) {
-            StatusPopover(
-                connection = store.connection,
-                status = state.connection,
-                onSettings = {
-                    showingStatus = false
-                    onSettings()
-                },
-            )
-        }
+    }
+
+    if (showingStatus) {
+        CaptureStatusDialog(
+            status = state.connection,
+            onOpenTranscripts = {
+                showingStatus = false
+                onOpenTranscripts()
+            },
+            onSettings = {
+                showingStatus = false
+                onSettings()
+            },
+            onClose = { showingStatus = false },
+        )
     }
 
     if (showingAdd) {
@@ -335,27 +435,38 @@ fun ChatScreen(store: ConversationStore, onSettings: () -> Unit) {
     }
 
     if (showingTasks) {
-        GlassDialog(
-            onDismiss = { showingTasks = false },
-            title = stringResource(R.string.chat_tasks),
-        ) {
-            if (state.works.isEmpty()) {
-                Text(stringResource(R.string.chat_no_tasks), color = palette.muted)
-            } else {
-                LazyColumn(modifier = Modifier.height(260.dp)) {
-                    items(state.works, key = { it.id }) { work ->
-                        Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                            Text(work.title ?: work.id, style = MoMoType.section, color = palette.ink)
-                            Text(
-                                text = work.waitReason ?: work.state,
-                                style = MoMoType.metadata,
-                                color = palette.muted,
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        TasksDialog(state.works, onDismiss = { showingTasks = false })
+    }
+
+    linkRecording?.let { found ->
+        RecordingLinkDialog(
+            found = found,
+            onOpen = {
+                linkRecording = null
+                contextStore?.openSource(found.source, found.window)
+                onOpenTranscripts()
+            },
+            onClose = { linkRecording = null },
+        )
+    }
+
+    linkMemory?.let { memory ->
+        MemoryNoteDialog(memory, onClose = { linkMemory = null })
+    }
+
+    linkFailure?.let { failure ->
+        LinkFailureDialog(
+            failure = failure,
+            onOpenTranscripts = {
+                linkFailure = null
+                onOpenTranscripts()
+            },
+            onOpenMemory = {
+                linkFailure = null
+                onOpenMemory()
+            },
+            onClose = { linkFailure = null },
+        )
     }
 
     if (showingDesktop) {
@@ -385,43 +496,52 @@ fun ChatScreen(store: ConversationStore, onSettings: () -> Unit) {
 private fun ChatHeader(
     state: ConversationState,
     conversationID: String?,
+    expression: String,
+    active: Boolean,
     onSettings: () -> Unit,
     onTasks: () -> Unit,
     onDesktop: () -> Unit,
     onStatus: () -> Unit,
+    onMeasured: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier) {
-        GlassIconButton(
-            icon = Icons.Filled.Settings,
-            label = stringResource(R.string.chat_settings),
-            onClick = onSettings,
-            modifier = Modifier.align(Alignment.CenterStart),
-        )
+    Box(modifier = modifier.onSizeChanged { onMeasured(it.height) }) {
+        Row(
+            modifier = Modifier.align(Alignment.TopStart).height(72.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            GlassIconButton(
+                icon = Icons.Filled.Settings,
+                label = stringResource(R.string.chat_settings),
+                onClick = onSettings,
+            )
+        }
         Column(
             modifier = Modifier.align(Alignment.TopCenter),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box {
+            Box(Modifier.height(72.dp).width(84.dp)) {
                 AvatarView(
                     size = 84.dp,
-                    expression = if (state.busy) "working" else "present",
-                    active = true,
+                    expression = expression,
+                    active = active,
                     conversationID = conversationID,
+                    modifier = Modifier.align(Alignment.TopCenter),
                 )
-                StatusBadge(
-                    status = state.connection,
+                CaptureStatusBadge(
                     onClick = onStatus,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .offset(x = 6.dp, y = 6.dp),
+                        .offset(x = 8.dp, y = 8.dp),
                 )
             }
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(6.dp))
             BrandWordmark("MoMoWordmark", height = 14.dp)
+            Spacer(Modifier.height(8.dp))
         }
         Row(
-            modifier = Modifier.align(Alignment.CenterEnd),
+            modifier = Modifier.align(Alignment.TopEnd).height(72.dp),
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             GlassTasksButton(state.works.size, onTasks)
@@ -435,109 +555,294 @@ private fun ChatHeader(
 }
 
 @Composable
-private fun statusTitle(status: ConnectionState): String = stringResource(
-        when (status) {
-            ConnectionState.Ready -> R.string.chat_status_ready
-            ConnectionState.Connecting -> R.string.chat_status_connecting
-            ConnectionState.Retrying -> R.string.chat_status_retrying
-            ConnectionState.AuthenticationRequired -> R.string.chat_status_auth
-            ConnectionState.Unavailable -> R.string.chat_status_unavailable
-        },
-    )
+fun CaptureStatusBadge(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val palette = LocalMoMoPalette.current
+    val label = stringResource(R.string.chat_capture_badge)
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Button,
+                onClickLabel = label,
+                onClick = onClick,
+            )
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        GlassSurface(
+            modifier = Modifier.height(24.dp),
+            shape = CircleShape,
+            contentPadding = PaddingValues(horizontal = 8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Watch,
+                    contentDescription = null,
+                    tint = palette.ink,
+                    modifier = Modifier.size(14.dp),
+                )
+                Box(Modifier.size(5.dp).background(WatchPending, CircleShape))
+            }
+        }
+    }
+}
+
+private val WatchPending = Color(0xFFE0A63A)
 
 @Composable
-private fun StatusBadge(
+fun CaptureStatusDialog(
     status: ConnectionState,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+    onOpenTranscripts: () -> Unit,
+    onSettings: () -> Unit,
+    onClose: () -> Unit,
 ) {
     val palette = LocalMoMoPalette.current
-    val color = when (status) {
-        ConnectionState.Ready -> palette.success
-        ConnectionState.Connecting, ConnectionState.Retrying -> Color(0xFFE0A63A)
-        ConnectionState.AuthenticationRequired, ConnectionState.Unavailable -> palette.failure
+    GlassDialog(
+        onDismiss = onClose,
+        title = stringResource(R.string.chat_capture_status),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.Filled.Watch, contentDescription = null, tint = palette.ink, modifier = Modifier.size(20.dp))
+                Text(stringResource(R.string.chat_watch_unknown), style = MoMoType.section, color = palette.ink)
+                Spacer(Modifier.weight(1f))
+                Box(Modifier.size(8.dp).background(WatchPending, CircleShape))
+            }
+            Text(stringResource(R.string.chat_watch_unknown_body), style = MoMoType.metadata, color = palette.muted)
+            HorizontalDivider(color = palette.line)
+            Text(stringResource(R.string.chat_mac_connection), style = MoMoType.caption, color = palette.muted)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = statusTitle(status),
+                    style = MoMoType.menu,
+                    color = palette.ink,
+                    modifier = Modifier.weight(1f),
+                )
+                Box(Modifier.size(7.dp).background(connectionColor(status), CircleShape))
+            }
+            DialogAction(stringResource(R.string.chat_open_transcripts), onOpenTranscripts)
+            DialogAction(stringResource(R.string.chat_status_settings), onSettings)
+        }
     }
-    GlassSurface(
-        modifier = modifier.size(32.dp),
-        shape = CircleShape,
-        onClick = onClick,
-        content = {
-            Icon(Icons.Filled.Computer, contentDescription = statusTitle(status), tint = color,
-                modifier = Modifier.size(17.dp))
-        },
-    )
 }
 
 @Composable
-private fun StatusPopover(
-    connection: AgentConnection,
-    status: ConnectionState,
-    onSettings: () -> Unit,
-) {
+private fun DialogAction(text: String, onClick: () -> Unit) {
     val palette = LocalMoMoPalette.current
-    val color = when (status) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, style = MoMoType.menu, color = palette.ink)
+        Spacer(Modifier.weight(1f))
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = palette.muted)
+    }
+}
+
+@Composable
+private fun statusTitle(status: ConnectionState): String = stringResource(
+    when (status) {
+        ConnectionState.Ready -> R.string.chat_status_ready
+        ConnectionState.Connecting -> R.string.chat_status_connecting
+        ConnectionState.Retrying -> R.string.chat_status_retrying
+        ConnectionState.AuthenticationRequired -> R.string.chat_status_auth
+        ConnectionState.Unavailable -> R.string.chat_status_unavailable
+    },
+)
+
+@Composable
+private fun connectionColor(status: ConnectionState): Color {
+    val palette = LocalMoMoPalette.current
+    return when (status) {
         ConnectionState.Ready -> palette.success
-        ConnectionState.Connecting, ConnectionState.Retrying -> Color(0xFFE0A63A)
+        ConnectionState.Connecting, ConnectionState.Retrying -> WatchPending
         ConnectionState.AuthenticationRequired, ConnectionState.Unavailable -> palette.failure
     }
-    val title = statusTitle(status)
-    val hint = when (status) {
-        ConnectionState.Retrying -> stringResource(R.string.chat_reconnecting)
-        ConnectionState.AuthenticationRequired -> stringResource(R.string.settings_auth_required)
-        ConnectionState.Unavailable -> stringResource(R.string.chat_connection_lost)
-        else -> null
-    }
-    val route = when (connection.network) {
-        "lan" -> stringResource(R.string.settings_lan)
-        "tailscale" -> stringResource(R.string.settings_tailscale)
-        else -> stringResource(R.string.settings_relay)
-    }
-    GlassSurface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        contentPadding = PaddingValues(18.dp),
+}
+
+@Composable
+private fun TasksDialog(works: List<ConversationWork>, onDismiss: () -> Unit) {
+    val palette = LocalMoMoPalette.current
+    var selectedID by rememberSaveable { mutableStateOf<String?>(null) }
+    val selected = works.firstOrNull { it.id == selectedID }
+    GlassDialog(
+        onDismiss = { if (selected != null) selectedID = null else onDismiss() },
+        title = stringResource(if (selected != null) R.string.chat_task_detail else R.string.chat_tasks),
+        confirmLabel = stringResource(
+            if (selected != null) R.string.chat_task_back else R.string.chat_notice_ok,
+        ),
+        onConfirm = if (selected != null) ({ selectedID = null }) else null,
     ) {
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(
-                    modifier = Modifier
-                        .size(9.dp)
-                        .background(color, CircleShape),
-                )
-                Text(title, style = MoMoType.section, color = palette.ink)
+        if (selected != null) {
+            TaskDetail(selected)
+        } else if (works.isEmpty()) {
+            Text(stringResource(R.string.chat_no_tasks), color = palette.muted)
+        } else {
+            LazyColumn(modifier = Modifier.height(280.dp)) {
+                items(works, key = { it.id }) { work ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { selectedID = work.id }
+                            .padding(horizontal = 4.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Text(
+                                text = taskTitle(work),
+                                style = MoMoType.section,
+                                color = palette.ink,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = taskHintLabel(taskHint(work)),
+                                style = MoMoType.metadata,
+                                color = palette.muted,
+                            )
+                        }
+                        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = palette.muted)
+                    }
+                    HorizontalDivider(color = palette.line)
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun TaskDetail(work: ConversationWork) {
+    val palette = LocalMoMoPalette.current
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(taskTitle(work), style = MoMoType.subheading, color = palette.ink)
+        Text(taskHintLabel(taskHint(work)), style = MoMoType.section, color = palette.ink)
+        work.summary?.takeIf { it.isNotBlank() }?.let {
+            Text(it, style = MoMoType.body, color = palette.muted)
+        }
+        work.createdAt?.takeIf { it > 0 }?.let { created ->
             Text(
-                text = "$route · ${connection.baseURL}",
+                text = stringResource(R.string.chat_task_started, formatTime(created)),
                 style = MoMoType.metadata,
-                color = palette.muted,
-                maxLines = 2,
-            )
-            hint?.let {
-                Text(it, style = MoMoType.caption, color = palette.muted)
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { onSettings() }
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(stringResource(R.string.chat_status_settings), style = MoMoType.menu, color = palette.ink)
-                Spacer(Modifier.weight(1f))
-                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = palette.muted)
-            }
-            Text(
-                text = "MoMo Agent ${BuildConfig.VERSION_NAME}",
-                style = MoMoType.caption,
                 color = palette.muted,
             )
         }
     }
 }
+
+@Composable
+private fun taskTitle(work: ConversationWork): String {
+    val title = work.title?.trim().orEmpty()
+    val identifier = work.id.substringAfter(':')
+    val internal = title.isEmpty() || title == identifier || title == work.id || title == work.workID
+    return if (internal) stringResource(R.string.chat_task_untitled) else title
+}
+
+@Composable
+private fun taskHintLabel(hint: TaskHint): String = stringResource(
+    when (hint) {
+        TaskHint.WaitingForComputer -> R.string.task_hint_waiting_computer
+        TaskHint.WaitingForConfirmation -> R.string.task_hint_waiting_confirm
+        TaskHint.Queued -> R.string.task_hint_queued
+        TaskHint.Finalizing -> R.string.task_hint_finalizing
+        TaskHint.NeedsReview -> R.string.task_hint_needs_review
+        TaskHint.Running -> R.string.task_hint_running
+        TaskHint.Completed -> R.string.task_hint_completed
+        TaskHint.Skipped -> R.string.task_hint_skipped
+        TaskHint.Stopped -> R.string.task_hint_stopped
+        TaskHint.Failed -> R.string.task_hint_failed
+    },
+)
+
+@Composable
+private fun RecordingLinkDialog(
+    found: RecordingLinkResult.Found,
+    onOpen: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val palette = LocalMoMoPalette.current
+    GlassDialog(
+        onDismiss = onClose,
+        title = stringResource(R.string.link_recording_title),
+        confirmLabel = stringResource(R.string.link_open_transcripts),
+        dismissLabel = stringResource(R.string.chat_dismiss),
+        onConfirm = onOpen,
+    ) {
+        Column(
+            modifier = Modifier
+                .heightIn(max = 360.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            val recordedAt = found.span.recordedAt ?: found.source.recordedAt
+            recordedAt?.takeIf { it > 0 }?.let {
+                Text(formatTime(it), style = MoMoType.metadata, color = palette.muted)
+            }
+            val speaker = if (found.span.isOwner == true) {
+                stringResource(R.string.transcripts_speaker_me)
+            } else {
+                found.span.speaker?.takeIf { it.isNotBlank() }
+            }
+            speaker?.let {
+                Text(it, style = MoMoType.section, color = palette.ink)
+            }
+            SelectionContainer {
+                Text(found.span.text, style = MoMoType.body, color = palette.ink)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LinkFailureDialog(
+    failure: LinkFailure,
+    onOpenTranscripts: () -> Unit,
+    onOpenMemory: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val palette = LocalMoMoPalette.current
+    GlassDialog(
+        onDismiss = onClose,
+        title = stringResource(R.string.link_unavailable_title),
+        onConfirm = onClose,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(failure.message, style = MoMoType.body, color = palette.muted)
+            when (failure.kind) {
+                LinkFailureKind.Source -> TextButton(onClick = onOpenTranscripts) {
+                    Text(stringResource(R.string.link_open_transcripts), style = MoMoType.menu)
+                }
+                LinkFailureKind.Memory -> TextButton(onClick = onOpenMemory) {
+                    Text(stringResource(R.string.link_open_memory), style = MoMoType.menu)
+                }
+                LinkFailureKind.Web -> Unit
+            }
+        }
+    }
+}
+
+private enum class LinkFailureKind { Source, Memory, Web }
+
+private data class LinkFailure(val message: String, val kind: LinkFailureKind)
+
+private fun formatTime(epochSeconds: Double): String =
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+        .format(Date((epochSeconds * 1_000).toLong()))
 
 @Composable
 private fun ChatBanners(
@@ -646,12 +951,6 @@ private fun findAttachment(state: ConversationState, id: String): AgentAttachmen
     return state.attachments.firstOrNull { it.id == id }
 }
 
-private fun openLink(context: Context, value: String) {
-    runCatching {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(value)))
-    }
-}
-
 private fun copyText(context: Context, value: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("MoMo", value))
@@ -718,11 +1017,9 @@ private fun previewJpeg(source: Bitmap): ByteArray? {
     val maxSide = 512
     val scale = minOf(1f, maxSide.toFloat() / maxOf(source.width, source.height))
     if (scale < 1f) {
-        bitmap = Bitmap.createScaledBitmap(
-            source,
+        bitmap = source.scale(
             (source.width * scale).toInt().coerceAtLeast(1),
             (source.height * scale).toInt().coerceAtLeast(1),
-            true,
         )
     }
     for (quality in intArrayOf(72, 60, 48, 36, 28)) {

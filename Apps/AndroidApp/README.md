@@ -10,17 +10,23 @@ existing access contract; the Mac keeps running the Agent and the memory vault.
 Welcome experience → Connection flow → Chat / Transcripts / Memory tabs → Desktop / Settings
 ```
 
-- Welcome: the same three scenarios and copy as the iPhone introduction, with the
-  live MoMo avatar, a static fallback and a Continue button for each scene. Brand SVGs are
-  pre-rendered to tintable PNGs because AndroidSVG clipped the outlined wordmark
-  and the still on device.
+- Welcome: the same three scenarios and copy as the iPhone introduction, marked
+  as a future demo. Context, request, reply and result appear in order, with a
+  static fallback while the live avatar loads. Skip moves to the ready page;
+  pairing starts only from its button. Brand SVGs are pre-rendered to tintable
+  PNGs because AndroidSVG clipped the outlined wordmark and the still on device.
 - Connection: scan the Mac pairing QR; pending pairing survives restarts and
   resumes on foreground. A manual connection form lives in Settings.
 - Chat: the iPhone's Web renderer is reused from `assets/chat`, fed by the same
   snapshot fields (Markdown, tools, attachments, `已送达`/`已读`, waiting dots).
   The avatar, settings and task/desktop controls float over the scroll view;
   the composer has its own space below the conversation. The tab bar hides while
-  the IME is open so the composer sits above the keyboard.
+  the IME is open so the composer sits above the keyboard. The avatar's capture
+  badge reports the recording device instead of the Mac connection; because
+  Android cannot observe the Apple Watch yet, it states that the watch status is
+  unknown and links to Transcripts. Recording and memory citations open inside
+  the app, with explicit messages for deleted or changed sources. Task rows map
+  protocol states to readable actions and open a detail view.
 - Transcripts: a day/window timeline grouped by recording day with previous/next
   day, a date picker and full-text search. A recording with several windows
   produces one row per window; opening a row scrolls the detail to that window.
@@ -28,7 +34,8 @@ Welcome experience → Connection flow → Chat / Transcripts / Memory tabs → 
   instead of stopping at 12,000 characters, and offer "Ask about this section"
   citations. Android has no local recording/ASR yet; local transcripts are a
   separate slice.
-- Memory: read-only long-term memory from the Mac context API.
+- Memory: read-only long-term memory from the Mac context API. Notes show their
+  folder path, and search matches the directory, file name, kind and body.
 - Settings: Mac connection state, reconnect, re-pair, manual configuration,
   network route/address, version and unpair. Unpair first calls `POST /pair/revoke`
   so the Mac also drops the device grant; the local credential is cleared only
@@ -86,9 +93,11 @@ gradle :app:lintDebug
 ```
 
 Current results: `assembleDebug` produces `app-debug.apk` (`com.momoagent.android`,
-version 0.6.0, versionCode 8, minSdk 26, targetSdk 35); 32/32 JVM tests pass;
-lint reports 0 errors and 30 warnings. There is no device/emulator end-to-end
-run yet.
+version 0.6.0, versionCode 8, minSdk 26, targetSdk 35); 44/44 JVM tests pass;
+lint reports 0 errors and 23 warnings. A Xiaomi 25098PN5AC (Android 17) run
+against a paired Mac verified the header size, capture badge/dialog, bottom
+navigation, light/dark appearance and avatar greeting. Welcome playback, chat
+link dialogs and task details still need targeted checks.
 
 The Settings header and About row read `BuildConfig.VERSION_NAME`; the
 `0.1.0` fallback is gone. The Welcome and Connect screens also show the version
@@ -115,14 +124,15 @@ of falling back to the old "not available" dialog.
 
 The Android client uses the shared neutral canvas, paper, ink and divider colors
 in light and dark mode. Transcripts and memories use reading rows. Navigation,
-the composer and the connection popover use a paper fill and a thin outline.
+the composer and the connection status dialog use a paper fill and a thin outline.
 The desktop viewer fits the Mac frame above its controls in portrait and places
 the tools beside the frame in wide landscape windows.
 
 ## Known gaps
 
 - Local recording, on-device ASR, speaker diarization and local transcripts.
-- Watch/earphone capture status, life illustrations and dream briefing cards.
+- Watch/earphone capture observation (the Android badge reports the unknown
+  state), life illustrations and dream briefing cards.
 - Chat voice dictation, push notifications, relay transport and an iOS LAN client.
 - Release signing and a narrowed production network policy.
 

@@ -8,6 +8,9 @@
     <string name="welcome_start_pairing">开始配对</string>
     <string name="welcome_continue">继续</string>
     <string name="welcome_skip">跳过</string>
+    <string name="welcome_next_scene">下一段</string>
+    <string name="welcome_demo">未来演示</string>
+    <string name="welcome_demo_hint">以下为未来能力的示例，尚未读取你的资料。</string>
 
     <string name="connect_title">连接 Mac</string>
     <string name="connect_scan_title">扫码连接 Mac</string>
@@ -94,6 +97,41 @@
     <string name="chat_status_auth">需要重新配对</string>
     <string name="chat_status_unavailable">Mac 未连接</string>
     <string name="chat_status_settings">连接设置</string>
+
+    <string name="avatar_greeting">和 MoMo 打个招呼</string>
+    <string name="chat_capture_status">录音状态</string>
+    <string name="chat_capture_badge">查看录音状态</string>
+    <string name="chat_watch_unknown">手表状态未知</string>
+    <string name="chat_watch_unknown_body">Android 版暂时读不到 Apple Watch 的录音状态。已同步到 Mac 的录音仍可在转录中查看。</string>
+    <string name="chat_mac_connection">Mac 连接</string>
+    <string name="chat_open_transcripts">查看转录</string>
+    <string name="chat_task_detail">任务详情</string>
+    <string name="chat_task_back">返回</string>
+    <string name="chat_task_untitled">后台任务</string>
+    <string name="chat_task_started">开始于 %1$s</string>
+
+    <string name="task_hint_waiting_computer">等待交还电脑</string>
+    <string name="task_hint_waiting_confirm">等待确认</string>
+    <string name="task_hint_queued">排队中</string>
+    <string name="task_hint_finalizing">正在整理结果</string>
+    <string name="task_hint_needs_review">待核对结果</string>
+    <string name="task_hint_running">正在执行</string>
+    <string name="task_hint_completed">已完成</string>
+    <string name="task_hint_skipped">核查后跳过</string>
+    <string name="task_hint_stopped">已停止</string>
+    <string name="task_hint_failed">执行未完成</string>
+
+    <string name="link_unavailable_title">链接不可用</string>
+    <string name="link_unavailable">无法打开这个链接。</string>
+    <string name="link_requires_mac">连接 Mac 后才能打开这条引用。</string>
+    <string name="link_source_missing">这条录音引用已被删除或无法访问。</string>
+    <string name="link_source_changed">录音内容已更新，这条引用已过期。</string>
+    <string name="link_memory_missing">这条笔记不存在或已被删除。</string>
+    <string name="link_open_failed">Mac 无法打开这条引用。</string>
+    <string name="link_web_failed">没有应用可以打开这个链接。</string>
+    <string name="link_recording_title">录音引用</string>
+    <string name="link_open_transcripts">查看转录</string>
+    <string name="link_open_memory">打开记忆</string>
 
     <string name="memory_title">记忆</string>
     <string name="memory_empty">配对并连接 Mac 后，即可在这里查看和管理长期记忆。</string>

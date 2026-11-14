@@ -3,6 +3,7 @@ package com.momoagent.android.ui
 import android.app.Application
 import android.os.Build
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -42,6 +43,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var contextStore by mutableStateOf<ContextStore?>(null)
         private set
     var manualFailure by mutableStateOf<String?>(null)
+        private set
+    var manualConnecting by mutableStateOf(false)
+        private set
+    var manualSuccess by mutableIntStateOf(0)
+        private set
     var unpairFailed by mutableStateOf(false)
         private set
 
@@ -191,7 +197,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun manualConnect(configuration: String, credential: String) {
+        if (manualConnecting) return
         manualFailure = null
+        manualConnecting = true
         viewModelScope.launch {
             try {
                 val connection = json.decodeFromString<AgentConnection>(configuration.trim())
@@ -217,8 +225,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 storedPairing = StoredPairing(connection, key)
                 setup = SetupStep.Completed
                 createStores(storedPairing!!)
+                manualSuccess += 1
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 manualFailure = error.message ?: "connection failed"
+            } finally {
+                manualConnecting = false
             }
         }
     }

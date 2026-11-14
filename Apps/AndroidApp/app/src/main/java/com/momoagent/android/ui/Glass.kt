@@ -124,20 +124,21 @@ fun GlassTabBar(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalMoMoPalette.current
-    GlassSurface(modifier = modifier, shape = CircleShape, contentPadding = PaddingValues(5.dp)) {
-        Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+    GlassSurface(modifier = modifier, shape = CircleShape, contentPadding = PaddingValues(4.dp)) {
+        Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             items.forEachIndexed { index, (icon, label) ->
                 val active = selected == index
-                val color = if (active) palette.canvas else palette.muted
+                val color = if (active) palette.ink else palette.muted
                 Column(
-                    modifier = Modifier.weight(1f).height(48.dp).clip(CircleShape)
-                        .background(if (active) palette.ink else Color.Transparent)
-                        .selectable(active, role = Role.Tab, onClick = { onSelect(index) }),
+                    modifier = Modifier.height(48.dp).clip(CircleShape)
+                        .background(if (active) palette.ink.copy(alpha = 0.08f) else Color.Transparent)
+                        .selectable(active, role = Role.Tab, onClick = { onSelect(index) })
+                        .padding(horizontal = 14.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(19.dp))
-                    Text(label, style = MoMoType.caption, color = color, maxLines = 1)
+                    Text(label, style = MoMoType.caption, color = color, maxLines = 1, softWrap = false)
                 }
             }
         }
@@ -151,12 +152,13 @@ fun GlassDialog(
     confirmLabel: String = stringResource(R.string.chat_notice_ok),
     dismissLabel: String? = null,
     confirmEnabled: Boolean = true,
+    dismissEnabled: Boolean = true,
     onConfirm: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val palette = LocalMoMoPalette.current
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (dismissEnabled) onDismiss() },
         containerColor = palette.paper,
         titleContentColor = palette.ink,
         textContentColor = palette.ink,
@@ -164,7 +166,7 @@ fun GlassDialog(
         title = { Text(title, style = MoMoType.title) },
         text = content,
         dismissButton = dismissLabel?.let { label ->
-            { TextButton(onClick = onDismiss) { Text(label, color = palette.muted) } }
+            { TextButton(onClick = onDismiss, enabled = dismissEnabled) { Text(label, color = palette.muted) } }
         },
         confirmButton = {
             TextButton(onClick = onConfirm ?: onDismiss, enabled = confirmEnabled) { Text(confirmLabel) }

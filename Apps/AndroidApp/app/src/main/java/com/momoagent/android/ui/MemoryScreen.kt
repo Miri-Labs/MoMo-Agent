@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -124,7 +125,7 @@ fun MemoryScreen(
     }
 
     selected?.let { memory ->
-        MemoryDetail(memory) { selected = null }
+        MemoryNoteDialog(memory) { selected = null }
     }
 }
 
@@ -168,8 +169,22 @@ private fun MemoryCard(memory: ContextMemory, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        memory.path?.takeIf { it.isNotBlank() }?.let {
-            Text(it, style = MoMoType.caption, color = palette.muted)
+        memory.path?.takeIf { it.isNotBlank() }?.let { path ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(
+                    Icons.Outlined.Description,
+                    contentDescription = null,
+                    tint = palette.muted,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    text = memoryBreadcrumb(path),
+                    style = MoMoType.caption,
+                    color = palette.muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         Text(memory.text, style = MoMoType.body, color = palette.ink, maxLines = 4, overflow = TextOverflow.Ellipsis)
         val metadata = listOfNotNull(
@@ -183,11 +198,14 @@ private fun MemoryCard(memory: ContextMemory, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MemoryDetail(memory: ContextMemory, onClose: () -> Unit) {
+fun MemoryNoteDialog(memory: ContextMemory, onClose: () -> Unit) {
     val palette = LocalMoMoPalette.current
+    val title = memory.path?.trim('/')?.substringAfterLast('/')?.removeSuffix(".md")
+        ?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.memory_title)
     GlassDialog(
         onDismiss = onClose,
-        title = stringResource(R.string.memory_title),
+        title = title,
     ) {
         Column(
             modifier = Modifier
@@ -196,8 +214,16 @@ private fun MemoryDetail(memory: ContextMemory, onClose: () -> Unit) {
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            memory.path?.takeIf { it.isNotBlank() }?.let {
-                Text(it, style = MoMoType.caption, color = palette.muted)
+            memory.path?.takeIf { it.isNotBlank() }?.let { path ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(
+                        Icons.Outlined.Description,
+                        contentDescription = null,
+                        tint = palette.muted,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text(memoryBreadcrumb(path), style = MoMoType.caption, color = palette.muted)
+                }
             }
             Text(memory.text, style = MoMoType.body, color = palette.ink)
             if (memory.evidence.isNotEmpty()) {
@@ -220,3 +246,6 @@ private fun MemoryDetail(memory: ContextMemory, onClose: () -> Unit) {
         }
     }
 }
+
+private fun memoryBreadcrumb(path: String): String =
+    path.trim('/').split('/').joinToString(" / ")

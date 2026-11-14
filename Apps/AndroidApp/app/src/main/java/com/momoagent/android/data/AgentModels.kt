@@ -139,6 +139,7 @@ data class ConversationWork(
     @SerialName("wait_reason") val waitReason: String? = null,
     val cancellable: Boolean? = null,
     @SerialName("created_at") val createdAt: Double? = null,
+    val summary: String? = null,
 )
 
 @Serializable

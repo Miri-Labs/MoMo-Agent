@@ -93,7 +93,11 @@ fun ConnectionScreen(viewModel: AppViewModel) {
                 modifier = Modifier.size(168.dp, 109.dp).background(palette.paper, bezel).border(2.dp, palette.ink, bezel),
                 contentAlignment = Alignment.Center,
             ) {
-                AvatarView(size = 90.dp, expression = if (pairing.stage == PairingStage.Approved) "settled" else "present", active = true)
+                AvatarView(
+                    size = 90.dp,
+                    expression = if (pairing.stage == PairingStage.Approved) "settled" else "present",
+                    active = false,
+                )
             }
             Spacer(Modifier.size(3.dp, 8.dp).background(palette.ink))
             Spacer(Modifier.size(42.dp, 3.dp).background(palette.ink, CircleShape))

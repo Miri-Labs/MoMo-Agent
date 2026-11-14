@@ -2,10 +2,14 @@ package com.momoagent.android.remote
 
 import com.momoagent.android.data.AgentApi
 import com.momoagent.android.data.AgentConnection
+import com.momoagent.android.data.AgentHttpException
+import com.momoagent.android.data.AgentLink
 import com.momoagent.android.data.ContextMemory
 import com.momoagent.android.data.ContextSource
 import com.momoagent.android.data.ContextSpan
 import com.momoagent.android.data.ContextWindow
+import com.momoagent.android.data.RecordingLink
+import com.momoagent.android.data.parseAgentLink
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +40,23 @@ data class TranscriptSearchHit(
     val window: ContextWindow,
     val snippet: String,
 )
+
+sealed interface RecordingLinkResult {
+    data class Found(
+        val source: ContextSource,
+        val span: ContextSpan,
+        val window: ContextWindow?,
+    ) : RecordingLinkResult
+    data object Missing : RecordingLinkResult
+    data object Changed : RecordingLinkResult
+    data class Failed(val message: String) : RecordingLinkResult
+}
+
+sealed interface MemoryLinkResult {
+    data class Found(val memory: ContextMemory) : MemoryLinkResult
+    data object Missing : MemoryLinkResult
+    data class Failed(val message: String) : MemoryLinkResult
+}
 
 data class ContextState(
     val memories: List<ContextMemory> = emptyList(),
@@ -82,18 +103,7 @@ class ContextStore(
         memoriesJob = scope.launch {
             _state.update { it.copy(memoriesLoading = true, memoriesFailure = null) }
             try {
-                val items = mutableListOf<ContextMemory>()
-                var cursor: String? = null
-                var revision: Long? = null
-                do {
-                    val page = withContext(Dispatchers.IO) {
-                        api.contextMemories(connection, credential, after = cursor, revision = revision, limit = 200)
-                    }
-                    if (revision == null) revision = page.revision
-                    items += page.items
-                    cursor = page.nextCursor
-                    if (page.items.isEmpty()) break
-                } while (cursor != null && items.size < 20_000)
+                val items = fetchMemories()
                 _state.update {
                     it.copy(memories = items, memoriesLoading = false, memoriesFailure = null)
                 }
@@ -110,16 +120,7 @@ class ContextStore(
         sourcesJob = scope.launch {
             _state.update { it.copy(sourcesLoading = true, sourcesFailure = null) }
             try {
-                val items = mutableListOf<ContextSource>()
-                var cursor: String? = null
-                do {
-                    val page = withContext(Dispatchers.IO) {
-                        api.contextSources(connection, credential, after = cursor, limit = 200)
-                    }
-                    items += page.items
-                    cursor = page.nextCursor
-                    if (page.items.isEmpty()) break
-                } while (cursor != null && items.size < 20_000)
+                val items = fetchSources()
                 _state.update {
                     it.copy(sources = items, sourcesLoading = false, sourcesFailure = null)
                 }
@@ -129,6 +130,112 @@ class ContextStore(
                 _state.update { it.copy(sourcesLoading = false, sourcesFailure = error.message) }
             }
         }
+    }
+
+    private suspend fun fetchMemories(): List<ContextMemory> {
+        val items = mutableListOf<ContextMemory>()
+        var cursor: String? = null
+        var revision: Long? = null
+        do {
+            val page = withContext(Dispatchers.IO) {
+                api.contextMemories(connection, credential, after = cursor, revision = revision, limit = 200)
+            }
+            if (revision == null) revision = page.revision
+            items += page.items
+            cursor = page.nextCursor
+            if (page.items.isEmpty()) break
+        } while (cursor != null && items.size < 20_000)
+        return items
+    }
+
+    private suspend fun fetchSources(): List<ContextSource> {
+        val items = mutableListOf<ContextSource>()
+        var cursor: String? = null
+        do {
+            val page = withContext(Dispatchers.IO) {
+                api.contextSources(connection, credential, after = cursor, limit = 200)
+            }
+            items += page.items
+            cursor = page.nextCursor
+            if (page.items.isEmpty()) break
+        } while (cursor != null && items.size < 20_000)
+        return items
+    }
+
+    /**
+     * Resolves a chat citation against the Mac. The link names a session and span,
+     * while the data API identifies the source by its library/session id; the
+     * citation URL returned with each span is the version/generation check.
+     */
+    suspend fun resolveRecordingLink(link: RecordingLink): RecordingLinkResult {
+        var source = _state.value.sources.firstOrNull { it.matchesSession(link.sessionID) }
+        if (source == null) {
+            source = try {
+                val items = fetchSources()
+                _state.update { it.copy(sources = items, sourcesLoading = false, sourcesFailure = null) }
+                items.firstOrNull { it.matchesSession(link.sessionID) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                return RecordingLinkResult.Failed(error.message.orEmpty())
+            }
+        }
+        if (source == null) return RecordingLinkResult.Missing
+        val detail = try {
+            loadFullSource(source)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: AgentHttpException) {
+            return when (error.status) {
+                404 -> RecordingLinkResult.Missing
+                409 -> RecordingLinkResult.Changed
+                else -> RecordingLinkResult.Failed(error.message.orEmpty())
+            }
+        } catch (error: Exception) {
+            if (error.message.orEmpty().contains("Transcript changed", ignoreCase = true)) {
+                return RecordingLinkResult.Changed
+            }
+            return RecordingLinkResult.Failed(error.message.orEmpty())
+        }
+        val span = detail.spans.firstOrNull { it.id.equals(link.spanID, ignoreCase = true) }
+            ?: return RecordingLinkResult.Missing
+        val citation = span.citationURL?.let(::parseAgentLink) as? AgentLink.Recording
+            ?: return RecordingLinkResult.Changed
+        if (citation.link != link) return RecordingLinkResult.Changed
+        return RecordingLinkResult.Found(source, span, windowForSpan(source, detail.spans, span.id))
+    }
+
+    suspend fun resolveMemoryLink(path: String): MemoryLinkResult {
+        resolveMemoryPath(path, _state.value.memories)?.let { return MemoryLinkResult.Found(it) }
+        return try {
+            val items = fetchMemories()
+            _state.update { it.copy(memories = items, memoriesLoading = false, memoriesFailure = null) }
+            resolveMemoryPath(path, items)?.let { MemoryLinkResult.Found(it) }
+                ?: MemoryLinkResult.Missing
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            MemoryLinkResult.Failed(error.message.orEmpty())
+        }
+    }
+
+    private fun windowForSpan(
+        source: ContextSource,
+        spans: List<ContextSpan>,
+        spanID: String,
+    ): ContextWindow? {
+        var position = 0
+        for (span in spans) {
+            val length = span.text.codePointCount(0, span.text.length)
+            if (span.id.equals(spanID, ignoreCase = true)) {
+                return source.windows.firstOrNull { position >= it.offset && position < it.end }
+                    ?: source.windows.minByOrNull {
+                        minOf(kotlin.math.abs(it.offset - position), kotlin.math.abs(it.end - position))
+                    }
+            }
+            position += length + 1
+        }
+        return null
     }
 
     fun openSource(source: ContextSource, window: ContextWindow? = null) {
@@ -364,6 +471,9 @@ class ContextStore(
     }
 
     private fun cacheKey(source: ContextSource): String = source.id + "@" + source.revision
+
+    private fun ContextSource.matchesSession(sessionID: String): Boolean =
+        id.substringAfterLast('/').equals(sessionID, ignoreCase = true)
 
     /** Number of UTF-16 units represented in the first [codePoints] code points. */
     fun utf16Length(text: String, codePoints: Int): Int {

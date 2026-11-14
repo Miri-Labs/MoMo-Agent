@@ -200,9 +200,14 @@ class DesktopStore(
         while (true) {
             inputSignal.receive()
             while (true) {
-                val event = inputLock.withLock { inputQueue.pollFirst() } ?: break
-                val status = _state.value.status ?: break
+                val state = _state.value
+                val status = state.status ?: break
                 val session = status.session ?: break
+                if (!state.streaming || state.picture == null || !state.controlling) {
+                    inputLock.withLock { inputQueue.clear() }
+                    break
+                }
+                val event = inputLock.withLock { inputQueue.pollFirst() } ?: break
                 try {
                     api.desktopInput(connection, credential, session, event, UUID.randomUUID().toString())
                 } catch (error: CancellationException) {

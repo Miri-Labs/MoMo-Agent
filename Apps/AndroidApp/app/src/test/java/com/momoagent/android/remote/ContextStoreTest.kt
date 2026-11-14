@@ -123,4 +123,33 @@ class ContextStoreTest {
         assertTrue(first.path.orEmpty().contains("offset=0"))
         assertTrue(second.path.orEmpty().contains("offset=6"))
     }
+
+    @Test
+    fun recordingLinkMatchesVersionAndWindow() = runBlocking {
+        val session = "11111111-2222-3333-4444-555555555555"
+        val span = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        server.enqueue(
+            MockResponse().setBody(
+                """{"revision":1,"items":[{"id":"lib/$session","revision":"r-source","recorded_at":1794540000.0,"total_characters":12,
+                    "windows":[{"id":"w1","source_id":"lib/$session","source_revision":"r-source","recorded_at":1794540000.0,"end_at":1794540060.0,"offset":0,"end":6,"total_characters":12}]}],"next_cursor":null}""",
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """{"source_id":"lib/$session","source_revision":"r-source","text":"hello\nworld","offset":0,"end":12,"total_characters":12,"next_offset":null,"spans":[
+                    {"id":"$span","recorded_at":1794540000.0,"text":"hello","citation_url":"momoagent://source/$session/$span?version=2&generation=0"}]}""",
+            ),
+        )
+        val store = ContextStore(api, this, connection(), "token")
+        val result = store.resolveRecordingLink(
+            com.momoagent.android.data.RecordingLink(session, span, 2, 0),
+        )
+        assertTrue(result is RecordingLinkResult.Found)
+        val found = result as RecordingLinkResult.Found
+        assertEquals("w1", found.window?.id)
+        val stale = store.resolveRecordingLink(
+            com.momoagent.android.data.RecordingLink(session, span, 1, 0),
+        )
+        assertEquals(RecordingLinkResult.Changed, stale)
+    }
 }

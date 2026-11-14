@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
@@ -32,6 +33,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.momoagent.android.R
+import com.momoagent.android.remote.ConnectionState
 
 @Composable
 fun MainScreen(viewModel: AppViewModel) {
@@ -78,9 +80,7 @@ fun MainScreen(viewModel: AppViewModel) {
                         items = tabs,
                         selected = tab,
                         onSelect = { tab = it },
-                        modifier = Modifier
-                            .widthIn(max = 360.dp)
-                            .fillMaxWidth(),
+                        modifier = Modifier.widthIn(max = 360.dp),
                     )
                 }
             }
@@ -93,9 +93,19 @@ fun MainScreen(viewModel: AppViewModel) {
         ) {
             when (tab) {
                 0 -> if (conversation != null) {
-                    ChatScreen(store = conversation, onSettings = { settings = true })
+                    ChatScreen(
+                        store = conversation,
+                        contextStore = context,
+                        onSettings = { settings = true },
+                        onOpenTranscripts = { tab = 1 },
+                        onOpenMemory = { tab = 2 },
+                    )
                 } else {
-                    EmptyChat(onStartPairing = { viewModel.advance(SetupStep.Connect) }, onSettings = { settings = true })
+                    EmptyChat(
+                        onStartPairing = { viewModel.advance(SetupStep.Connect) },
+                        onSettings = { settings = true },
+                        onOpenTranscripts = { tab = 1 },
+                    )
                 }
                 1 -> TranscriptsScreen(
                     contextStore = context,
@@ -120,8 +130,9 @@ fun MainScreen(viewModel: AppViewModel) {
 }
 
 @Composable
-private fun EmptyChat(onStartPairing: () -> Unit, onSettings: () -> Unit) {
+private fun EmptyChat(onStartPairing: () -> Unit, onSettings: () -> Unit, onOpenTranscripts: () -> Unit) {
     val palette = LocalMoMoPalette.current
+    var showingStatus by rememberSaveable { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -145,14 +156,40 @@ private fun EmptyChat(onStartPairing: () -> Unit, onSettings: () -> Unit) {
                 modifier = Modifier.padding(top = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                AvatarView(size = 144.dp, expression = "present", active = true)
+                Box {
+                    AvatarView(
+                        size = 120.dp,
+                        expression = "present",
+                        active = !showingStatus,
+                    )
+                    CaptureStatusBadge(
+                        onClick = { showingStatus = true },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = 8.dp, y = 8.dp),
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
-                BrandWordmark("MoMoWordmark", height = 22.dp)
+                BrandWordmark("MoMoWordmark", height = 26.dp)
                 Spacer(Modifier.height(16.dp))
                 Text(stringResource(R.string.brand_tagline), style = MoMoType.subheading, color = palette.muted)
             }
         }
         ClientPrimaryButton(stringResource(R.string.chat_start_pairing), onStartPairing)
         Spacer(Modifier.height(20.dp))
+    }
+    if (showingStatus) {
+        CaptureStatusDialog(
+            status = ConnectionState.Unavailable,
+            onOpenTranscripts = {
+                showingStatus = false
+                onOpenTranscripts()
+            },
+            onSettings = {
+                showingStatus = false
+                onSettings()
+            },
+            onClose = { showingStatus = false },
+        )
     }
 }

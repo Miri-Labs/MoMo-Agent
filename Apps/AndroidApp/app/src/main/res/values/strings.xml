@@ -8,6 +8,9 @@
     <string name="welcome_start_pairing">Start pairing</string>
     <string name="welcome_continue">Continue</string>
     <string name="welcome_skip">Skip</string>
+    <string name="welcome_next_scene">Next scene</string>
+    <string name="welcome_demo">Future demo</string>
+    <string name="welcome_demo_hint">Illustrative examples of future capabilities. No personal data has been read yet.</string>
 
     <string name="connect_title">Connect to Mac</string>
     <string name="connect_scan_title">Scan to connect Mac</string>
@@ -94,6 +97,41 @@
     <string name="chat_status_auth">Pairing needs to be renewed</string>
     <string name="chat_status_unavailable">Mac not connected</string>
     <string name="chat_status_settings">Connection settings</string>
+
+    <string name="avatar_greeting">Say hello to MoMo</string>
+    <string name="chat_capture_status">Recording status</string>
+    <string name="chat_capture_badge">View recording status</string>
+    <string name="chat_watch_unknown">Watch status unknown</string>
+    <string name="chat_watch_unknown_body">This Android build cannot read the Apple Watch recording status yet. Recordings that sync to your Mac still appear in Transcripts.</string>
+    <string name="chat_mac_connection">Mac connection</string>
+    <string name="chat_open_transcripts">View transcripts</string>
+    <string name="chat_task_detail">Task details</string>
+    <string name="chat_task_back">Back</string>
+    <string name="chat_task_untitled">Background task</string>
+    <string name="chat_task_started">Started %1$s</string>
+
+    <string name="task_hint_waiting_computer">Waiting for you to hand back the computer</string>
+    <string name="task_hint_waiting_confirm">Waiting for confirmation</string>
+    <string name="task_hint_queued">Queued</string>
+    <string name="task_hint_finalizing">Preparing results</string>
+    <string name="task_hint_needs_review">Results need review</string>
+    <string name="task_hint_running">Running</string>
+    <string name="task_hint_completed">Completed</string>
+    <string name="task_hint_skipped">Skipped after review</string>
+    <string name="task_hint_stopped">Stopped</string>
+    <string name="task_hint_failed">Did not finish</string>
+
+    <string name="link_unavailable_title">Link unavailable</string>
+    <string name="link_unavailable">This link cannot be opened.</string>
+    <string name="link_requires_mac">Connect your Mac to open this reference.</string>
+    <string name="link_source_missing">This recording reference was deleted or is no longer available.</string>
+    <string name="link_source_changed">This recording has changed since the reference was created.</string>
+    <string name="link_memory_missing">This note no longer exists.</string>
+    <string name="link_open_failed">The Mac could not open this reference.</string>
+    <string name="link_web_failed">No app can open this link.</string>
+    <string name="link_recording_title">Recording reference</string>
+    <string name="link_open_transcripts">Open transcripts</string>
+    <string name="link_open_memory">Open memory</string>
 
     <string name="memory_title">Memory</string>
     <string name="memory_empty">Connect Mac to view and manage long-term memory.</string>

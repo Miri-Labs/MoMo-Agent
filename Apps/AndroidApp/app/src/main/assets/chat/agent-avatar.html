@@ -13,8 +13,8 @@ body{color:#252525;--eyes:#fafafa}body.dark{color:#f4f4f4;--eyes:#171717}
 <script>
 const actor = MoMoAvatar.create(document.getElementById('agent'), {size:'100%'});
 const svg = document.querySelector('svg.life-avatar');
-// Leave room for the greeting pose inside the square native view.
-svg.setAttribute('viewBox','-150 -150 300 300');
+// Match the native 1.5x viewport without changing the character's resting size.
+svg.setAttribute('viewBox','-225 -225 450 450');
 const greetingLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
 greetingLayer.classList.add('avatar-greeting');
 greetingLayer.append(svg.querySelector('g'));
