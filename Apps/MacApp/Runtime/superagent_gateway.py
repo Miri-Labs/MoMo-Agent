@@ -36,6 +36,7 @@ if str(REPOSITORY / "Vendor/HermesAgent") not in sys.path:
     sys.path.insert(0, str(REPOSITORY / "Vendor/HermesAgent"))
 
 from momo_memory import memory_home
+from memory_search import MemorySearch, SEARCH_SCHEMA, READ_SCHEMA, execute_search_tool
 from momo_agent import profile_directory
 from memory_review import InvalidReviewReceipt, STALLED_REVIEW, outcome as verify_review_receipt
 from apple_pim import ApplePIM
@@ -84,9 +85,21 @@ class RepeatedToolRead(RuntimeError):
 
 
 _EVIDENCE_READS = frozenset({
+    "search_memory", "read_memory_evidence",
     "read_recording", "list_recordings", "search_recordings", "phone_context",
     "session_search", "read_memory_notebook", "list_memory_notebooks", "read_daily_evidence",
 })
+
+
+def search_recording_evidence(data, args):
+    result = MemorySearch(data).search(args.get("query"), args.get("alternative_queries"),
+                                      kind="recording", limit=args.get("limit", 15))
+    for match in result["matches"]:
+        speaker, owner, _ = classify_transcript_span(match)
+        match["speaker"] = speaker
+        match["speaker_role"] = "owner" if owner is True else "other" if owner is False else "unattributed"
+        match["recorded_at_local"] = time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime(match["recorded_at"]))
+    return result
 
 
 def _unchanged_tool_key(call, results):
@@ -2127,11 +2140,15 @@ class SuperAgentGateway:
             "- `memory` to update compact core `MEMORY.md` (`target='memory'`) or `USER.md` (`target='user'`);\n"
             "- `notebook` to freely read, write, move, or remove pure Markdown (`.md`) notes anywhere in the multi-level `memories/` vault (`BRIEFING.md` via `category='briefing'` or `path='BRIEFING.md'`, and multi-level directories via `path='projects/<project>/<doc>.md'`, `path='journal/YYYY-MM/YYYY-MM-DD.md'`, `path='people/<group>/<name>.md'`, or any custom folder hierarchy you design);\n"
             "- `relabel_speakers` to fix or name speaker labels (`[说话人 1]` -> real name or fix `[我]` vs `[他人]`) when the transcript wording and speaker attribution are both corroborated;\n"
+            "- `search_memory` for ranked cross-source recall; provide focused alternative_queries for synonyms and missing aspects, "
+            "then `read_memory_evidence` with id and revision to check the full source. Search hypotheses are not facts.\n"
             "- `list_recordings`, `read_recording`, `search_recordings`, `phone_context`, and `session_search` to gather grounded evidence.\n"
             "Never claim `outcome: \"updated\"` unless at least one `memory`, `notebook` (write/remove), or `relabel_speakers` call confirmed a persisted change (`success: true`, `changed: true`).\n\n"
             f"{memory_context}\n\n{notebook_summary}\n\n{recent_recordings_summary}"
         )
         tool_specs = [
+            copy.deepcopy(SEARCH_SCHEMA),
+            copy.deepcopy(READ_SCHEMA),
             {
                 "name": MEMORY_SCHEMA["name"],
                 "description": MEMORY_SCHEMA["description"],
@@ -2257,7 +2274,8 @@ class SuperAgentGateway:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Substring or keyword to search across transcripts."},
+                        "query": {"type": "string", "description": "Words or phrase to rank across transcripts."},
+                        "alternative_queries": copy.deepcopy(SEARCH_SCHEMA["parameters"]["properties"]["alternative_queries"]),
                         "limit": {"type": "integer", "description": "Maximum matches to return (1..30, default 15)."},
                     },
                     "required": ["query"],
@@ -2287,7 +2305,8 @@ class SuperAgentGateway:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Keyword to search in user/assistant messages (empty returns latest messages)."},
+                        "query": {"type": "string", "description": "Words to rank in user/assistant messages (empty returns latest messages)."},
+                        "alternative_queries": copy.deepcopy(SEARCH_SCHEMA["parameters"]["properties"]["alternative_queries"]),
                         "limit": {"type": "integer", "description": "Maximum matching messages to return (1..30, default 10)."},
                     },
                     "required": [],
@@ -2315,6 +2334,15 @@ class SuperAgentGateway:
                 return json.dumps({"success": False, "error": f"Invalid tool JSON arguments: {exc}"}, ensure_ascii=False)
 
             clean_name = name[5:] if name.startswith("mcp__") else name
+            if clean_name in ("search_memory", "read_memory_evidence", "search_recordings"):
+                try:
+                    if clean_name == "search_recordings":
+                        result = search_recording_evidence(self.data, args)
+                    else:
+                        result = execute_search_tool(self.data, clean_name, args)
+                    return json.dumps(result, ensure_ascii=False)
+                except (ValueError, OSError, sqlite3.Error) as error:
+                    return json.dumps({"error": str(error)}, ensure_ascii=False)
             if clean_name == "read_daily_evidence":
                 import daily_review
                 if session_id != "momo-review-" + str(args.get("review_id", "")):
@@ -2444,45 +2472,6 @@ class SuperAgentGateway:
                 finally:
                     store.close()
 
-            if clean_name == "search_recordings":
-                q = str(args.get("query") or "").strip().lower()
-                if not q:
-                    return json.dumps({"matches": [], "error": "query is required"}, ensure_ascii=False)
-                lim = max(1, min(int(args.get("limit") or 15), 30))
-                ctx_dir = self.data / "context"
-                store = ContextStore(ctx_dir)
-                try:
-                    rows = store.db.execute(
-                        "SELECT id, revision, payload, updated FROM sources WHERE deleted=0 AND lower(text) LIKE ? ORDER BY updated DESC LIMIT ?",
-                        (f"%{q}%", lim * 2),
-                    ).fetchall()
-                    matches = []
-                    for row in rows:
-                        payload = json.loads(row["payload"])
-                        spans = store._apply_speaker_overrides(row["id"], payload.get("spans") or [])
-                        for sp in spans:
-                            if q in str(sp.get("text") or "").lower():
-                                spk_label, spk_is_owner, _ = classify_transcript_span(sp)
-                                rec_at = sp.get("recorded_at")
-                                matches.append({
-                                    "source_id": row["id"],
-                                    "source_revision": row["revision"],
-                                    "span_id": sp.get("id"),
-                                    "recorded_at_local": time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime(float(rec_at))) if rec_at else None,
-                                    "speaker": spk_label,
-                                    "speaker_role": "owner" if spk_is_owner is True else ("other" if spk_is_owner is False else "unattributed"),
-                                    "text": str(sp.get("text") or "")[:500],
-                                })
-                                if len(matches) >= lim:
-                                    break
-                        if len(matches) >= lim:
-                            break
-                    return json.dumps({"query": q, "matches": matches}, ensure_ascii=False)
-                except Exception as exc:
-                    return json.dumps({"error": str(exc)}, ensure_ascii=False)
-                finally:
-                    store.close()
-
             if clean_name == "phone_context":
                 kind = str(args.get("kind") or "all").strip().lower()
                 after = args.get("after", "")
@@ -2511,6 +2500,13 @@ class SuperAgentGateway:
                     return json.dumps({"messages": []}, ensure_ascii=False)
                 q = str(args.get("query") or "").strip()
                 lim = max(1, min(int(args.get("limit") or 10), 30))
+                if q:
+                    try:
+                        result = MemorySearch(self.data).search(q, args.get("alternative_queries"), kind="chat", limit=lim)
+                        return json.dumps({"messages": [{**m, "content": m["text"]} for m in result["matches"]],
+                                           "method": result["method"], "has_more": result["has_more"]}, ensure_ascii=False)
+                    except (ValueError, OSError, sqlite3.Error) as error:
+                        return json.dumps({"error": str(error)}, ensure_ascii=False)
                 with closing(memory_review.readonly(conv_path)) as db:
                     rows = db.execute(
                         f"SELECT seq,role,substr(content, 1, 1200) AS content,created_at "
@@ -4346,6 +4342,12 @@ class SuperAgentGateway:
                     raise PermissionError("Ticket assignment is no longer running")
             op = str(body.get("op") or "").strip()
             args = body["args"]
+            if op in ("search_memory", "read_memory_evidence", "search_recordings"):
+                if op == "search_recordings":
+                    result = await asyncio.to_thread(search_recording_evidence, self.data, args)
+                else:
+                    result = await asyncio.to_thread(execute_search_tool, self.data, op, args)
+                return web.json_response({"ok": True, **result})
             if op in (
                 "list_memory_notebooks",
                 "read_memory_notebook",
@@ -4414,7 +4416,7 @@ class SuperAgentGateway:
                     path=raw_write_path,
                 )
                 return web.json_response({"ok": bool(res.get("success")), **res})
-            if op in ("list_recordings", "read_recording", "search_recordings", "relabel_recording_speakers", "exclude_recording_speaker"):
+            if op in ("list_recordings", "read_recording", "relabel_recording_speakers", "exclude_recording_speaker"):
                 from context_store import ContextStore
 
                 cstore = ContextStore(self.data / "context")
@@ -4448,37 +4450,6 @@ class SuperAgentGateway:
                                 sp["speaker"] = spk_label
                             sp["speaker_role"] = "owner" if spk_is_owner is True else ("other" if spk_is_owner is False else "unattributed")
                         return web.json_response({"ok": True, **res})
-                    if op == "search_recordings":
-                        q = str(args.get("query") or "").strip().lower()
-                        if not q:
-                            return web.json_response({"ok": False, "matches": [], "error": "query is required"}, status=400)
-                        lim = max(1, min(int(args.get("limit") or 15), 30))
-                        rows = cstore.db.execute(
-                            "SELECT id, revision, payload, updated FROM sources WHERE deleted=0 AND lower(text) LIKE ? ORDER BY updated DESC LIMIT ?",
-                            (f"%{q}%", lim * 2),
-                        ).fetchall()
-                        matches = []
-                        for row in rows:
-                            payload = json.loads(row["payload"])
-                            spans = cstore._apply_speaker_overrides(row["id"], payload.get("spans") or [])
-                            for sp in spans:
-                                if q in str(sp.get("text") or "").lower():
-                                    spk_label, spk_is_owner, _ = classify_transcript_span(sp)
-                                    rec_at = sp.get("recorded_at")
-                                    matches.append({
-                                        "source_id": row["id"],
-                                        "source_revision": row["revision"],
-                                        "span_id": sp.get("id"),
-                                        "recorded_at_local": time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime(float(rec_at))) if rec_at else None,
-                                        "speaker": spk_label,
-                                        "speaker_role": "owner" if spk_is_owner is True else ("other" if spk_is_owner is False else "unattributed"),
-                                        "text": str(sp.get("text") or "")[:500],
-                                    })
-                                    if len(matches) >= lim:
-                                        break
-                            if len(matches) >= lim:
-                                break
-                        return web.json_response({"ok": True, "query": q, "matches": matches})
                     res = cstore.relabel_speakers(
                         str(args.get("source_id") or ""),
                         str(args.get("target_speaker") or ""),
@@ -4495,7 +4466,7 @@ class SuperAgentGateway:
             return web.json_response(result)
         except PermissionError as error:
             return web.json_response({"error": str(error)}, status=409)
-        except (ValueError, RuntimeError, OSError, TimeoutError) as error:
+        except (ValueError, RuntimeError, OSError, TimeoutError, sqlite3.Error) as error:
             return web.json_response({"error": str(error)}, status=400)
 
     async def handle_internal_context(self, request: web.Request) -> web.Response:

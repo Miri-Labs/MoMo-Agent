@@ -143,42 +143,16 @@ def _cmd_recording_reference(data: Path, args: argparse.Namespace) -> dict:
 
 
 def _cmd_search(data: Path, args: argparse.Namespace) -> dict:
-    query = args.query.strip().lower()
-    store = _open_context(data)
-    try:
-        rows = store.db.execute(
-            "SELECT id, revision, payload, updated FROM sources WHERE deleted = 0 ORDER BY updated DESC"
-        ).fetchall()
-        matches: list[dict] = []
-        limit = max(1, min(args.limit, 50))
-        now_local = _local_dt(time.time())
-        for row in rows:
-            payload = json.loads(row["payload"])
-            title = payload.get("title") or row["id"]
-            for idx, span in enumerate(payload.get("spans") or ()):
-                text = str(span.get("text") or "")
-                if query in text.lower():
-                    rec_at = span.get("recorded_at")
-                    spk_label, spk_is_owner, _ = classify_transcript_span(span)
-                    match_item = {
-                        "source_id": row["id"],
-                        "title": title,
-                        "revision": row["revision"],
-                        "seq": idx,
-                        "span_id": span.get("id"),
-                        "recorded_at": rec_at,
-                        "recorded_at_local": _local_dt(rec_at),
-                        "speaker_role": _speaker_role(spk_is_owner),
-                        "text": text,
-                    }
-                    if spk_label:
-                        match_item["speaker"] = spk_label
-                    matches.append(match_item)
-                    if len(matches) >= limit:
-                        return {"query": args.query, "current_local_time": now_local, "matches": matches}
-        return {"query": args.query, "current_local_time": now_local, "matches": matches}
-    finally:
-        store.close()
+    from memory_search import MemorySearch
+    result = MemorySearch(data).search(args.query, args.alternative_query, kind="recording", limit=args.limit)
+    for match in result["matches"]:
+        speaker, owner, _ = classify_transcript_span(match)
+        match["speaker"] = speaker
+        match["speaker_role"] = _speaker_role(owner)
+        match["recorded_at_local"] = _local_dt(match["recorded_at"])
+        match["evidence_revision"] = match["revision"]
+        match["revision"] = match["source_revision"]  # Existing recording --revision contract.
+    return {"query": args.query, "current_local_time": _local_dt(time.time()), **result}
 
 
 def _cmd_save_recording_result(data: Path, args: argparse.Namespace) -> dict:
@@ -215,6 +189,16 @@ def _cmd_health(data: Path, args: argparse.Namespace) -> dict:
 def _cmd_memories(data: Path, args: argparse.Namespace) -> dict:
     from momo_memory import MoMoMemory
     return MoMoMemory(data).list(after=args.after, limit=args.limit)
+
+
+def _cmd_search_memory(data: Path, args: argparse.Namespace) -> dict:
+    from memory_search import MemorySearch
+    return MemorySearch(data).search(args.query, args.alternative_query, args.kind, args.limit)
+
+
+def _cmd_read_memory_evidence(data: Path, args: argparse.Namespace) -> dict:
+    from memory_search import MemorySearch
+    return MemorySearch(data).read(args.id, args.revision, args.offset, args.limit)
 
 
 def _cmd_remember(data: Path, args: argparse.Namespace) -> dict:
@@ -564,6 +548,7 @@ def main() -> int:
     rec_search = sub.add_parser("search", help="Search voice recording transcripts")
     rec_search.add_argument("query")
     rec_search.add_argument("--limit", type=int, default=20)
+    rec_search.add_argument("--alternative-query", action="append", default=[])
 
     rec_save = sub.add_parser("save-result", help="Save a Markdown note attached to a recording")
     rec_save.add_argument("source_id")
@@ -583,6 +568,17 @@ def main() -> int:
     mem_list = sub.add_parser("memories", help="List shared MoMo memories and user profile facts")
     mem_list.add_argument("--after", default="")
     mem_list.add_argument("--limit", type=int, default=100)
+
+    recall = sub.add_parser("search-memory", help="Rank all Markdown, recordings and chat; add focused query variants for broader recall")
+    recall.add_argument("query")
+    recall.add_argument("--alternative-query", action="append", default=[])
+    recall.add_argument("--kind", choices=("all", "note", "recording", "chat"), default="all")
+    recall.add_argument("--limit", type=int, default=10)
+    evidence = sub.add_parser("read-memory-evidence", help="Read a search result in full with revision validation and paging")
+    evidence.add_argument("id")
+    evidence.add_argument("--revision", required=True)
+    evidence.add_argument("--offset", type=int, default=0)
+    evidence.add_argument("--limit", type=int, default=12000)
 
     mem_add = sub.add_parser("remember", help="Add an entry to shared MEMORY.md or USER.md")
     mem_add.add_argument("--target", choices=("memory", "user"), default="memory")
@@ -644,6 +640,8 @@ def main() -> int:
         "phone-context": _cmd_phone_context,
         "health": _cmd_health,
         "memories": _cmd_memories,
+        "search-memory": _cmd_search_memory,
+        "read-memory-evidence": _cmd_read_memory_evidence,
         "remember": _cmd_remember,
         "forget": _cmd_forget,
         "notebook": _cmd_notebook,

@@ -690,7 +690,7 @@ class MemoryReviewTests(unittest.TestCase):
         system_prompt,tool_specs,execute_tool=gateway._build_memory_review_session(session)
         self.assertIn('empty',system_prompt)
         self.assertEqual(
-            {'memory','notebook','relabel_speakers','list_recordings','read_recording','search_recordings','phone_context','session_search','read_daily_evidence'},
+            {'memory','notebook','relabel_speakers','list_recordings','read_recording','search_recordings','phone_context','session_search','read_daily_evidence','search_memory','read_memory_evidence'},
             {t['name'] for t in tool_specs},
         )
 
