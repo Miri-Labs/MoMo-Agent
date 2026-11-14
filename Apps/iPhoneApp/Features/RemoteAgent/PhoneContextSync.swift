@@ -83,6 +83,7 @@ final class PhoneContextSync {
     private struct MemoryCache: Codable {
         let libraryID: UUID
         let instanceID: UUID
+        let workspaceID: UUID?
         let memories: [ContextMemory]
         let revision: Int64?
         let lastSynced: Date?
@@ -103,7 +104,13 @@ final class PhoneContextSync {
             do {
                 let cached = try JSONDecoder().decode(MemoryCache.self, from: Data(contentsOf: memoryFile))
                 guard cached.libraryID == state.libraryID, cached.instanceID == connection.instanceID else { throw SyncError.identity }
-                memories = cached.memories; lastSynced = cached.lastSynced
+                if let workspace = cached.workspaceID {
+                    guard workspace == connection.workspaceID else { throw SyncError.identity }
+                    memories = cached.memories; lastSynced = cached.lastSynced
+                } else {
+                    // Unverified caches from the split-cache build must be refreshed before display.
+                    failure = String(localized: "笔记需要重新同步。")
+                }
             } catch SyncError.identity { throw SyncError.identity }
             catch { failure = String(localized: "笔记缓存暂时无法读取，原数据已保留。") }
         }
@@ -602,11 +609,22 @@ final class PhoneContextSync {
         // Publish only a complete, consistent snapshot. A concurrent Mac write retries on the next refresh.
         var items: [ContextMemory] = [], revision: Int64?, after: String?
         var seen = Set<String>()
+        var verifiedLegacyIdentity = false
         repeat {
             try Task.checkCancellation()
             let page = try await client.memories(after: after, revision: revision)
             try Task.checkCancellation()
             guard memoryGeneration == owner else { throw CancellationError() }
+            if let workspace = page.workspaceId {
+                guard workspace == state.connection.workspaceID else { throw SyncError.identity }
+            } else if !verifiedLegacyIdentity {
+                // Older Macs identify their notebook through status; never stamp unverified content with our identity.
+                let status = try await client.contextStatus()
+                try Task.checkCancellation()
+                guard memoryGeneration == owner else { throw CancellationError() }
+                try validate(status)
+                verifiedLegacyIdentity = true
+            }
             if let revision, revision != page.revision { throw SyncError.invalidPagination }
             revision = page.revision; items += page.items; after = page.nextCursor
             if let after, !seen.insert(after).inserted { throw SyncError.invalidPagination }
@@ -614,6 +632,7 @@ final class PhoneContextSync {
         try Task.checkCancellation()
         guard memoryGeneration == owner else { throw CancellationError() }
         let cached = MemoryCache(libraryID: state.libraryID, instanceID: state.connection.instanceID,
+                                 workspaceID: state.connection.workspaceID,
                                  memories: items, revision: revision, lastSynced: Date())
         try JSONEncoder().encode(cached).write(to: memoryFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         if memories != items { memories = items }

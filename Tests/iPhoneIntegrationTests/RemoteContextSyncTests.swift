@@ -7,6 +7,69 @@ import MoMoContracts
 
 @MainActor
 final class RemoteContextSyncTests: XCTestCase {
+    func testUnverifiedLegacyCacheWaitsForRefreshAndForeignWorkspaceCacheIsRejected() async throws {
+        let (sync, root, archive, connection) = try fixture()
+        await sync.refreshMemories()
+        sync.background()
+        let file = root.appendingPathComponent("memories-cache.json")
+        var cache = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        cache.removeValue(forKey: "workspaceID")
+        try JSONSerialization.data(withJSONObject: cache).write(to: file)
+        let restored = try PhoneContextSync(directory: root, archive: archive, deviceID: UUID(), connection: connection,
+                                           key: "fixture", configuration: configuration())
+        XCTAssertTrue(restored.memories.isEmpty)
+        XCTAssertNil(restored.lastSynced)
+        await restored.refreshMemories()
+        XCTAssertEqual(restored.memories.count, 1)
+        restored.background()
+        cache["workspaceID"] = UUID().uuidString
+        try JSONSerialization.data(withJSONObject: cache).write(to: file)
+        XCTAssertThrowsError(try PhoneContextSync(directory: root, archive: archive, deviceID: UUID(), connection: connection,
+                                                key: "fixture", configuration: configuration()))
+    }
+
+    func testIdentityMismatchCannotAdvanceNotebookCache() async throws {
+        let (sync, root, _, _) = try fixture()
+        await sync.refresh()
+        let last = try XCTUnwrap(sync.lastSynced)
+        let file = root.appendingPathComponent("memories-cache.json")
+        let saved = try Data(contentsOf: file)
+        sync.background()
+        MemoryResponse.state.reset(UUID())
+        await sync.refresh()
+        XCTAssertEqual(sync.lastSynced, last)
+        XCTAssertEqual(try Data(contentsOf: file), saved)
+        XCTAssertNotNil(sync.failure)
+    }
+
+    func testLegacyNotebookRequiresMatchingIdentityBeforeCommit() async throws {
+        let (sync, root, _, _) = try fixture()
+        MemoryResponse.state.legacyMemory = true
+        await sync.refreshMemories()
+        let last = try XCTUnwrap(sync.lastSynced)
+        let file = root.appendingPathComponent("memories-cache.json")
+        let saved = try Data(contentsOf: file)
+        sync.background()
+        MemoryResponse.state.reset(UUID())
+        MemoryResponse.state.legacyMemory = true
+        await sync.refreshMemories()
+        XCTAssertEqual(sync.lastSynced, last)
+        XCTAssertEqual(try Data(contentsOf: file), saved)
+        XCTAssertNotNil(sync.failure)
+    }
+
+    func testLegacyNotebookKeepsCacheWhenIdentityCannotBeVerified() async throws {
+        let (sync, _, _, _) = try fixture()
+        MemoryResponse.state.legacyMemory = true
+        await sync.refreshMemories()
+        let last = try XCTUnwrap(sync.lastSynced)
+        sync.background()
+        MemoryResponse.state.rejectStatus = true
+        await sync.refreshMemories()
+        XCTAssertEqual(sync.lastSynced, last)
+        XCTAssertNotNil(sync.failure)
+    }
+
     func testCancelledUploadCleanupCannotClearReplacementTask() async throws {
         let (sync, root, archive, _) = try fixture()
         _ = try await summaryWindow(archive: archive, root: root)
@@ -462,6 +525,7 @@ private final class MemoryResponses: @unchecked Sendable {
     private var forgotten = false
     private var sourceCount = 0
     private var sourceStatus: Int?
+    private var legacyNotebook = false
     private var waitingForStatus: XCTestExpectation?
     private var heldStatus: (@Sendable () -> Void)?
     private var waitingForSource: XCTestExpectation?
@@ -501,6 +565,10 @@ private final class MemoryResponses: @unchecked Sendable {
         response?()
     }
     var sourceAttempts: Int { lock.withLock { sourceCount } }
+    var legacyMemory: Bool {
+        get { lock.withLock { legacyNotebook } }
+        set { lock.withLock { legacyNotebook = newValue } }
+    }
     var sourceFailureStatus: Int? {
         get { lock.withLock { sourceStatus } }
         set { lock.withLock { sourceStatus = newValue } }
@@ -533,6 +601,7 @@ private final class MemoryResponses: @unchecked Sendable {
         rejected = false; memoriesRejected = false; statusRejected = false; forgetAllowed = false; forgotten = false; sourceCount = 0
         waitingForSource = nil; heldResponse = nil; waitingForMemory = nil; heldMemory = nil
         waitingForStatus = nil; heldStatus = nil; sourceStatus = nil
+        legacyNotebook = false
     } }
     func receive(_ request: URLRequest) -> (Int, String) {
         lock.withLock {
@@ -571,8 +640,11 @@ private final class MemoryResponses: @unchecked Sendable {
             }
             if request.url?.path == "/v1/memories" {
                 if memoriesRejected { return (503, "{}") }
-                if forgotten { return (200, #"{"revision":2,"next_cursor":null,"items":[]}"#) }
-                return (200, #"{"revision":1,"next_cursor":null,"items":[{"id":"momo-memory-fixture","text":"下周五发方案","kind":"memory","basis":"momo","status":"current","revision":1,"evidence":[]}]}"#)
+                let body = forgotten ? #"{"revision":2,"next_cursor":null,"items":[]}"#
+                    : #"{"revision":1,"next_cursor":null,"items":[{"id":"momo-memory-fixture","text":"下周五发方案","kind":"memory","basis":"momo","status":"current","revision":1,"evidence":[]}]}"#
+                var page = try! JSONSerialization.jsonObject(with: Data(body.utf8)) as! [String: Any]
+                if !legacyNotebook { page["workspace_id"] = workspace.uuidString }
+                return (200, String(decoding: try! JSONSerialization.data(withJSONObject: page), as: UTF8.self))
             }
             if request.url?.path == "/v1/memories/forget", forgetAllowed { forgotten = true; return (200, "{}") }
             return (503, "{}")

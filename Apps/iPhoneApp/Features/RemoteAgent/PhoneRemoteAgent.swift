@@ -35,7 +35,9 @@ final class PhoneRemoteAgent {
     private(set) var connection: AgentConnection?
     var failure: String?
     private(set) var readingPosition: ChatReadingPosition?
-    private(set) var connecting = false
+    var connecting: Bool { pairingInProgress || recovering }
+    private(set) var pairingInProgress = false
+    private var recovering = false
     let notifications = PhoneNotifications()
     let pairing: PhonePairing
     let tailnet: EmbeddedTailnet
@@ -130,25 +132,27 @@ final class PhoneRemoteAgent {
         }
     }
 
-    func connect(configuration: String, credential: String) async {
-        guard !connecting else { return }
-        connecting = true
-        defer { if recoveryTask == nil { connecting = false } }
+    @discardableResult
+    func connect(configuration: String, credential: String, requestConfiguration: URLSessionConfiguration = .ephemeral) async -> Bool {
+        guard !pairingInProgress else { return false }
+        cancelRecovery()
+        pairingInProgress = true
+        defer { pairingInProgress = false }
         do {
             let proposed = try JSONDecoder().decode(AgentConnection.self, from: Data(configuration.utf8))
             guard connection == nil || connection?.hasSameIdentity(as: proposed) == true else { throw ConnectionError.identityChanged }
             let key = credential.trimmingCharacters(in: .whitespacesAndNewlines)
             let route = try transport(for: proposed)
-            let client = try AgentClient(baseURL: proposed.baseURL, credential: key, assistantID: proposed.assistantID, transport: route)
+            let client = try AgentClient(baseURL: proposed.baseURL, credential: key, assistantID: proposed.assistantID, configuration: requestConfiguration, transport: route)
             let capabilities = try await client.capabilities()
             guard capabilities.features.runSubmission == true,
                   capabilities.features.runsIdempotency?.durable == true else { throw ConnectionError.unsupported }
             guard let dataURL = proposed.dataURL else { throw ConnectionError.unsupported }
-            let contextClient = try AgentClient(baseURL: dataURL, credential: key, assistantID: proposed.assistantID, transport: route)
+            let contextClient = try AgentClient(baseURL: dataURL, credential: key, assistantID: proposed.assistantID, configuration: requestConfiguration, transport: route)
             let status = try await contextClient.contextStatus()
             guard status.workspaceId == proposed.workspaceID, status.sourceSync,
                   status.memoryWriter == "SuperAgent" else { throw ConnectionError.identityChanged }
-            let restored = try makeStore(proposed, key: key)
+            let restored = try makeStore(proposed, key: key, configuration: requestConfiguration)
             if connection?.network != proposed.network || connection?.baseURL != proposed.baseURL {
                 try restored.sync.allowSourceDeliveryRetry()
             }
@@ -170,11 +174,14 @@ final class PhoneRemoteAgent {
             connection = proposed; store = restored.tasks; context = restored.sync; health = restored.health; sources = restored.sources; network = restored.network; desktopClient = restored.desktop; failure = nil
             desktopClientID = UUID()
             notifications.start()
+            pairingInProgress = false
             if active { beginRecovery() }
             onSummariesChanged?()
             sourcesChanged()
+            return true
         } catch {
             failure = AgentTransportFailure.isTransient(error) ? String(localized: "暂时无法连接 Mac，请重试，无需重新扫码。") : error.localizedDescription
+            return false
         }
     }
 
@@ -195,8 +202,11 @@ final class PhoneRemoteAgent {
     }
 
     func reconnect() async {
+        let scene = sceneGeneration
         beginRecovery(userInitiated: true)
-        await recoveryTask?.value
+        while !Task.isCancelled, sceneGeneration == scene, let current = recoveryTask {
+            await current.value
+        }
     }
 
     private func cancelRecovery() {
@@ -207,7 +217,7 @@ final class PhoneRemoteAgent {
         recoveryTask?.cancel(); recoveryTask = nil
         queuedRecovery = nil
         ancillaryStarted = false
-        connecting = false
+        recovering = false
     }
 
     private func beginRecovery(userInitiated: Bool = false, trigger: String = "foreground") {
@@ -225,7 +235,7 @@ final class PhoneRemoteAgent {
             store.foreground(); context?.foreground()
         }
         let scene = sceneGeneration, owner = UUID(), confirmation = connectionConfirmation
-        recoveryID = owner; connecting = true; failure = nil
+        recoveryID = owner; recovering = true; failure = nil
         tailnet.diagnostics.recordLink("recovery", "started", details: ["attempt": owner.uuidString,
             "generation": scene.uuidString, "trigger": userInitiated ? "manual" : trigger])
         let sync = context
@@ -233,10 +243,10 @@ final class PhoneRemoteAgent {
             guard let self, let store else { return }
             defer {
                 if self.recoveryID == owner {
-                    self.recoveryTask = nil; self.connecting = false
+                    self.recoveryTask = nil; self.recovering = false
                     if let manual = self.queuedRecovery {
                         self.queuedRecovery = nil
-                        if self.active { self.beginRecovery(userInitiated: manual, trigger: "coalesced") }
+                        if self.active || manual { self.beginRecovery(userInitiated: manual, trigger: "coalesced") }
                     }
                 }
             }
@@ -431,10 +441,10 @@ final class PhoneRemoteAgent {
         return connection.network == "tailscale" ? EmbeddedTailnetTransport(network: tailnet, endpoint: connection.baseURL) : nil
     }
 
-    private func makeStore(_ connection: AgentConnection, key: String) throws -> (tasks: RemoteTaskStore, sync: PhoneContextSync, health: PhoneHealthSync?, sources: PhoneSourcesSync?, network: AgentRTCTransport?, desktop: AgentClient) {
+    private func makeStore(_ connection: AgentConnection, key: String, configuration: URLSessionConfiguration = .ephemeral) throws -> (tasks: RemoteTaskStore, sync: PhoneContextSync, health: PhoneHealthSync?, sources: PhoneSourcesSync?, network: AgentRTCTransport?, desktop: AgentClient) {
         let network = connection.network == nil ? try AgentRTCTransport(connection: connection, credential: key) : nil
         let route = try transport(for: connection) ?? network
-        let client = try AgentClient(baseURL: connection.baseURL, credential: key, assistantID: connection.assistantID, transport: route)
+        let client = try AgentClient(baseURL: connection.baseURL, credential: key, assistantID: connection.assistantID, configuration: configuration, transport: route)
         let sync = try PhoneContextSync(directory: directory, archive: archive, deviceID: deviceID, connection: connection, key: key, transport: route)
         sync.configurationFingerprint = transcriptionFingerprint
         let health = try? PhoneHealthSync(directory: directory, deviceID: deviceID, connection: connection, key: key, transport: route)

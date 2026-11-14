@@ -5,11 +5,113 @@ import XCTest
 import MoMoArchive
 import MoMoContracts
 import MoMoRecording
+import MoMoAgentClient
+import Security
 @testable import MoMoAgent
 
 /// Controlled platform events test the adapter contract; they are not iOS scheduler acceptance.
 @MainActor
 final class BackgroundGrantLifecycleTests: XCTestCase {
+    func testManualRetryWaitsForItsCoalescedFollowup() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoRecoveryWait-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let device = UUID()
+        let archive = try ArchiveStore(rootURL: root, receiverDeviceID: device)
+        let agent = try PhoneRemoteAgent(directory: root.appendingPathComponent("remote"), archive: archive, deviceID: device)
+        let endpoint = URL(string: "https://fixture.invalid")!
+        let connection = AgentConnection(workspaceID: UUID(), assistantID: UUID(), instanceID: UUID(), baseURL: endpoint, dataURL: endpoint)
+        defer {
+            agent.contextDelivery.expire()
+            PairingHoldProtocol.releaseProbe()
+            SecItemDelete([kSecClass as String: kSecClassGenericPassword,
+                           kSecAttrService as String: "MoMoAgent.MacConnection",
+                           kSecAttrAccount as String: connection.instanceID.uuidString] as CFDictionary)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PairingHoldProtocol.self]
+        PairingHoldProtocol.respond(workspace: connection.workspaceID)
+        let applied = await agent.connect(configuration: String(decoding: try JSONEncoder().encode(connection), as: UTF8.self),
+                                          credential: "fixture", requestConfiguration: configuration)
+        XCTAssertTrue(applied, agent.failure ?? "No pairing error was reported")
+        agent.contextDelivery.expire()
+        let first = expectation(description: "First recovery probe held")
+        PairingHoldProtocol.holdProbe(first)
+        let firstRetry = Task { await agent.reconnect() }
+        await fulfillment(of: [first], timeout: 5)
+        let queued = expectation(description: "Manual retry requested")
+        var returned = false
+        let manual = Task { queued.fulfill(); await agent.reconnect(); returned = true }
+        await fulfillment(of: [queued], timeout: 5)
+        let second = expectation(description: "Coalesced probe held")
+        PairingHoldProtocol.holdProbe(second)
+        PairingHoldProtocol.releaseProbe()
+        await fulfillment(of: [second], timeout: 5)
+        XCTAssertFalse(returned, "Manual refresh must await its own coalesced attempt")
+        PairingHoldProtocol.releaseProbe()
+        await firstRetry.value; await manual.value
+        XCTAssertTrue(returned)
+    }
+
+    func testExplicitConnectionPreemptsAutomaticRecoveryAndReportsFailure() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoConnectionPriority-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let device = UUID()
+        let archive = try ArchiveStore(rootURL: root, receiverDeviceID: device)
+        let agent = try PhoneRemoteAgent(directory: root.appendingPathComponent("remote"), archive: archive, deviceID: device)
+        let endpoint = URL(string: "https://fixture.invalid")!
+        let connection = AgentConnection(workspaceID: UUID(), assistantID: UUID(), instanceID: UUID(), baseURL: endpoint, dataURL: endpoint)
+        defer {
+            agent.leavingForeground()
+            agent.contextDelivery.expire()
+            SecItemDelete([kSecClass as String: kSecClassGenericPassword,
+                           kSecAttrService as String: "MoMoAgent.MacConnection",
+                           kSecAttrAccount as String: connection.instanceID.uuidString] as CFDictionary)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PairingHoldProtocol.self]
+        PairingHoldProtocol.respond(workspace: connection.workspaceID)
+        agent.foreground()
+        let applied = await agent.connect(configuration: String(decoding: try JSONEncoder().encode(connection), as: UTF8.self),
+                                          credential: "fixture", requestConfiguration: configuration)
+        XCTAssertTrue(applied, agent.failure ?? "No pairing error was reported")
+        XCTAssertNotNil(agent.store)
+        XCTAssertTrue(agent.connecting, "A successful foreground pairing starts automatic recovery")
+        XCTAssertFalse(agent.pairingInProgress)
+        let replacement = await agent.connect(configuration: "invalid", credential: "replacement")
+        XCTAssertFalse(replacement)
+        XCTAssertNotNil(agent.failure, "Explicit configuration must be attempted, not silently ignored during recovery")
+        XCTAssertEqual(agent.connection, connection)
+    }
+
+    func testLeavingForegroundDoesNotReleaseAnInFlightPairing() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoPairingLifecycle-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let device = UUID()
+        let archive = try ArchiveStore(rootURL: root, receiverDeviceID: device)
+        let agent = try PhoneRemoteAgent(directory: root.appendingPathComponent("remote"), archive: archive, deviceID: device)
+        let endpoint = URL(string: "https://fixture.invalid")!
+        let connection = AgentConnection(workspaceID: UUID(), assistantID: UUID(), instanceID: UUID(), baseURL: endpoint, dataURL: endpoint)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PairingHoldProtocol.self]
+        let entered = expectation(description: "Pairing capabilities in flight")
+        PairingHoldProtocol.observe(entered)
+        agent.foreground()
+        let pairing = Task {
+            return await agent.connect(configuration: String(decoding: try JSONEncoder().encode(connection), as: UTF8.self),
+                                credential: "fixture", requestConfiguration: configuration)
+        }
+        await fulfillment(of: [entered], timeout: 5)
+        agent.leavingForeground()
+        XCTAssertTrue(agent.connecting, "Scene recovery cancellation must not unlock an ongoing pairing")
+        let secondApplied = await agent.connect(configuration: "invalid", credential: "fixture")
+        XCTAssertFalse(secondApplied, "Busy pairing must explicitly report that it was not applied")
+        XCTAssertNil(agent.failure, "A second pairing must not be admitted before the first finishes")
+        pairing.cancel()
+        let firstApplied = try await pairing.value
+        XCTAssertFalse(firstApplied)
+        XCTAssertFalse(agent.connecting)
+    }
+
     func testSceneContinuationEndsOnceAndAnOldExpirationCannotStopTheNextGrant() async throws {
         var expirations: [@MainActor @Sendable () -> Void] = []
         var ended: [UIBackgroundTaskIdentifier] = []
@@ -667,4 +769,47 @@ private actor GrantHarness {
 
     func releaseStop() { stopBarrier?.resume(); stopBarrier = nil }
     func deliverLateCompletion() { finish?(Completion(execution: handle, reason: .completed, failureCode: nil)) }
+}
+
+private final class PairingHoldProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var entered: XCTestExpectation?
+    nonisolated(unsafe) private static var workspace: UUID?
+    nonisolated(unsafe) private static var nextProbe: XCTestExpectation?
+    nonisolated(unsafe) private static var probeResponse: (@Sendable () -> Void)?
+    static func holdProbe(_ entered: XCTestExpectation) { lock.withLock { nextProbe = entered } }
+    static func releaseProbe() {
+        let response = lock.withLock { let response = probeResponse; probeResponse = nil; return response }
+        response?()
+    }
+    static func observe(_ expectation: XCTestExpectation) {
+        lock.withLock { entered = expectation; workspace = nil; nextProbe = nil; probeResponse = nil }
+    }
+    static func respond(workspace: UUID) {
+        lock.withLock { self.workspace = workspace; entered = nil; nextProbe = nil; probeResponse = nil }
+    }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let workspace = Self.lock.withLock { Self.entered?.fulfill(); Self.entered = nil; return Self.workspace }
+        guard let workspace else { return }
+        if request.url?.path == "/v1/capabilities", Self.lock.withLock({
+            guard let next = Self.nextProbe else { return false }
+            Self.nextProbe = nil
+            Self.probeResponse = { [self] in
+                client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil,
+                                                                     headerFields: ["Content-Type":"application/json"])!, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: Data("{}".utf8)); client?.urlProtocolDidFinishLoading(self)
+            }
+            next.fulfill(); return true
+        }) { return }
+        let body = request.url?.path == "/v1/status"
+            ? "{\"workspace_id\":\"\(workspace)\",\"source_sync\":true,\"memory_writer\":\"SuperAgent\"}"
+            : #"{"features":{"run_submission":true,"runs_idempotency":{"supported":true,"durable":true}}}"#
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                                                             headerFields: ["Content-Type":"application/json"])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

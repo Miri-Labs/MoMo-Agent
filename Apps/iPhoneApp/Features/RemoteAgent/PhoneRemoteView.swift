@@ -481,12 +481,13 @@ private struct PhoneManualConnectionView: View {
                     .accessibilityIdentifier("remote.credential")
             } footer: { Text("密钥保存在这台手机的钥匙串中。") }
             Section {
-                Button(agent.connecting ? "正在连接…" : "保存") {
+                Button(agent.pairingInProgress ? "正在连接…" : "保存") {
                     Task {
-                        await agent.connect(configuration: configuration, credential: credential)
-                        if agent.failure == nil { credential = ""; dismiss() }
+                        if await agent.connect(configuration: configuration, credential: credential) {
+                            credential = ""; dismiss()
+                        }
                     }
-                }.disabled(agent.connecting || credential.isEmpty || configuration.isEmpty)
+                }.disabled(agent.pairingInProgress || credential.isEmpty || configuration.isEmpty)
                     .accessibilityIdentifier("remote.saveConnection")
                 if let failure = agent.failure { Text(failure).font(.footnote).foregroundStyle(.red) }
             }
