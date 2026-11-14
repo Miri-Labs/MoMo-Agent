@@ -49,7 +49,22 @@ data class AgentAttachment(
     val data: String? = null,
     val text: String? = null,
     val preview: String? = null,
+    val recording: RecordingReference? = null,
 )
+
+@Serializable
+data class RecordingReference(
+    @SerialName("library_id") val libraryID: String,
+    val sessions: List<Session>,
+) {
+    @Serializable
+    data class Session(
+        @SerialName("session_id") val sessionID: String,
+        val version: Long,
+        val generation: Long,
+        @SerialName("span_ids") val spanIDs: List<String>,
+    )
+}
 
 @Serializable
 data class ConversationMessage(

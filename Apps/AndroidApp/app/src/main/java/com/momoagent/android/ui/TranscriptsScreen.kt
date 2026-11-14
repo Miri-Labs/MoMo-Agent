@@ -56,8 +56,10 @@ import com.momoagent.android.data.ContextSource
 import com.momoagent.android.data.ContextSpan
 import com.momoagent.android.data.ContextWindow
 import com.momoagent.android.remote.ContextStore
+import com.momoagent.android.remote.RecordingSelection
 import com.momoagent.android.remote.TranscriptDetail
 import com.momoagent.android.remote.TranscriptSearchHit
+import com.momoagent.android.remote.recordingSelection
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -88,7 +90,7 @@ fun TranscriptsScreen(
     contextStore: ContextStore?,
     onConnect: () -> Unit,
     onSettings: () -> Unit,
-    onDiscuss: (List<String>) -> Unit,
+    onDiscuss: (RecordingSelection) -> Unit,
 ) {
     val palette = LocalMoMoPalette.current
     if (contextStore == null) {
@@ -426,15 +428,23 @@ private fun TranscriptDetailView(
     meLabel: String,
     onBack: () -> Unit,
     onSettings: () -> Unit,
-    onDiscuss: (List<String>) -> Unit,
+    onDiscuss: (RecordingSelection) -> Unit,
 ) {
     val palette = LocalMoMoPalette.current
+    var discussFailure by remember { mutableStateOf<String?>(null) }
     BackHandler(onBack = onBack)
     val listState = rememberLazyListState()
     val windowKey = detail.source.id + "@" + (detail.window?.id ?: "")
     var scrolledKey by remember { mutableStateOf<String?>(null) }
     val spans = detail.spans
     val citations = remember(detail) { citationsForWindow(detail) }
+    val windowStart = detail.window?.recordedAt ?: detail.source.recordedAt ?: 0.0
+    val windowEnd = detail.window?.endAt ?: detail.window?.recordedAt ?: windowStart
+    val referenceName = stringResource(
+        R.string.transcripts_reference_name,
+        formatDay(logicalDay(windowStart)) + " · " + formatTimeRange(windowStart, windowEnd),
+    )
+    val referenceChanged = stringResource(R.string.transcripts_reference_changed)
 
     LaunchedEffect(windowKey, detail.complete) {
         if (!detail.complete || scrolledKey == windowKey) return@LaunchedEffect
@@ -514,15 +524,31 @@ private fun TranscriptDetailView(
                         }
                     }
                 }
-                if (detail.window != null && citations.isNotEmpty() && !loading) {
+                if (detail.window != null && citations.isNotEmpty() && detail.complete && !loading) {
                     Button(
-                        onClick = { onDiscuss(citations) },
+                        onClick = {
+                            val selection = recordingSelection(detail, referenceName)
+                            if (selection == null) {
+                                discussFailure = referenceChanged
+                            } else {
+                                onDiscuss(selection)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
                     ) {
                         Text(stringResource(R.string.transcripts_discuss))
                     }
                 }
             }
+        }
+    }
+
+    discussFailure?.let { message ->
+        GlassDialog(
+            onDismiss = { discussFailure = null },
+            title = stringResource(R.string.transcripts_discuss_failed),
+        ) {
+            Text(message)
         }
     }
 }

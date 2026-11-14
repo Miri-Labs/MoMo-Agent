@@ -57,6 +57,7 @@ data class ConversationState(
     val connection: ConnectionState = ConnectionState.Connecting,
     val draft: String = "",
     val attachments: List<AgentAttachment> = emptyList(),
+    val recordingReferenceFailure: Boolean = false,
 ) {
     val busy: Boolean
         get() = runs.values.any { !it.isTerminal } ||
@@ -133,6 +134,28 @@ class ConversationStore(
         _state.update { it.copy(failure = null) }
     }
 
+    fun dismissRecordingReferenceFailure() {
+        _state.update { it.copy(recordingReferenceFailure = false) }
+    }
+
+    /**
+     * Replaces any previous recording reference while keeping the draft and other
+     * attachments. Returns false when the attachment limit leaves no room.
+     */
+    fun setRecordingAttachment(attachment: AgentAttachment): Boolean {
+        if (attachment.recording == null) return false
+        val current = _state.value
+        val others = current.attachments.filterNot { it.recording != null }
+        if (others.size >= 4) return false
+        _state.update {
+            it.copy(
+                attachments = others + attachment,
+                recordingReferenceFailure = false,
+            )
+        }
+        return true
+    }
+
     fun send() {
         val current = _state.value
         val content = current.draft.trim()
@@ -145,6 +168,7 @@ class ConversationStore(
                 draft = "",
                 attachments = emptyList(),
                 failure = null,
+                recordingReferenceFailure = false,
             )
         }
         dispatch(outgoing)
@@ -158,6 +182,7 @@ class ConversationStore(
                     if (it.operationID == operationID) it.copy(failed = false, failure = null) else it
                 },
                 failure = null,
+                recordingReferenceFailure = false,
             )
         }
         dispatch(outgoing.copy(failed = false, failure = null))
@@ -181,6 +206,7 @@ class ConversationStore(
                 throw error
             } catch (error: Exception) {
                 val message = error.message ?: "send failed"
+                val referenceChanged = message.contains("recording_reference_changed")
                 _state.update { current ->
                     current.copy(
                         outgoing = current.outgoing.map {
@@ -188,7 +214,8 @@ class ConversationStore(
                                 it.copy(failed = true, failure = message)
                             } else it
                         },
-                        failure = message,
+                        failure = if (referenceChanged) current.failure else message,
+                        recordingReferenceFailure = current.recordingReferenceFailure || referenceChanged,
                     )
                 }
             }

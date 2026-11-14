@@ -34,11 +34,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.momoagent.android.R
 import com.momoagent.android.remote.ConnectionState
+import com.momoagent.android.remote.toAttachment
 
 @Composable
 fun MainScreen(viewModel: AppViewModel) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var settings by rememberSaveable { mutableStateOf(false) }
+    var discussFailure by rememberSaveable { mutableStateOf<String?>(null) }
 
     if (settings) {
         androidx.activity.compose.BackHandler { settings = false }
@@ -55,7 +57,8 @@ fun MainScreen(viewModel: AppViewModel) {
 
     val conversation = viewModel.conversationStore
     val context = viewModel.contextStore
-    val discussPrompt = stringResource(R.string.transcripts_discuss_prompt)
+    val discussUnavailable = stringResource(R.string.transcripts_discuss_unavailable)
+    val discussLimit = stringResource(R.string.transcripts_reference_limit)
     val density = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
     val tabs = listOf(
@@ -111,10 +114,13 @@ fun MainScreen(viewModel: AppViewModel) {
                     contextStore = context,
                     onConnect = { viewModel.advance(SetupStep.Connect) },
                     onSettings = { settings = true },
-                    onDiscuss = { citations ->
+                    onDiscuss = { selection ->
                         val store = conversation
-                        if (store != null && citations.isNotEmpty()) {
-                            store.setDraft(discussPrompt + "\n" + citations.joinToString("\n"))
+                        if (store == null) {
+                            discussFailure = discussUnavailable
+                        } else if (!store.setRecordingAttachment(selection.toAttachment())) {
+                            discussFailure = discussLimit
+                        } else {
                             tab = 0
                         }
                     },
@@ -125,6 +131,15 @@ fun MainScreen(viewModel: AppViewModel) {
                     onSettings = { settings = true },
                 )
             }
+        }
+    }
+
+    discussFailure?.let { message ->
+        GlassDialog(
+            onDismiss = { discussFailure = null },
+            title = stringResource(R.string.transcripts_discuss_failed),
+        ) {
+            Text(message)
         }
     }
 }

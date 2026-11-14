@@ -162,7 +162,13 @@
     <string name="transcripts_pick_date">选择日期</string>
     <string name="transcripts_detail_title">转录详情</string>
     <string name="transcripts_discuss">围绕这段时间提问</string>
-    <string name="transcripts_discuss_prompt">请根据这些录音稿帮我梳理要做的事：</string>
+    <string name="transcripts_reference_name">录音引用 · %1$s</string>
+    <string name="transcripts_reference_changed">这段录音已更新或删除，请重新打开该时间段后再试。</string>
+    <string name="transcripts_reference_limit">最多添加 4 个附件，其中只能有一个录音引用。请先移除其他附件。</string>
+    <string name="transcripts_discuss_unavailable">连接 Mac 后才能引用录音。</string>
+    <string name="transcripts_discuss_failed">无法添加录音引用</string>
+    <string name="recording_reference_changed">录音在发送前已更新，请重新打开该时间段后再试。</string>
+    <string name="recording_reference_failed_title">录音引用已变化</string>
     <string name="transcripts_speaker_me">我</string>
     <string name="transcripts_partial_failed">后续内容读取失败，已保留已读部分。</string>
 

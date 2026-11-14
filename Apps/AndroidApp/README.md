@@ -11,10 +11,11 @@ Welcome experience → Connection flow → Chat / Transcripts / Memory tabs → 
 ```
 
 - Welcome: the same three scenarios and copy as the iPhone introduction, marked
-  as a future demo. Context, request, reply and result appear in order, with a
-  static fallback while the live avatar loads. Skip moves to the ready page;
-  pairing starts only from its button. Brand SVGs are pre-rendered to tintable
-  PNGs because AndroidSVG clipped the outlined wordmark and the still on device.
+  as a future demo. Context, request, reply and result appear in order, while one
+  live avatar moves from the listening area to the reply and ready page instead
+  of creating a WebView per stage. Skip moves to the ready page; pairing starts
+  only from its button. Brand SVGs are pre-rendered to tintable PNGs because
+  AndroidSVG clipped the outlined wordmark and the still on device.
 - Connection: scan the Mac pairing QR; pending pairing survives restarts and
   resumes on foreground. A manual connection form lives in Settings.
 - Chat: the iPhone's Web renderer is reused from `assets/chat`, fed by the same
@@ -24,16 +25,21 @@ Welcome experience → Connection flow → Chat / Transcripts / Memory tabs → 
   the IME is open so the composer sits above the keyboard. The avatar's capture
   badge reports the recording device instead of the Mac connection; because
   Android cannot observe the Apple Watch yet, it states that the watch status is
-  unknown and links to Transcripts. Recording and memory citations open inside
-  the app, with explicit messages for deleted or changed sources. Task rows map
-  protocol states to readable actions and open a detail view.
+  unknown and links to Transcripts. The avatar is a single instance whether the
+  conversation is empty or has messages, so the first message shrinks and moves
+  the same WebView instead of reloading it. Recording and memory citations open
+  inside the app, with explicit messages for deleted or changed sources. Task
+  rows map protocol states to readable actions and open a detail view.
 - Transcripts: a day/window timeline grouped by recording day with previous/next
   day, a date picker and full-text search. A recording with several windows
   produces one row per window; opening a row scrolls the detail to that window.
   Details render each span's time and known speaker, load every server page
   instead of stopping at 12,000 characters, and offer "Ask about this section"
-  citations. Android has no local recording/ASR yet; local transcripts are a
-  separate slice.
+  as a removable recording-reference attachment. The reference keeps the current
+  draft and other attachments, replaces an earlier reference, and sends only the
+  selected window's spans through the same `application/vnd.momo.recording-reference`
+  contract as the iPhone. Android has no local recording/ASR yet; local
+  transcripts are a separate slice.
 - Memory: read-only long-term memory from the Mac context API. Notes show their
   folder path, and search matches the directory, file name, kind and body.
 - Settings: Mac connection state, reconnect, re-pair, manual configuration,
@@ -93,8 +99,8 @@ gradle :app:lintDebug
 ```
 
 Current results: `assembleDebug` produces `app-debug.apk` (`com.momoagent.android`,
-version 0.6.0, versionCode 8, minSdk 26, targetSdk 35); 44/44 JVM tests pass;
-lint reports 0 errors and 23 warnings. A Xiaomi 25098PN5AC (Android 17) run
+version 0.6.0, versionCode 8, minSdk 26, targetSdk 35); 57/57 JVM tests pass;
+lint reports 0 errors and 30 warnings. A Xiaomi 25098PN5AC (Android 17) run
 against a paired Mac verified the header size, capture badge/dialog, bottom
 navigation, light/dark appearance and avatar greeting. Welcome playback, chat
 link dialogs and task details still need targeted checks.
@@ -118,7 +124,10 @@ and right clicks are normalized to image coordinates and sent through
 seconds (`heartbeat`) and releases it on exit (`release`). Without a claim the
 viewer stays read-only. Screen Recording or Accessibility permissions are
 checked by the Mac when claiming; failures stay visible in the viewer instead
-of falling back to the old "not available" dialog.
+of falling back to the old "not available" dialog. Each queued input records the
+frame generation and control session it belongs to; a lost frame stream, a
+background transition or a lease change invalidates that queue, so a click based
+on an old picture cannot arrive after the stream recovers.
 
 ## Interface
 

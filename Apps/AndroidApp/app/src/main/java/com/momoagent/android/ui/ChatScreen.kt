@@ -13,6 +13,11 @@ import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateIntOffsetAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -63,11 +68,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -75,6 +83,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.scale
 import androidx.core.net.toUri
@@ -120,6 +130,9 @@ fun ChatScreen(
     }
     val statusBarDp = with(density) { WindowInsets.statusBars.getTop(this).toDp().value }
     var headerHeightPx by remember { mutableIntStateOf(0) }
+    var parentPosition by remember { mutableStateOf<Offset?>(null) }
+    var emptyAvatarPlaceholder by remember { mutableStateOf<AvatarPlaceholder?>(null) }
+    var headerAvatarPlaceholder by remember { mutableStateOf<AvatarPlaceholder?>(null) }
     val measuredHeaderDp = with(density) { headerHeightPx.toDp().value.toDouble() }
     // The measured child excludes the status bar and the header's 4 dp vertical padding.
     val headerInset = if (headerHeightPx > 0) statusBarDp + 8.0 + measuredHeaderDp else statusBarDp + 108.0
@@ -140,7 +153,7 @@ fun ChatScreen(
     val avatarActive = !showingStatus && !showingTasks && !showingAdd && !showingDesktop &&
         !showingVoice && preview == null && attachmentFailure == null &&
         linkRecording == null && linkMemory == null && linkFailure == null &&
-        state.providerNotice == null
+        state.providerNotice == null && !state.recordingReferenceFailure
     var settled by remember { mutableStateOf(false) }
     var previousBusy by remember { mutableStateOf(state.busy) }
     LaunchedEffect(state.busy) {
@@ -157,6 +170,13 @@ fun ChatScreen(
         state.busy -> "working"
         settled -> "settled"
         else -> "present"
+    }
+    val avatarTarget = if (isEmpty) {
+        emptyAvatarPlaceholder?.target(parentPosition, 144.dp)
+            ?: headerAvatarPlaceholder?.target(parentPosition, 72.dp)
+    } else {
+        headerAvatarPlaceholder?.target(parentPosition, 72.dp)
+            ?: emptyAvatarPlaceholder?.target(parentPosition, 144.dp)
     }
 
     fun openAgentLink(value: String) {
@@ -275,7 +295,12 @@ fun ChatScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxWidth().weight(1f)) {
+            Box(
+                Modifier.fillMaxWidth().weight(1f).onGloballyPositioned { coords ->
+                    val position = coords.positionInWindow()
+                    if (position != parentPosition) parentPosition = position
+                },
+            ) {
                 if (isEmpty) {
                     Box(
                         modifier = Modifier
@@ -307,20 +332,15 @@ fun ChatScreen(
                             .padding(top = 24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Box {
-                            AvatarView(
-                                size = 144.dp,
-                                expression = avatarExpression,
-                                active = avatarActive,
-                                conversationID = state.conversationID.ifBlank { store.connection.assistantID },
-                            )
-                            CaptureStatusBadge(
-                                onClick = { showingStatus = true },
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .offset(x = 8.dp, y = 8.dp),
-                            )
-                        }
+                        Box(
+                            Modifier.size(144.dp).onGloballyPositioned { coords ->
+                                val next = AvatarPlaceholder(
+                                    position = coords.positionInWindow(),
+                                    size = with(density) { coords.size.width.toDp() },
+                                )
+                                if (next != emptyAvatarPlaceholder) emptyAvatarPlaceholder = next
+                            },
+                        )
                         Spacer(Modifier.height(6.dp))
                         BrandWordmark("MoMoWordmark", height = 22.dp)
                         if (state.loading) {
@@ -351,20 +371,56 @@ fun ChatScreen(
                     )
                     ChatHeader(
                         state = state,
-                        conversationID = state.conversationID.ifBlank { store.connection.assistantID },
-                        expression = avatarExpression,
-                        active = avatarActive,
                         onSettings = onSettings,
                         onTasks = { showingTasks = true },
                         onDesktop = { showingDesktop = true },
-                        onStatus = { showingStatus = true },
                         onMeasured = { headerHeightPx = it },
+                        onAvatarPlaceholder = { position, size ->
+                            val next = AvatarPlaceholder(position, size)
+                            if (next != headerAvatarPlaceholder) headerAvatarPlaceholder = next
+                        },
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .fillMaxWidth()
                             .statusBarsPadding()
                             .padding(horizontal = 10.dp, vertical = 4.dp),
                     )
+                }
+
+                avatarTarget?.let { target ->
+                    val dpSpec = if (reduceMotion) {
+                        snap<Dp>()
+                    } else {
+                        spring<Dp>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 500f)
+                    }
+                    val offsetSpec = if (reduceMotion) {
+                        snap<IntOffset>()
+                    } else {
+                        spring<IntOffset>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 500f)
+                    }
+                    val animatedSize by animateDpAsState(target.size, dpSpec, label = "avatar-size")
+                    val animatedHeight by animateDpAsState(target.layoutHeight, dpSpec, label = "avatar-height")
+                    val animatedOffset by animateIntOffsetAsState(target.offset, offsetSpec, label = "avatar-offset")
+                    Box(
+                        modifier = Modifier
+                            .offset { animatedOffset }
+                            .width(animatedSize)
+                            .height(animatedHeight),
+                    ) {
+                        AvatarView(
+                            size = animatedSize,
+                            expression = avatarExpression,
+                            active = avatarActive,
+                            conversationID = state.conversationID.ifBlank { store.connection.assistantID },
+                            modifier = Modifier.align(Alignment.TopCenter),
+                        )
+                        CaptureStatusBadge(
+                            onClick = { showingStatus = true },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .offset(x = 8.dp, y = 8.dp),
+                        )
+                    }
                 }
             }
             ChatBanners(
@@ -490,21 +546,28 @@ fun ChatScreen(
             Text(notice.message, color = palette.muted)
         }
     }
+
+    if (state.recordingReferenceFailure) {
+        GlassDialog(
+            onDismiss = store::dismissRecordingReferenceFailure,
+            title = stringResource(R.string.recording_reference_failed_title),
+        ) {
+            Text(stringResource(R.string.recording_reference_changed), color = palette.muted)
+        }
+    }
 }
 
 @Composable
 private fun ChatHeader(
     state: ConversationState,
-    conversationID: String?,
-    expression: String,
-    active: Boolean,
     onSettings: () -> Unit,
     onTasks: () -> Unit,
     onDesktop: () -> Unit,
-    onStatus: () -> Unit,
     onMeasured: (Int) -> Unit,
+    onAvatarPlaceholder: (Offset, Dp) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val density = LocalDensity.current
     Box(modifier = modifier.onSizeChanged { onMeasured(it.height) }) {
         Row(
             modifier = Modifier.align(Alignment.TopStart).height(72.dp),
@@ -520,21 +583,14 @@ private fun ChatHeader(
             modifier = Modifier.align(Alignment.TopCenter),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(Modifier.height(72.dp).width(84.dp)) {
-                AvatarView(
-                    size = 84.dp,
-                    expression = expression,
-                    active = active,
-                    conversationID = conversationID,
-                    modifier = Modifier.align(Alignment.TopCenter),
-                )
-                CaptureStatusBadge(
-                    onClick = onStatus,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .offset(x = 8.dp, y = 8.dp),
-                )
-            }
+            Box(
+                Modifier.height(72.dp).width(84.dp).onGloballyPositioned { coords ->
+                    onAvatarPlaceholder(
+                        coords.positionInWindow(),
+                        with(density) { coords.size.width.toDp() },
+                    )
+                },
+            )
             Spacer(Modifier.height(6.dp))
             BrandWordmark("MoMoWordmark", height = 14.dp)
             Spacer(Modifier.height(8.dp))

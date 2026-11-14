@@ -21,9 +21,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-
 enum class DesktopFailure { Revoked, Permissions, Busy, Ownership, Unavailable, Network }
 
 data class DesktopState(
@@ -37,6 +34,41 @@ data class DesktopState(
     val permitted: Boolean get() = status?.approved == true && status.screen && status.input
     val controlling: Boolean get() = status?.owner == "you" && status.active
     val otherDevice: Boolean get() = status?.owner == "other"
+}
+
+internal data class QueuedDesktopInput(
+    val event: DesktopInputEvent,
+    val generation: Int,
+    val session: String,
+)
+
+/** Inputs belong to the frame generation and control session they were produced for. */
+internal class DesktopInputQueue {
+    private val entries = ArrayDeque<QueuedDesktopInput>()
+
+    @Synchronized
+    fun enqueue(entry: QueuedDesktopInput) {
+        val last = entries.lastOrNull()
+        if (entry.event.kind == "mouse_move" && last?.event?.kind == "mouse_move" &&
+            last.generation == entry.generation && last.session == entry.session
+        ) {
+            entries.removeLast()
+        } else if (entries.size >= 128) {
+            entries.removeFirst()
+        }
+        entries.addLast(entry)
+    }
+
+    @Synchronized
+    fun poll(generation: Int, session: String): QueuedDesktopInput? {
+        while (true) {
+            val entry = entries.pollFirst() ?: return null
+            if (entry.generation == generation && entry.session == session) return entry
+        }
+    }
+
+    @Synchronized
+    fun clear() = entries.clear()
 }
 
 /**
@@ -57,14 +89,15 @@ class DesktopStore(
     private var inputJob: Job? = null
     private var watchdogJob: Job? = null
     private var lastFrameAt = 0L
+    private var inputGeneration = 0
     private val inputSignal = Channel<Unit>(Channel.CONFLATED)
-    private val inputQueue = ArrayDeque<DesktopInputEvent>()
-    private val inputLock = Mutex()
+    private val inputQueue = DesktopInputQueue()
     private var inputSequence = 0
 
     fun open() {
         if (pollJob?.isActive == true) return
         lastFrameAt = 0L
+        invalidateInputs()
         _state.value = DesktopState()
         pollJob = scope.launch { pollLoop() }
         streamJob = scope.launch { streamLoop() }
@@ -75,6 +108,7 @@ class DesktopStore(
     fun retry() {
         pollJob?.cancel()
         streamJob?.cancel()
+        invalidateInputs()
         pollJob = scope.launch { pollLoop() }
         streamJob = scope.launch { streamLoop() }
     }
@@ -82,6 +116,7 @@ class DesktopStore(
     fun close() {
         val status = _state.value.status
         val controlling = _state.value.controlling
+        invalidateInputs()
         pollJob?.cancel(); streamJob?.cancel(); heartbeatJob?.cancel(); inputJob?.cancel(); watchdogJob?.cancel()
         pollJob = null; streamJob = null; heartbeatJob = null; inputJob = null; watchdogJob = null
         if (controlling && status?.session != null) {
@@ -132,23 +167,20 @@ class DesktopStore(
     }
 
     fun send(event: DesktopInputEvent) {
-        val status = _state.value.status ?: return
-        if (status.session == null) return
-        if (!_state.value.streaming || _state.value.picture == null) return
-        if (!_state.value.controlling || !status.screen || !status.input) return
+        val state = _state.value
+        val status = state.status ?: return
+        val session = status.session ?: return
+        if (!state.streaming || state.picture == null) return
+        if (!state.controlling || !status.screen || !status.input) return
         inputSequence += 1
-        val sequenced = event.copy(sequence = inputSequence)
-        scope.launch {
-            inputLock.withLock {
-                if (sequenced.kind == "mouse_move" && inputQueue.peekLast()?.kind == "mouse_move") {
-                    inputQueue.removeLast()
-                } else if (inputQueue.size >= 128) {
-                    inputQueue.removeFirst()
-                }
-                inputQueue.addLast(sequenced)
-            }
-            inputSignal.trySend(Unit)
-        }
+        inputQueue.enqueue(
+            QueuedDesktopInput(
+                event = event.copy(sequence = inputSequence),
+                generation = inputGeneration,
+                session = session,
+            ),
+        )
+        inputSignal.trySend(Unit)
     }
 
     private suspend fun pollLoop() {
@@ -204,12 +236,12 @@ class DesktopStore(
                 val status = state.status ?: break
                 val session = status.session ?: break
                 if (!state.streaming || state.picture == null || !state.controlling) {
-                    inputLock.withLock { inputQueue.clear() }
+                    inputQueue.clear()
                     break
                 }
-                val event = inputLock.withLock { inputQueue.pollFirst() } ?: break
+                val queued = inputQueue.poll(inputGeneration, session) ?: break
                 try {
-                    api.desktopInput(connection, credential, session, event, UUID.randomUUID().toString())
+                    api.desktopInput(connection, credential, session, queued.event, UUID.randomUUID().toString())
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
@@ -221,6 +253,15 @@ class DesktopStore(
     }
 
     private fun applyStatus(next: DesktopStatus) {
+        val previous = _state.value.status
+        if (previous != null && (
+                previous.session != next.session ||
+                    previous.owner != next.owner ||
+                    previous.active != next.active
+                )
+        ) {
+            invalidateInputs()
+        }
         inputSequence = maxOf(inputSequence, next.inputSequence ?: 0)
         _state.update { it.copy(status = next, loading = false) }
         if (next.owner == "you" && next.active && next.session != null && _state.value.streaming) {
@@ -257,6 +298,7 @@ class DesktopStore(
     }
 
     private fun loseFrames(error: Throwable?) {
+        invalidateInputs()
         stopHeartbeat()
         _state.update {
             it.copy(
@@ -266,6 +308,11 @@ class DesktopStore(
                 failure = error?.let(::classify) ?: DesktopFailure.Network,
             )
         }
+    }
+
+    private fun invalidateInputs() {
+        inputGeneration += 1
+        inputQueue.clear()
     }
 
     private suspend fun frameWatchdog() {
@@ -284,6 +331,7 @@ class DesktopStore(
     fun pause() {
         val status = _state.value.status
         val controlling = _state.value.controlling
+        invalidateInputs()
         pollJob?.cancel(); streamJob?.cancel(); heartbeatJob?.cancel(); inputJob?.cancel(); watchdogJob?.cancel()
         pollJob = null; streamJob = null; heartbeatJob = null; inputJob = null; watchdogJob = null
         if (controlling && status?.session != null) {

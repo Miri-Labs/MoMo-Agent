@@ -171,9 +171,7 @@ class ContextStore(
         var source = _state.value.sources.firstOrNull { it.matchesSession(link.sessionID) }
         if (source == null) {
             source = try {
-                val items = fetchSources()
-                _state.update { it.copy(sources = items, sourcesLoading = false, sourcesFailure = null) }
-                items.firstOrNull { it.matchesSession(link.sessionID) }
+                refreshSourcesAndFind(link.sessionID)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -181,28 +179,68 @@ class ContextStore(
             }
         }
         if (source == null) return RecordingLinkResult.Missing
-        val detail = try {
-            loadFullSource(source)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: AgentHttpException) {
-            return when (error.status) {
-                404 -> RecordingLinkResult.Missing
-                409 -> RecordingLinkResult.Changed
-                else -> RecordingLinkResult.Failed(error.message.orEmpty())
+
+        var refreshed = false
+        while (true) {
+            val current = source ?: return RecordingLinkResult.Missing
+            val detail = try {
+                // A citation must observe the current source even when its text is cached.
+                fetchFullSource(current)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: AgentHttpException) {
+                when (error.status) {
+                    404 -> {
+                        evictSourceCache(current.id)
+                        return RecordingLinkResult.Missing
+                    }
+                    409 -> {
+                        evictSourceCache(current.id)
+                        if (refreshed) return RecordingLinkResult.Changed
+                        source = try {
+                            refreshSourcesAndFind(link.sessionID)
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            return RecordingLinkResult.Failed(error.message.orEmpty())
+                        } ?: return RecordingLinkResult.Missing
+                        if (source.revision == current.revision) return RecordingLinkResult.Changed
+                        refreshed = true
+                        continue
+                    }
+                    else -> return RecordingLinkResult.Failed(error.message.orEmpty())
+                }
+            } catch (error: Exception) {
+                if (!error.message.orEmpty().contains("Transcript changed", ignoreCase = true)) {
+                    return RecordingLinkResult.Failed(error.message.orEmpty())
+                }
+                evictSourceCache(current.id)
+                if (refreshed) return RecordingLinkResult.Changed
+                source = try {
+                    refreshSourcesAndFind(link.sessionID)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    return RecordingLinkResult.Failed(error.message.orEmpty())
+                } ?: return RecordingLinkResult.Missing
+                if (source.revision == current.revision) return RecordingLinkResult.Changed
+                refreshed = true
+                continue
             }
-        } catch (error: Exception) {
-            if (error.message.orEmpty().contains("Transcript changed", ignoreCase = true)) {
-                return RecordingLinkResult.Changed
-            }
-            return RecordingLinkResult.Failed(error.message.orEmpty())
+
+            val span = detail.spans.firstOrNull { it.id.equals(link.spanID, ignoreCase = true) }
+                ?: return RecordingLinkResult.Missing
+            val citation = span.citationURL?.let(::parseAgentLink) as? AgentLink.Recording
+                ?: return RecordingLinkResult.Changed
+            if (citation.link != link) return RecordingLinkResult.Changed
+            return RecordingLinkResult.Found(current, span, windowForSpan(current, detail.spans, span.id))
         }
-        val span = detail.spans.firstOrNull { it.id.equals(link.spanID, ignoreCase = true) }
-            ?: return RecordingLinkResult.Missing
-        val citation = span.citationURL?.let(::parseAgentLink) as? AgentLink.Recording
-            ?: return RecordingLinkResult.Changed
-        if (citation.link != link) return RecordingLinkResult.Changed
-        return RecordingLinkResult.Found(source, span, windowForSpan(source, detail.spans, span.id))
+    }
+
+    private suspend fun refreshSourcesAndFind(sessionID: String): ContextSource? {
+        val items = fetchSources()
+        _state.update { it.copy(sources = items, sourcesLoading = false, sourcesFailure = null) }
+        return items.firstOrNull { it.matchesSession(sessionID) }
     }
 
     suspend fun resolveMemoryLink(path: String): MemoryLinkResult {
@@ -325,19 +363,20 @@ class ContextStore(
     }
 
     private suspend fun findHits(source: ContextSource, query: String, generation: Int): List<TranscriptSearchHit> {
-        val detail = runCatching { loadFullSource(source) }.getOrNull()
+        // A body read failure must surface as a search failure, not as "no matches".
+        val detail = loadFullSource(source)
         if (generation != searchGeneration) return emptyList()
         val windows = source.windows.ifEmpty { listOf(syntheticWindow(source)) }
         val sourceMatch = source.summary?.contains(query, ignoreCase = true) == true ||
             source.preview?.contains(query, ignoreCase = true) == true
         val hits = mutableListOf<TranscriptSearchHit>()
         for (window in windows) {
-            val local = detail?.let { windowText(it, window) }
-            val index = local?.indexOf(query, ignoreCase = true) ?: -1
+            val local = windowText(detail, window)
+            val index = local.indexOf(query, ignoreCase = true)
             val direct = window.summary?.contains(query, ignoreCase = true) == true ||
                 window.preview?.contains(query, ignoreCase = true) == true
             if (index < 0 && !direct) continue
-            val snippet = if (local != null && index >= 0) {
+            val snippet = if (index >= 0) {
                 snippet(local, index, query.length)
             } else {
                 window.summary ?: window.preview ?: source.summary ?: source.preview.orEmpty()
@@ -443,6 +482,11 @@ class ContextStore(
 
     private suspend fun loadFullSource(source: ContextSource): TranscriptDetail {
         synchronized(fullSources) { fullSources[cacheKey(source)] }?.let { return it }
+        return fetchFullSource(source)
+    }
+
+    /** Always reads the current source revision; used when a citation must be verified. */
+    private suspend fun fetchFullSource(source: ContextSource): TranscriptDetail {
         var offset = 0
         var text = ""
         val spans = LinkedHashMap<String, ContextSpan>()
@@ -468,6 +512,12 @@ class ContextStore(
             }
         }
         return detail
+    }
+
+    private fun evictSourceCache(sourceID: String) {
+        synchronized(fullSources) {
+            fullSources.keys.filter { it.startsWith("$sourceID@") }.forEach(fullSources::remove)
+        }
     }
 
     private fun cacheKey(source: ContextSource): String = source.id + "@" + source.revision

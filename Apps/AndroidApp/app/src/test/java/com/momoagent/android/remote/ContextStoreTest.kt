@@ -9,6 +9,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -147,9 +148,64 @@ class ContextStoreTest {
         assertTrue(result is RecordingLinkResult.Found)
         val found = result as RecordingLinkResult.Found
         assertEquals("w1", found.window?.id)
+        server.enqueue(
+            MockResponse().setBody(
+                """{"source_id":"lib/$session","source_revision":"r-source","text":"hello\nworld","offset":0,"end":12,"total_characters":12,"next_offset":null,"spans":[
+                    {"id":"$span","recorded_at":1794540000.0,"text":"hello","citation_url":"momoagent://source/$session/$span?version=2&generation=0"}]}""",
+            ),
+        )
         val stale = store.resolveRecordingLink(
             com.momoagent.android.data.RecordingLink(session, span, 1, 0),
         )
         assertEquals(RecordingLinkResult.Changed, stale)
+    }
+
+    @Test
+    fun recordingLinkRefreshesAChangedSourceAndAcceptsTheNewVersion() = runBlocking {
+        val session = "11111111-2222-3333-4444-555555555555"
+        val span = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        fun sourceList(revision: String) =
+            """{"revision":1,"items":[{"id":"lib/$session","revision":"$revision","recorded_at":1794540000.0,"total_characters":5,
+                "windows":[{"id":"w1","source_id":"lib/$session","source_revision":"$revision","recorded_at":1794540000.0,"end_at":1794540060.0,"offset":0,"end":5,"total_characters":5}]}],"next_cursor":null}"""
+        fun sourceText(revision: String, version: Int) =
+            """{"source_id":"lib/$session","source_revision":"$revision","text":"hello","offset":0,"end":5,"total_characters":5,"next_offset":null,"spans":[
+                {"id":"$span","recorded_at":1794540000.0,"text":"hello","citation_url":"momoagent://source/$session/$span?version=$version&generation=0"}]}"""
+
+        server.enqueue(MockResponse().setBody(sourceList("r1")))
+        server.enqueue(MockResponse().setBody(sourceText("r1", 2)))
+        val store = ContextStore(api, this, connection(), "token")
+        assertTrue(
+            store.resolveRecordingLink(com.momoagent.android.data.RecordingLink(session, span, 2, 0))
+                is RecordingLinkResult.Found,
+        )
+
+        server.enqueue(MockResponse().setResponseCode(409).setBody("""{"code":"source_changed"}"""))
+        server.enqueue(MockResponse().setBody(sourceList("r2")))
+        server.enqueue(MockResponse().setBody(sourceText("r2", 3)))
+        assertEquals(
+            RecordingLinkResult.Changed,
+            store.resolveRecordingLink(com.momoagent.android.data.RecordingLink(session, span, 2, 0)),
+        )
+
+        server.enqueue(MockResponse().setBody(sourceText("r2", 3)))
+        assertTrue(
+            store.resolveRecordingLink(com.momoagent.android.data.RecordingLink(session, span, 3, 0))
+                is RecordingLinkResult.Found,
+        )
+    }
+
+    @Test
+    fun searchReportsABodyReadFailure() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"revision":1,"items":[${source("s1")}],"next_cursor":null}"""))
+        server.enqueue(MockResponse().setResponseCode(503).setBody("temporarily unavailable"))
+        val store = ContextStore(api, this, connection(), "token")
+        store.loadSources()
+        withTimeout(5_000) { store.state.first { !it.sourcesLoading } }
+        store.search("needle")
+        val state = withTimeout(5_000) {
+            store.state.first { it.searchQuery == "needle" && !it.searchLoading }
+        }
+        assertNotNull(state.searchFailure)
+        assertTrue(state.searchHits.isEmpty())
     }
 }

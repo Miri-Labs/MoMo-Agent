@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -172,7 +173,12 @@ private fun AttachmentChip(item: AgentAttachment, onRemove: () -> Unit) {
                 .border(0.75.dp, palette.line.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
                 .padding(start = 10.dp, end = 4.dp),
         ) {
-            Icon(Icons.Filled.Description, contentDescription = null, tint = palette.muted, modifier = Modifier.size(16.dp))
+            Icon(
+                if (item.recording != null) Icons.Filled.GraphicEq else Icons.Filled.Description,
+                contentDescription = null,
+                tint = palette.muted,
+                modifier = Modifier.size(16.dp),
+            )
             Spacer(Modifier.width(6.dp))
             Text(
                 text = item.name,

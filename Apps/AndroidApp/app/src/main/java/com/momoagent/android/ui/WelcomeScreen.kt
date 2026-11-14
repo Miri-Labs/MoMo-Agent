@@ -1,9 +1,15 @@
 package com.momoagent.android.ui
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.view.accessibility.AccessibilityManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateIntOffsetAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -42,9 +49,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -102,6 +116,8 @@ private val welcomeScenarios = listOf(
 fun WelcomeScreen(onFinish: () -> Unit) {
     val palette = LocalMoMoPalette.current
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val reduceMotion = !ValueAnimator.areAnimatorsEnabled()
     val accessibility = remember(context) {
         context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
     }
@@ -119,6 +135,10 @@ fun WelcomeScreen(onFinish: () -> Unit) {
     var stage by rememberSaveable { mutableIntStateOf(0) }
     val ready = index == welcomeScenarios.size
 
+    var parentPosition by remember { mutableStateOf<Offset?>(null) }
+    var avatarPlaceholder by remember { mutableStateOf<AvatarPlaceholder?>(null) }
+    var lastTarget by remember { mutableStateOf<AvatarPlacement?>(null) }
+
     val advance = {
         if (index < welcomeScenarios.size) {
             if (stage < STAGE_RESULT) {
@@ -133,10 +153,35 @@ fun WelcomeScreen(onFinish: () -> Unit) {
         }
     }
 
+    fun report(page: Int, coordinates: LayoutCoordinates) {
+        if (page != index) return
+        val next = AvatarPlaceholder(
+            position = coordinates.positionInWindow(),
+            size = with(density) { coordinates.size.width.toDp() },
+        )
+        if (next != avatarPlaceholder) avatarPlaceholder = next
+    }
+
     LaunchedEffect(index, stage, ready, touchExploration, resumed) {
         if (ready || touchExploration || !resumed.isAtLeast(Lifecycle.State.RESUMED)) return@LaunchedEffect
         delay(if (stage < STAGE_RESULT) 900 else 1_600)
         advance()
+    }
+
+    val computedTarget = avatarPlaceholder?.let { it.target(parentPosition, it.size) }
+    LaunchedEffect(computedTarget) {
+        if (computedTarget != null && computedTarget != lastTarget) lastTarget = computedTarget
+    }
+    val avatarTarget = computedTarget ?: lastTarget
+    val avatarExpression = if (ready) {
+        "greeting"
+    } else {
+        when (stage) {
+            0 -> "listening"
+            1 -> "thinking"
+            2 -> "speaking"
+            else -> "settled"
+        }
     }
 
     Column(
@@ -164,54 +209,88 @@ fun WelcomeScreen(onFinish: () -> Unit) {
                 }
             }
         }
-        Crossfade(
-            targetState = index,
-            modifier = Modifier.weight(1f).widthIn(max = 480.dp).fillMaxWidth(),
-            label = "scenario",
-        ) { page ->
-            val scenario = welcomeScenarios.getOrNull(page)
-            Column(
-                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                if (scenario == null) {
-                    AvatarView(size = 104.dp, expression = "greeting", active = true)
-                    BrandWordmark("MoMoWordmark", height = 18.dp)
-                    Spacer(Modifier.height(20.dp))
-                    Text(
-                        text = stringResource(R.string.brand_tagline),
-                        style = MoMoType.title,
-                        color = palette.ink,
-                        textAlign = TextAlign.Center,
-                    )
+        Box(
+            modifier = Modifier.weight(1f).widthIn(max = 480.dp).fillMaxWidth()
+                .onGloballyPositioned { coordinates ->
+                    val position = coordinates.positionInWindow()
+                    if (position != parentPosition) parentPosition = position
+                },
+        ) {
+            Crossfade(
+                targetState = index,
+                modifier = Modifier.fillMaxSize(),
+                label = "scenario",
+            ) { page ->
+                val scenario = welcomeScenarios.getOrNull(page)
+                Column(
+                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    if (scenario == null) {
+                        Box(
+                            Modifier.size(104.dp).onGloballyPositioned { report(page, it) },
+                        )
+                        BrandWordmark("MoMoWordmark", height = 18.dp)
+                        Spacer(Modifier.height(20.dp))
+                        Text(
+                            text = stringResource(R.string.brand_tagline),
+                            style = MoMoType.title,
+                            color = palette.ink,
+                            textAlign = TextAlign.Center,
+                        )
+                    } else {
+                        if (stage < 2) {
+                            Box(
+                                Modifier.size(220.dp).onGloballyPositioned { report(page, it) },
+                            )
+                            BrandWordmark("MoMoWordmark", height = 18.dp)
+                            Spacer(Modifier.height(20.dp))
+                        }
+                        Text(
+                            text = stringResource(scenario.title),
+                            style = MoMoType.title,
+                            color = palette.ink,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            text = stringResource(R.string.welcome_demo_hint),
+                            style = MoMoType.caption,
+                            color = palette.muted,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                        ScenarioConversation(scenario, stage) { coordinates -> report(page, coordinates) }
+                    }
+                }
+            }
+
+            avatarTarget?.let { target ->
+                val dpSpec = if (reduceMotion) {
+                    snap<Dp>()
                 } else {
+                    spring<Dp>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 420f)
+                }
+                val offsetSpec = if (reduceMotion) {
+                    snap<IntOffset>()
+                } else {
+                    spring<IntOffset>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 420f)
+                }
+                val animatedSize by animateDpAsState(target.size, dpSpec, label = "welcome-avatar-size")
+                val animatedHeight by animateDpAsState(target.layoutHeight, dpSpec, label = "welcome-avatar-height")
+                val animatedOffset by animateIntOffsetAsState(target.offset, offsetSpec, label = "welcome-avatar-offset")
+                Box(
+                    modifier = Modifier
+                        .offset { animatedOffset }
+                        .width(animatedSize)
+                        .height(animatedHeight),
+                ) {
                     AvatarView(
-                        size = 112.dp,
-                        expression = when (stage) {
-                            0 -> "listening"
-                            1 -> "thinking"
-                            2 -> "speaking"
-                            else -> "settled"
-                        },
+                        size = animatedSize,
+                        expression = avatarExpression,
                         active = true,
+                        modifier = Modifier.align(Alignment.TopCenter),
                     )
-                    BrandWordmark("MoMoWordmark", height = 18.dp)
-                    Spacer(Modifier.height(20.dp))
-                    Text(
-                        text = stringResource(scenario.title),
-                        style = MoMoType.title,
-                        color = palette.ink,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        text = stringResource(R.string.welcome_demo_hint),
-                        style = MoMoType.caption,
-                        color = palette.muted,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                    ScenarioConversation(scenario, stage)
                 }
             }
         }
@@ -245,7 +324,11 @@ fun WelcomeScreen(onFinish: () -> Unit) {
 }
 
 @Composable
-private fun ScenarioConversation(scenario: WelcomeScenario, stage: Int) {
+private fun ScenarioConversation(
+    scenario: WelcomeScenario,
+    stage: Int,
+    onAvatarPlaceholder: (LayoutCoordinates) -> Unit,
+) {
     val palette = LocalMoMoPalette.current
     Column(Modifier.fillMaxWidth().padding(top = 22.dp)) {
         scenario.moments.zip(scenario.sources).forEach { (moment, source) ->
@@ -273,24 +356,34 @@ private fun ScenarioConversation(scenario: WelcomeScenario, stage: Int) {
             }
         }
         AnimatedVisibility(visible = stage >= 2) {
-            Text(
-                text = stringResource(scenario.reply),
-                style = MoMoType.body,
-                color = palette.ink,
-                modifier = Modifier.padding(top = 12.dp),
-            )
-        }
-        AnimatedVisibility(visible = stage >= STAGE_RESULT) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
-                    .background(palette.surface, RoundedCornerShape(14.dp)).padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top,
             ) {
-                Icon(scenario.icon, null, tint = palette.ink, modifier = Modifier.size(22.dp))
-                Column {
-                    Text(stringResource(scenario.result), style = MoMoType.section, color = palette.ink)
-                    Text(stringResource(scenario.detail), style = MoMoType.metadata, color = palette.muted)
+                Box(
+                    Modifier.size(72.dp).onGloballyPositioned(onAvatarPlaceholder),
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(scenario.reply),
+                        style = MoMoType.body,
+                        color = palette.ink,
+                    )
+                    AnimatedVisibility(visible = stage >= STAGE_RESULT) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                                .background(palette.surface, RoundedCornerShape(14.dp)).padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Icon(scenario.icon, null, tint = palette.ink, modifier = Modifier.size(22.dp))
+                            Column {
+                                Text(stringResource(scenario.result), style = MoMoType.section, color = palette.ink)
+                                Text(stringResource(scenario.detail), style = MoMoType.metadata, color = palette.muted)
+                            }
+                        }
+                    }
                 }
             }
         }

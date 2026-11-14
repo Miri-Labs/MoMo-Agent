@@ -162,7 +162,13 @@
     <string name="transcripts_pick_date">Choose date</string>
     <string name="transcripts_detail_title">Transcript detail</string>
     <string name="transcripts_discuss">Ask about this section</string>
-    <string name="transcripts_discuss_prompt">Please review these transcripts and organize what I need to do:</string>
+    <string name="transcripts_reference_name">Recording reference · %1$s</string>
+    <string name="transcripts_reference_changed">This recording was updated or deleted. Reopen the section and try again.</string>
+    <string name="transcripts_reference_limit">You can attach up to 4 items, including one recording reference. Remove another attachment first.</string>
+    <string name="transcripts_discuss_unavailable">Connect your Mac before referencing a recording.</string>
+    <string name="transcripts_discuss_failed">Could not add the recording reference</string>
+    <string name="recording_reference_changed">The recording changed before it was sent. Reopen the section and try again.</string>
+    <string name="recording_reference_failed_title">Recording reference changed</string>
     <string name="transcripts_speaker_me">Me</string>
     <string name="transcripts_partial_failed">The rest of this transcript could not be loaded. Read text is kept.</string>
 
