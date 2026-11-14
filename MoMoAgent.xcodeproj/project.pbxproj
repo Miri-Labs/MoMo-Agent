@@ -868,7 +868,7 @@
 				FBF62052F630ECE3983EC58E /* WebRTC-LICENSE.txt */,
 			);
 			name = Resources;
-			path = Apps/iPhoneApp/Resources;
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		1454B8A901CB71A582959A8F /* Desktop */ = {
@@ -957,7 +957,6 @@
 				44203024F7B4EF3464DCBBCD /* Licenses */,
 				7BE941E0A1E933AD0092ADFD /* Packages */,
 				19640A024BF8A8249F12E637 /* RemoteUITests */,
-				04C38192D729B4F3A69F6E6E /* Resources */,
 				ADE726912D6DB3F83C38A07F /* Resources */,
 				EB7384A86962CF3309B6DE3C /* Shared */,
 				9B99FEF28B853D5F528661BC /* Sources */,

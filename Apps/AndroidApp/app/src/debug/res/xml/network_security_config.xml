@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: the embedded Tailscale mode uses plain HTTP inside the
+     WireGuard tunnel at http://100.64.0.0/10:8767. Release builds keep the
+     main config and allow cleartext only for loopback. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

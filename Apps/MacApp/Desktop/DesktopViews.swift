@@ -213,7 +213,7 @@ struct DesktopDevices: View {
         Button {
             model.isPairingDevice = true
             Task {
-                if model.status?.tunnel.state == "connected" { _ = await model.control("pair/invite") }
+                if model.status?.invitation == nil { _ = await model.inviteForPairing() }
                 showingPairing = true
             }
         } label: {
