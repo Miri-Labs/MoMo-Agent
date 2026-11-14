@@ -1,6 +1,46 @@
 import SwiftUI
 import MoMoAgentClient
 
+@MainActor @Observable
+final class RemoteMemoryProjection {
+    struct Input: Equatable, Sendable {
+        let memories: [ContextMemory]
+        let query: String
+    }
+
+    private(set) var tree: MemoryVaultTree = .empty
+    private(set) var visibleTree: MemoryVaultTree = .empty
+    private(set) var isLoading = false
+    @ObservationIgnored private var loadedInput: Input?
+    @ObservationIgnored private var generation = UUID()
+
+    func update(_ input: Input) async {
+        let owner = UUID()
+        generation = owner
+        guard loadedInput != input else { isLoading = false; return }
+        isLoading = true
+        defer { if generation == owner { isLoading = false } }
+        let cachedTree = loadedInput?.memories == input.memories ? tree : nil
+        // Sorting and searching can parse every notebook; never do this in View.body.
+        let worker = Task.detached(priority: .userInitiated) { () -> (MemoryVaultTree, MemoryVaultTree)? in
+            guard !Task.isCancelled else { return nil }
+            let tree = cachedTree ?? MemoryVaultTree.build(from: input.memories)
+            guard !Task.isCancelled else { return nil }
+            let visible = tree.filtered(matching: input.query)
+            return Task.isCancelled ? nil : (tree, visible)
+        }
+        let result = await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
+        guard let result, !Task.isCancelled, generation == owner else { return }
+        tree = result.0
+        visibleTree = result.1
+        loadedInput = input
+    }
+}
+
 struct RemoteMemoryView: View {
     let sync: PhoneContextSync
     var taskStore: RemoteTaskStore? = nil
@@ -8,12 +48,11 @@ struct RemoteMemoryView: View {
     @State private var forgetting: ContextMemory?
     @State private var searchQuery = ""
     @State private var expandedFolderIDs: Set<String>? = nil
+    @State private var projection = RemoteMemoryProjection()
     @Environment(\.colorScheme) private var scheme
 
-    private var allMemories: [ContextMemory] { sync.memories.filter { $0.status != "forgotten" } }
-
     private var vaultTree: MemoryVaultTree {
-        MemoryVaultTree.build(from: allMemories)
+        projection.tree
     }
 
     private var trimmedQuery: String {
@@ -21,7 +60,7 @@ struct RemoteMemoryView: View {
     }
 
     private var visibleTree: MemoryVaultTree {
-        vaultTree.filtered(matching: trimmedQuery)
+        projection.visibleTree
     }
 
     private var showsSingleFlatCoreOnly: Bool {
@@ -103,13 +142,13 @@ struct RemoteMemoryView: View {
                     VStack(spacing: 16) {
                         ContentUnavailableView {
                             Label(
-                                allMemories.isEmpty ? "还没有记忆" : "没有匹配的笔记",
-                                systemImage: allMemories.isEmpty ? "brain" : "magnifyingglass"
+                                vaultTree.isEmpty ? "还没有记忆" : "没有匹配的笔记",
+                                systemImage: vaultTree.isEmpty ? "brain" : "magnifyingglass"
                             )
                         } description: {
                             Text(
-                                allMemories.isEmpty
-                                    ? (sync.isSyncing ? "正在读取记忆…" : "下拉即可同步记忆。")
+                                vaultTree.isEmpty
+                                    ? (sync.isSyncing || projection.isLoading ? "正在读取记忆…" : "下拉即可同步记忆。")
                                     : "试试其他关键词。"
                             )
                         }
@@ -125,14 +164,16 @@ struct RemoteMemoryView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         if !visibleTree.rootItems.isEmpty {
-                            VStack(alignment: .leading, spacing: 0) {
+                            LazyVStack(alignment: .leading, spacing: 0) {
                                 ForEach(Array(visibleTree.rootItems.enumerated()), id: \.element.id) { idx, memory in
-                                    if idx > 0 {
-                                        Divider()
-                                            .overlay(colors.line.opacity(0.55))
-                                            .padding(.leading, 34)
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        if idx > 0 {
+                                            Divider()
+                                                .overlay(colors.line.opacity(0.55))
+                                                .padding(.leading, 34)
+                                        }
+                                        directoryNoteRow(memory, colors: colors)
                                     }
-                                    directoryNoteRow(memory, colors: colors)
                                 }
                             }
                             .padding(.vertical, 2)
@@ -158,40 +199,42 @@ struct RemoteMemoryView: View {
                                 }
 
                                 if expanded {
-                                    VStack(alignment: .leading, spacing: 0) {
+                                    LazyVStack(alignment: .leading, spacing: 0) {
                                         ForEach(Array(childRows.enumerated()), id: \.element.id) { idx, row in
-                                            switch row {
-                                            case let .subfolder(subNode, expandedSub, indentLevel):
-                                                if idx > 0 {
-                                                    Divider()
-                                                        .overlay(colors.line.opacity(0.45))
-                                                        .padding(.leading, CGFloat(indentLevel) * 14 + 12)
-                                                }
-                                                VaultFolderHeaderRow(
-                                                    node: subNode,
-                                                    isExpanded: expandedSub,
-                                                    onToggle: { toggleFolder(subNode.id) }
-                                                )
-                                                .padding(.leading, CGFloat(indentLevel) * 14)
-                                                .overlay(alignment: .leading) {
-                                                    treeGuideLines(levels: indentLevel, colors: colors)
-                                                }
-
-                                            case let .note(memory, indentLevel, isFirstInGroup):
-                                                if idx > 0 && !isFirstInGroup {
-                                                    Divider()
-                                                        .overlay(colors.line.opacity(0.55))
-                                                        .padding(.leading, CGFloat(indentLevel) * 14 + 34)
-                                                } else if idx > 0 {
-                                                    Divider()
-                                                        .overlay(colors.line.opacity(0.45))
-                                                        .padding(.leading, CGFloat(indentLevel) * 14 + 12)
-                                                }
-                                                directoryNoteRow(memory, colors: colors)
+                                            VStack(alignment: .leading, spacing: 0) {
+                                                switch row {
+                                                case let .subfolder(subNode, expandedSub, indentLevel):
+                                                    if idx > 0 {
+                                                        Divider()
+                                                            .overlay(colors.line.opacity(0.45))
+                                                            .padding(.leading, CGFloat(indentLevel) * 14 + 12)
+                                                    }
+                                                    VaultFolderHeaderRow(
+                                                        node: subNode,
+                                                        isExpanded: expandedSub,
+                                                        onToggle: { toggleFolder(subNode.id) }
+                                                    )
                                                     .padding(.leading, CGFloat(indentLevel) * 14)
                                                     .overlay(alignment: .leading) {
                                                         treeGuideLines(levels: indentLevel, colors: colors)
                                                     }
+
+                                                case let .note(memory, indentLevel, isFirstInGroup):
+                                                    if idx > 0 && !isFirstInGroup {
+                                                        Divider()
+                                                            .overlay(colors.line.opacity(0.55))
+                                                            .padding(.leading, CGFloat(indentLevel) * 14 + 34)
+                                                    } else if idx > 0 {
+                                                        Divider()
+                                                            .overlay(colors.line.opacity(0.45))
+                                                            .padding(.leading, CGFloat(indentLevel) * 14 + 12)
+                                                    }
+                                                    directoryNoteRow(memory, colors: colors)
+                                                        .padding(.leading, CGFloat(indentLevel) * 14)
+                                                        .overlay(alignment: .leading) {
+                                                            treeGuideLines(levels: indentLevel, colors: colors)
+                                                        }
+                                                }
                                             }
                                         }
                                     }
@@ -248,6 +291,9 @@ struct RemoteMemoryView: View {
                  : "连接 Mac 后删除这条记忆。原始录音与聊天记录仍保留。")
         }
         .task { await sync.refreshMemories() }
+        .task(id: RemoteMemoryProjection.Input(memories: sync.memories, query: trimmedQuery)) {
+            await projection.update(.init(memories: sync.memories, query: trimmedQuery))
+        }
     }
 
     @ViewBuilder

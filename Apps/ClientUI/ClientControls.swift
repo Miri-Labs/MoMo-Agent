@@ -2549,10 +2549,11 @@ enum DreamMemoryCategory: String, CaseIterable, Identifiable {
 
     static func sortMemories(_ items: [ContextMemory]) -> [ContextMemory] {
         // Keep stable relative order for items with identical kind and no date (e.g. UI layout fixtures)
-        let indexed = Array(items.enumerated())
+        // Compute once per note; comparator lookups can evict and reparse large notebooks.
+        let indexed = items.enumerated().map { (offset: $0.offset, element: $0.element, key: sortKey(for: $0.element)) }
         return indexed.sorted { lhs, rhs in
-            let lKey = sortKey(for: lhs.element)
-            let rKey = sortKey(for: rhs.element)
+            let lKey = lhs.key
+            let rKey = rhs.key
             if lKey.0 != rKey.0 { return lKey.0 < rKey.0 }
             if !lKey.1.isEmpty && !rKey.1.isEmpty && lKey.1 != rKey.1 {
                 return lKey.1 > rKey.1 // Newer dates first

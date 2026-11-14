@@ -2,6 +2,51 @@ import XCTest
 import UIKit
 
 @MainActor final class ChatInteractionTests: XCTestCase {
+    func testTabSwitchingWithLargeNotebook() async throws {
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:19277/test/status"))
+        let data = try? await URLSession.shared.data(from: url).0
+        let status = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        try XCTSkipUnless(status?["memory_count"] as? Int == 1_200,
+                          "Start serve_chat_interaction_fixture.py --large-memory and seed its pairing file")
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["MOMO_UI_TEST_RUN_ID"] = "5F12C378-A804-4E20-A46D-213FE37495AB"
+        app.launchEnvironment["MOMO_UI_TEST_TIMELINE_FIXTURE"] = "chat"
+        app.launchEnvironment["MOMO_UI_TEST_AVATAR_UNAVAILABLE"] = "1"
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        defer { app.terminate() }
+        if app.buttons["welcome.skip"].waitForExistence(timeout: 5) { app.buttons["welcome.skip"].tap() }
+        if app.buttons["welcome.start"].waitForExistence(timeout: 5) { app.buttons["welcome.start"].tap() }
+        if app.buttons["onboarding.finish"].waitForExistence(timeout: 5) { app.buttons["onboarding.finish"].tap() }
+        XCTAssertTrue(app.tabBars.buttons["记忆"].waitForExistence(timeout: 20))
+        app.tabBars.buttons["记忆"].tap()
+        let row = app.buttons["remote.memoryRow.tab-memory-0"]
+        XCTAssertTrue(row.waitForExistence(timeout: 30), app.debugDescription)
+        capture(app, "Memory with 1200 notes")
+        for _ in 0..<6 {
+            for name in ["转录", "聊天", "记忆"] {
+                let tab = app.tabBars.buttons[name]
+                let start = ProcessInfo.processInfo.systemUptime
+                tab.tap()
+                let elapsed = ProcessInfo.processInfo.systemUptime - start
+                print("Tab switch \(name): \(elapsed)s")
+                XCTAssertLessThan(elapsed, 5, "Tab interaction must not wait for a full notebook rebuild")
+                let content: XCUIElement
+                switch name {
+                case "聊天": content = app.textFields["remote.input"]
+                case "记忆": content = row
+                default: content = app.navigationBars["转录"]
+                }
+                XCTAssertTrue(content.waitForExistence(timeout: 5), app.debugDescription)
+            }
+        }
+        XCTAssertTrue(row.isHittable)
+        row.tap()
+        XCTAssertTrue(app.buttons["remote.memoryInstructToggle"].waitForExistence(timeout: 5))
+        capture(app, "Memory remains interactive after tab switching")
+    }
+
     // Use serve_recording_reference_ui_fixture.py and seed its pairing file in the app's Documents directory.
     func testLongRecordingDiscussionShowsOneRemovableCard() async throws {
         continueAfterFailure = false
