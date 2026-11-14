@@ -4,6 +4,65 @@ import XCTest
 @testable import MoMoAgent
 
 final class LifeIllustrationJourneyLayoutTests: XCTestCase {
+    @MainActor
+    func testMemoryProjectionKeepsMainActorResponsiveAndReusesCompletedSnapshot() async throws {
+        let memories = try largeMemoryFixture()
+        let projection = RemoteMemoryProjection()
+        var heartbeats = 0
+        let heartbeat = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(5))
+                if projection.isLoading { heartbeats += 1 }
+            }
+        }
+        let clock = ContinuousClock()
+        let start = clock.now
+        await projection.update(.init(memories: memories, query: ""))
+        let buildDuration = start.duration(to: clock.now)
+        heartbeat.cancel()
+        await heartbeat.value
+        XCTAssertGreaterThan(heartbeats, 0, "Notebook preparation must yield the main actor for tab interaction")
+        XCTAssertEqual(projection.visibleTree.flatOrderedItems.count, memories.count)
+        XCTAssertFalse(projection.isLoading)
+
+        let reuseStart = clock.now
+        for _ in 0..<30 { await projection.update(.init(memories: memories, query: "")) }
+        let reuseDuration = reuseStart.duration(to: clock.now)
+        print("Memory projection: \(memories.count) notes, build \(buildDuration), 30 revisits \(reuseDuration), main-actor heartbeats \(heartbeats)")
+        XCTAssertLessThan(reuseDuration, .milliseconds(100), "Tab revisits must reuse the prepared snapshot")
+
+        await projection.update(.init(memories: memories, query: "unique-needle"))
+        XCTAssertEqual(projection.visibleTree.flatOrderedItems.map(\.id), ["tab-memory-1199"])
+        await projection.update(.init(memories: memories, query: ""))
+        XCTAssertEqual(projection.visibleTree.flatOrderedItems.count, memories.count)
+    }
+
+    @MainActor
+    func testCancelledMemoryProjectionCannotReplaceNewerNotebook() async throws {
+        let memories = try largeMemoryFixture()
+        let projection = RemoteMemoryProjection()
+        let old = Task { await projection.update(.init(memories: memories, query: "")) }
+        // Let the earlier request enter its background preparation before superseding it.
+        await Task.yield()
+        XCTAssertTrue(projection.isLoading)
+        old.cancel()
+        await projection.update(.init(memories: Array(memories.suffix(1)), query: "unique-needle"))
+        await old.value
+        XCTAssertEqual(projection.tree.flatOrderedItems.map(\.id), ["tab-memory-1199"])
+        XCTAssertEqual(projection.visibleTree.flatOrderedItems.map(\.id), ["tab-memory-1199"])
+        XCTAssertFalse(projection.isLoading)
+    }
+
+    private func largeMemoryFixture() throws -> [ContextMemory] {
+        let body = String(repeating: "- 记录项目讨论、下一步安排及来源。\n", count: 60)
+        let payload = (0..<1_200).map { index -> [String: Any] in
+            ["id": "tab-memory-\(index)", "kind": "note", "basis": "explicit", "status": "active",
+             "revision": 1, "evidence": [], "path": "projects/project-\(index % 12)/note-\(index).md",
+             "text": "# 笔记 \(index)\n" + body + (index == 1_199 ? "unique-needle" : "")]
+        }
+        return try JSONDecoder().decode([ContextMemory].self, from: JSONSerialization.data(withJSONObject: payload))
+    }
+
     func testCalloutsStayFixedThroughoutZoomAndUpdateOnceCameraSettles() {
         let items = (0..<3).map { item(index: $0) }
         let size = CGSize(width: 402, height: 677)
