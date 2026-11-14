@@ -95,9 +95,9 @@ import UIKit
     func expire() {
         guard isActive else { return }
         task?.cancel()
+        cancel()
         // Release the OS grant synchronously; cancellation of network work may finish later.
         finish(owner: generation, success: false)
-        cancel()
     }
 
     private func finish(owner: UUID, success: Bool) {

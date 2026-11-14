@@ -217,7 +217,7 @@ private struct RemoteConversationView: View {
         .onChange(of: agent.notifications.navigationRevision) { _, _ in
             if agent.notifications.focusedTarget?.messageID == nil { composeRevision += 1 }
         }
-        .task { await agent.context?.refresh() }
+        .task { await agent.context?.refreshMemories() }
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { viewport = $0 }
         .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: isEmpty)
         .scrollDismissesKeyboard(.interactively)
@@ -262,7 +262,7 @@ private struct RemoteConversationView: View {
                 previewingMemoryNote = matched
             } else {
                 Task {
-                    await agent.context?.refresh()
+                    await agent.context?.refreshMemories()
                     if let matched = DreamMemoryLinkResolver.resolve(url: url, in: agent.context?.memories ?? []) {
                         previewingMemoryNote = matched
                     } else {
@@ -481,12 +481,13 @@ private struct PhoneManualConnectionView: View {
                     .accessibilityIdentifier("remote.credential")
             } footer: { Text("密钥保存在这台手机的钥匙串中。") }
             Section {
-                Button(agent.connecting ? "正在连接…" : "保存") {
+                Button(agent.pairingInProgress ? "正在连接…" : "保存") {
                     Task {
-                        await agent.connect(configuration: configuration, credential: credential)
-                        if agent.failure == nil { credential = ""; dismiss() }
+                        if await agent.connect(configuration: configuration, credential: credential) {
+                            credential = ""; dismiss()
+                        }
                     }
-                }.disabled(agent.connecting || credential.isEmpty || configuration.isEmpty)
+                }.disabled(agent.pairingInProgress || credential.isEmpty || configuration.isEmpty)
                     .accessibilityIdentifier("remote.saveConnection")
                 if let failure = agent.failure { Text(failure).font(.footnote).foregroundStyle(.red) }
             }

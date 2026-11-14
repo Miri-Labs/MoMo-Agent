@@ -135,6 +135,7 @@ class ContextService:
                     elif url.path == "/v1/memories":
                         revision = query.get("revision", [None])[0]
                         result = service.memory.list(after, limit, int(revision) if revision is not None else None)
+                        result["workspace_id"] = connection["workspace_id"]
                     elif url.path == "/v1/sources":
                         summarize = query.get("summarize", ["0"])[0] == "1"
                         result = store.list_sources(after, min(limit, 200), summarize=summarize, include_organization=False)

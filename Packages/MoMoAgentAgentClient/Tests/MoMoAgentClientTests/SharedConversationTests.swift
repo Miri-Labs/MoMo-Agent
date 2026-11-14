@@ -3,6 +3,35 @@ import XCTest
 @testable import MoMoAgentClient
 
 @MainActor final class SharedConversationTests: XCTestCase {
+    func testRestoredNotificationFiresOnlyOnceUntilAnotherOutage() async throws {
+        let (_, connection, client, folder) = try fixture()
+        let store = try RemoteTaskStore(file: folder.appendingPathComponent("restored.json"), connection: connection, client: client)
+        var restored = 0
+        store.onConnectionRestored = { restored += 1 }
+        await store.refresh()
+        XCTAssertEqual(restored, 1)
+        await store.refresh()
+        XCTAssertEqual(restored, 1, "Ordinary successful requests must not repeatedly start ancillary work")
+        store.recordConnectionFailure(URLError(.networkConnectionLost))
+        await store.refresh(userInitiated: true)
+        XCTAssertEqual(restored, 2)
+        store.background()
+    }
+
+    func testAuthenticationGateRequiresExplicitCredentialVerification() async throws {
+        let (_, connection, client, folder) = try fixture()
+        let store = try RemoteTaskStore(file: folder.appendingPathComponent("auth.json"), connection: connection, client: client)
+        store.recordConnectionFailure(AgentClientError.http(status: 401, code: nil, message: nil))
+        store.foreground()
+        await store.retryConnection()
+        XCTAssertFalse(store.canContactServer)
+        store.resumeAfterCredentialVerification()
+        XCTAssertTrue(store.canContactServer)
+        await store.refresh(userInitiated: true)
+        XCTAssertEqual(store.connectionState, .ready)
+        store.background()
+    }
+
     func testAutomaticRecoveryKeepsDisconnectedStateUntilResponseArrives() async throws {
         let (wire, connection, client, folder) = try fixture()
         var clock = Date(timeIntervalSince1970: 1000)

@@ -119,7 +119,7 @@ struct RemoteMemoryView: View {
                     .padding(16)
                 }
                 .refreshable {
-                    await sync.refresh()
+                    await sync.refreshMemories()
                 }
             } else {
                 ScrollView {
@@ -212,7 +212,7 @@ struct RemoteMemoryView: View {
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .refreshable {
-                    await sync.refresh()
+                    await sync.refreshMemories()
                 }
             }
         }
@@ -247,7 +247,7 @@ struct RemoteMemoryView: View {
                  ? "连接 Mac 后删除该人物档案与本地声纹，且 Dream 不会再次自动生成该说话人。"
                  : "连接 Mac 后删除这条记忆。原始录音与聊天记录仍保留。")
         }
-        .task { await sync.refresh() }
+        .task { await sync.refreshMemories() }
     }
 
     @ViewBuilder
@@ -485,7 +485,7 @@ private struct RemoteMemoryDetail: View {
                 await store.refresh(userInitiated: true)
                 for delay in [6, 10, 15, 22] {
                     try? await Task.sleep(for: .seconds(delay))
-                    await sync.refresh()
+                    await sync.refreshMemories()
                 }
             }
         } catch {

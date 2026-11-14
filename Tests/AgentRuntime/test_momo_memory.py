@@ -136,7 +136,9 @@ class MoMoMemoryTests(unittest.TestCase):
             with opener.open(req, timeout=3) as response:
                 return json.load(response)
 
-        item = next(row for row in request()["items"] if row["path"] == "projects/a.md")
+        page = request()
+        self.assertEqual("test", page["workspace_id"])
+        item = next(row for row in page["items"] if row["path"] == "projects/a.md")
         service.memory.write_notebook(path="projects/a.md", content="# Revised")
         for body in ({"id": item["id"]}, {"id": item["id"], "base_revision": item["revision"]}):
             with self.assertRaises(urllib.error.HTTPError) as conflict:

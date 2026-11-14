@@ -813,9 +813,9 @@ final class DesktopModel {
                     body["error"] = tailnet.state == "Running" ? String(localized: "正在连接…") : tailnet.message ?? String(localized: "请登录 Tailscale。")
                 }
             }
-        } catch let error as URLError where probe != nil && error.code == .appTransportSecurityRequiresSecureConnection {
+        } catch let error where probe != nil && AgentTransportFailure.isConfigurationFailure(error) {
             // A local policy rejection supplies no evidence about the serving node.
-            tailnet.diagnostics.recordLink("identityProbe", "blocked-by-ats", error: error)
+            tailnet.diagnostics.recordLink("identityProbe", "configuration-rejected", error: error)
             guard let probe, probe.generation == tailnet.generation,
                   servedEmbeddedNode?.generation == probe.generation else { return }
             let url = probe.endpoint
@@ -823,7 +823,7 @@ final class DesktopModel {
                 body = ["state": "connected", "endpoint": url.absoluteString]
             } else {
                 tailnetAccessError = error.localizedDescription
-                body = ["state": "reconnecting", "endpoint": url.absoluteString, "error": error.localizedDescription]
+                body = ["state": "needs_setup", "error": error.localizedDescription]
             }
         } catch {
             guard !AgentTransportFailure.isCancelled(error) else { return }

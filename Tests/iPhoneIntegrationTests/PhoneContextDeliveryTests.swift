@@ -102,7 +102,10 @@ import XCTest
             if calls == 1 { first.fulfill() } else { second.fulfill() }
             for await _ in gates[calls - 1].stream { break }
             try Task.checkCancellation()
-        }, prepare: {}, suspend: { released.fulfill() }, cancel: { cancellations += 1 }, schedule: { _ in },
+        }, prepare: {}, suspend: {
+            XCTAssertEqual(cancellations, calls, "Cancel inner synchronization before releasing its transport")
+            released.fulfill()
+        }, cancel: { cancellations += 1 }, schedule: { _ in },
         begin: { expirations.append($0); return UIBackgroundTaskIdentifier(rawValue: expirations.count) },
         end: { ends.append($0.rawValue) })
         delivery.request()

@@ -109,6 +109,7 @@ public struct ContextMemory: Codable, Sendable, Identifiable, Equatable {
     public var path: String? = nil
 }
 public struct MemoryPage: Codable, Sendable {
+    public let workspaceId: UUID?
     public let revision: Int64
     public let items: [ContextMemory]
     public let nextCursor: String?

@@ -111,6 +111,12 @@ HARNESS = r'''
 import Foundation
 import TailscaleKit
 import MoMoAgentClient
+final class PolicyFailureProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() { client?.urlProtocol(self, didFailWithError: URLError(.appTransportSecurityRequiresSecureConnection)) }
+    override func stopLoading() {}
+}
 @main struct RecoveryTests {
     @MainActor static func main() async throws {
         // Use the access service's 15-second deadline and the desktop refresh cadence.
@@ -197,6 +203,7 @@ import MoMoAgentClient
         precondition(!String(decoding: recorded, as: UTF8.self).contains("100.64.0.2"))
         precondition(!String(decoding: recorded, as: UTF8.self).contains("private-"))
         let network = EmbeddedTailnet(directory: directory, device: "fixture")
+        network.recoveryRestartInterval = .zero // Independent legacy repair cases do not wait a minute each.
         async let a = network.connectedSession()
         async let b = network.connectedSession()
         let (first, same) = try await (a, b)
@@ -337,6 +344,25 @@ import MoMoAgentClient
         try await corrupt.updateProxy(TailnetProxySettings())
         try await corrupt.start(); await corrupt.close()
         print("PASS: proxy persistence, validation, node-only restart, identity retention and corrupt-setting recovery")
+
+        Probe.useHealthyProxy(true)
+        Probe.configureState("Running")
+        let bounded = EmbeddedTailnet(directory: directory.appendingPathComponent("bounded"), device: "fixture")
+        _ = try await bounded.connectedSession()
+        await bounded.restartForRecovery()
+        let afterRestart = try await bounded.connectedSession()
+        let nodeCount = Probe.counts.0
+        await bounded.restartForRecovery()
+        let afterRejectedRestart = try await bounded.connectedSession()
+        precondition(afterRestart === afterRejectedRestart && Probe.counts.0 == nodeCount,
+                     "Repeated repair requests must share a node rebuild budget")
+        bounded.suspendSessions()
+        Probe.setProtocolOverride(PolicyFailureProtocol.self)
+        _ = try await bounded.connectedSession()
+        precondition(Probe.counts.0 == nodeCount, "ATS rejection must not mark the node for reconstruction")
+        Probe.setProtocolOverride(nil)
+        await bounded.close()
+        print("PASS: rebuild rate limit and policy failures preserve the node")
 
         // Regression 1: Zombie "Stopped" node after background wakeup with healthy localapi proxy
         // must re-invoke node.up() and recover in-place without trapping connectedSession forever.

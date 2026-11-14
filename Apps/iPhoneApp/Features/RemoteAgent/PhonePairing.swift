@@ -71,8 +71,10 @@ final class PhonePairing {
                 case "approved":
                     guard let connection = current.connection else { throw PairingError.identityChanged }
                     let configuration = String(decoding: try JSONEncoder().encode(connection), as: UTF8.self)
-                    await agent.connect(configuration: configuration, credential: value.credential)
-                    if let failure = agent.failure { self.failure = failure; return }
+                    guard await agent.connect(configuration: configuration, credential: value.credential) else {
+                        failure = agent.failure ?? String(localized: "连接尚未完成，请重试。")
+                        return
+                    }
                     try clear(); completionGeneration += 1; return
                 case "pending":
                     try await Task.sleep(for: .seconds(2))

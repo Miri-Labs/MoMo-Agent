@@ -14,13 +14,17 @@ final class PhoneContextSync {
     private(set) var failure: String?
     private(set) var sourceDeliveryFailure: String?
     private(set) var isSyncing = false
+    private(set) var isUploadingSources = false
     private(set) var memoryPending = 0
     private(set) var memoryNeedsReview = 0
     private(set) var memoryReview: MemoryReviewStatus?
     private(set) var isDreamRequesting = false
     var pendingSources: Int { state.sources.values.filter { $0.receipt == nil }.count }
     var needsDelivery: Bool {
-        pendingSources > 0 || (state.sourceChangeRevision ?? 0) != (state.deliveredChangeRevision ?? 0)
+        stateNeedsPersistence || (state.lastSourcesSent == nil && state.examinedChangeRevision == nil)
+            || state.sources.values.contains { $0.receipt == nil && $0.deliveryFailure == nil }
+            || ((state.sourceChangeRevision ?? 0) != (state.deliveredChangeRevision ?? 0)
+                && state.sourceChangeRevision != state.examinedChangeRevision)
     }
     var lastSourcesSent: Date? { state.lastSourcesSent }
     var sourceChangeRevision: Int64 { state.sourceChangeRevision ?? 0 }
@@ -28,21 +32,32 @@ final class PhoneContextSync {
     var hasUnfinishedIllustrationDownload: Bool { state.illustrationDownloadIncomplete == true }
     var hasLegacyChanges: Bool { !state.forget.isEmpty }
     @ObservationIgnored var onAuthenticationRequired: ((Error) -> Void)?
+    @ObservationIgnored var onConnectionConfirmed: (() -> Void)?
     @ObservationIgnored private var authenticationRequired = false
     @ObservationIgnored private let archive: ArchiveStore
     @ObservationIgnored private let deviceID: UUID
     @ObservationIgnored private let client: AgentClient
     @ObservationIgnored private let file: URL
+    @ObservationIgnored private let memoryFile: URL
     @ObservationIgnored private var state: State
     @ObservationIgnored private var inFlight: Task<Void, Error>?
     @ObservationIgnored private var syncRequested = false
-    @ObservationIgnored private var memoriesRequested = false
+    @ObservationIgnored private var sourceGeneration = UUID()
+    @ObservationIgnored private var memoryGeneration = UUID()
+    @ObservationIgnored private var memoryTask: Task<Void, Error>?
+    @ObservationIgnored private var reviewTask: Task<Void, Never>?
+    @ObservationIgnored private var reviewGeneration = UUID()
+    @ObservationIgnored private var memoryRetry: (until: Date, error: Error)?
+    @ObservationIgnored private var sourceRetry: (until: Date, error: Error)?
+    @ObservationIgnored private var reviewRetry: (until: Date, error: Error)?
+    @ObservationIgnored private var stateNeedsPersistence = false
     @ObservationIgnored private var polling: Task<Void, Never>?
 
     private struct Source: Codable {
         var envelope: SourceEnvelope
         var receipt: SourceReceipt?
         var coverage: CoverageStamp?
+        var deliveryFailure: String?
     }
     private struct CoverageStamp: Codable, Equatable {
         let chunks: Int
@@ -63,11 +78,21 @@ final class PhoneContextSync {
         var illustrationRefreshPending: Bool?
         var illustrationDownloadIncomplete: Bool?
         var memoryBackend: String?
+        var examinedChangeRevision: Int64?
+    }
+    private struct MemoryCache: Codable {
+        let libraryID: UUID
+        let instanceID: UUID
+        let workspaceID: UUID?
+        let memories: [ContextMemory]
+        let revision: Int64?
+        let lastSynced: Date?
     }
     init(directory: URL, archive: ArchiveStore, deviceID: UUID, connection: AgentConnection, key: String, configuration: URLSessionConfiguration = .ephemeral, transport: (any AgentTransport)? = nil) throws {
         guard let endpoint = connection.dataURL else { throw SyncError.unavailable }
         client = try AgentClient(baseURL: endpoint, credential: key, assistantID: connection.assistantID, configuration: configuration, transport: transport)
         self.archive = archive; self.deviceID = deviceID; file = directory.appendingPathComponent("context.json")
+        memoryFile = directory.appendingPathComponent("memories-cache.json")
         if FileManager.default.fileExists(atPath: file.path) {
             state = try JSONDecoder().decode(State.self, from: Data(contentsOf: file))
             guard state.libraryID == archive.libraryInstanceID, state.connection.hasSameIdentity(as: connection) else { throw SyncError.identity }
@@ -75,6 +100,21 @@ final class PhoneContextSync {
         // Migrate the marker used by older phone builds for the same Mac notebook.
         if state.memoryBackend == "Hermes" { state.memoryBackend = "SuperAgent" }
         memories = state.memoryBackend == "SuperAgent" ? state.memories : []; lastSynced = state.memoryBackend == "SuperAgent" ? state.lastSynced : nil
+        if FileManager.default.fileExists(atPath: memoryFile.path) {
+            do {
+                let cached = try JSONDecoder().decode(MemoryCache.self, from: Data(contentsOf: memoryFile))
+                guard cached.libraryID == state.libraryID, cached.instanceID == connection.instanceID else { throw SyncError.identity }
+                if let workspace = cached.workspaceID {
+                    guard workspace == connection.workspaceID else { throw SyncError.identity }
+                    memories = cached.memories; lastSynced = cached.lastSynced
+                } else {
+                    // Unverified caches from the split-cache build must be refreshed before display.
+                    failure = String(localized: "笔记需要重新同步。")
+                }
+            } catch SyncError.identity { throw SyncError.identity }
+            catch { failure = String(localized: "笔记缓存暂时无法读取，原数据已保留。") }
+        }
+        sourceDeliveryFailure = state.sources.values.compactMap(\.deliveryFailure).first
         do { recordingSummaries = try PhoneRecordingSummaries(directory: directory, archive: archive, connection: connection, client: client) }
         catch {
             recordingSummaries = nil
@@ -94,13 +134,16 @@ final class PhoneContextSync {
         recordingSummaries?.foreground()
         polling = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.refresh()
+                await self?.refreshMemories()
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
             }
         }
     }
-    func stopPolling() { polling?.cancel(); polling = nil; recordingSummaries?.background() }
-    func background() { stopPolling(); inFlight?.cancel() }
+    func stopPolling() {
+        polling?.cancel(); polling = nil; recordingSummaries?.background()
+        cancelMemoryRefresh()
+    }
+    func background() { stopPolling(); cancelSynchronization() }
     func refresh() async {
         do { try await synchronize() }
         catch { if AgentTransportFailure.isCancelled(error) { return } }
@@ -124,55 +167,150 @@ final class PhoneContextSync {
         updated.illustrationDownloadIncomplete = sourceRevision != sourceChangeRevision
         try commit(updated)
     }
-    func cancelSynchronization() { inFlight?.cancel() }
+    func cancelSynchronization() {
+        sourceGeneration = UUID(); inFlight?.cancel(); inFlight = nil; isUploadingSources = false
+    }
 
-    func synchronize(includeMemories: Bool = true) async throws {
+    private func cancelMemoryRefresh() {
+        memoryGeneration = UUID(); memoryTask?.cancel(); memoryTask = nil; isSyncing = false
+        reviewGeneration = UUID(); reviewTask?.cancel(); reviewTask = nil
+    }
+
+    func refreshMemories() async {
+        do { try await synchronizeMemories() } catch { }
+    }
+
+    func resumeAfterCredentialVerification() { authenticationRequired = false }
+
+    private func synchronizeMemories() async throws {
+        try Task.checkCancellation()
         guard !authenticationRequired else { throw CancellationError() }
-        syncRequested = true
-        memoriesRequested = memoriesRequested || includeMemories
-        if let inFlight { return try await inFlight.value }
-        isSyncing = true
+        if let memoryTask, !memoryTask.isCancelled { return try await memoryTask.value }
+        if let memoryRetry, memoryRetry.until > Date() { throw memoryRetry.error }
+        startMemoryReview()
+        let owner = UUID(); memoryGeneration = owner; isSyncing = true
         let task = Task {
-            var uploadError: Error?
-            repeat {
-                syncRequested = false
-                let includeMemories = memoriesRequested
-                memoriesRequested = false
-                do {
-                    uploadError = try await synchronizeArchive(includeMemories: includeMemories)
-                } catch {
-                    if !AgentTransportFailure.isCancelled(error) {
-                        if includeMemories {
-                            failure = AgentTransportFailure.isTransient(error)
-                                ? String(localized: "笔记暂未刷新，稍后自动重试。") : error.localizedDescription
-                        } else {
-                            sourceDeliveryFailure = sourceFailureMessage(error)
-                        }
-                    }
-                    throw error
-                }
-            } while syncRequested && !Task.isCancelled
-            if let uploadError { throw uploadError }
+            try await downloadMemories(owner: owner)
+            try Task.checkCancellation()
+            guard memoryGeneration == owner else { throw CancellationError() }
+            failure = nil; memoryRetry = nil
         }
-        inFlight = task
-        defer { inFlight = nil; isSyncing = false }
+        memoryTask = task
+        defer { if memoryGeneration == owner { memoryTask = nil; isSyncing = false } }
         do { try await task.value }
         catch {
-            if AgentTransportFailure.isCancelled(error) { throw error }
-            if case AgentClientError.http(401, _, _, _) = error {
-                authenticationRequired = true; background(); onAuthenticationRequired?(error)
-                failure = error.localizedDescription
+            guard memoryGeneration == owner, !AgentTransportFailure.isCancelled(error) else { throw error }
+            memoryRetry = Self.retryWindow(error)
+            recordAuthenticationFailure(error)
+            failure = AgentTransportFailure.isTransient(error)
+                ? String(localized: "笔记暂未刷新，请稍后重试。") : error.localizedDescription
+            throw error
+        }
+    }
+
+    private func startMemoryReview() {
+        guard reviewTask == nil else { return }
+        if let reviewRetry, reviewRetry.until > Date() { return }
+        let owner = UUID(); reviewGeneration = owner
+        reviewTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.reviewGeneration == owner { self.reviewTask = nil } }
+            await self.refreshMemoryReview(owner: owner)
+        }
+    }
+
+    private func refreshMemoryReview(owner: UUID) async {
+        do {
+            let status = try await client.contextStatus()
+            try Task.checkCancellation()
+            guard reviewGeneration == owner else { return }
+            try validate(status)
+            onConnectionConfirmed?()
+            memoryPending = status.memoryPending ?? 0; memoryNeedsReview = status.memoryNeedsReview ?? 0
+            memoryReview = status.memoryReview
+            reviewRetry = nil
+        } catch {
+            if reviewGeneration == owner, !AgentTransportFailure.isCancelled(error) {
+                reviewRetry = Self.retryWindow(error)
+                recordAuthenticationFailure(error)
             }
+        }
+    }
+
+    private static func retryWindow(_ error: Error) -> (until: Date, error: Error)? {
+        guard case AgentClientError.http(_, _, _, let delay?) = error, delay > 0 else { return nil }
+        return (Date().addingTimeInterval(delay), error)
+    }
+
+    private func validate(_ status: ContextStatus) throws {
+        guard status.workspaceId == state.connection.workspaceID, status.sourceSync,
+              status.memoryWriter == "SuperAgent" else { throw SyncError.identity }
+    }
+
+    private func recordAuthenticationFailure(_ error: Error) {
+        if case AgentClientError.http(401, _, _, _) = error {
+            authenticationRequired = true; background(); onAuthenticationRequired?(error)
+        }
+    }
+
+    func synchronize(includeMemories: Bool = true) async throws {
+        if includeMemories {
+            async let memories: Result<Void, Error> = capture { try await self.synchronizeMemories() }
+            async let sources: Result<Void, Error> = capture { try await self.synchronizeSources() }
+            let results = await (memories, sources)
+            try results.0.get(); try results.1.get()
+        } else { try await synchronizeSources() }
+    }
+
+    private func capture(_ operation: () async throws -> Void) async -> Result<Void, Error> {
+        do { try await operation(); return .success(()) } catch { return .failure(error) }
+    }
+
+    func allowSourceDeliveryRetry() throws {
+        var updated = state
+        for id in updated.sources.keys { updated.sources[id]?.deliveryFailure = nil }
+        updated.examinedChangeRevision = nil
+        try commit(updated)
+    }
+
+    private func synchronizeSources() async throws {
+        try Task.checkCancellation()
+        guard !authenticationRequired else { throw CancellationError() }
+        if let sourceRetry, sourceRetry.until > Date() { throw sourceRetry.error }
+        syncRequested = true
+        if let inFlight, !inFlight.isCancelled { return try await inFlight.value }
+        let owner = UUID(); sourceGeneration = owner; isUploadingSources = true
+        let task = Task {
+            repeat {
+                try Task.checkCancellation()
+                syncRequested = false
+                try await synchronizeArchive()
+                try Task.checkCancellation()
+                guard sourceGeneration == owner else { throw CancellationError() }
+                sourceDeliveryFailure = state.sources.values.compactMap(\.deliveryFailure).first
+                sourceRetry = nil
+            } while syncRequested && !Task.isCancelled
+        }
+        inFlight = task
+        defer { if sourceGeneration == owner { inFlight = nil; isUploadingSources = false } }
+        do { try await task.value }
+        catch {
+            guard sourceGeneration == owner, !AgentTransportFailure.isCancelled(error) else { throw error }
+            sourceDeliveryFailure = sourceFailureMessage(error)
+            sourceRetry = Self.retryWindow(error)
+            recordAuthenticationFailure(error)
             throw error
         }
     }
     func forget(_ memory: ContextMemory) async {
         do {
             try await client.forget(ForgetMemory(memory: memory))
+            try Task.checkCancellation()
+            cancelMemoryRefresh()
             if memory.kind == "person" {
                 await forgetMatchingVoiceprintIfNeeded(for: memory)
             }
-            try await downloadMemories()
+            try await synchronizeMemories()
             failure = nil
         } catch {
             guard !AgentTransportFailure.isCancelled(error) else { return }
@@ -221,7 +359,7 @@ final class PhoneContextSync {
         defer { isDreamRequesting = false }
         do {
             _ = try await client.triggerDream()
-            await refresh()
+            await refreshMemories()
         } catch {
             guard !AgentTransportFailure.isCancelled(error) else { return }
             if case AgentClientError.http(401, _, _, _) = error {
@@ -271,7 +409,7 @@ final class PhoneContextSync {
             try await deliver(source)
         }
     }
-    private func stage(_ recording: RecordingSummary, allowEmptyInitial: Bool = true) async throws -> Source {
+    private func stage(_ recording: RecordingSummary, allowEmptyInitial: Bool = true, checkpoint: Bool = true) async throws -> Source {
         let id = recording.sessionID.uuidString.lowercased()
         let coverage = CoverageStamp(chunks: recording.chunkCount, transcriptionState: recording.transcriptionState.rawValue,
             audioState: recording.audioState.rawValue, fingerprint: configurationFingerprint)
@@ -284,9 +422,10 @@ final class PhoneContextSync {
            saved.envelope.generation == recording.generation, saved.envelope.version == recording.transcriptVersion {
             if saved.envelope.pendingTranscriptionRanges != pending || saved.coverage != coverage {
                 if saved.envelope.pendingTranscriptionRanges != pending { saved.receipt = nil }
+                saved.deliveryFailure = nil
                 saved.envelope.pendingTranscriptionRanges = pending
                 saved.coverage = coverage
-                var updated = state; updated.sources[id] = saved; try commit(updated)
+                var updated = state; updated.sources[id] = saved; try commit(updated, persist: checkpoint)
             }
             return saved
         }
@@ -294,7 +433,7 @@ final class PhoneContextSync {
             let source = Source(envelope: SourceEnvelope(library: archive.libraryInstanceID, session: recording.sessionID,
                 device: deviceID, generation: recording.generation, version: 0, recordedAt: recording.recordedAt,
                 spans: [], pendingTranscriptionRanges: pending), coverage: coverage)
-            var updated = state; updated.sources[id] = source; try commit(updated)
+            var updated = state; updated.sources[id] = source; try commit(updated, persist: checkpoint)
             return source
         }
         let snapshot = try await archive.transcriptSnapshot(sessionID: recording.sessionID)
@@ -312,45 +451,31 @@ final class PhoneContextSync {
             pendingTranscriptionRanges: pending), coverage: coverage)
         if let newer = state.sources[id], newer.envelope.generation > document.generation ||
             (newer.envelope.generation == document.generation && newer.envelope.version > document.version) { return newer }
-        var updated = state; updated.sources[id] = source; try commit(updated)
+        if let saved = state.sources[id], saved.envelope == source.envelope { return saved }
+        var updated = state; updated.sources[id] = source; try commit(updated, persist: checkpoint)
         return source
     }
-    private func deliver(_ source: Source) async throws {
+    private func deliver(_ source: Source, checkpoint: Bool = true) async throws {
         let receipt = try await client.syncSource(source.envelope)
         let expected = "\(source.envelope.generation):\(source.envelope.version):\(source.envelope.textSha256):\(source.envelope.deleted ? 1 : 0)"
         guard receipt.sourceId == source.envelope.sourceID, receipt.sourceRevision == expected else { throw SyncError.identity }
         var updated = state
         if updated.sources[source.envelope.sessionId]?.envelope == source.envelope {
-            updated.sources[source.envelope.sessionId]?.receipt = receipt; try commit(updated)
+            updated.sources[source.envelope.sessionId]?.receipt = receipt
+            updated.sources[source.envelope.sessionId]?.deliveryFailure = nil
+            try commit(updated, persist: checkpoint)
         }
     }
     private func sourceFailureMessage(_ error: Error) -> String {
         AgentTransportFailure.isTransient(error)
-            ? String(localized: "录音资料暂未上传，稍后自动重试。") : error.localizedDescription
+            ? String(localized: "录音资料暂未上传，请稍后重试。") : error.localizedDescription
     }
 
-    // Return a delivery error separately so a waiting memory refresh still runs.
-    private func synchronizeArchive(includeMemories: Bool) async throws -> Error? {
+    private func synchronizeArchive() async throws {
         let status = try await client.contextStatus()
-        guard status.workspaceId == state.connection.workspaceID, status.sourceSync,
-              status.memoryWriter == "SuperAgent" else { throw SyncError.identity }
-        memoryPending = status.memoryPending ?? 0; memoryNeedsReview = status.memoryNeedsReview ?? 0
-        memoryReview = status.memoryReview
-        var uploadError = await applySpeakerCorrections(status)
-        do {
-            try await uploadSources()
-            sourceDeliveryFailure = nil
-        } catch {
-            if AgentTransportFailure.isCancelled(error) { throw error }
-            if case AgentClientError.http(401, _, _, _) = error { throw error }
-            sourceDeliveryFailure = sourceFailureMessage(error)
-            uploadError = error
-        }
-        if includeMemories {
-            try await downloadMemories()
-            failure = nil
-        }
-        return uploadError
+        try Task.checkCancellation(); try validate(status)
+        if let error = await applySpeakerCorrections(status) { throw error }
+        try await uploadSources()
     }
     private func speakerSources(session: String?, spans: [String]) async throws -> [SourceReference] {
         guard let session, let sessionID = UUID(uuidString: session), !spans.isEmpty else { throw SyncError.identity }
@@ -406,63 +531,121 @@ final class PhoneContextSync {
             try Task.checkCancellation()
             let page = try await archive.recordingsPage(limit: 100, cursor: cursor)
             for recording in page.items {
-                do { _ = try await stage(recording, allowEmptyInitial: false) }
+                do { _ = try await stage(recording, allowEmptyInitial: false, checkpoint: false) }
                 catch ArchiveError.missingTranscript, ArchiveError.sessionDeleted { continue }
                 catch ArchiveError.projectionConflict { hadDeferredProjection = true; continue }
                 catch is CancellationError { throw CancellationError() }
                 catch { if firstError == nil { firstError = error } }
             }
+            try checkpointSources()
             cursor = page.nextCursor
         } while cursor != nil
         for id in Array(state.sources.keys).sorted() {
             guard let source = state.sources[id], !source.envelope.deleted, let sessionID = UUID(uuidString: id) else { continue }
             do { _ = try await archive.recordingSummary(sessionID: sessionID) }
             catch ArchiveError.sessionDeleted {
+                guard state.sources[id]?.envelope == source.envelope else { continue }
                 var updated = state; updated.sources[id] = Source(envelope: source.envelope.tombstone())
-                try commit(updated)
+                try commit(updated, persist: false)
             }
             catch is CancellationError { throw CancellationError() }
             catch { if firstError == nil { firstError = error } }
         }
+        try checkpointSources()
         let pendingIDs = state.sources.keys.sorted {
             let lhs = state.sources[$0]?.envelope.recordedAt ?? 0
             let rhs = state.sources[$1]?.envelope.recordedAt ?? 0
             return lhs == rhs ? $0 < $1 : lhs > rhs
         }
+        var delivered = 0
         for id in pendingIDs {
             try Task.checkCancellation()
-            guard let source = state.sources[id], source.receipt == nil else { continue }
-            do { try await deliver(source) }
+            guard let source = state.sources[id], source.receipt == nil, source.deliveryFailure == nil else { continue }
+            do {
+                try await deliver(source, checkpoint: false)
+                delivered += 1
+                if delivered % 10 == 0 { try checkpointSources() }
+            }
             catch is CancellationError { throw CancellationError() }
             catch {
-                if case AgentClientError.http(401, _, _, _) = error { throw error }
+                if AgentTransportFailure.isCancelled(error) { throw error }
+                if case AgentClientError.http(401, _, _, _) = error { try checkpointSources(); throw error }
+                if AgentTransportFailure.isTransient(error) || AgentTransportFailure.isConfigurationFailure(error) {
+                    try checkpointSources(); throw error
+                }
+                if Self.isOversizedSource(error), state.sources[id]?.envelope == source.envelope {
+                    var updated = state; updated.sources[id]?.deliveryFailure = error.localizedDescription
+                    try commit(updated, persist: false)
+                    delivered += 1
+                    if delivered % 10 == 0 { try checkpointSources() }
+                    continue
+                }
                 if firstError == nil { firstError = error }
             }
         }
+        try checkpointSources()
         if let firstError { throw firstError }
         if !hadDeferredProjection {
             var updated = state
-            updated.lastSourcesSent = Date()
-            updated.deliveredChangeRevision = changeRevision
+            updated.examinedChangeRevision = changeRevision ?? 0
+            if !updated.sources.values.contains(where: { $0.receipt == nil }) {
+                updated.lastSourcesSent = Date()
+                updated.deliveredChangeRevision = changeRevision
+            }
             try commit(updated)
         }
     }
-    private func downloadMemories() async throws {
+    private static func isOversizedSource(_ error: Error) -> Bool {
+        if case RelayError.requestTooLarge = error { return true }
+        if case AgentClientError.http(413, _, _, _) = error { return true }
+        return false
+    }
+
+    private func checkpointSources() throws {
+        if stateNeedsPersistence { try commit(state) }
+    }
+
+    private func downloadMemories(owner: UUID) async throws {
         // Publish only a complete, consistent snapshot. A concurrent Mac write retries on the next refresh.
         var items: [ContextMemory] = [], revision: Int64?, after: String?
         var seen = Set<String>()
+        var verifiedLegacyIdentity = false
         repeat {
+            try Task.checkCancellation()
             let page = try await client.memories(after: after, revision: revision)
+            try Task.checkCancellation()
+            guard memoryGeneration == owner else { throw CancellationError() }
+            if let workspace = page.workspaceId {
+                guard workspace == state.connection.workspaceID else { throw SyncError.identity }
+            } else if !verifiedLegacyIdentity {
+                // Older Macs identify their notebook through status; never stamp unverified content with our identity.
+                let status = try await client.contextStatus()
+                try Task.checkCancellation()
+                guard memoryGeneration == owner else { throw CancellationError() }
+                try validate(status)
+                verifiedLegacyIdentity = true
+            }
+            if let revision, revision != page.revision { throw SyncError.invalidPagination }
             revision = page.revision; items += page.items; after = page.nextCursor
             if let after, !seen.insert(after).inserted { throw SyncError.invalidPagination }
         } while after != nil
-        var updated = state; updated.memories = items; updated.memoryBackend = "SuperAgent"; updated.lastSynced = Date(); try commit(updated)
+        try Task.checkCancellation()
+        guard memoryGeneration == owner else { throw CancellationError() }
+        let cached = MemoryCache(libraryID: state.libraryID, instanceID: state.connection.instanceID,
+                                 workspaceID: state.connection.workspaceID,
+                                 memories: items, revision: revision, lastSynced: Date())
+        try JSONEncoder().encode(cached).write(to: memoryFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        if memories != items { memories = items }
+        lastSynced = cached.lastSynced
     }
-    private func commit(_ updated: State) throws {
-        try JSONEncoder().encode(updated).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    private func commit(_ updated: State, persist: Bool = true) throws {
+        try Task.checkCancellation()
+        if persist {
+            // Keep the legacy notebook checkpoint for rollback; new reads use memoryFile.
+            try JSONEncoder().encode(updated).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        }
         state = updated
-        memories = updated.memoryBackend == "SuperAgent" ? updated.memories : []
-        lastSynced = updated.memoryBackend == "SuperAgent" ? updated.lastSynced : nil
+        stateNeedsPersistence = !persist
     }
     enum SyncError: LocalizedError {
         case unavailable, identity, missingSourceTime, sourceChanged, invalidPagination
