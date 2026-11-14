@@ -10,6 +10,16 @@ public protocol TransientTransportError: Error {
 }
 
 public enum AgentTransportFailure {
+    // Validated SOCKS endpoints can report a cold proxy connection as badURL.
+    private static let linkURLCodes: Set<URLError.Code> = [
+        .badURL, .timedOut, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+        .networkConnectionLost, .notConnectedToInternet
+    ]
+    private static let configurationURLCodes: Set<URLError.Code> = [
+        .unsupportedURL, .appTransportSecurityRequiresSecureConnection, .secureConnectionFailed,
+        .serverCertificateHasBadDate, .serverCertificateUntrusted, .serverCertificateHasUnknownRoot,
+        .serverCertificateNotYetValid, .clientCertificateRejected, .clientCertificateRequired
+    ]
     private static let transientPOSIXCodes: Set<Int> = [
         Int(ENETDOWN), Int(ENETUNREACH), Int(ENETRESET), Int(ECONNABORTED),
         Int(ECONNRESET), Int(ENOBUFS), Int(ENOTCONN), Int(ETIMEDOUT),
@@ -21,16 +31,21 @@ public enum AgentTransportFailure {
     }
 
     public static func isSocketOrLinkFailure(_ error: Error) -> Bool {
-        if let urlError = error as? URLError { return urlError.code != .cancelled }
+        if let urlError = error as? URLError { return linkURLCodes.contains(urlError.code) }
         if let transient = error as? any TransientTransportError { return transient.isTransientTransportFailure }
         let nsError = error as NSError
         if nsError.domain == NSPOSIXErrorDomain { return transientPOSIXCodes.contains(nsError.code) }
         #if canImport(CFNetwork)
         if nsError.domain == (kCFErrorDomainCFNetwork as String) {
-            return nsError.code != Int(CFNetworkErrors.cfurlErrorCancelled.rawValue)
+            return linkURLCodes.contains(URLError.Code(rawValue: nsError.code))
         }
         #endif
         return false
+    }
+
+    public static func isConfigurationFailure(_ error: Error) -> Bool {
+        let error = error as NSError
+        return error.domain == NSURLErrorDomain && configurationURLCodes.contains(URLError.Code(rawValue: error.code))
     }
 
     public static func isTransient(_ error: Error) -> Bool {

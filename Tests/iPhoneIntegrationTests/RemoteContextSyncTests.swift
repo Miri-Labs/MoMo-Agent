@@ -7,6 +7,178 @@ import MoMoContracts
 
 @MainActor
 final class RemoteContextSyncTests: XCTestCase {
+    func testCancelledUploadCleanupCannotClearReplacementTask() async throws {
+        let (sync, root, archive, _) = try fixture()
+        _ = try await summaryWindow(archive: archive, root: root)
+        let first = expectation(description: "Old source request held")
+        MemoryResponse.state.holdNextSource(first)
+        let old = Task { try await sync.synchronize(includeMemories: false) }
+        await fulfillment(of: [first], timeout: 5)
+        sync.cancelSynchronization()
+        MemoryResponse.state.releaseSource()
+        let second = expectation(description: "Replacement source request held")
+        MemoryResponse.state.holdNextSource(second)
+        defer { MemoryResponse.state.releaseSource() }
+        let replacement = Task { try await sync.synchronize(includeMemories: false) }
+        await fulfillment(of: [second], timeout: 5)
+        do { try await old.value; XCTFail("Old delivery must be cancelled") } catch { }
+        XCTAssertTrue(sync.isUploadingSources)
+        MemoryResponse.state.releaseSource()
+        try await replacement.value
+        XCTAssertFalse(sync.isUploadingSources)
+        XCTAssertEqual(sync.pendingSources, 0)
+    }
+
+    func testCorruptNotebookCachePreservesSourceOutboxAndCanRecover() async throws {
+        let (sync, root, archive, connection) = try fixture()
+        _ = try await summaryWindow(archive: archive, root: root)
+        MemoryResponse.state.rejectSources = true
+        do { try await sync.synchronize(includeMemories: false) } catch { }
+        let cache = root.appendingPathComponent("memories-cache.json")
+        let invalid = Data("incomplete".utf8)
+        try invalid.write(to: cache)
+        let restored = try PhoneContextSync(directory: root, archive: archive, deviceID: UUID(), connection: connection,
+                                            key: "fixture", configuration: configuration())
+        XCTAssertEqual(restored.pendingSources, 1)
+        XCTAssertNotNil(restored.failure)
+        XCTAssertEqual(try Data(contentsOf: cache), invalid, "Opening a broken cache does not delete it")
+        await restored.refreshMemories()
+        XCTAssertNil(restored.failure)
+        XCTAssertEqual(restored.memories.count, 1)
+        XCTAssertEqual(restored.pendingSources, 1)
+        restored.background()
+    }
+
+    func testSlowReviewMetadataDoesNotHoldNotebookRead() async throws {
+        let (sync, _, _, _) = try fixture()
+        let entered = expectation(description: "Review request held")
+        MemoryResponse.state.holdNextStatus(entered)
+        defer { MemoryResponse.state.releaseStatus(); sync.background() }
+        let read = Task { await sync.refreshMemories() }
+        await fulfillment(of: [entered], timeout: 5)
+        await read.value
+        XCTAssertNotNil(sync.lastSynced)
+        XCTAssertFalse(sync.isSyncing)
+        XCTAssertEqual(sync.memories.count, 1)
+    }
+
+    func testOversizedSourceRemainsStoredWithoutAutomaticReplayAndCanBeRetried() async throws {
+        let (sync, root, archive, _) = try fixture()
+        _ = try await summaryWindow(archive: archive, root: root)
+        MemoryResponse.state.sourceFailureStatus = 413
+        try await sync.synchronize(includeMemories: false)
+        XCTAssertEqual(sync.pendingSources, 1)
+        XCTAssertFalse(sync.needsDelivery)
+        XCTAssertNotNil(sync.sourceDeliveryFailure)
+        let count = MemoryResponse.state.sourceAttempts
+        try await sync.synchronize(includeMemories: false)
+        XCTAssertEqual(MemoryResponse.state.sourceAttempts, count)
+        MemoryResponse.state.sourceFailureStatus = nil
+        try sync.allowSourceDeliveryRetry()
+        try await sync.synchronize(includeMemories: false)
+        XCTAssertEqual(sync.pendingSources, 0)
+        XCTAssertFalse(sync.sources.isEmpty, "Acknowledgement must retain complete source references")
+    }
+
+    func testSourceRetryAfterDoesNotBlockNotesAndSurvivesForegroundRetry() async throws {
+        let (sync, root, archive, _) = try fixture()
+        _ = try await summaryWindow(archive: archive, root: root)
+        MemoryResponse.state.sourceFailureStatus = 429
+        do { try await sync.synchronize(includeMemories: false); XCTFail() } catch { }
+        let count = MemoryResponse.state.sourceAttempts
+        sync.background()
+        try sync.allowSourceDeliveryRetry()
+        do { try await sync.synchronize(includeMemories: false); XCTFail() } catch { }
+        XCTAssertEqual(MemoryResponse.state.sourceAttempts, count)
+        await sync.refreshMemories()
+        XCTAssertNotNil(sync.lastSynced)
+        sync.background()
+    }
+
+    func testMemoryRefreshFinishesDuringHeldUploadAndBothCachesSurviveRestart() async throws {
+        let (sync, root, archive, connection) = try fixture()
+        _ = try await summaryWindow(archive: archive, root: root)
+        let entered = expectation(description: "Source receipt held")
+        MemoryResponse.state.holdNextSource(entered)
+        defer { MemoryResponse.state.releaseSource() }
+        let upload = Task { try await sync.synchronize(includeMemories: false) }
+        await fulfillment(of: [entered], timeout: 5)
+        await sync.refreshMemories()
+        XCTAssertNotNil(sync.lastSynced)
+        XCTAssertFalse(sync.isSyncing)
+        XCTAssertTrue(sync.isUploadingSources)
+        let memoryFile = root.appendingPathComponent("memories-cache.json")
+        let saved = try Data(contentsOf: memoryFile)
+        MemoryResponse.state.releaseSource()
+        try await upload.value
+        XCTAssertEqual(try Data(contentsOf: memoryFile), saved, "A source receipt must not rewrite notebook cache")
+        let reopened = try PhoneContextSync(directory: root, archive: archive, deviceID: UUID(), connection: connection,
+                                            key: "fixture", configuration: configuration())
+        XCTAssertEqual(reopened.memories, sync.memories)
+        XCTAssertFalse(reopened.needsDelivery)
+        XCTAssertNotNil(reopened.lastSourcesSent)
+    }
+
+    func testCancelledMemoryTaskCannotCaptureForegroundRefreshOrReviveDeletedNote() async throws {
+        let (sync, _, _, _) = try fixture()
+        await sync.refreshMemories()
+        let note = try XCTUnwrap(sync.memories.first)
+        let entered = expectation(description: "Old notebook response held")
+        MemoryResponse.state.holdNextMemory(entered)
+        defer { MemoryResponse.state.releaseMemory() }
+        let old = Task { await sync.refreshMemories() }
+        await fulfillment(of: [entered], timeout: 5)
+        sync.background()
+        MemoryResponse.state.allowForget = true
+        await sync.forget(note)
+        XCTAssertTrue(sync.memories.isEmpty)
+        XCTAssertFalse(sync.isSyncing)
+        MemoryResponse.state.releaseMemory()
+        await old.value
+        XCTAssertTrue(sync.memories.isEmpty, "An older response cannot restore a confirmed deletion")
+    }
+
+    func testReviewStatusFailureDoesNotPreventNotebookRead() async throws {
+        let (sync, _, _, _) = try fixture()
+        MemoryResponse.state.rejectStatus = true
+        await sync.refreshMemories()
+        XCTAssertNotNil(sync.lastSynced)
+        XCTAssertNil(sync.failure)
+        XCTAssertEqual(sync.memories.count, 1)
+    }
+
+    func testFiveHundredQueuedSourcesStopAfterFirstTransientFailureAndLeaveNotesAvailable() async throws {
+        let (sync, root, archive, connection) = try fixture()
+        await sync.refresh()
+        let path = root.appendingPathComponent("context.json")
+        var state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        var queued: [String: Any] = [:]
+        for _ in 0..<500 {
+            let envelope = SourceEnvelope(library: archive.libraryInstanceID, session: UUID(), device: UUID(),
+                generation: 0, version: 1, recordedAt: Date(), spans: [.init(id: UUID(), text: String(repeating: "完整录音正文", count: 100), recordedAt: Date())])
+            queued[envelope.sessionId] = ["envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))]
+        }
+        state["sources"] = queued
+        try JSONSerialization.data(withJSONObject: state).write(to: path)
+        let restored = try PhoneContextSync(directory: root, archive: archive, deviceID: UUID(), connection: connection,
+                                            key: "fixture", configuration: configuration())
+        MemoryResponse.state.rejectSources = true
+        let entered = expectation(description: "First failing source is held")
+        MemoryResponse.state.holdNextSource(entered)
+        defer { MemoryResponse.state.releaseSource() }
+        let upload = Task { try await restored.synchronize(includeMemories: false) }
+        await fulfillment(of: [entered], timeout: 10)
+        let started = ContinuousClock.now
+        await restored.refreshMemories()
+        XCTAssertLessThan(started.duration(to: .now), .seconds(2))
+        XCTAssertNil(restored.failure)
+        MemoryResponse.state.releaseSource()
+        do { try await upload.value; XCTFail("The source outage must remain visible") } catch { }
+        XCTAssertEqual(MemoryResponse.state.sourceAttempts, 1)
+        XCTAssertEqual(restored.pendingSources, 500)
+        XCTAssertTrue(restored.needsDelivery)
+    }
+
     func testStickerObservationSurvivesSourceReceiptAndRestartUntilExplicitlyDisabled() async throws {
         let (sync, root, archive, connection) = try fixture()
         try sync.markSourcesChanged()
@@ -246,7 +418,9 @@ final class RemoteContextSyncTests: XCTestCase {
         let url = URL(string: "http://127.0.0.1:8765")!
         let connection = AgentConnection(workspaceID: UUID(), assistantID: UUID(), instanceID: UUID(), baseURL: url, dataURL: url)
         MemoryResponse.state.reset(connection.workspaceID)
-        return (try PhoneContextSync(directory: root, archive: archive, deviceID: UUID(), connection: connection, key: "fixture", configuration: configuration()), root, archive, connection)
+        let sync = try PhoneContextSync(directory: root, archive: archive, deviceID: UUID(), connection: connection, key: "fixture", configuration: configuration())
+        addTeardownBlock { [weak sync] in await sync?.background() }
+        return (sync, root, archive, connection)
     }
     private static func makeWAVFixture() -> Data {
         var data = Data("RIFF".utf8)
@@ -260,17 +434,21 @@ final class RemoteContextSyncTests: XCTestCase {
 }
 private final class MemoryResponse: URLProtocol, @unchecked Sendable {
     static let state = MemoryResponses()
+    private let cancellationLock = NSLock()
+    private var stopped = false
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let (code, body) = Self.state.receive(request)
         let respond: @Sendable () -> Void = { [self] in
-            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: nil, headerFields: ["Content-Type":"application/json"])!, cacheStoragePolicy: .notAllowed)
+            guard !cancellationLock.withLock({ stopped }) else { return }
+            let headers = code == 429 ? ["Content-Type":"application/json", "Retry-After":"60"] : ["Content-Type":"application/json"]
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: nil, headerFields: headers)!, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(body.utf8)); client?.urlProtocolDidFinishLoading(self)
         }
         if !Self.state.holdResponse(request, respond: respond) { respond() }
     }
-    override func stopLoading() {}
+    override func stopLoading() { cancellationLock.withLock { stopped = true } }
 }
 private final class MemoryResponses: @unchecked Sendable {
     private let lock = NSLock()
@@ -279,10 +457,33 @@ private final class MemoryResponses: @unchecked Sendable {
     private var payloads: [SourceEnvelope] = []
     private var rejected = false
     private var memoriesRejected = false
+    private var statusRejected = false
+    private var forgetAllowed = false
+    private var forgotten = false
+    private var sourceCount = 0
+    private var sourceStatus: Int?
+    private var waitingForStatus: XCTestExpectation?
+    private var heldStatus: (@Sendable () -> Void)?
     private var waitingForSource: XCTestExpectation?
     private var heldResponse: (@Sendable () -> Void)?
+    private var waitingForMemory: XCTestExpectation?
+    private var heldMemory: (@Sendable () -> Void)?
+    func holdNextMemory(_ waiting: XCTestExpectation) { lock.withLock { waitingForMemory = waiting } }
+    func holdNextStatus(_ waiting: XCTestExpectation) { lock.withLock { waitingForStatus = waiting } }
     func holdNextSource(_ waiting: XCTestExpectation) { lock.withLock { waitingForSource = waiting } }
     func holdResponse(_ request: URLRequest, respond: @escaping @Sendable () -> Void) -> Bool {
+        if request.url?.path == "/v1/status" {
+            return lock.withLock {
+                guard let waitingForStatus else { return false }
+                self.waitingForStatus = nil; heldStatus = respond; waitingForStatus.fulfill(); return true
+            }
+        }
+        if request.url?.path == "/v1/memories" {
+            return lock.withLock {
+                guard let waitingForMemory else { return false }
+                self.waitingForMemory = nil; heldMemory = respond; waitingForMemory.fulfill(); return true
+            }
+        }
         guard request.url?.path == "/v1/sources", request.httpMethod == "POST" else { return false }
         return lock.withLock {
             guard let waitingForSource else { return false }
@@ -295,6 +496,27 @@ private final class MemoryResponses: @unchecked Sendable {
         let response = lock.withLock { let response = heldResponse; heldResponse = nil; return response }
         response?()
     }
+    func releaseMemory() {
+        let response = lock.withLock { let response = heldMemory; heldMemory = nil; return response }
+        response?()
+    }
+    var sourceAttempts: Int { lock.withLock { sourceCount } }
+    var sourceFailureStatus: Int? {
+        get { lock.withLock { sourceStatus } }
+        set { lock.withLock { sourceStatus = newValue } }
+    }
+    func releaseStatus() {
+        let response = lock.withLock { let response = heldStatus; heldStatus = nil; return response }
+        response?()
+    }
+    var rejectStatus: Bool {
+        get { lock.withLock { statusRejected } }
+        set { lock.withLock { statusRejected = newValue } }
+    }
+    var allowForget: Bool {
+        get { lock.withLock { forgetAllowed } }
+        set { lock.withLock { forgetAllowed = newValue } }
+    }
     var rejectSources: Bool {
         get { lock.withLock { rejected } }
         set { lock.withLock { rejected = newValue } }
@@ -306,10 +528,19 @@ private final class MemoryResponses: @unchecked Sendable {
     var requests: Int { lock.withLock { count } }
     var syncedSourceIDs: [String] { lock.withLock { synced } }
     var sourcePayloads: [SourceEnvelope] { lock.withLock { payloads } }
-    func reset(_ workspace: UUID) { lock.withLock { self.workspace = workspace; count = 0; synced = []; payloads = []; summaryRevision = nil; rejected = false; memoriesRejected = false } }
+    func reset(_ workspace: UUID) { lock.withLock {
+        self.workspace = workspace; count = 0; synced = []; payloads = []; summaryRevision = nil
+        rejected = false; memoriesRejected = false; statusRejected = false; forgetAllowed = false; forgotten = false; sourceCount = 0
+        waitingForSource = nil; heldResponse = nil; waitingForMemory = nil; heldMemory = nil
+        waitingForStatus = nil; heldStatus = nil; sourceStatus = nil
+    } }
     func receive(_ request: URLRequest) -> (Int, String) {
         lock.withLock {
             count += 1
+            if request.url?.path == "/v1/sources", request.httpMethod == "POST" {
+                sourceCount += 1
+                if let sourceStatus { return (sourceStatus, "{}") }
+            }
             if request.url?.path == "/v1/summaries", request.httpMethod == "POST",
                let body = request.BodyData,
                let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
@@ -321,6 +552,7 @@ private final class MemoryResponses: @unchecked Sendable {
                 return (200, "{\"id\":\"summary-fixture\",\"revision\":\"\(revision)\",\"state\":\"done\",\"text\":\"团队决定周五交付。\"}")
             }
             if request.url?.path == "/v1/status" {
+                if statusRejected { return (503, "{}") }
                 return (200, "{\"workspace_id\":\"\(workspace)\",\"source_sync\":true,\"memory_writer\":\"SuperAgent\"}")
             }
             if request.url?.path == "/v1/sources", rejected { return (503, "{}") }
@@ -339,8 +571,10 @@ private final class MemoryResponses: @unchecked Sendable {
             }
             if request.url?.path == "/v1/memories" {
                 if memoriesRejected { return (503, "{}") }
+                if forgotten { return (200, #"{"revision":2,"next_cursor":null,"items":[]}"#) }
                 return (200, #"{"revision":1,"next_cursor":null,"items":[{"id":"momo-memory-fixture","text":"下周五发方案","kind":"memory","basis":"momo","status":"current","revision":1,"evidence":[]}]}"#)
             }
+            if request.url?.path == "/v1/memories/forget", forgetAllowed { forgotten = true; return (200, "{}") }
             return (503, "{}")
         }
     }

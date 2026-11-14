@@ -520,6 +520,13 @@ public final class RemoteTaskStore {
         // No remote stop: an interrupted HTTP response is reconciled with the same identity.
     }
 
+    /// Only the paired client's successful authenticated probe may reopen this gate.
+    public func resumeAfterCredentialVerification() {
+        guard connectionState == .authenticationRequired else { return }
+        background()
+        connectionState = .retrying; nextConnectionAttempt = nil
+    }
+
     public func retryConnection(ifNeeded: Bool = false) async {
         guard canContactServer, !serverIsThrottling else { return }
         // Path changes can arrive during the handshake or while the peer is sending.
@@ -1214,12 +1221,13 @@ public final class RemoteTaskStore {
     }
 
     private func markConnectionReady(operation: StaticString = #function) {
-        if connectionState != .ready || !confirmedInCurrentForeground {
+        let restored = connectionState != .ready || !confirmedInCurrentForeground
+        if restored {
             onConnectionDiagnostic?(operation, .ready, nil, nil)
         }
         confirmedInCurrentForeground = true
         connectionState = .ready; connectionFailures = 0; nextConnectionAttempt = nil
-        onConnectionRestored?()
+        if restored { onConnectionRestored?() }
     }
 
     private func liveConnectionConfirmed() {
@@ -1432,6 +1440,10 @@ public final class RemoteTaskStore {
 
     public func recordConnectionFailure(_ error: Error, operation: StaticString = #function) {
         if AgentTransportFailure.isCancelled(error) { return }
+        if AgentTransportFailure.isConfigurationFailure(error) {
+            markUnavailable(error, operation: operation)
+            return
+        }
         var delay: TimeInterval?; var transient = AgentTransportFailure.isSocketOrLinkFailure(error); var serverLimited = false
         if case AgentClientError.invalidResponse = error { transient = true }
         if case AgentClientError.http(let status, _, _, let retryAfter) = error {
@@ -1452,7 +1464,8 @@ public final class RemoteTaskStore {
             // Only a server throttle can extend a retry that is already scheduled.
             if !serverLimited, let deadline = nextConnectionAttempt, now() < deadline { return }
             connectionFailures += 1; connectionState = .retrying
-            nextConnectionAttempt = now().addingTimeInterval(max(delay ?? 0, min(30, pow(2, Double(min(connectionFailures, 5))))))
+            let backoff = min(30, pow(2, Double(min(connectionFailures, 5)))) * Double.random(in: 0.5...1)
+            nextConnectionAttempt = now().addingTimeInterval(max(delay ?? 0, backoff))
             if serverLimited, let deadline = nextConnectionAttempt {
                 serverRetryNotBefore = max(serverRetryNotBefore ?? deadline, deadline)
             }

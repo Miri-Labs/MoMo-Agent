@@ -217,7 +217,7 @@ private struct RemoteConversationView: View {
         .onChange(of: agent.notifications.navigationRevision) { _, _ in
             if agent.notifications.focusedTarget?.messageID == nil { composeRevision += 1 }
         }
-        .task { await agent.context?.refresh() }
+        .task { await agent.context?.refreshMemories() }
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { viewport = $0 }
         .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: isEmpty)
         .scrollDismissesKeyboard(.interactively)
@@ -262,7 +262,7 @@ private struct RemoteConversationView: View {
                 previewingMemoryNote = matched
             } else {
                 Task {
-                    await agent.context?.refresh()
+                    await agent.context?.refreshMemories()
                     if let matched = DreamMemoryLinkResolver.resolve(url: url, in: agent.context?.memories ?? []) {
                         previewingMemoryNote = matched
                     } else {

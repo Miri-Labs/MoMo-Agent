@@ -86,7 +86,7 @@ extension AgentClient {
                     }
                 }
                 if !snapshotRecovered { failed(failure) }
-                var delay = backoff
+                var delay = backoff * Double.random(in: 0.5...1)
                 if case AgentClientError.http(let status, _, _, let retryAfter) = failure {
                     if status == 409 { needsSnapshot = true }
                     else if (400..<500).contains(status) && ![408, 429].contains(status) { return }
@@ -98,7 +98,7 @@ extension AgentClient {
                 } else if !AgentTransportFailure.isTransient(failure) { return }
                 self?.isBackingOff = true
                 do { try await Task.sleep(for: .seconds(delay)) } catch { return }
-                backoff = min(5, backoff * 2)
+                backoff = min(30, backoff * 2)
             }
         }
     }
