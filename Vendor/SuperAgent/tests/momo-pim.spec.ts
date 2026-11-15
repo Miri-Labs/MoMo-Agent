@@ -29,7 +29,9 @@ afterEach(async () => {
 
 it('registers all Reminders/Calendar/Notes, Recording & Dream Notebook tools only in a loopback MoMo host', () => {
   const names = momoPimTools(host, ticket.id).map(t => t.name)
-  expect(names).toHaveLength(30)
+  expect(names).toHaveLength(32)
+  expect(names).toContain('search_memory')
+  expect(names).toContain('read_memory_evidence')
   expect(names).toContain('create_reminder')
   expect(names).toContain('complete_reminder')
   expect(names).toContain('create_calendar_event')
@@ -88,4 +90,19 @@ it('aborts cleanly and refuses stopped tickets before calling the bridge', async
   controller.abort()
   await expect(searchReminders.execute(searchReminders.schema.parse({}), controller.signal)).rejects.toThrow()
   expect(fetch).not.toHaveBeenCalled()
+})
+
+it('bounds recall queries and forwards evidence revisions unchanged', async () => {
+  const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, matches: [] }) })
+  vi.stubGlobal('fetch', fetch)
+  const tools = momoPimTools(host, ticket.id)
+  const search = tools.find(t => t.name === 'search_memory')!
+  expect(search.schema.safeParse({ query: 'release', alternative_queries: ['a', 'b', 'c', 'd'] }).success).toBe(false)
+  const args = search.schema.parse({ query: '发布扛不住', alternative_queries: ['连接池 高并发'], kind: 'recording' })
+  await search.execute(args, new AbortController().signal)
+  expect(JSON.parse(fetch.mock.calls[0]![1].body).args).toEqual({ query: '发布扛不住', alternative_queries: ['连接池 高并发'], kind: 'recording', limit: 10 })
+  const read = tools.find(t => t.name === 'read_memory_evidence')!
+  expect(read.schema.safeParse({ id: 'chat:7' }).success).toBe(false)
+  await read.execute(read.schema.parse({ id: 'chat:7', revision: 'content-hash', offset: 1200 }), new AbortController().signal)
+  expect(JSON.parse(fetch.mock.calls[1]![1].body).args).toEqual({ id: 'chat:7', revision: 'content-hash', offset: 1200, limit: 12000 })
 })

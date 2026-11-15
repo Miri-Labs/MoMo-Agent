@@ -122,8 +122,9 @@ function momoMemoryPromptBlock(): string {
   }
   collectVaultMd('', 0)
   if (notesIndex.length > 0) {
-    sections.push(`### Dream Markdown 活页知识库索引 (支持多级目录，可用 read_memory_notebook(path=...) 按需精读)\n${notesIndex.join('\n')}`)
+    sections.push(`### Dream Markdown 活页目录预览（最多 80 条，非完整检索结果）\n${notesIndex.join('\n')}`)
   }
+  sections.push('### 按任务检索长期记忆\n涉及历史背景、偏好或跨天线索时，使用 search_memory 搜索全部活页、录音与聊天。模糊问法可提供最多 3 个 alternative_queries，分别覆盖同义表达、专业术语或缺失方面；这些检索假设不能当作事实。用 read_memory_evidence(id, revision) 读原文并按 next_offset 续读，必要时根据已找到的线索继续搜索。目录预览没有列出的内容仍可检索；笔记及助手消息不构成对其原始来源的独立确认。主控可通过 "$DSH_SUPERAGENT_MOMO_CLI" search-memory "问题" --alternative-query "检索词" 和 read-memory-evidence "id" --revision "revision" 使用同一检索。')
   sections.push(
     `### 记忆订正、说话人声纹回写与多级目录自由组织工作流\n`
     + `当用户指出某段记忆/日志总结有误，告知说话人归属，或要求整理记忆目录结构时：\n`

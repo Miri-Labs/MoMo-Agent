@@ -306,6 +306,7 @@ def next_review(store, data, now):
 
 
 DREAM_INSTRUCTION = """执行闲时深度 Dream（五阶段认知循环：后验纠错 + 自主断舍离重整 + 时空对账 + 项目治理 + 管家简报，产出物全部使用纯 Markdown `.md`）：
+涉及跨天背景、重复或冲突时，先用 search_memory 按问题检索完整记忆、录音和聊天，按需提供 alternative_queries 覆盖同义表达及缺失方面。用 read_memory_evidence(id, revision) 核对原文并按 next_offset 续读。检索词只是查找假设，笔记与助手消息不构成对其原始来源的独立确认。
 1. 【阶段一：全局后验自省纠错、语义说话人推理与人物活页（`relabel_speakers` + `notebook`）】
    - 调用 `list_recordings`、`read_recording`、`search_recordings` 与 `session_search`，结合完整录音全貌与用户后续对话，**主动审查既有 `journal/*.md`、`projects/*.md`、`people/*.md`、`MEMORY.md` 中是否存在早期分批整理时的误判或张冠李戴**（例如：会议开场批次误把某段发言/OKR 归因给 A，但中后段对话互动、职责分工或用户后续纠正表明实际主讲人是 B；或早期笔记残留了 `revision 0:xxx`、`remaining_parts=xxx`、`来源与边界` 等内部调试废话）。
    - 一旦发现前序归属错误或新确认了真实说话人身份：

@@ -219,6 +219,28 @@ export function momoPimTools(host: ExecutorToolsHost, ticketId: string): Tool[] 
 
     // ── Dream Markdown Notebook, Core Memory & Semantic Speaker Relabeling ──────
     {
+      name: 'search_memory',
+      description: 'Search all shared Markdown memory, original recording spans and chat by relevance, beyond the prompt directory preview. For vague wording supply up to 3 focused alternative_queries: synonyms, names, technical terms or separate missing aspects. Variants are search hypotheses, never evidence. Read relevant hits with read_memory_evidence; search again for missing aspects using grounded clues. Notes and assistant messages are not independent confirmation of their sources.',
+      schema: z.object({
+        query: z.string().trim().min(1).max(300),
+        alternative_queries: z.array(z.string().trim().min(1).max(300)).max(3).optional(),
+        kind: z.enum(['all', 'note', 'recording', 'chat']).default('all'),
+        limit: z.number().int().min(1).max(30).default(10),
+      }).strict(),
+      execute: (args, signal) => call('search_memory', args, signal),
+    },
+    {
+      name: 'read_memory_evidence',
+      description: 'Read the complete current source of a search hit. Pass its id and revision and follow next_offset until null; a changed or deleted source requires a fresh search. Recording offsets here are within this span, not the full recording.',
+      schema: z.object({
+        id: z.string().min(1),
+        revision: z.string().min(1),
+        offset: z.number().int().min(0).default(0),
+        limit: z.number().int().min(1).max(24000).default(12000),
+      }).strict(),
+      execute: (args, signal) => call('read_memory_evidence', args, signal),
+    },
+    {
       name: 'list_memory_notebooks',
       description: 'List pure Markdown (.md) living notebook pages across the multi-level memories/ vault (optionally filtered by category or folder path prefix).',
       schema: z.object({
@@ -292,9 +314,10 @@ export function momoPimTools(host: ExecutorToolsHost, ticketId: string): Tool[] 
     },
     {
       name: 'search_recordings',
-      description: 'Full-text search across synchronized recordings to locate exact source_id, span_id, timestamps, and current speaker labels for any topic, quote, or OKR.',
+      description: 'Rank synchronized recording passages by relevance. Supply focused alternative_queries for synonyms or missing aspects. Returns source_id, span_id, current speaker labels and evidence id/revision for full reading with read_memory_evidence.',
       schema: z.object({
         query: z.string().trim().min(1).max(300),
+        alternative_queries: z.array(z.string().trim().min(1).max(300)).max(3).optional(),
         limit: z.number().int().min(1).max(30).default(15),
       }).strict(),
       execute: (args, signal) => call('search_recordings', args, signal),

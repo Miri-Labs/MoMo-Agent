@@ -9388,7 +9388,8 @@ function momoMemoryPromptBlock() {
 		} catch {}
 	};
 	collectVaultMd("", 0);
-	if (notesIndex.length > 0) sections.push(`### Dream Markdown 活页知识库索引 (支持多级目录，可用 read_memory_notebook(path=...) 按需精读)\n${notesIndex.join("\n")}`);
+	if (notesIndex.length > 0) sections.push(`### Dream Markdown 活页目录预览（最多 80 条，非完整检索结果）\n${notesIndex.join("\n")}`);
+	sections.push("### 按任务检索长期记忆\n涉及历史背景、偏好或跨天线索时，使用 search_memory 搜索全部活页、录音与聊天。模糊问法可提供最多 3 个 alternative_queries，分别覆盖同义表达、专业术语或缺失方面；这些检索假设不能当作事实。用 read_memory_evidence(id, revision) 读原文并按 next_offset 续读，必要时根据已找到的线索继续搜索。目录预览没有列出的内容仍可检索；笔记及助手消息不构成对其原始来源的独立确认。主控可通过 \"$DSH_SUPERAGENT_MOMO_CLI\" search-memory \"问题\" --alternative-query \"检索词\" 和 read-memory-evidence \"id\" --revision \"revision\" 使用同一检索。");
 	sections.push("### 记忆订正、说话人声纹回写与多级目录自由组织工作流\n当用户指出某段记忆/日志总结有误，告知说话人归属，或要求整理记忆目录结构时：\n1. 若涉及录音事实或说话人，立即使用 `search_recordings` / `read_recording` 找到对应录音 `source_id` 及精确的 `span_ids`；\n2. 若用户仅排除一个人，调用 exclude_recording_speaker，按明确范围传片段或带时区的起始日期，并保留未知身份。已确认真实身份时调用 `relabel_recording_speakers` 修正录音说话人并同步回写 iPhone 声纹库（若原标签已是具名人或“我”仅局部串轨，必须传精确 `span_ids` + `scope=\"selection\"` 避免误改同场其他发言；若原标签是整组匿名 `[说话人 N]` 可用 `scope=\"cluster\"`）；\n3. 全量排查并用 `read_memory_notebook` / `write_memory_notebook` / `move_memory_notebook` / `remove_memory_notebook` / `update_core_memory` 同步订正所有受影响的笔记与 `BRIEFING.md` / `MEMORY.md`，顺手清除笔记里残留的 `remaining_parts` / `revision` 等内部调试字样。\n4. **多级目录自由组织与自治断舍离**：`memories/` 支持任意二级/三级目录及自定义目录（如 `projects/AI访谈/overview.md`、`projects/AI访谈/双月OKR.md`、`people/核心团队/shengli.md`、`journal/2026-11/2026-11-10.md`）。优先用 `mode=\"replace\"` 重整结构、确保首行有清晰的 `# 一级标题`，主动合并重叠碎片、用 `move_memory_notebook` 归整子目录、用 `remove_memory_notebook` 删除过时/冗余活页。");
 	return sections.length > 0 ? `\n\n## MoMo 共享长期记忆与 Dream Markdown 活页笔记本\n${sections.join("\n\n")}` : "";
 }
@@ -10549,6 +10550,33 @@ function momoPimTools(host, ticketId) {
 			execute: (args, signal) => call("delete_note", args, signal)
 		},
 		{
+			name: "search_memory",
+			description: "Search all shared Markdown memory, original recording spans and chat by relevance, beyond the prompt directory preview. For vague wording supply up to 3 focused alternative_queries: synonyms, names, technical terms or separate missing aspects. Variants are search hypotheses, never evidence. Read relevant hits with read_memory_evidence; search again for missing aspects using grounded clues. Notes and assistant messages are not independent confirmation of their sources.",
+			schema: z.object({
+				query: z.string().trim().min(1).max(300),
+				alternative_queries: z.array(z.string().trim().min(1).max(300)).max(3).optional(),
+				kind: z.enum([
+					"all",
+					"note",
+					"recording",
+					"chat"
+				]).default("all"),
+				limit: z.number().int().min(1).max(30).default(10)
+			}).strict(),
+			execute: (args, signal) => call("search_memory", args, signal)
+		},
+		{
+			name: "read_memory_evidence",
+			description: "Read the complete current source of a search hit. Pass its id and revision and follow next_offset until null; a changed or deleted source requires a fresh search. Recording offsets here are within this span, not the full recording.",
+			schema: z.object({
+				id: z.string().min(1),
+				revision: z.string().min(1),
+				offset: z.number().int().min(0).default(0),
+				limit: z.number().int().min(1).max(24e3).default(12e3)
+			}).strict(),
+			execute: (args, signal) => call("read_memory_evidence", args, signal)
+		},
+		{
 			name: "list_memory_notebooks",
 			description: "List pure Markdown (.md) living notebook pages across the multi-level memories/ vault (optionally filtered by category or folder path prefix).",
 			schema: z.object({
@@ -10626,9 +10654,10 @@ function momoPimTools(host, ticketId) {
 		},
 		{
 			name: "search_recordings",
-			description: "Full-text search across synchronized recordings to locate exact source_id, span_id, timestamps, and current speaker labels for any topic, quote, or OKR.",
+			description: "Rank synchronized recording passages by relevance. Supply focused alternative_queries for synonyms or missing aspects. Returns source_id, span_id, current speaker labels and evidence id/revision for full reading with read_memory_evidence.",
 			schema: z.object({
 				query: z.string().trim().min(1).max(300),
+				alternative_queries: z.array(z.string().trim().min(1).max(300)).max(3).optional(),
 				limit: z.number().int().min(1).max(30).default(15)
 			}).strict(),
 			execute: (args, signal) => call("search_recordings", args, signal)
