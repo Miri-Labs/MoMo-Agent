@@ -123,19 +123,18 @@ def next_question(store, now=None):
     candidates = []
     unanswered = store.db.execute("""SELECT 1 FROM speaker_proposals
         WHERE delivered IS NOT NULL AND decision_operation IS NULL LIMIT 1""").fetchone() is not None
-    for row in store.db.execute("SELECT * FROM speaker_proposals WHERE state='pending' ORDER BY id").fetchall():
-        if not _current(store, row):
-            store.db.execute("UPDATE speaker_proposals SET state='obsolete' WHERE id=? AND state='pending'", (row["id"],))
-            continue
-        if row["delivered"] is not None:
-            continue
-        item = json.loads(row["payload"])
-        if now - row["created"] > 7 * 86400 or not _worth_asking(store, item):
-            continue
-        candidates.append((row, item))
     latest = store.db.execute("SELECT MAX(delivered) FROM speaker_proposals").fetchone()[0]
     if unanswered or latest is not None and now - latest < 86400:
         return None
+    for row in store.db.execute("""SELECT * FROM speaker_proposals WHERE state='pending' AND delivered IS NULL
+        AND json_extract(payload,'$.importance') IN ('task','recurring') ORDER BY id""").fetchall():
+        item = json.loads(row["payload"])
+        if now - row["created"] > 7 * 86400 or not _worth_asking(store, item):
+            continue
+        if not _current(store, row):
+            store.db.execute("UPDATE speaker_proposals SET state='obsolete' WHERE id=? AND state='pending'", (row["id"],))
+            continue
+        candidates.append((row, item))
     recent = [json.loads(row["payload"])["args"] for row in store.db.execute(
         "SELECT payload FROM speaker_proposals WHERE delivered>?", (now - 30 * 86400,))]
     recent_names = {_person_key(args["target_speaker"]) for args in recent}
