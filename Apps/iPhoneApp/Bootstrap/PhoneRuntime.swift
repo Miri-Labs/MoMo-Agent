@@ -262,6 +262,10 @@ final class PhoneRuntime {
             self.activeSystemTaskRunning = true
             self.transcriptionContinuation?.finish()
             await self.transcription?.clearForegroundContinuation()
+            let allowed = PhoneBackgroundTasks.resourcesAllowProcessing(foreground: self.isForeground)
+            await self.transcription?.setAnalysisPrefetchEnabled(allowed)
+            await self.transcription?.setHistoricalWorkAllowed(allowed,
+                constraint: PhoneBackgroundTasks.currentProcessingConstraint(foreground: self.isForeground))
             self.syncSpeechExecutionMode()
             await self.receivedAudioTranscription?.handOffToSystemTask()
         }
@@ -301,6 +305,14 @@ final class PhoneRuntime {
                 }
                 await self.transcription?.setAnalysisPrefetchEnabled(sceneAllowed)
                 await self.transcription?.setHistoricalWorkAllowed(sceneAllowed, constraint: sceneConstraint ?? effectiveConstraint)
+                if sceneAllowed, !self.isForeground, !self.activeSystemTaskRunning,
+                   self.backgroundTasks?.hasActiveContinuedGrant != true,
+                   let transcription = self.transcription {
+                    let excluded = self.backgroundTasks?.pendingContinuedBatchID ?? self.requestedTranscriptionBatchID
+                    if await transcription.hasResumableBackgroundWork(excludingBatchID: excluded) {
+                        self.receivedAudioTranscription?.request()
+                    }
+                }
             }
         }
         library.timeline.onSelectedDayChanged = { [weak self] day in

@@ -10,23 +10,25 @@ final class TranscriptionTaskGrant {
 
     private let start: Start
     private var followUp: FollowUpStart?
+    private let drainFollowUps: Bool
     private let prepare: @Sendable () async throws -> Void
     private let stop: Stop
     private let completion: @MainActor (Bool, String?) -> Void
     private(set) var execution: TranscriptionExecutionHandle?
     private(set) var finished = false
     private(set) var endReason: TranscriptionBatchEndReason?
-    private(set) var completedProactively = false
     private var expiration: TranscriptionBatchEndReason?
     private var started = false
     private var admissionStarted = false
+    private var stageRevision: UInt64 = 0
 
     init(prepare: @escaping @Sendable () async throws -> Void = {}, start: @escaping Start,
-         followUp: FollowUpStart? = nil, stop: @escaping Stop,
+         followUp: FollowUpStart? = nil, drainFollowUps: Bool = false, stop: @escaping Stop,
          completion: @escaping @MainActor (Bool, String?) -> Void) {
         self.prepare = prepare
         self.start = start
         self.followUp = followUp
+        self.drainFollowUps = drainFollowUps
         self.stop = stop
         self.completion = completion
     }
@@ -34,78 +36,69 @@ final class TranscriptionTaskGrant {
     func run() async {
         guard !finished, !started else { return }
         started = true
-        if let expiration { finish(success: completedProactively, failure: nil, reason: expiration); return }
+        if let expiration { finish(success: false, failure: nil, reason: expiration); return }
         do {
             try await prepare()
             guard !finished else { return }
             admissionStarted = true
+            stageRevision &+= 1
+            let revision = stageRevision
             let handle = try await start { [weak self] result in
-                Task { @MainActor in self?.completed(result) }
+                Task { @MainActor in self?.completed(result, stage: revision) }
             }
+            guard !finished, stageRevision == revision else { return }
             execution = handle
             if let expiration { await stopAndFinish(handle, reason: expiration) }
         } catch {
-            completedProactively = false
             finish(success: false, failure: "background_start_failed", reason: expiration ?? .interrupted)
         }
     }
 
-    func completeSlice(reason: TranscriptionBatchEndReason = .systemEndedUnknown) {
-        guard !finished, expiration == nil else { return }
-        completedProactively = true
-        expiration = reason
-        if !admissionStarted { finish(success: true, failure: nil, reason: reason); return }
-        if let execution { Task { await stopAndFinish(execution, reason: reason) } }
-    }
-
     func expire(reason: TranscriptionBatchEndReason) {
         guard !finished else { return }
-        if completedProactively {
-            completedProactively = false
-            if reason != .systemEndedUnknown { expiration = reason }
-            return
-        }
         guard expiration == nil else { return }
         expiration = reason
         if !admissionStarted { finish(success: false, failure: nil, reason: reason); return }
         if let execution { Task { await stopAndFinish(execution, reason: reason) } }
     }
 
-    private func completed(_ result: TranscriptionExecutionCompletion) {
-        // An expiration or proactive slice completion already owns completion; wait for its durable stop barrier.
-        guard expiration == nil else { return }
+    private func completed(_ result: TranscriptionExecutionCompletion, stage: UInt64) {
+        // Expiration owns completion; wait for its durable stop barrier.
+        guard !finished, expiration == nil, stageRevision == stage else { return }
         if result.reason == .completed, result.failureCode == nil, let nextStage = followUp {
-            followUp = nil
+            if !drainFollowUps { followUp = nil }
             execution = nil
+            stageRevision &+= 1
+            let revision = stageRevision
             Task { @MainActor [weak self] in
-                await self?.runFollowUp(nextStage)
+                await self?.runFollowUp(nextStage, stage: revision)
             }
             return
         }
         finish(success: result.reason == .completed && result.failureCode == nil, failure: result.failureCode, reason: result.reason)
     }
 
-    private func runFollowUp(_ nextStage: FollowUpStart) async {
+    private func runFollowUp(_ nextStage: FollowUpStart, stage: UInt64) async {
         guard !finished else { return }
         if let expiration {
-            finish(success: completedProactively, failure: nil, reason: expiration)
+            finish(success: false, failure: nil, reason: expiration)
             return
         }
         do {
             guard let handle = try await nextStage({ [weak self] nextResult in
-                Task { @MainActor in self?.completed(nextResult) }
+                Task { @MainActor in self?.completed(nextResult, stage: stage) }
             }) else {
-                finish(success: true, failure: nil, reason: .completed)
+                finish(success: expiration == nil, failure: nil, reason: expiration ?? .completed)
                 return
             }
+            guard !finished, stageRevision == stage else { return }
             execution = handle
             if let expiration { await stopAndFinish(handle, reason: expiration) }
         } catch is TranscriptionExecutionError {
-            finish(success: completedProactively || expiration == nil, failure: nil, reason: expiration ?? .completed)
+            finish(success: expiration == nil, failure: nil, reason: expiration ?? .completed)
         } catch is CancellationError {
-            finish(success: completedProactively || expiration == nil, failure: nil, reason: expiration ?? .completed)
+            finish(success: expiration == nil, failure: nil, reason: expiration ?? .completed)
         } catch {
-            completedProactively = false
             finish(success: false, failure: "background_start_failed", reason: expiration ?? .interrupted)
         }
     }
@@ -113,9 +106,8 @@ final class TranscriptionTaskGrant {
     private func stopAndFinish(_ execution: TranscriptionExecutionHandle, reason: TranscriptionBatchEndReason) async {
         do {
             try await stop(execution, reason)
-            finish(success: completedProactively, failure: nil, reason: expiration ?? reason)
+            finish(success: false, failure: nil, reason: expiration ?? reason)
         } catch {
-            completedProactively = false
             finish(success: false, failure: "archive_cancel_barrier_failed", reason: expiration ?? reason)
         }
     }
