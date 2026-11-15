@@ -14,6 +14,7 @@ import unicodedata
 from context_store import ContextStore, Conflict, canonical, digest
 from memory_review import eligible_chat_messages, readonly
 from momo_memory import MoMoMemory, _file_lock
+from transcript_speakers import classify_transcript_span
 
 KINDS = ("note", "recording", "chat")
 CHUNK_SIZE = 1200
@@ -32,7 +33,7 @@ SEARCH_SCHEMA = {
         "alternative_queries": {"type": "array", "maxItems": 3,
                                 "items": {"type": "string", "minLength": 1, "maxLength": 300}},
         "kind": {"type": "string", "enum": ["all", *KINDS]},
-        "limit": {"type": "integer", "minimum": 1, "maximum": 30},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 50},
     }, "required": ["query"], "additionalProperties": False},
 }
 READ_SCHEMA = {
@@ -175,20 +176,24 @@ class MemorySearch:
                 exclusions = defaultdict(list)
                 for row in store.db.execute("SELECT source_id,speaker,span_ids,recorded_from FROM speaker_exclusions ORDER BY id"):
                     exclusions[row["source_id"]].append(tuple(row))
-                rows = store.db.execute("SELECT id,revision FROM sources WHERE deleted=0").fetchall()
+                rows = store.db.execute("SELECT id,revision,updated FROM sources WHERE deleted=0").fetchall()
                 for row in rows:
                     source_id = row["id"]
-                    signature = digest(canonical([row["revision"], overrides[source_id], exclusions[source_id], exclusions[None]]))
+                    signature = digest(canonical([row["revision"], row["updated"], overrides[source_id], exclusions[source_id], exclusions[None]]))
                     group = "recording:" + source_id
                     live.add(group)
                     if known.get(group) != signature:
                         payload = json.loads(store.db.execute("SELECT payload FROM sources WHERE id=?", (row["id"],)).fetchone()[0])
                         spans = store._apply_speaker_overrides(row["id"], payload["spans"])
-                        documents = [_document(f"recording:{row['id']}:{span['id']}", "recording", span["text"],
-                                          {"source_id": row["id"], "source_revision": row["revision"],
-                                           "span_id": span["id"], "recorded_at": span["recorded_at"],
-                                           "speaker": span.get("speaker"), "is_owner": span.get("is_owner"),
-                                           "basis": "transcript"}, span.get("speaker") or "") for span in spans]
+                        documents = []
+                        for seq, span in enumerate(spans):
+                            speaker, owner, _ = classify_transcript_span(span)
+                            documents.append(_document(f"recording:{row['id']}:{span['id']}", "recording", span["text"],
+                                {"source_id": row["id"], "source_revision": row["revision"],
+                                 "span_id": span["id"], "recorded_at": span["recorded_at"],
+                                 "speaker": speaker, "is_owner": owner, "seq": seq,
+                                 "speaker_attribution_excluded": span.get("speaker_attribution_excluded") is True,
+                                 "title": payload.get("title") or row["id"], "basis": "transcript"}, speaker or ""))
                         updates.append((group, signature, documents))
             finally:
                 store.close()
@@ -216,10 +221,11 @@ class MemorySearch:
             not isinstance(q, str) or not q.strip() or len(q) > 300 for q in alternatives
         ):
             raise ValueError("alternative_queries must contain at most 3 queries of 1...300 characters")
-        if kind not in ("all", *KINDS) or type(limit) is not int or not 1 <= limit <= 30:
-            raise ValueError("Invalid kind or limit (1...30)")
+        if kind not in ("all", *KINDS) or type(limit) is not int or not 1 <= limit <= 50:
+            raise ValueError("Invalid kind or limit (1...50)")
         queries = list(dict.fromkeys(q.strip() for q in [query, *alternatives]))
         hits, scores, per_query = {}, defaultdict(float), []
+        candidate_overflow = False
         with self._index() as db:
             for q in queries:
                 words = list(dict.fromkeys(terms(q)))
@@ -237,9 +243,10 @@ class MemorySearch:
                     SELECT d.id,d.kind,d.metadata,d.revision,b.start,b.end,b.rank,
                            substr(d.content,b.start+1,b.end-b.start) AS snippet, length(d.content) AS total
                     FROM best b JOIN documents d ON d.id=b.document_id
-                    WHERE b.position=1 ORDER BY b.rank,d.id LIMIT 50""",
+                    WHERE b.position=1 ORDER BY b.rank,d.id LIMIT 51""",
                                   (expression, kind, kind)).fetchall()
-                unique = {row["id"]: row for row in rows}
+                candidate_overflow |= len(rows) > 50
+                unique = {row["id"]: row for row in rows[:50]}
                 ranked = list(unique)
                 per_query.append(ranked)
                 for rank, identity in enumerate(ranked, 1):
@@ -257,7 +264,7 @@ class MemorySearch:
                 match["matched_queries"] = [q for q, ids in zip(queries, per_query) if identity in ids]
                 matches.append(match)
         return {"method": "bm25_multi_query_rrf", "queries": queries, "matches": matches,
-                "has_more": len(order) > limit}
+                "has_more": candidate_overflow or len(order) > limit}
 
     @staticmethod
     def _result(row, text, offset, total):

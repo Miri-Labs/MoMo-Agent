@@ -10561,7 +10561,7 @@ function momoPimTools(host, ticketId) {
 					"recording",
 					"chat"
 				]).default("all"),
-				limit: z.number().int().min(1).max(30).default(10)
+				limit: z.number().int().min(1).max(50).default(10)
 			}).strict(),
 			execute: (args, signal) => call("search_memory", args, signal)
 		},
@@ -10658,7 +10658,7 @@ function momoPimTools(host, ticketId) {
 			schema: z.object({
 				query: z.string().trim().min(1).max(300),
 				alternative_queries: z.array(z.string().trim().min(1).max(300)).max(3).optional(),
-				limit: z.number().int().min(1).max(30).default(15)
+				limit: z.number().int().min(1).max(50).default(15)
 			}).strict(),
 			execute: (args, signal) => call("search_recordings", args, signal)
 		},

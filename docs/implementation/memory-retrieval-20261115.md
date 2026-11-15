@@ -9,7 +9,7 @@
 - [agentic.py](https://github.com/EverMind-AI/EverOS/blob/489ac7e921a81cf82cc9273674a0fa2429b861eb/src/everos/memory/search/agentic.py)：细粒度召回后关联原始内容、限制候选量、按名次融合。
 - [llm_multiround.py](https://github.com/EverMind-AI/EverOS/blob/489ac7e921a81cf82cc9273674a0fa2429b861eb/src/everos/memory/search/llm_multiround.py)：按问题的缺失方面扩展查询，保留不同子查询的独有证据，核对证据后决定是否继续查找。
 
-MoMo 独立实现 SQLite FTS5 BM25、中文双字切分、英文词干匹配和多查询 RRF（k=40）。每个查询先选每篇原文的最佳片段，再取最多 50 篇候选，防止一篇长文占满候选池；最终优先保留各查询的首项，再按融合分数补齐。查询最多包含原问法与 3 个变体，结果最多 30 项，每项约 1200 字符。
+MoMo 独立实现 SQLite FTS5 BM25、中文双字切分、英文词干匹配和多查询 RRF（k=40）。每个查询先选每篇原文的最佳片段，再取最多 50 篇候选，防止一篇长文占满候选池；最终优先保留各查询的首项，再按融合分数补齐。查询最多包含原问法与 3 个变体，结果最多 50 项，每项约 1200 字符。
 
 查询改写、证据充分性判断和后续补查由现有 Agent 执行。当前没有文本 embedding 服务，也没有增加向量模型或嵌套模型调用；这是全文检索加 Agent 查询扩展，不能描述成向量语义检索。若原文与全部查询没有共同词项，仍会漏召回。
 
@@ -76,3 +76,16 @@ uv run --python <runtime-python> python Tests/AgentRuntime/memory_search_eval.py
 uv run --python <runtime-python> python Tests/AgentRuntime/memory_search_agent_eval.py \
   --live-config <agent-data> --repeat 2 --output /tmp/momo-answer-eval.json
 ```
+
+## 合并后复核与补修（2026-11-15）
+
+复核 PR #73 后补充了以下真实失败用例，并修复对应路径：
+
+- 手机在正文版本不变时补充或修改 `is_owner`，旧索引会跳过刷新。现在同版本元数据同步推进源更新时间，索引签名包含该字段；同一时钟刻度或时钟回退也能触发刷新，旧证据版本会失效。
+- 长转录只命中后部时，开头的说话人标签没有进入命中片段，CLI/Worker 因而将其识别为未知。现在 Context 与 Runtime 共用 `transcript_speakers.py`，在切片前从完整原文解析归属。
+- 排除被 Dream 纠正后的说话人时，原始错误标签可能重新出现。现在排除对当前纠正标签同样生效，并保留明确的“归属已排除”标记，避免正文中的方括号再次被当成人名。无空格标签也按同一规则处理。
+- 旧 CLI `search --limit 50` 被新上限 30 拒绝，原来的 `title` 与 `seq` 也丢失。现在恢复 50 项和两项元数据，保留原有 CLI 越界截取规则，Python/Worker 工具上限统一为 50；`revision` 仍指原录音版本，`evidence_revision` 用于证据读取。
+
+另补旧索引自动刷新、聊天修改和删除的验证。共 116 项 Python 测试（包括 18 项检索测试）、11 项 TypeScript 测试、类型检查及 SuperAgent bundle 构建通过。固定词项召回回归为 8/8；本轮没有重跑前述 24 次真实模型问答，也不将旧结果当作新一轮结果。
+
+使用正式 `copy_sources` 打包步骤将源码复制到临时独立目录，并在 `/tmp` 以 Python 隔离模式启动，验证新模块来自打包目录、检索及完整原文读取可用。该项验证不包含签名 App 构建、安装和设备交互。

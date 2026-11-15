@@ -144,7 +144,7 @@ def _cmd_recording_reference(data: Path, args: argparse.Namespace) -> dict:
 
 def _cmd_search(data: Path, args: argparse.Namespace) -> dict:
     from memory_search import MemorySearch
-    result = MemorySearch(data).search(args.query, args.alternative_query, kind="recording", limit=args.limit)
+    result = MemorySearch(data).search(args.query, args.alternative_query, kind="recording", limit=max(1, min(args.limit, 50)))
     for match in result["matches"]:
         speaker, owner, _ = classify_transcript_span(match)
         match["speaker"] = speaker
