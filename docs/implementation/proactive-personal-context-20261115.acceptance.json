@@ -1,0 +1,98 @@
+{
+  "model": "gpt-6.1-sol",
+  "synthetic_only": true,
+  "before": {
+    "home": "星河办公室",
+    "workplaces": [
+      "青禾苑"
+    ],
+    "hotel_is_home": true,
+    "li_lives_with_user": true,
+    "li_present_at_home": true,
+    "budget_fixed": true,
+    "xiaoyu_identity_status": "未知",
+    "explanation": "《旧地点判断》明确将星河办公室认定为家、青禾苑认定为公司，称李工常在家里且是同住家人，并将出差酒店视为另一个家；这些仅是该文件中的旧判断，没有其他材料验证或更新，也不能据此确定李工此刻是否在家。《预算》明确五十万元预算已定案。材料未提及小雨身份。"
+  },
+  "before_checks": {
+    "home": false,
+    "multiple_workplaces": false,
+    "temporary_hotel": false,
+    "no_invented_family": false,
+    "remote_call_not_presence": false,
+    "repaired_budget": false,
+    "candidate_identity": true
+  },
+  "after": {
+    "home": "青禾苑",
+    "workplaces": [
+      "星河办公室",
+      "北岸共享办公室"
+    ],
+    "hotel_is_home": false,
+    "li_lives_with_user": null,
+    "li_present_at_home": false,
+    "budget_fixed": false,
+    "xiaoyu_identity_status": "推测",
+    "explanation": "青禾苑为家、星河办公室为公司办公点，均有多次支持；北岸共享办公室为第二办公点，仅有一次明确陈述与位置支持，仍属推测。云际酒店是出差临时住宿，旧有另一处家的判断已撤回。李工同住关系未知；2026-11-12家中录音中的李工在星河办公室，通过视频通话，并非家中同场人物，此结论不代表其他时间是否到访。预算尚未定数，对方未同意金额，应先统计工时再报价，不能从疑似错词推定金额。小雨仅为一次家中对话中的候选称呼，身份及姓名写法待用户确认，关系与是否同住未知。"
+  },
+  "checks": {
+    "home": true,
+    "multiple_workplaces": true,
+    "temporary_hotel": true,
+    "no_invented_family": true,
+    "remote_call_not_presence": true,
+    "repaired_budget": true,
+    "candidate_identity": true,
+    "original_transcripts_preserved": true,
+    "no_label_without_consent": true,
+    "proactively_requested_label": true,
+    "traceable_notes": true
+  },
+  "transient_errors": [],
+  "dream_receipt": "{\"memory_review\":{\"outcome\":\"updated\",\"reason\":\"结合五段完整录音和手机位置纠正家与办公点归属，建立四个地点活页并删除错误旧判断；撤回李工为同住家人的推断，记录远程通话背景；重写预算页，撤回五十万元已定案，保留金额未定及先统计工时的可靠内容。为小雨建立候选人物页并提交单句标注建议，仍待用户同意，未修改标签或声纹；精简更新核心记忆索引，活页保留原音、位置来源及待确认事项。\"}}",
+  "notes": "文件 MEMORY.md\n**【家与办公点】**（2026-11-15）：跨日录音支持青禾苑是家、星河办公室是公司办公点；居家办公和远程通话不改变地点归属。北岸第二办公点及出差酒店的判断见 `places/北岸共享办公室.md`、`places/云际酒店.md`，主要地点见 `places/青禾苑.md`、`places/星河办公室.md`。\n**【报价待定】**（2026-11-15）：已撤回“五十万元定案”；可靠信息是先统计工时再报价，金额未定、对方未同意，疑似错词不用于推定数字。见 `projects/预算.md`。\n\n文件 people/小雨-候选.md\n# 小雨 · 家中对话的候选称呼\n\n当前判断：2026-11-10青禾苑家中对话的一位参与者可能叫“小雨”；状态：推测，尚待用户确认。只有一次对话，不能写成“通常在家出现”，亲属、同住或其他关系均未知。上次核对：2026-11-15。\n\n用户先称呼“小雨”问谁下厨；匿名发言转写为“我是小雨，今晚我下厨，厨房菜已经热好了”；用户随后回应“好的小雨，谢谢”。[21:00 原音](momoagent://source/3800f96c-16a6-48f4-9046-0e6e2908d517/6b52adf7-112f-4fa6-ab13-9eccf4367ffb?version=1&generation=0)\n\n自我介绍略显突兀，但前后称呼、回答内容相互吻合，可提出具体候选。姓名准确写法及说话人身份缺少独立确认；称呼接话本身不能单独证明身份，也不以用户手机位置证明该人在场。\n\n已就2026-11-10 21:00:10这句“说话人 1”发言提出“小雨”标注建议，当前等待用户同意，标签与声纹未修改。该匿名编号只在本次录音内有效，不跨录音关联。\n\n\n文件 people/李工.md\n# 李工 · 接口工作交流\n\n当前判断：与用户有公司接口工作往来；状态：多次支持。具体雇佣、亲属及同住关系未知。上次核对：2026-11-15。\n\n- 2026-11-11 用户到星河办公室，称李工来会议室讨论公司接口；标为李工的发言回应刚进会议室。[10:00 原音](momoagent://source/3f3d2944-8030-4e2c-afef-e290b7b0879e/809f26fe-888b-4e2f-88e8-ef25f7cafc67?version=1&generation=0)\n- 2026-11-12 用户在青禾苑家中办公，明确说李工在公司、正在视频电话里；标为李工的发言说在星河办公室展示接口图。[11:00 原音](momoagent://source/37f8bbae-10e4-4a91-8759-b1daadcff16e/1a3627a8-d795-4c20-ac3e-cc09e8ca41d3?version=1&generation=0)\n\n纠正：撤回旧笔记“李工常在家里，是同住家人”。家中录音听见李工可由远程通话解释，未有同住或亲属证据。保留原转录标签，不把既有标签视为用户已确认声纹。\n\n\n文件 places/云际酒店.md\n# 云际酒店 · 出差临时住宿\n\n当前判断：2026-11-13出差时的一晚临时住宿，不是另一处家；状态：推测（一次明确陈述与位置支持）。上次核对：2026-11-15。\n\n用户说“出差临时住云际酒店，只住这一晚，明天回青禾苑”。[22:00 原音](momoagent://source/184a92d3-98da-4505-a7a4-7c4c9c81eb01/3e842db2-b014-40fd-9a75-f4def3b0bbe8?version=1&generation=0) 当时手机位置与此前家、公司区域明显不同。[^位置]\n\n纠正：旧笔记“出差酒店也是另一个家”已撤回。2026-11-14回青禾苑只是当时计划，尚无回家完成证据；位置短时记录不证明整夜停留。\n\n[^位置]: 手机位置快照观察于2026-11-15；2026-11-13 21:55–22:10，坐标(30.2700,120.1500)，精度60米；evidence_ref=`phone-visits:1ca0684d-13ac-43f4-98f0-658c159f6bb2:1:visit-3`。\n\n\n文件 places/北岸共享办公室.md\n# 北岸共享办公室 · 第二办公点\n\n当前判断：用户的第二办公点；状态：推测（一次明确到达表达与位置支持）。上次核对：2026-11-15。\n\n2026-11-14 用户说“到北岸共享办公室了，这是第二个办公点，周三来和另一组开会”。[15:00 原音](momoagent://source/956b60e7-99d1-4b55-b631-5450632af7b9/ad2d3863-529e-4563-a7e8-0445db1c6566?version=1&generation=0) 手机位置与星河办公室相距约2公里，超过60米精度误差，作为不同办公点保留。[^位置]\n\n待核：2026-11-14为周六，“周三”可能指惯常安排或另一次会议，不能据此生成具体日期或每周固定日程；没有日历同步证据。没有住所证据。\n\n[^位置]: 手机位置快照观察于2026-11-15；2026-11-14 14:55–15:10，坐标(31.2500,121.4900)，精度60米；evidence_ref=`phone-visits:1ca0684d-13ac-43f4-98f0-658c159f6bb2:1:visit-4`。\n\n\n文件 places/星河办公室.md\n# 星河办公室 · 公司办公点\n\n当前判断：用户公司办公点之一；状态：多次支持。上次核对：2026-11-15。\n\n- 2026-11-11 用户明确说“已到星河办公室”，与李工在会议室讨论公司接口。[10:00 原音](momoagent://source/3f3d2944-8030-4e2c-afef-e290b7b0879e/809f26fe-888b-4e2f-88e8-ef25f7cafc67?version=1&generation=0) 同时手机有对应区域的到访记录。[^位置]\n- 2026-11-12 用户在青禾苑家中，李工说自己在星河办公室，视频展示接口图。[11:00 原音](momoagent://source/37f8bbae-10e4-4a91-8759-b1daadcff16e/0f83a5d5-d7c2-448c-a970-bf298434362d?version=1&generation=0) 不能把用户手机的位置归给远端李工。\n\n纠正：旧笔记“星河办公室是家”已撤回。另有[北岸共享办公室](北岸共享办公室.md)，不将两者混成唯一公司地址。\n\n[^位置]: 手机位置快照观察于2026-11-15；2026-11-11 09:55–10:10，坐标(31.2300,121.4800)，精度60米；evidence_ref=`phone-visits:1ca0684d-13ac-43f4-98f0-658c159f6bb2:1:visit-1`。仅支持该时间段手机在附近。\n\n\n文件 places/青禾苑.md\n# 青禾苑 · 家与居家办公\n\n当前判断：用户的家，也可在家办公；状态：多次支持。上次核对：2026-11-15。\n\n- 2026-11-10 明确说“回到青禾苑的家了”，并谈厨房与玄关。[21:00 原音](momoagent://source/3800f96c-16a6-48f4-9046-0e6e2908d517/36891121-0fbe-4890-ad85-8285f1089984?version=1&generation=0)\n- 2026-11-12 明确说“在青禾苑家里办公”；李工在公司，通过视频沟通，不是家中同场人物。[11:00 原音](momoagent://source/37f8bbae-10e4-4a91-8759-b1daadcff16e/1a3627a8-d795-4c20-ac3e-cc09e8ca41d3?version=1&generation=0)\n- 两天手机位置相差约15米，均在60米精度范围内，按同一地点理解，不另拆办公地点。位置只支持手机当时所在区域。[^位置]\n\n纠正：旧笔记“青禾苑是公司”已撤回；在家办公不改变住所属性。没有搬家证据。\n\n[^位置]: 手机位置快照观察于2026-11-15；2026-11-10 20:55–21:10，坐标(31.2000,121.4000)，精度60米，evidence_ref=`phone-visits:1ca0684d-13ac-43f4-98f0-658c159f6bb2:1:visit-0`；2026-11-12 10:55–11:10，坐标(31.2001,121.4001)，精度60米，evidence_ref=`phone-visits:1ca0684d-13ac-43f4-98f0-658c159f6bb2:1:visit-2`。\n\n\n文件 projects/预算.md\n# 预算 · 先统计工时再报价\n\n## 当前判断\n截至2026-11-12的可靠表述：先统计工时再报价；数字尚未确定，对方也未同意金额。状态：单次明确陈述；上次核对：2026-11-15。\n\n## 纠正与依据\n撤回旧笔记“预算五十万元已经定案”。原转录为“预算无十万。先统计工时再报价，还没定数字，对方也没同意金额。”[11:00 原音](momoagent://source/37f8bbae-10e4-4a91-8759-b1daadcff16e/14f752cc-5a6e-4315-be33-692626da3c92?version=1&generation=0)\n\n“预算无十万”疑似误听，原词未知；不替换为“五十万”，不从中提取金额。后文清楚否定已定价和对方已同意。旧笔记不是独立确认，原始转录保持不变。\n\n## 下一步\n如继续报价，先汇总工时，再明确报价及对方是否接受；没有已完成统计的证据，也没有明确期限。所属具体项目、客户未知；虽然同段前文讨论接口，暂不将金额或报价承诺绑定某一接口项目。\n",
+  "verification": {
+    "python_tests": 134,
+    "superagent_tests": 12,
+    "typecheck": "passed",
+    "build": "passed",
+    "relocated_runtime": "passed",
+    "physical_device": "not run",
+    "deployed": false
+  },
+  "tool_calls": [
+    "search_memory",
+    "notebook",
+    "notebook",
+    "phone_context",
+    "list_recordings",
+    "read_recording",
+    "read_recording",
+    "read_recording",
+    "read_recording",
+    "read_recording",
+    "session_search",
+    "read_memory_evidence",
+    "read_memory_evidence",
+    "read_memory_evidence",
+    "notebook",
+    "notebook",
+    "notebook",
+    "notebook",
+    "notebook",
+    "notebook",
+    "relabel_speakers",
+    "notebook",
+    "notebook",
+    "memory"
+  ],
+  "speaker_proposals": [
+    {
+      "success": true,
+      "changed": false,
+      "proposal_id": 1,
+      "state": "pending",
+      "guidance": "No labels or voiceprints changed. Pending suggestions are delivered in chat for explicit confirmation. Do not claim a saved identity, repeat a rejected request, or treat this receipt as consent."
+    }
+  ]
+}

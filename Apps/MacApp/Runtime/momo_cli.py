@@ -92,7 +92,7 @@ def _cmd_life_illustrations(data: Path, args: argparse.Namespace) -> dict:
 def _cmd_recording(data: Path, args: argparse.Namespace) -> dict:
     store = _open_context(data)
     try:
-        result = store.read_source(args.source_id, args.revision or None, args.offset, args.limit)
+        result = store.read_source(args.source_id, args.revision or None, args.offset, args.limit, location_offset=args.location_offset)
         spans = result.get("spans") or []
         for span in spans:
             span["recorded_at_local"] = _local_dt(span.get("recorded_at"))
@@ -538,6 +538,7 @@ def main() -> int:
     rec_read.add_argument("source_id")
     rec_read.add_argument("--revision", default="")
     rec_read.add_argument("--offset", type=int, default=0)
+    rec_read.add_argument("--location-offset", type=int, default=0)
     rec_read.add_argument("--limit", type=int, default=12000)
 
     rec_reference = sub.add_parser("recording-reference", help="Read selected recording spans for a chat operation")
@@ -604,14 +605,14 @@ def main() -> int:
     exclude.add_argument("--span-ids")
     exclude.add_argument("--recorded-from")
 
-    relabel = sub.add_parser("relabel-speakers", help="Relabel speaker tags on a recording based on dialogue semantics")
+    relabel = sub.add_parser("relabel-speakers", help="Propose speaker labels for explicit user confirmation in chat")
     relabel.add_argument("source_id")
     relabel.add_argument("target_speaker")
     relabel.add_argument("--from-speaker", default="")
     relabel.add_argument("--span-ids", default="")
     relabel.add_argument("--is-owner", action="store_true")
     relabel.add_argument("--scope", choices=("cluster", "selection"), default="cluster")
-    relabel.add_argument("--reason", default="")
+    relabel.add_argument("--reason", required=True)
 
     conv = sub.add_parser("conversation", help="Read recent MoMo chat history")
     conv.add_argument("--limit", type=int, default=20)
