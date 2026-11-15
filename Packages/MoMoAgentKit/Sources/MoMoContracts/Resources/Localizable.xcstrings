@@ -12947,32 +12947,32 @@
         }
       }
     },
-    "后台转写已停止，进度保存在本机。请回到转录页检查。": {
+    "后台转写暂时中断，进度已保存，将自动重试。": {
       "extractionState": "manual",
       "generatesSymbol": false,
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Background transcription has stopped and the progress is saved locally. Please go back to the transcription page to check.\nThe text following"
+            "value": "Background transcription was interrupted. Progress is saved and will resume automatically."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "バックグラウンド文字起こしが停止され、進行状況がローカルに保存されます。文字起こしページに戻ってご確認ください。"
+            "value": "バックグラウンド文字起こしが中断されました。進行状況は保存され、自動的に再試行します。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "백그라운드 기록이 중지되었으며 진행 상황이 로컬에 저장되었습니다. 확인하려면 텍스트 변환 페이지로 돌아가세요."
+            "value": "백그라운드 텍스트 변환이 중단되었습니다. 진행 상황은 저장되었으며 자동으로 다시 시도합니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "后台转写已停止，进度保存在本机。请回到转录页检查。"
+            "value": "后台转写暂时中断，进度已保存，将自动重试。"
           }
         }
       }
@@ -43897,32 +43897,32 @@
         }
       }
     },
-    "系统暂未接受后台转写安排，回到 App 后可继续。": {
+    "系统暂未接受后台转写安排，将稍后自动重试。": {
       "extractionState": "manual",
       "generatesSymbol": false,
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The system has not accepted the background transcription arrangement yet. You can continue after returning to the App."
+            "value": "The system has not accepted background transcription yet. The app will retry automatically."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "システムはバックグラウンド文字起こしの手配をまだ受け入れていません。アプリに戻ってから続行できます。"
+            "value": "バックグラウンド文字起こしの申請がまだ受け付けられていません。後で自動的に再試行します。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "시스템이 아직 백그라운드 텍스트 변환 배열을 승인하지 않았습니다. 앱으로 돌아온 후 계속할 수 있습니다."
+            "value": "시스템이 아직 백그라운드 텍스트 변환 요청을 승인하지 않았습니다. 잠시 후 자동으로 다시 시도합니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统暂未接受后台转写安排，回到 App 后可继续。"
+            "value": "系统暂未接受后台转写安排，将稍后自动重试。"
           }
         }
       }

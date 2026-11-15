@@ -861,6 +861,35 @@ final class TranscriptionBatchIntegrationTests: XCTestCase {
         XCTAssertNil(notResumed)
     }
 
+    func testInterruptedContinuedBatchCompletesOnNextBackgroundLaunchWithoutForeground() async throws {
+        let fixture = try fixture()
+        let archive = try ArchiveStore(rootURL: fixture.root.appendingPathComponent("phone"), receiverDeviceID: UUID())
+        let recording = try await TranscriptionIntegrationScenario.ingest(fixture.chunks, archive: archive)
+        let engine = try SpeechEngine(bundle: fixture.model, configuration: SpeechConfiguration())
+        try await prepareWindows(archive: archive, engine: engine)
+        let coordinator = try TranscriptionCoordinator(archive: archive, speech: engine)
+        let frozen = try await coordinator.freezeBatch()
+        let batch = try XCTUnwrap(frozen)
+        _ = try await archive.beginTranscriptionBatch(id: batch.id, origin: .continuedProcessing)
+        // Startup recovery observes the durable execution left by a terminated process.
+        try await archive.recoverInterruptedJobs()
+        let recovered = try await archive.transcriptionBatch(id: batch.id)
+        XCTAssertEqual(recovered.endReason, .systemEndedUnknown)
+        let resumed = try await coordinator.resumeSystemEndedBatchForBackgroundProcessing()
+        XCTAssertEqual(resumed, batch.id)
+        let completions = OSAllocatedUnfairLock(initialState: [TranscriptionExecutionCompletion]())
+        _ = try await coordinator.startBatch(id: batch.id, origin: .backgroundProcessing) {
+            result in completions.withLock { $0.append(result) }
+        }
+        let report = await coordinator.runUntilIdle()
+        XCTAssertNil(report.snapshot.failureCode)
+        XCTAssertEqual(report.snapshot.phase, .systemSuspended)
+        XCTAssertEqual(completions.withLock { $0.map(\.reason) }, [.completed])
+        let finished = try await archive.transcriptionBatch(id: batch.id)
+        XCTAssertEqual(finished.state, .completed)
+        try await assertOfficialTranscript(recording.sessionID, archive: archive)
+    }
+
     func testFiniteBackgroundBudgetStopsAtCleanWindowBoundaryWithoutCancellingNextWindow() async throws {
         let fixture = try fixture()
         let archive = try ArchiveStore(rootURL: fixture.root.appendingPathComponent("phone"), receiverDeviceID: UUID())
