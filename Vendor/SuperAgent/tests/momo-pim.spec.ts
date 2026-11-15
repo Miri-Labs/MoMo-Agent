@@ -111,3 +111,17 @@ it('bounds recall queries and forwards evidence revisions unchanged', async () =
   await read.execute(read.schema.parse({ id: 'chat:7', revision: 'content-hash', offset: 1200 }), new AbortController().signal)
   expect(JSON.parse(fetch.mock.calls[1]![1].body).args).toEqual({ id: 'chat:7', revision: 'content-hash', offset: 1200, limit: 12000 })
 })
+
+it('requires speaker evidence without a model-controlled consent flag and pages visits', async () => {
+  const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, state: 'pending', changed: false }) })
+  vi.stubGlobal('fetch', fetch)
+  const tools = momoPimTools(host, ticket.id)
+  const relabel = tools.find(t => t.name === 'relabel_recording_speakers')!
+  const args = { source_id: 'recording', target_speaker: '小林', span_ids: ['span'], reason: 'Self introduction' }
+  expect(relabel.schema.safeParse({ ...args, approved: true }).success).toBe(false)
+  expect(relabel.schema.safeParse({ ...args, reason: '' }).success).toBe(false)
+  expect(await relabel.execute(relabel.schema.parse(args), new AbortController().signal)).toMatchObject({ state: 'pending', changed: false })
+  const read = tools.find(t => t.name === 'read_recording')!
+  await read.execute(read.schema.parse({ source_id: 'recording', offset: 1200, location_offset: 30 }), new AbortController().signal)
+  expect(JSON.parse(fetch.mock.calls[1]![1].body).args).toMatchObject({ offset: 1200, location_offset: 30 })
+})

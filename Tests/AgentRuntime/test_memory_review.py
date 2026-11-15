@@ -741,7 +741,11 @@ class MemoryReviewTests(unittest.TestCase):
             'reason':'对话中用户直接称呼对方为小林，对方回应四点前发接口清单',
         }))
         self.assertTrue(relabel_res['success'])
-        self.assertEqual(1,relabel_res['updated_span_count'])
+        self.assertFalse(relabel_res['changed'])
+        self.assertEqual([], self.store.pending_speaker_relabels())
+        from speaker_proposals import decide
+        self.store.db.execute('UPDATE speaker_proposals SET delivered=1 WHERE id=?', (relabel_res['proposal_id'],))
+        self.assertEqual(1, decide(self.store, relabel_res['proposal_id'], True, 'owner-confirmation')['updated_span_count'])
 
         read_res=json.loads(execute_tool('read_recording',{'source_id':src_id}))
         spans={s['id']:s for s in read_res['spans']}
@@ -765,7 +769,7 @@ class MemoryReviewTests(unittest.TestCase):
         self.assertTrue(nb_res['success'])
         verified=review.outcome(self.data/'hermes',session,json.dumps({'memory_review':{'outcome':'updated','reason':'修正说话人小林并更新人物活页'}}))
         self.assertEqual('updated',verified['outcome'])
-        self.assertEqual(2,verified['native_writes'])
+        self.assertEqual(1,verified['native_writes'])
 
     def test_prose_wrapped_receipt_and_wedged_run_timeout_recovery(self):
         from superagent_gateway import SuperAgentGateway
@@ -870,7 +874,10 @@ class MemoryReviewTests(unittest.TestCase):
             'reason':'用户指正双月 OKR 是 shengli 说的',
         }))
         self.assertTrue(rel['ok'])
-        self.assertEqual(1,rel['updated_span_count'])
+        self.assertFalse(rel['changed'])
+        from speaker_proposals import decide
+        self.store.db.execute('UPDATE speaker_proposals SET delivered=1 WHERE id=?', (rel['proposal_id'],))
+        self.assertEqual(1, decide(self.store, rel['proposal_id'], True, 'owner-confirmation')['updated_span_count'])
 
         read_back=asyncio.run(call_pim('read_recording',{'source_id':src_id}))
         by_id={s['id']:s for s in read_back['spans']}

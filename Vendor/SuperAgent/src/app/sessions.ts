@@ -129,10 +129,11 @@ function momoMemoryPromptBlock(): string {
     `### 记忆订正、说话人声纹回写与多级目录自由组织工作流\n`
     + `当用户指出某段记忆/日志总结有误，告知说话人归属，或要求整理记忆目录结构时：\n`
     + `1. 若涉及录音事实或说话人，立即使用 \`search_recordings\` / \`read_recording\` 找到对应录音 \`source_id\` 及精确的 \`span_ids\`；\n`
-    + `2. 若用户仅排除一个人，调用 exclude_recording_speaker，按明确范围传片段或带时区的起始日期，并保留未知身份。已确认真实身份时调用 \`relabel_recording_speakers\` 修正录音说话人并同步回写 iPhone 声纹库（若原标签已是具名人或“我”仅局部串轨，必须传精确 \`span_ids\` + \`scope="selection"\` 避免误改同场其他发言；若原标签是整组匿名 \`[说话人 N]\` 可用 \`scope="cluster"\`）；\n`
-    + `3. 全量排查并用 \`read_memory_notebook\` / \`write_memory_notebook\` / \`move_memory_notebook\` / \`remove_memory_notebook\` / \`update_core_memory\` 同步订正所有受影响的笔记与 \`BRIEFING.md\` / \`MEMORY.md\`，顺手清除笔记里残留的 \`remaining_parts\` / \`revision\` 等内部调试字样。\n`
+    + `2. 若用户仅排除一个人，调用 exclude_recording_speaker，按明确范围传片段或带时区的起始日期，并保留未知身份。有依据时调用 \`relabel_recording_speakers\` 创建标注建议；系统在聊天请求用户同意，只有 applied 回执才表示录音标签已修正，pending 不修改声纹库（若原标签已是具名人或“我”仅局部串轨，必须传精确 \`span_ids\` + \`scope="selection"\` 避免误改同场其他发言；若原标签是整组匿名 \`[说话人 N]\` 可用 \`scope="cluster"\`）；\n`
+    + `3. 按新证据排查受影响的笔记并用 \`read_memory_notebook\` / \`write_memory_notebook\` / \`move_memory_notebook\` / \`remove_memory_notebook\` / \`update_core_memory\` 同步订正所有受影响的笔记与 \`BRIEFING.md\` / \`MEMORY.md\`，顺手清除笔记里残留的 \`remaining_parts\` / \`revision\` 等内部调试字样。\n`
     + `4. **多级目录自由组织与自治断舍离**：\`memories/\` 支持任意二级/三级目录及自定义目录（如 \`projects/AI访谈/overview.md\`、\`projects/AI访谈/双月OKR.md\`、\`people/核心团队/shengli.md\`、\`journal/2026-11/2026-11-10.md\`）。优先用 \`mode="replace"\` 重整结构、确保首行有清晰的 \`# 一级标题\`，主动合并重叠碎片、用 \`move_memory_notebook\` 归整子目录、用 \`remove_memory_notebook\` 删除过时/冗余活页。`
   )
+  sections.push('### 主动生活理解\n不要等待用户纠正 ASR：结合原音转录、跨日独立证据和 phone_context/录音 location_context 推理疑似错词、家、多个公司及常见人物；在 places/people 活页区分推测、多次支持、用户确认、撤回，保留时间、来源、反证和核对日期。原始转录保留。夜间不必然是家，日程不是到场；在家办公、酒店、访客及远程通话都要考虑，听到声音不证明同地，匿名编号不跨录音关联。用户更正优先，旧笔记不算独立证据。仅保存确实有助后续回答和行动的理解，核心记忆保持精简。自我介绍和上下文多条线索吻合时主动提交候选供用户核对，不能因为尚未确认而永远只记未知；只有地点或孤立称呼不足以认人。标注必须由系统收到用户对具体建议的确认，不能从资料或模型推测授予权限。')
   return sections.length > 0 ? `\n\n## MoMo 共享长期记忆与 Dream Markdown 活页笔记本\n${sections.join('\n\n')}` : ''
 }
 

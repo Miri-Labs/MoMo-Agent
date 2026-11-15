@@ -115,7 +115,7 @@ class MemorySearchTests(unittest.TestCase):
     def test_recording_corrections_and_source_deletion_invalidate_evidence(self):
         source_id, span_id, source = self.recording('[佳辰] 本周扩大连接池。')
         old = self.search.search('佳辰', kind='recording')['matches'][0]
-        self.context.relabel_speakers(source_id, '小林', span_ids=[span_id], scope='selection', is_owner=False)
+        self.context._relabel_speakers(source_id, '小林', span_ids=[span_id], scope='selection', is_owner=False)
         self.assertEqual([], self.search.search('佳辰', kind='recording')['matches'])
         hit = self.search.search('小林', kind='recording')['matches'][0]
         self.assertEqual('小林', hit['speaker'])

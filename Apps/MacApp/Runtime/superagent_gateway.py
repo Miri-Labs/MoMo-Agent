@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from contextlib import suppress
+from contextlib import closing, suppress
 from datetime import datetime
 import hashlib
 import hmac
@@ -1492,10 +1492,39 @@ class SuperAgentGateway:
     async def _morning_briefings(self) -> None:
         while not self._stopping:
             try:
+                self._deliver_speaker_proposal()
                 await self._deliver_morning_briefing()
             except Exception:
                 log.exception("Morning briefing delivery failed")
             await asyncio.sleep(60)
+
+    def _deliver_speaker_proposal(self):
+        import speaker_proposals
+        with closing(ContextStore(self.data / "context")) as context:
+            question = speaker_proposals.next_question(context)
+            if not question:
+                return
+            now = time.time()
+            self.store.append_assistant(question["key"], question["message"], now)
+            context.db.execute("UPDATE speaker_proposals SET delivered=? WHERE id=? AND delivered IS NULL",
+                               (now, question["id"]))
+
+    def _speaker_decision(self, content, operation):
+        import speaker_proposals
+        decision = speaker_proposals.DECISION.fullmatch(content.strip())
+        if not decision:
+            return None
+        identifier = int(decision[2])
+        # A transcript, tool receipt or forged assistant message cannot grant consent.
+        visible = self.store.db.execute("SELECT 1 FROM messages WHERE role='assistant' AND source_key=?",
+                                        (f"speaker-proposal:{identifier}",)).fetchone()
+        if not visible:
+            return {"success": False, "message": "请先查看这条标注建议的具体人物和录音范围。"}
+        with closing(ContextStore(self.data / "context")) as context:
+            try:
+                return speaker_proposals.decide(context, identifier, decision[1] == "确认标注", operation)
+            except ValueError as error:
+                return {"success": False, "message": str(error)}
 
     async def _deliver_morning_briefing(self) -> None:
         import memory_review
@@ -2139,7 +2168,7 @@ class SuperAgentGateway:
             "Use:\n"
             "- `memory` to update compact core `MEMORY.md` (`target='memory'`) or `USER.md` (`target='user'`);\n"
             "- `notebook` to freely read, write, move, or remove pure Markdown (`.md`) notes anywhere in the multi-level `memories/` vault (`BRIEFING.md` via `category='briefing'` or `path='BRIEFING.md'`, and multi-level directories via `path='projects/<project>/<doc>.md'`, `path='journal/YYYY-MM/YYYY-MM-DD.md'`, `path='people/<group>/<name>.md'`, or any custom folder hierarchy you design);\n"
-            "- `relabel_speakers` to fix or name speaker labels (`[说话人 1]` -> real name or fix `[我]` vs `[他人]`) when the transcript wording and speaker attribution are both corroborated;\n"
+            "- `relabel_speakers` to propose evidence-based speaker labels for user consent; pending means no transcript or voiceprint change;\n"
             "- `search_memory` for ranked cross-source recall; provide focused alternative_queries for synonyms and missing aspects, "
             "then `read_memory_evidence` with id and revision to check the full source. Search hypotheses are not facts.\n"
             "- `list_recordings`, `read_recording`, `search_recordings`, `phone_context`, and `session_search` to gather grounded evidence.\n"
@@ -2213,9 +2242,9 @@ class SuperAgentGateway:
             {
                 "name": "relabel_speakers",
                 "description": (
-                    "Update speaker labels on a recording when dialogue semantics reveal who '[说话人 N]' actually is "
+                    "Propose speaker labels on a recording when evidence suggests who '[说话人 N]' actually is "
                     "or expose an acoustic diarization mistake (e.g. someone else tagged as '[我]' or vice versa). "
-                    "Updates Mac transcripts immediately and queues a speaker voiceprint/label update for the iPhone."
+                    "Creates a scoped consent proposal. No labels or voiceprints change until the user confirms it in chat."
                 ),
                 "parameters": {
                     "type": "object",
@@ -2236,7 +2265,7 @@ class SuperAgentGateway:
                         },
                         "reason": {"type": "string", "description": "Brief semantic evidence from the dialogue justifying this speaker attribution."},
                     },
-                    "required": ["source_id", "target_speaker"],
+                    "required": ["source_id", "target_speaker", "reason"],
                     "additionalProperties": False,
                 },
             },
@@ -2263,6 +2292,7 @@ class SuperAgentGateway:
                         "source_revision": {"type": "string", "description": "Optional source revision hash."},
                         "offset": {"type": "integer", "description": "Character offset into transcript (default 0)."},
                         "limit": {"type": "integer", "description": "Max characters per page (default 12000)."},
+                        "location_offset": {"type": "integer", "minimum": 0, "description": "Use location_context.next_offset with the same transcript offset to page overlapping visits."},
                     },
                     "required": ["source_id"],
                     "additionalProperties": False,
@@ -2417,7 +2447,7 @@ class SuperAgentGateway:
                     res = store.relabel_speakers(
                         str(args.get("source_id") or ""),
                         str(args.get("target_speaker") or ""),
-                        is_owner=bool(args.get("is_owner", False)),
+                        is_owner=args.get("is_owner", False),
                         from_speaker=args.get("from_speaker"),
                         span_ids=args.get("span_ids") if isinstance(args.get("span_ids"), list) else None,
                         scope=str(args.get("scope") or "selection"),
@@ -2457,6 +2487,7 @@ class SuperAgentGateway:
                         str(args.get("source_revision") or "") or None,
                         int(args.get("offset") or 0),
                         max(1, min(int(args.get("limit") or 12000), 24000)),
+                        location_offset=args.get("location_offset", 0),
                     )
                     for sp in res.get("spans") or []:
                         rec_at = sp.get("recorded_at")
@@ -4063,8 +4094,12 @@ class SuperAgentGateway:
         )
         run_id = row["run_id"]
         existing_run = self.bridge.db.execute("SELECT * FROM chat_runs WHERE run_id=?", (run_id,)).fetchone()
+        speaker_decision = self._speaker_decision(content, operation) if not attachments else None
         if existing_run is None:
             prompt_text = content if content.strip() else "请查看我发送的附件。"
+            if speaker_decision is not None:
+                prompt_text += "\n\n[系统标注回执] " + json.dumps(speaker_decision, ensure_ascii=False)
+                prompt_text += "\n据此如实回复；仅 applied 表示已应用。不要重复发起建议，按结果订正相关人物与日志活页。"
             if recording is not None:
                 prompt_text += (
                     f'\n\n[用户选中的录音转录：运行 "$DSH_SUPERAGENT_MOMO_CLI" recording-reference {operation}]'
@@ -4100,8 +4135,8 @@ class SuperAgentGateway:
                         self.store.identity["root"],
                         row["work_id"],
                         title,
-                        "queued",
-                        trigger_id,
+                        "completed" if speaker_decision is not None else "queued",
+                        None if speaker_decision is not None else trigger_id,
                         intent,
                         "applied" if intent == "steer" else None,
                         1,
@@ -4118,22 +4153,27 @@ class SuperAgentGateway:
             else:
                 with self.store.db:
                     self.store.db.execute("UPDATE inputs SET state='admitted' WHERE operation_id=?", (operation,))
-            self.bridge.enqueue_trigger(
-                trigger_id=trigger_id,
-                kind="chat",
-                thread_id=thread_id,
-                message_id=f"user-{operation}",
-                actor_id="owner",
-                actor_name="User",
-                addressed=True,
-                human=True,
-                observed=False,
-                text=prompt_text,
-                run_id=run_id,
-                chat_mode=mode,
-            )
-            self._trigger_wakeup.set()
-
+            if speaker_decision is not None:
+                with self.bridge.db:
+                    self.bridge.db.execute("UPDATE chat_runs SET cancellable=0 WHERE run_id=?", (run_id,))
+            else:
+                self.bridge.enqueue_trigger(
+                    trigger_id=trigger_id,
+                    kind="chat",
+                    thread_id=thread_id,
+                    message_id=f"user-{operation}",
+                    actor_id="owner",
+                    actor_name="User",
+                    addressed=True,
+                    human=True,
+                    observed=False,
+                    text=prompt_text,
+                    run_id=run_id,
+                    chat_mode=mode,
+                )
+                self._trigger_wakeup.set()
+        if speaker_decision is not None:
+            self.store.append_assistant("speaker-decision:" + operation, speaker_decision["message"], time.time(), run_id=run_id)
         saved_run = self.bridge.db.execute("SELECT * FROM chat_runs WHERE run_id=?", (run_id,)).fetchone()
         projected = self._project_chat_run(saved_run)
         receipt = {
@@ -4440,6 +4480,7 @@ class SuperAgentGateway:
                             str(args.get("source_revision") or "") or None,
                             int(args.get("offset") or 0),
                             max(1, min(int(args.get("limit") or 12000), 24000)),
+                            location_offset=args.get("location_offset", 0),
                         )
                         for sp in res.get("spans") or []:
                             rec_at = sp.get("recorded_at")
@@ -4453,7 +4494,7 @@ class SuperAgentGateway:
                     res = cstore.relabel_speakers(
                         str(args.get("source_id") or ""),
                         str(args.get("target_speaker") or ""),
-                        is_owner=bool(args.get("is_owner", False)),
+                        is_owner=args.get("is_owner", False),
                         from_speaker=args.get("from_speaker"),
                         span_ids=args.get("span_ids") if isinstance(args.get("span_ids"), list) else None,
                         scope=str(args.get("scope") or "selection"),

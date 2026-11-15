@@ -143,7 +143,7 @@ class ContextService:
                             item["summary"] = item.pop("recorded_summary", None); item["organization"] = None
                     elif url.path == "/v1/source":
                         source_limit = min(int(query.get("limit", ["12000"])[0]), 24_000)
-                        result = store.read_source(query["source_id"][0], query["revision"][0], int(query.get("offset", ["0"])[0]), source_limit)
+                        result = store.read_source(query["source_id"][0], query["revision"][0], int(query.get("offset", ["0"])[0]), source_limit, location_offset=int(query.get("location_offset", ["0"])[0]))
                     elif url.path == "/v1/status":
                         result = {"application": "MoMoAgent", "workspace_id": connection["workspace_id"],
                                   "engine": "superagent",

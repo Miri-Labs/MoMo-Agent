@@ -176,9 +176,9 @@ class MoMoMemoryTests(unittest.TestCase):
         self.assertNotIn("is_owner", store.read_source(source_id)["spans"][0])
         target = {"source_id": source_id, "target_speaker": "Sam", "is_owner": False,
                   "span_ids": [span_id], "scope": "selection"}
-        self.assertEqual(1, store.relabel_speakers(**target)["updated_span_count"])
+        self.assertEqual(1, store._relabel_speakers(**target)["updated_span_count"])
         self.assertIs(False, store.read_source(source_id)["spans"][0]["is_owner"])
-        self.assertEqual(0, store.relabel_speakers(**target)["updated_span_count"])
+        self.assertEqual(0, store._relabel_speakers(**target)["updated_span_count"])
 
     def test_dream_counts_material_writes_and_preserves_speaker_ack(self):
         from superagent_gateway import SuperAgentGateway
@@ -195,7 +195,7 @@ class MoMoMemoryTests(unittest.TestCase):
         gateway = SuperAgentGateway.__new__(SuperAgentGateway)
         gateway.data = self.home
         session = "momo-review-first"
-        target = {"source_id": source["source_id"], "span_ids": [span_id], "scope": "selection", "target_speaker": "Sam"}
+        target = {"source_id": source["source_id"], "span_ids": [span_id], "scope": "selection", "target_speaker": "Sam", "reason": "Verified introduction"}
         _, _, call = gateway._build_memory_review_session(session)
         def write(name, args):
             return json.loads(call(name, args))
@@ -210,12 +210,17 @@ class MoMoMemoryTests(unittest.TestCase):
 
         self.assertTrue(write("memory", memory)["changed"])
         self.assertTrue(write("notebook", notebook)["changed"])
-        self.assertTrue(write("relabel_speakers", target)["changed"])
+        proposal = write("relabel_speakers", target)
+        self.assertFalse(proposal["changed"])
+        self.assertEqual([], store.pending_speaker_relabels())
+        from speaker_proposals import decide
+        store.db.execute("UPDATE speaker_proposals SET delivered=1 WHERE id=?", (proposal["proposal_id"],))
+        self.assertTrue(decide(store, proposal["proposal_id"], True, "user-confirmed")["changed"])
         relabel = store.pending_speaker_relabels()[0]
         store.ack_speaker_relabels([relabel["id"]])
         revision = store.revision
         home = memory_home(self.home)
-        self.assertEqual(3, memory_review.successful_writes(home, session))
+        self.assertEqual(2, memory_review.successful_writes(home, session))
 
         session = "momo-review-replay"
         _, _, call = gateway._build_memory_review_session(session)
@@ -236,9 +241,9 @@ class MoMoMemoryTests(unittest.TestCase):
             memory_review.outcome(home, session, no_change)
 
         # The phone keeps delivery IDs forever. A -> B -> A must deliver A again.
-        self.assertTrue(write("relabel_speakers", dict(target, target_speaker="Tina"))["changed"])
+        self.assertTrue(store._relabel_speakers(**dict(target, target_speaker="Tina"))["changed"])
         store.ack_speaker_relabels([store.pending_speaker_relabels()[0]["id"]])
-        restored = write("relabel_speakers", target)
+        restored = store._relabel_speakers(**target)
         store.ack_speaker_relabels([relabel["id"]])
         self.assertNotEqual(relabel["id"], restored["relabel_id"])
         self.assertEqual([restored["relabel_id"]], [row["id"] for row in store.pending_speaker_relabels()])

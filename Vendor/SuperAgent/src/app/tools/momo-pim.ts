@@ -327,6 +327,7 @@ export function momoPimTools(host: ExecutorToolsHost, ticketId: string): Tool[] 
       description: 'Read original transcript spans (with span id, speaker, speaker_role, recorded_at_local) by source_id and offset.',
       schema: z.object({
         source_id: z.string().min(1).max(200),
+        location_offset: z.number().int().min(0).optional().describe('Page location_context.next_offset with the same transcript offset'),
         source_revision: z.string().max(200).default(''),
         offset: z.number().int().min(0).default(0),
         limit: z.number().int().min(1).max(24000).default(12000),
@@ -346,7 +347,7 @@ export function momoPimTools(host: ExecutorToolsHost, ticketId: string): Tool[] 
     },
     {
       name: 'relabel_recording_speakers',
-      description: 'Relabel anonymous ([说话人 N]) or misattributed speaker spans in a recording and sync back to iPhone voiceprints. IMPORTANT: If the old label was ALREADY a named person or "我" and only specific turns were misattributed, pass exact span_ids and scope="selection" so that person\'s other turns are preserved; use scope="cluster" only when relabeling an entire anonymous [说话人 N] cluster.',
+      description: 'Propose anonymous ([说话人 N]) or misattributed speaker labels for explicit user confirmation in chat. Pending proposals do not change recordings or iPhone voiceprints. IMPORTANT: If the old label was ALREADY a named person or "我" and only specific turns were misattributed, pass exact span_ids and scope="selection" so that person\'s other turns are preserved; use scope="cluster" only when relabeling an entire anonymous [说话人 N] cluster.',
       schema: z.object({
         source_id: z.string().min(1).max(200),
         target_speaker: z.string().trim().min(1).max(64),
@@ -354,7 +355,7 @@ export function momoPimTools(host: ExecutorToolsHost, ticketId: string): Tool[] 
         from_speaker: z.string().max(64).optional(),
         span_ids: z.array(z.string().min(1)).max(200).optional(),
         scope: z.enum(['cluster', 'selection']).default('selection'),
-        reason: z.string().max(400).default(''),
+        reason: z.string().trim().min(1).max(400),
       }).strict(),
       execute: (args, signal) => call('relabel_recording_speakers', args, signal),
     },
