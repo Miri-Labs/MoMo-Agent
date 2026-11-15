@@ -8,7 +8,7 @@ Worker 的 `orchestrator_report(human_action=...)` 会持久化 `ticket.attentio
 
 网关现在从持久工单补发显式任务的活跃确认，复用原 outbound → ProductStore 消息/事件 → PushOutbox，不增加通知服务。按 `attention.triggerId`、原 mandate 或最早关联聊天定位消息，保留 run/message 归属，不投到最新无关聊天。读取完整 open 分页，并复查掉出近期 ended 页的本地等待任务。
 
-以工单、来源 run 和完整问题去重，兼容上游 attention receipt；同一问题重放、重启或换运行时 ID 不重复，问题、设备、链接发生变化可重新通知。消息持久化及 push 入队完成后才记回执；部分失败可在后续同步或上游重试补齐。清除/ready 撤销等待和过时的未发 push，延迟 attention 出站被拒绝。运行时暂不可读返回可重试的 503。inferred 的确认、blocked/failed 追问和 dropped 出站保持静默，显式结果与主动 ready 交付保留原路径。
+以持久确认轮次、工单、来源 run 和完整问题去重，兼容上游 attention receipt；同一轮问题重放、重启或换运行时 ID 不重复，问题、设备、链接发生变化或清除后再次提问可重新通知。消息持久化及 push 入队完成后才记回执；部分失败可在后续同步或上游重试补齐。清除/ready 撤销等待和过时的未发 push，延迟 attention 出站被拒绝。运行时暂不可读返回可重试的 503。inferred 的确认、blocked/failed 追问和 dropped 出站保持静默，显式结果与主动 ready 交付保留原路径。
 
 ## human_action 契约与客户端兼容
 
@@ -48,3 +48,16 @@ PYTHONDONTWRITEBYTECODE=1 uv run --no-project --with aiohttp --with cryptography
 未构建、安装、重启或修改现场配置，未验证真机/APNs；当前安装的 agent-desktop 不受此本地提交影响。新模块随既有 tracked Runtime 文件打包机制交付。
 
 临时 fixture 自动删除，测试日志收尾删除；没有生成 DerivedData、SPM 或 Python 字节码目录。共享 uv 缓存和其他任务目录保留。收尾磁盘可用约 16 GiB，不声称其他任务引起的空间变化为本次清理成果。
+
+## 独立评审后的两项修正
+
+评审指出初次提交的两个 P2；新增测试在修改实现前复现了说明丢失和跨轮次过度去重（4 项失败），随后修复：
+
+- **保留说明与追问答复。** `core/replies.ts` 会把完整问题附在主 Agent 的说明后。网关现在只用当前问题建立确认身份，显示内容保留出站说明。例如 `Use company identity not personal.\n\nApprove read-only?` 完整显示。若自动补发先送出问题，后到的说明独立送达并按说明内容去重，不重复发送问题；独立 `purpose=answer` 仍投到其明确追问对应的 run。首条完整说明、补充说明均覆盖入队失败后的重启重试。
+- **按确认轮次去重。** BridgeStore 增加 `confirmation_episodes`，持久保存 generation 和问题/来源签名；观察到 clear/ready 后清空签名，下一次确认递增 generation，活跃问题或来源变化也递增。`A → clear → B → clear → A` 正常送出三条消息与三个 push 事件；同轮重启及 attention ID 重建不新增消息。`confirmation_messages` 将消息绑定到轮次，按轮次撤销过时 push，避免把含有说明的消息误当成过时问题。
+
+不修改 Vendor 或 human_action schema。产品提示词同步说明保留已核实解释和独立追问答复。
+
+保留原有 57 项测试及其断言，新增 7 项隔离回归。旧测试 helper 的默认 outbound 文本改为原问题，准确表示“相同确认重放”；带额外说明的语义由新测试单独验证，不再以丢弃说明来满足去重断言。
+
+执行上方同一四套件命令，结果：**64 tests，OK**（6.015 秒）；`git diff --check` 通过。仍有 Python 3.14 SQLite ResourceWarning。没有再次运行缺依赖的旧 Hermes 附加套件；没有部署、推送或创建 PR。

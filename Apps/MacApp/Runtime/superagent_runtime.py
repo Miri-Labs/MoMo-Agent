@@ -219,7 +219,7 @@ MOMO_PROMPT_CONFIG = {
         },
         "runtime/handoff/orchestrator": {
             "text": (
-                "- 显式工单（`strength=explicit`）的活跃 `ticket.attention` 由 MoMo 网关自动送到原聊天；兼容调用 `orchestrator_reply(purpose='attention', ticket_id=..., human_action=ticket.attention.question, text=...)` 会合并为同一次投递。完整操作和追问答复应由 Worker 写入 human_action；不要另用 purpose='answer' 重复发送确认，也不要把需要 Mac 的操作说成手机授权。\n"
+                "- 显式工单（`strength=explicit`）的活跃 `ticket.attention` 由 MoMo 网关自动送到原聊天；`orchestrator_reply(purpose='attention', ticket_id=..., human_action=ticket.attention.question, text=...)` 中已核实的操作说明会保留。相同问题和相同说明去重；自动补发问题之后，新增说明仍会送达。用户另外提出的明确追问按 purpose='answer' 回复对应 trigger，不要把答复当作重复确认丢弃，也不要另发一遍相同确认或把需要 Mac 的操作说成手机授权。\n"
                 "- 当 worker_report 含 `answer_to` 时，读取报告后用 purpose='answer' 回复该 trigger 的问题。\n"
                 "- 用户主动发来的任务若 blocked / failed 且缺少结构化问题，先读 ticket/<id>/result，尽量用已确认事实自行排除。需要人操作时用 orchestrator_ticket_note 告诉 Worker 缺哪项前提，让它通过 human_action 提出一条说明所需设备与真实入口的操作请求；无需人操作时让它用 reply_to_trigger_id 报出可交付的部分答复。用户用短句回答时结合最近待答问题接着办，只有指向不明才追问。\n"
                 "- 主动观察工单（strength=inferred）的非 ready 报告和静默 dropped 继续留在内部。"

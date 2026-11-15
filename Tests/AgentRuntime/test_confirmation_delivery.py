@@ -83,7 +83,7 @@ class ConfirmationDeliveryTests(unittest.IsolatedAsyncioTestCase):
         return await self.client.post("/momo/internal/superagent/outbound",
             headers={"X-MoMo-Bridge": self.gateway.bridge_secret}, json={
                 "id": hashlib.sha256(key.encode()).hexdigest()[:32], "kind": "reply", "ticket_id": ticket["id"],
-                "attention_id": attention.get("id"), "text": "主 Agent 转达的确认",
+                "attention_id": attention.get("id"), "text": attention.get("question") or "主 Agent 转达的确认",
                 "channel": {"thread": "chat:" + turn["work_id"], "address": {"messageId": turn["message_id"]}},
                 **changes})
 
@@ -103,6 +103,118 @@ class ConfirmationDeliveryTests(unittest.IsolatedAsyncioTestCase):
         push = self.gateway.store.db.execute("SELECT payload FROM push_events").fetchone()[0]
         self.assertEqual(json.loads(push)["message_id"], messages[0]["id"])
         self.assertNotIn("只读", push)  # Push remains a private reference, not consent content.
+
+    async def test_orchestrator_explanation_survives_question_canonicalization(self):
+        ticket = self.ticket("Approve read-only?")
+        self.gateway._cached_tickets = [ticket]
+        text = "Use company identity not personal.\n\nApprove read-only?"
+        self.assertEqual((await self.outbound(ticket, text=text)).status, 200)
+        self.assertEqual((await self.messages())[0]["content"], text)
+        self.project(ticket)
+        await self.outbound(ticket, text=text)
+        self.assertEqual(len(await self.messages()), 1)
+        self.assertEqual(self.count("push_events"), 1)
+        self.assertEqual(self.gateway.store.db.execute("SELECT sum(active) FROM push_events").fetchone()[0], 1)
+
+    async def test_fallback_does_not_consume_later_explanation_or_explicit_followup_answer(self):
+        ticket = self.ticket("Approve read-only?")
+        self.project(ticket)
+        followup = await self.submit("Which identity should I use?")
+        text = "Use company identity not personal.\n\nApprove read-only?"
+        await self.outbound(ticket, text=text)
+        messages = await self.messages()
+        self.assertEqual([m["content"] for m in messages], ["Approve read-only?", "Use company identity not personal."])
+        self.assertEqual([m["run_id"] for m in messages], [self.turn["run_id"]] * 2)
+        await self.restart()
+        ticket["attention"]["id"] = "recovered"
+        self.project(ticket)
+        await self.outbound(ticket, text=text)
+        self.assertEqual(len(await self.messages()), 2)
+        self.assertEqual(self.count("push_events"), 2)
+        # purpose=answer uses the follow-up's own channel and must remain independent of attention dedupe.
+        answer = "Use company identity not personal."
+        response = await self.outbound(ticket, turn=followup, id="explicit-answer", attention_id=None, text=answer)
+        self.assertEqual(response.status, 200)
+        await self.outbound(ticket, turn=followup, id="explicit-answer", attention_id=None, text=answer)
+        self.assertEqual([(m["run_id"], m["content"]) for m in await self.messages()][-1], (followup["run_id"], answer))
+        self.assertEqual(len(await self.messages()), 3)
+        self.assertEqual(self.count("push_events"), 3)
+        self.assertEqual(self.state()[0], "waiting_for_input")
+
+    async def test_new_confirmation_episode_can_repeat_a_previously_cleared_question(self):
+        for index, question in enumerate(("A?", "B?", "A?")):
+            ticket = self.ticket(question)
+            ticket["attention"]["id"] = f"fresh-{index}"
+            self.project(ticket)
+            self.assertEqual(len(await self.messages()), index + 1)
+            self.assertEqual(self.count("push_events"), index + 1)
+            await self.restart()
+            ticket["attention"]["id"] = f"recovered-{index}"
+            self.project(ticket)
+            await self.outbound(ticket, text=question)
+            self.assertEqual(len(await self.messages()), index + 1)
+            self.assertEqual(self.count("push_events"), index + 1)
+            if index < 2:
+                self.project(self.ticket(attention=None, action="running"))
+                self.assertIsNone(self.state()[1])
+                await self.restart()  # The cleared episode boundary must survive downtime.
+        messages = await self.messages()
+        self.assertEqual([m["content"] for m in messages], ["A?", "B?", "A?"])
+        self.assertEqual(len({m["id"] for m in messages}), 3)
+        self.assertEqual(self.gateway.store.db.execute("SELECT sum(active) FROM push_events").fetchone()[0], 1)
+
+    async def test_returning_to_question_without_clear_is_a_meaningful_update(self):
+        for question in ("A?", "B?", "A?"):
+            self.project(self.ticket(question))
+            self.project(self.ticket(question))
+        self.assertEqual([m["content"] for m in await self.messages()], ["A?", "B?", "A?"])
+        self.assertEqual(self.count("push_events"), 3)
+
+    async def test_explanation_partial_failure_recovered_by_fallback_does_not_duplicate(self):
+        ticket = self.ticket("Approve read-only?")
+        self.gateway._cached_tickets = [ticket]
+        text = "Use company identity not personal.\n\nApprove read-only?"
+        with patch.object(self.gateway.push, "emit", side_effect=OSError("fixture enqueue failure")):
+            with self.assertLogs("aiohttp.server", level="ERROR"):
+                self.assertEqual((await self.outbound(ticket, text=text)).status, 500)
+        await self.restart()
+        self.project(ticket)  # Recovers the already-written full message, including its explanation.
+        await self.outbound(ticket, text=text)
+        self.assertEqual([m["content"] for m in await self.messages()], [text])
+        self.assertEqual(self.count("push_events"), 1)
+
+    async def test_supplemental_explanation_enqueue_failure_retries_after_restart(self):
+        ticket = self.ticket("Approve read-only?")
+        self.project(ticket)
+        text = "Use company identity not personal.\n\nApprove read-only?"
+        with patch.object(self.gateway.push, "emit", side_effect=OSError("fixture enqueue failure")):
+            with self.assertLogs("aiohttp.server", level="ERROR"):
+                self.assertEqual((await self.outbound(ticket, text=text)).status, 500)
+        self.assertEqual(self.count("push_events"), 1)
+        await self.restart()
+        self.project(ticket)
+        await self.outbound(ticket, text=text)
+        await self.outbound(ticket, text=text)
+        self.assertEqual([m["content"] for m in await self.messages()], ["Approve read-only?", "Use company identity not personal."])
+        self.assertEqual(self.count("push_events"), 2)
+
+    async def test_ready_boundary_and_failed_delivery_keep_new_episode_retryable(self):
+        ticket = self.ticket("A?")
+        self.project(ticket)
+        self.project(self.ticket(attention=None, state="ended", ended={"outcome": "completed"}))
+        await self.restart()
+        ticket["attention"]["id"] = "new-after-ready"
+        with patch.object(self.gateway.push, "emit", side_effect=OSError("fixture enqueue failure")):
+            with self.assertLogs("momo.superagent_gateway", level="ERROR"):
+                self.project(ticket)
+        self.assertEqual(len(await self.messages()), 2)
+        await self.restart()
+        ticket["attention"]["id"] = "regenerated-during-retry"
+        self.project(ticket)
+        self.project(ticket)
+        self.assertEqual([m["content"] for m in await self.messages()], ["A?", "A?"])
+        self.assertEqual(self.count("push_events"), 2)
+        self.assertEqual(self.gateway.store.db.execute("SELECT sum(active) FROM push_events").fetchone()[0], 1)
 
     async def test_phone_choice_reply_clear_and_ready_resume_without_granting_consent(self):
         self.project(self.ticket())

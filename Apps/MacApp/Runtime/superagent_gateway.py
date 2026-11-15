@@ -237,6 +237,16 @@ class BridgeStore:
                 message_id TEXT,
                 created_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS confirmation_episodes(
+                ticket_id TEXT PRIMARY KEY,
+                generation INTEGER NOT NULL,
+                signature TEXT
+            );
+            CREATE TABLE IF NOT EXISTS confirmation_messages(
+                message_id TEXT PRIMARY KEY,
+                ticket_id TEXT NOT NULL,
+                generation INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS source_watermarks(
                 source_id TEXT PRIMARY KEY,
                 revision TEXT NOT NULL,
@@ -1509,25 +1519,46 @@ class SuperAgentGateway:
 
         for ticket in tickets_by_id.values():
             try:
+                self._sync_confirmation_episode(ticket)
                 self._expire_confirmation_pushes(ticket)
                 self._deliver_pending_attention(ticket)
             except Exception:
                 # The durable ticket remains pending; retry next reconciliation without restarting DSH.
                 log.exception("Confirmation delivery failed for ticket %s", ticket["id"])
 
-    def _expire_confirmation_pushes(self, ticket: dict) -> None:
+    def _sync_confirmation_episode(self, ticket: dict) -> int | None:
         attention = active_attention(ticket) if ticket_strength(ticket) != "inferred" else None
-        text = confirmation_message(attention["question"])[0] if attention and attention.get("question") else None
-        asker = self.bridge.db.execute("SELECT run_id FROM triggers WHERE id=?",
-                                       ((attention or {}).get("triggerId"),)).fetchone()
-        delivered = self.bridge.db.execute("SELECT DISTINCT message_id FROM outbound_receipts WHERE ticket_id=?",
-                                           (ticket["id"],)).fetchall()
+        current = self.bridge.db.execute("SELECT * FROM confirmation_episodes WHERE ticket_id=?", (ticket["id"],)).fetchone()
+        if attention and not attention.get("question"):
+            # Legacy projections can omit the question; omission does not clear an active wait.
+            return current["generation"] if current and current["signature"] else None
+        signature = None
+        if attention:
+            source = attention.get("triggerId") or ((ticket.get("mandate") or {}).get("basis") or {}).get("triggerId")
+            signature = json.dumps([attention["question"].strip(), source], ensure_ascii=False)
+        generation = current["generation"] if current else 1
+        if current and signature is not None and signature != current["signature"]:
+            generation += 1
+        if not current or signature != current["signature"]:
+            with self.bridge.db:
+                self.bridge.db.execute(
+                    "INSERT INTO confirmation_episodes VALUES(?,?,?) ON CONFLICT(ticket_id) DO UPDATE SET generation=excluded.generation,signature=excluded.signature",
+                    (ticket["id"], generation, signature),
+                )
+        return generation if signature is not None else None
+
+    def _expire_confirmation_pushes(self, ticket: dict) -> None:
+        episode = self.bridge.db.execute("SELECT * FROM confirmation_episodes WHERE ticket_id=?", (ticket["id"],)).fetchone()
+        if not episode:
+            return
+        delivered = self.bridge.db.execute(
+            "SELECT message_id FROM confirmation_messages WHERE ticket_id=? AND (generation!=? OR ? IS NULL)",
+            (ticket["id"], episode["generation"], episode["signature"]),
+        ).fetchall()
         with self.store.db:
             for receipt in delivered:
-                message = self.store.db.execute("SELECT * FROM messages WHERE id=?", (receipt[0],)).fetchone()
-                if not message or not message["confirmation_json"]:
-                    continue
-                if message["content"] != text or (asker and message["run_id"] != asker["run_id"]):
+                message = self.store.db.execute("SELECT source_key FROM messages WHERE id=?", (receipt[0],)).fetchone()
+                if message:
                     self.store.db.execute("UPDATE push_events SET active=0 WHERE event_key=?",
                                           ("terminal:" + message["source_key"],))
 
@@ -4894,20 +4925,41 @@ class SuperAgentGateway:
         is_question = kind == "reply" and bool(body.get("attention_id"))
         confirmation = None
         original_id = out_id
+        explanation_id = None
+        generation = None
         ticket = next((t for t in self._cached_tickets if t.get("id") == ticket_id), None)
+        if ticket:
+            generation = self._sync_confirmation_episode(ticket)
+            self._expire_confirmation_pushes(ticket)
         if is_question:
             if not chat_channel or (ticket and ticket_strength(ticket) == "inferred"):
                 return web.json_response({"status": "gone"}, status=410)
+            question_text = text
             if ticket:
                 attention = active_attention(ticket)
                 if not attention or attention["id"] != body["attention_id"]:
                     return web.json_response({"status": "gone"}, status=410)
-                text = attention.get("question") or text
-            question_text = text.strip()
-            text, confirmation = confirmation_message(question_text)
-            # Ignore regenerated attention IDs and orchestrator paraphrases on recovery.
-            key = json.dumps([ticket_id, linked_run["run_id"], question_text], ensure_ascii=False)
+                question_text = attention.get("question") or text
+            question_text = question_text.strip()
+            episode_ticket_id = ticket_id or linked_run["run_id"]
+            if generation is None:
+                generation = self._sync_confirmation_episode({
+                    "id": episode_ticket_id, "attention": {"id": body["attention_id"], "question": question_text},
+                })
+            rendered_question, confirmation = confirmation_message(question_text)
+            explanation = text.replace(question_text, "", 1).strip() if question_text in text else text
+            text = text.replace(question_text, rendered_question, 1) if question_text in text else f"{text}\n\n{rendered_question}"
+            # Runtime IDs may change on recovery; a cleared/replaced question starts a durable new episode.
+            key = json.dumps([ticket_id, generation, linked_run["run_id"], question_text], ensure_ascii=False)
             out_id = "attention-" + hashlib.sha256(key.encode()).hexdigest()[:32]
+            if explanation:
+                explanation_id = out_id + ":explanation:" + hashlib.sha256(explanation.encode()).hexdigest()[:32]
+                base_receipt = self.bridge.db.execute("SELECT message_id FROM outbound_receipts WHERE id=?", (out_id,)).fetchone()
+                base_message = self.store.db.execute("SELECT content FROM messages WHERE id=?", (base_receipt[0],)).fetchone() if base_receipt else None
+                if base_message and base_message["content"] != text:
+                    # The fallback may have delivered the question first. Send the verified answer separately.
+                    out_id = explanation_id
+                    text = explanation
         elif ticket and ticket_strength(ticket) == "inferred" and not is_ack:
             ended = ticket.get("ended")
             outcome = ended.get("outcome") if isinstance(ended, dict) else ended
@@ -4915,15 +4967,19 @@ class SuperAgentGateway:
                 return web.json_response({"status": "gone"}, status=410)
 
         existing = self.bridge.db.execute("SELECT * FROM outbound_receipts WHERE id=?", (out_id,)).fetchone()
-        if existing is None and is_question:
+        if existing is None and is_question and generation == 1:
             # Adopt pre-upgrade deliveries without suppressing a changed question that reused an ID.
             existing = self.bridge.db.execute("SELECT * FROM outbound_receipts WHERE id=?", (original_id,)).fetchone()
             if existing:
-                prior = self.store.db.execute("SELECT content,confirmation_json FROM messages WHERE id=?", (existing["message_id"],)).fetchone()
+                prior = self.store.db.execute("SELECT content,confirmation_json,run_id FROM messages WHERE id=?", (existing["message_id"],)).fetchone()
                 raw_question = (active_attention(ticket) or {}).get("question") if ticket else body.get("text")
-                legacy_match = prior and not prior["confirmation_json"] and raw_question and prior["content"].endswith(raw_question)
-                if not prior or (prior["content"] != text and not legacy_match):
+                legacy_match = prior and not prior["confirmation_json"] and not explanation and raw_question and prior["content"].endswith(raw_question)
+                if (not prior or prior["run_id"] != linked_run["run_id"]
+                        or (prior["content"] != text and not legacy_match)):
                     existing = None
+        receipt_ids = {out_id, original_id}
+        if explanation_id:
+            receipt_ids.add(explanation_id)
         if existing:
             # Older receipts could precede push enqueue. Repair that gap idempotently on replay.
             message = self.store.db.execute("SELECT * FROM messages WHERE id=?", (existing["message_id"],)).fetchone()
@@ -4931,7 +4987,10 @@ class SuperAgentGateway:
                 self.push.emit("terminal:" + message["source_key"], "final", run_id=message["run_id"],
                                message=self.store._format_message(message), historical=False)
             with self.bridge.db:
-                for alias in (out_id, original_id):
+                if is_question and message:
+                    self.bridge.db.execute("INSERT OR IGNORE INTO confirmation_messages VALUES(?,?,?)",
+                                           (message["id"], episode_ticket_id, generation))
+                for alias in receipt_ids:
                     self.bridge.db.execute("INSERT OR IGNORE INTO outbound_receipts VALUES(?,?,?,?,?,?)",
                                            (alias, kind, channel_id, ticket_id, existing["message_id"], now))
             return web.json_response({"status": "sent", "duplicate": True, "message_id": existing["message_id"]})
@@ -4994,12 +5053,16 @@ class SuperAgentGateway:
             confirmation=confirmation,
         )
         msg_row = self.store.db.execute("SELECT * FROM messages WHERE id=?", (msg_id,)).fetchone()
+        if is_question:
+            with self.bridge.db:
+                self.bridge.db.execute("INSERT OR IGNORE INTO confirmation_messages VALUES(?,?,?)",
+                                       (msg_id, episode_ticket_id, generation))
         if not is_ack:
             # Enqueue before acknowledging delivery; append and push both dedupe after a partial failure.
             self.push.emit(f"terminal:superagent:{out_id}", "final", run_id=run_id,
                            message=self.store._format_message(msg_row), historical=False)
         with self.bridge.db:
-            for alias in (out_id, original_id):
+            for alias in receipt_ids:
                 self.bridge.db.execute("INSERT OR IGNORE INTO outbound_receipts VALUES(?,?,?,?,?,?)",
                                        (alias, kind, channel_id, ticket_id, msg_id, now))
             if is_ack:
