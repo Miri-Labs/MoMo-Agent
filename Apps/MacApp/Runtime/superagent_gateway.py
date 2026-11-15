@@ -1501,13 +1501,14 @@ class SuperAgentGateway:
     def _deliver_speaker_proposal(self):
         import speaker_proposals
         with closing(ContextStore(self.data / "context")) as context:
-            question = speaker_proposals.next_question(context)
-            if not question:
-                return
-            now = time.time()
-            self.store.append_assistant(question["key"], question["message"], now)
-            context.db.execute("UPDATE speaker_proposals SET delivered=? WHERE id=? AND delivered IS NULL",
-                               (now, question["id"]))
+            with context.write():
+                question = speaker_proposals.next_question(context)
+                if not question:
+                    return
+                now = time.time()
+                self.store.append_assistant(question["key"], question["message"], now)
+                context.db.execute("UPDATE speaker_proposals SET delivered=? WHERE id=? AND delivered IS NULL",
+                                   (now, question["id"]))
 
     def _speaker_decision(self, content, operation):
         import speaker_proposals
@@ -2264,6 +2265,9 @@ class SuperAgentGateway:
                             "description": "'cluster' (default) relabels all turns of that speaker in the session; 'selection' relabels only the specified span_ids.",
                         },
                         "reason": {"type": "string", "description": "Brief semantic evidence from the dialogue justifying this speaker attribution."},
+                        "importance": {"type": "string", "enum": ["incidental", "recurring", "task"], "description": "Default incidental stays quiet. Task requires a real current need; recurring requires cross-day evidence."},
+                        "benefit": {"type": "string", "maxLength": 80, "description": "Concrete benefit to the user of resolving this identity now, not filling a people database."},
+                        "supporting_source_ids": {"type": "array", "items": {"type": "string"}, "maxItems": 10, "description": "Independent recording sources on at least two days for a useful recurring person."},
                     },
                     "required": ["source_id", "target_speaker", "reason"],
                     "additionalProperties": False,
@@ -2452,6 +2456,9 @@ class SuperAgentGateway:
                         span_ids=args.get("span_ids") if isinstance(args.get("span_ids"), list) else None,
                         scope=str(args.get("scope") or "selection"),
                         reason=str(args.get("reason") or ""),
+                        importance=args.get("importance", "incidental"),
+                        benefit=args.get("benefit", ""),
+                        supporting_source_ids=args.get("supporting_source_ids"),
                     )
                 except Exception as exc:
                     res = {"success": False, "error": str(exc)}
@@ -4499,6 +4506,9 @@ class SuperAgentGateway:
                         span_ids=args.get("span_ids") if isinstance(args.get("span_ids"), list) else None,
                         scope=str(args.get("scope") or "selection"),
                         reason=str(args.get("reason") or ""),
+                        importance=args.get("importance", "incidental"),
+                        benefit=args.get("benefit", ""),
+                        supporting_source_ids=args.get("supporting_source_ids"),
                     )
                 finally:
                     cstore.close()

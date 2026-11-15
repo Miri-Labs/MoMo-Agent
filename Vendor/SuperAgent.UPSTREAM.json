@@ -57,6 +57,11 @@
       "file": "src/app/sessions.ts, src/app/tools/momo-pim.ts",
       "reason": "Guide proactive, evidence-backed ASR/place/person reasoning in shared Markdown; speaker relabel tools now create scoped user-consent proposals instead of immediately training phone voiceprints. Expose paginated location overlap evidence.",
       "validation": "tests/momo-pim.spec.ts, tests/model-surface.spec.ts, typecheck/build; Tests/AgentRuntime/test_personal_context.py and personal_context_live.py."
+    },
+    {
+      "file": "src/app/sessions.ts, src/app/tools/momo-pim.ts",
+      "reason": "Default speaker candidates to quiet accumulation; require a concrete benefit and current-task or cross-day recurring-person context before the shared once-per-day question selector considers them. Prevent per-person roll calls and duplicate asks outside the selector.",
+      "validation": "tests/momo-pim.spec.ts, typecheck/build, Tests/AgentRuntime/test_personal_context.py and personal_context_live.py."
     }
   ]
 }

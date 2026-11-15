@@ -16,6 +16,7 @@ from context_store import ContextStore, digest
 from momo_memory import MoMoMemory
 from phone_sources import sync_phone_source
 import memory_review
+import speaker_proposals
 from superagent_gateway import SuperAgentGateway
 from superagent_runtime import resolve_superagent_llm
 
@@ -111,7 +112,7 @@ def main(args):
         checks = score(after)
         checks['original_transcripts_preserved'] = raw_before == [tuple(r) for r in store.db.execute('SELECT id,payload FROM sources ORDER BY id')]
         checks['no_label_without_consent'] = not store.pending_speaker_relabels()
-        checks['proactively_requested_label'] = store.db.execute("SELECT COUNT(*) FROM speaker_proposals WHERE state='pending'").fetchone()[0] > 0
+        checks['incidental_identity_stays_quiet'] = speaker_proposals.next_question(store) is None
         checks['traceable_notes'] = 'momoagent://source/' in notes() and ('visit-' in notes() or 'revision' in notes())
         result = dict(model=config['model_id'], synthetic_only=True, before=before, before_checks=score(before),
                       after=after, checks=checks, transient_errors=transient_errors, dream_receipt=output, notes=notes(), trace=traces)
