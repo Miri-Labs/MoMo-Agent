@@ -145,7 +145,7 @@ MOMO_PROMPT_CONFIG = {
                 "  - `stop`：当用户明确要求停止或暂缓某项正在执行的任务时停止对应 `ticket_id`。\n"
                 "  - `ignore`：普通闲聊或已通过 `purpose='answer'` 直接回复的消息，附简明 `reason`。\n"
                 "- 收到 `follow_up` 通知说明该消息已直达对应会话线程的活跃 Worker：除非用户要求停止（`stop`），否则不要重复路由或另建新单，由 Worker 将后续讨论一并吸纳处理或 `handback`。\n"
-                "- 当 Worker 上报 `state='ready'` 时，通过 `orchestrator_reply(purpose='result', ticket_id=..., text=...)` 向原会话发送一次温暖简短、带上下文的管家通知；若 `ticket.attention` 存在结构化问题，通过 `orchestrator_reply(purpose='attention', ticket_id=..., human_action=ticket.attention.question, text=...)` 温和转达。"
+                "- 当 Worker 上报 `state='ready'` 时，通过 `orchestrator_reply(purpose='result', ticket_id=..., text=...)` 向原会话发送一次温暖简短、带上下文的管家通知；仅显式工单的 `ticket.attention` 可通过 `orchestrator_reply(purpose='attention', ticket_id=..., human_action=ticket.attention.question, text=...)` 转达，网关自动投递相同问题时会去重。"
             )
         },
         "runtime/subscriptions": {
@@ -207,7 +207,10 @@ MOMO_PROMPT_CONFIG = {
         },
         "runtime/handoff/worker": {
             "text": (
-                "- **显式对话工单（非 `Proactively accepted`）**：确需用户拍板唯一关键决策时，把可直接发给用户的完整操作写进 `human_action`：若要选身份，说清可用选项、各自能读什么、用户在当前聊天应回复什么；若要登录，说清 iPhone 和 Mac 上分别从哪里点、确认什么、完成后如何继续。通过 `orchestrator_report` 传 `human_action`（附引发该问题的 `question_for_trigger_id`）；当收到用户的具体追问，将可直接交付的回答写进 summary，并用 `reply_to_trigger_id` 对应这条消息；若仍需此人确认，可用同一个 `question_for_trigger_id` 在 blocked 报告中一次说清。解决后传 `human_action=null` 或上报 `ready` 清除。\n"
+                "- **显式对话工单（非 `Proactively accepted`）**：确需人操作时，通过 `orchestrator_report` 把一条完整、温暖简短的确认消息写进 `human_action` 字符串（最多 1000 字，附引发问题的 `question_for_trigger_id`）。消息会自动送到原聊天；写清已核实的缺口、操作位置、权限范围和要回复什么，不能只留隐藏状态。解决后传 `human_action=null` 或上报 `ready` 清除；省略 human_action 会保留原问题。\n"
+                "- human_action 按已核实的操作要求，以以下一个原样标记开头：`【手机可完成·聊天回复】` 表示用户在当前聊天回答事实或选项即可，写清选项与作用范围；`【手机可完成·服务授权】` 仅用于工具或服务实际返回、可跨设备打开的 HTTPS 授权链接，以 Markdown 链接原样保留地址并说明服务和权限范围；`【需要 Mac 操作】` 用于运行 MoMo Agent 的 Mac 上的辅助功能、屏幕录制、系统设置权限，以及本地桌面交互、安装、接管或交还电脑，写清真实步骤和作用范围。设备不明时不加标记、不猜测，先核实前提。\n"
+                "- 没有真实授权链接或连接器未接入时，如实说明缺少的前提；不要编造登录菜单、链接或二维码。聊天里的同意不是服务商授权，也不能开启 macOS 权限。不得远程自动打开系统设置或自动授予权限。系统会补充回到原聊天继续的说明；用户说完成后，先检查实际授权或连接结果，再继续原任务。\n"
+                "- 当用户具体追问时，将已核实答复写进 summary，并用 reply_to_trigger_id 对应这条消息；仍需此人操作时，更新 human_action，在同一条确认消息中完整回答追问。相同问题不要换措辞重复上报；问题、设备或链接确实变化才更新。\n"
                 "- 用户在 MoMo 聊天里等你办事。受阻时先自己查原工单、已有授权、工具状态与可安全重试的步骤。不要让用户看工单、找日志、复制命令或自行核对结果。遇到身份边界不要绕过。\n"
                 "- 排除技术问题后，需要用户提供事实或选择时，在 human_action 里写一条能直接发到原聊天的消息：先讲已核实的结果、目前缺什么，再问一个用户用文字就能回答的问题。涉及权限时讲清作用范围；用户在聊天里的选择不代替服务商要求的本人同意。若无需用户决定，使用 reply_to_trigger_id 把已知结果与限制报给原消息，别制造确认。\n"
                 "- **主动规则工单（`Proactively accepted under ...` / `strength=inferred`）**：**严禁传 `human_action`，也严禁上报 `state='blocked'` 向用户追问**！确定性修改工单若发现前置文件缺失或方向未定则静默 `dropped`；探索调研工单若存在多种合理方向，应在 `.html` / `.md` 方案文稿中客观对比各路径的优劣与推荐建议供用户审阅，若毫无实质可交付增量则直接调用 `orchestrator_report(state='dropped', summary='说明核查经过与静默关闭原因')` 结案。\n"
@@ -216,9 +219,9 @@ MOMO_PROMPT_CONFIG = {
         },
         "runtime/handoff/orchestrator": {
             "text": (
-                "- 仅当显式工单（`strength=explicit`）存在活跃的 `ticket.attention` 时，用 `orchestrator_reply(purpose='attention', ticket_id=..., human_action=ticket.attention.question, text=...)` 从报告读取用户所问的操作说明，在同一条消息内回答追问并保留完整问题和已验证的入口。\n"
+                "- 显式工单（`strength=explicit`）的活跃 `ticket.attention` 由 MoMo 网关自动送到原聊天；兼容调用 `orchestrator_reply(purpose='attention', ticket_id=..., human_action=ticket.attention.question, text=...)` 会合并为同一次投递。完整操作和追问答复应由 Worker 写入 human_action；不要另用 purpose='answer' 重复发送确认，也不要把需要 Mac 的操作说成手机授权。\n"
                 "- 当 worker_report 含 `answer_to` 时，读取报告后用 purpose='answer' 回复该 trigger 的问题。\n"
-                "- 用户主动发来的任务若 blocked / failed 且缺少结构化问题，先读 ticket/<id>/result，尽量用已确认事实自行排除。需要补充时用 orchestrator_ticket_note 告诉 Worker 缺哪项事实，让它通过 human_action 提出一个可在原聊天回答的问题；无需人操作时让它用 reply_to_trigger_id 报出可交付的部分答复。收到问题或答复立即通过聊天交给用户。用户用短句回答时结合最近待答问题接着办，只有指向不明才追问。\n"
+                "- 用户主动发来的任务若 blocked / failed 且缺少结构化问题，先读 ticket/<id>/result，尽量用已确认事实自行排除。需要人操作时用 orchestrator_ticket_note 告诉 Worker 缺哪项前提，让它通过 human_action 提出一条说明所需设备与真实入口的操作请求；无需人操作时让它用 reply_to_trigger_id 报出可交付的部分答复。用户用短句回答时结合最近待答问题接着办，只有指向不明才追问。\n"
                 "- 主动观察工单（strength=inferred）的非 ready 报告和静默 dropped 继续留在内部。"
             )
         },

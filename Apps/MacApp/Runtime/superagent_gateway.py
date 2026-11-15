@@ -42,6 +42,7 @@ from memory_review import InvalidReviewReceipt, STALLED_REVIEW, outcome as verif
 from apple_pim import ApplePIM
 from context_store import Conflict as ContextConflict, ContextStore, logical_local_date, read_day_start_hour
 from conversation_store import ProductStore, collect_deliverable_attachments
+from confirmation import active_attention, confirmation_message, ticket_strength
 from provider_notice import (
     canonical_provider,
     classify_provider_issue,
@@ -1149,17 +1150,34 @@ class SuperAgentGateway:
     def _fetch_dsh_snapshots(self) -> tuple[dict, list[dict], list[dict]]:
         state = dsh_api_request(self.dsh_port, "GET", "/orchestrator/api/state", timeout=4.0)
         open_resp = dsh_api_request(self.dsh_port, "GET", "/orchestrator/api/tickets?state=open&limit=30", timeout=4.0)
+        open_pages = [open_resp]
+        while isinstance(open_pages[-1], dict) and open_pages[-1].get("next_offset") is not None:
+            offset = open_pages[-1]["next_offset"]
+            open_pages.append(dsh_api_request(self.dsh_port, "GET",
+                f"/orchestrator/api/tickets?state=open&limit=30&offset={int(offset)}", timeout=4.0))
         ended_resp = dsh_api_request(self.dsh_port, "GET", "/orchestrator/api/tickets?state=ended&limit=40", timeout=4.0)
         decisions_resp = dsh_api_request(self.dsh_port, "GET", "/orchestrator/api/decisions?limit=40", timeout=4.0)
         seen_ids: set[str] = set()
         tickets: list[dict] = []
-        for resp in (open_resp, ended_resp):
+        for resp in (*open_pages, ended_resp):
             rows = resp.get("items", resp.get("tickets", [])) if isinstance(resp, dict) else []
             for item in rows:
                 tid = item.get("id") if isinstance(item, dict) else None
                 if tid and tid not in seen_ids:
+                    attention = active_attention(item)
+                    if attention and ticket_strength(item) == "explicit" and not attention.get("triggerId"):
+                        # List rows omit the mandate's source trigger; read it rather than guess a thread.
+                        item = dsh_api_request(self.dsh_port, "GET",
+                            f"/orchestrator/api/tickets/{quote(tid, safe='')}", timeout=4.0)
                     seen_ids.add(tid)
                     tickets.append(item)
+        for row in self.bridge.db.execute("SELECT DISTINCT ticket_id FROM chat_runs WHERE status='waiting_for_input'"):
+            tid = row[0]
+            if tid and tid not in seen_ids:
+                # A ready/cleared wait may have fallen outside the recent-ended page during downtime.
+                tickets.append(dsh_api_request(self.dsh_port, "GET",
+                    f"/orchestrator/api/tickets/{quote(tid, safe='')}", timeout=4.0))
+                seen_ids.add(tid)
         decisions = (
             decisions_resp.get("items", decisions_resp.get("decisions", []))
             if isinstance(decisions_resp, dict)
@@ -1325,14 +1343,15 @@ class SuperAgentGateway:
         # receipt so another turn on the same ticket, or a later actual result, stays settled.
         for ticket in tickets_by_id.values():
             attention = ticket.get("attention")
-            if ticket.get("ended") or not isinstance(attention, dict) or not attention.get("id"):
+            if not active_attention(ticket) or ticket_strength(ticket) == "inferred":
                 continue
             key = json.dumps(["attention-reply", attention["id"]], ensure_ascii=False, separators=(",", ":"))
             receipt = hashlib.sha256(key.encode()).hexdigest()[:32]
+            delivered = self.bridge.db.execute("SELECT message_id FROM outbound_receipts WHERE id=?", (receipt,)).fetchone()
             question = self.store.db.execute(
-                """SELECT q.run_id FROM messages q WHERE q.source_key=?
+                """SELECT q.run_id FROM messages q WHERE (q.source_key=? OR q.id=?)
                    AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.run_id=q.run_id
-                       AND m.role='assistant' AND m.seq>q.seq)""", (f"superagent:{receipt}",),
+                       AND m.role='assistant' AND m.seq>q.seq)""", (f"superagent:{receipt}", delivered[0] if delivered else None),
             ).fetchone()
             if question:
                 with self.bridge.db:
@@ -1394,13 +1413,10 @@ class SuperAgentGateway:
                 )
                 t_state = str(ticket.get("state") or ticket.get("outcome") or "")
                 t_action = str(ticket.get("action") or "")
-                if ticket.get("attention"):
+                if active_attention(ticket) and ticket_strength(ticket) != "inferred":
                     new_status = "waiting_for_input"
                     wait_reason = "clarify"
                     err = None
-                elif row["status"] == "waiting_for_input" and t_action in ("running", "starting") and not ended_info:
-                    new_status = "started"
-                    wait_reason = None
                 elif ended_outcome in ("stopped", "canceled", "cancelled") or t_state in ("stopped", "canceled", "cancelled"):
                     new_status = "cancelled"
                     wait_reason = None
@@ -1412,6 +1428,10 @@ class SuperAgentGateway:
                     err = notice["short_error"] if notice else ("无法完成。" + reason[:240] if reason else "无法完成。")
                 elif ended_outcome in ("dropped",) or t_state in ("dropped",):
                     new_status = "completed"
+                    wait_reason = None
+                elif row["status"] == "waiting_for_input":
+                    # Clearing a question (including ready) ends the wait even before result delivery.
+                    new_status = "started"
                     wait_reason = None
             elif row["status"] in ("queued", "started") and not ticket_id and trig_id:
                 has_reply = self.store.db.execute(
@@ -1486,6 +1506,52 @@ class SuperAgentGateway:
                     )
                 if new_status in ("completed", "failed", "cancelled"):
                     self._finish_run_stream(row["run_id"], new_status)
+
+        for ticket in tickets_by_id.values():
+            try:
+                self._expire_confirmation_pushes(ticket)
+                self._deliver_pending_attention(ticket)
+            except Exception:
+                # The durable ticket remains pending; retry next reconciliation without restarting DSH.
+                log.exception("Confirmation delivery failed for ticket %s", ticket["id"])
+
+    def _expire_confirmation_pushes(self, ticket: dict) -> None:
+        attention = active_attention(ticket) if ticket_strength(ticket) != "inferred" else None
+        text = confirmation_message(attention["question"])[0] if attention and attention.get("question") else None
+        asker = self.bridge.db.execute("SELECT run_id FROM triggers WHERE id=?",
+                                       ((attention or {}).get("triggerId"),)).fetchone()
+        delivered = self.bridge.db.execute("SELECT DISTINCT message_id FROM outbound_receipts WHERE ticket_id=?",
+                                           (ticket["id"],)).fetchall()
+        with self.store.db:
+            for receipt in delivered:
+                message = self.store.db.execute("SELECT * FROM messages WHERE id=?", (receipt[0],)).fetchone()
+                if not message or not message["confirmation_json"]:
+                    continue
+                if message["content"] != text or (asker and message["run_id"] != asker["run_id"]):
+                    self.store.db.execute("UPDATE push_events SET active=0 WHERE event_key=?",
+                                          ("terminal:" + message["source_key"],))
+
+    def _deliver_pending_attention(self, ticket: dict) -> None:
+        attention = active_attention(ticket)
+        if ticket_strength(ticket) != "explicit" or not attention or not attention.get("question"):
+            return
+        trigger_id = attention.get("triggerId") or ((ticket.get("mandate") or {}).get("basis") or {}).get("triggerId")
+        if trigger_id:
+            trigger = self.bridge.db.execute("SELECT * FROM triggers WHERE id=?", (trigger_id,)).fetchone()
+        else:
+            # The first linked turn is the ticket's source, never the latest unrelated follow-up.
+            trigger = self.bridge.db.execute(
+                """SELECT t.* FROM triggers t JOIN chat_runs r ON t.id=r.trigger_id
+                   WHERE r.ticket_id=? ORDER BY r.seq LIMIT 1""", (ticket["id"],),
+            ).fetchone()
+        if not trigger or trigger["kind"] != "chat" or not trigger["human"]:
+            return
+        key = json.dumps(["attention-reply", attention["id"]], ensure_ascii=False, separators=(",", ":"))
+        self._deliver_outbound({
+            "id": hashlib.sha256(key.encode()).hexdigest()[:32], "kind": "reply",
+            "ticket_id": ticket["id"], "attention_id": attention["id"], "text": attention["question"],
+            "channel": {"thread": trigger["thread_id"], "address": {"stream": "chat", "messageId": trigger["message_id"]}},
+        })
 
     # ── Proactive Context Watcher ───────────────────────────────────────────────
 
@@ -4780,6 +4846,17 @@ class SuperAgentGateway:
         if refused := self._check_bridge_secret(request):
             return refused
         body = await request.json()
+        if body.get("ticket_id") and body.get("kind", "reply") == "reply":
+            if self.dsh_ready:
+                # Validate against live state: an outbox send can race the periodic snapshot.
+                ticket = await self._computer_ticket(str(body["ticket_id"]))
+                self._cached_tickets = [t for t in self._cached_tickets if t.get("id") != ticket["id"]] + [ticket]
+            elif self.manage_dsh:
+                # A retryable response preserves the upstream outbox during startup/recovery.
+                return web.json_response({"error": "ticket_state_unavailable"}, status=503)
+        return self._deliver_outbound(body)
+
+    def _deliver_outbound(self, body: dict) -> web.Response:
         out_id = str(body.get("id") or "").strip()
         kind = str(body.get("kind") or "reply").strip()
         text = str(body.get("text") or "").strip()
@@ -4790,10 +4867,6 @@ class SuperAgentGateway:
         address_msg_id = str(address.get("messageId") or "").strip()
         if not out_id or not text:
             return web.json_response({"error": "invalid_outbound"}, status=400)
-
-        existing = self.bridge.db.execute("SELECT * FROM outbound_receipts WHERE id=?", (out_id,)).fetchone()
-        if existing:
-            return web.json_response({"status": "sent", "duplicate": True, "message_id": existing["message_id"]})
 
         now = time.time()
         # A ticket can receive several user messages. Route chat output to its source turn.
@@ -4819,6 +4892,49 @@ class SuperAgentGateway:
 
         is_ack = kind == "acknowledgement"
         is_question = kind == "reply" and bool(body.get("attention_id"))
+        confirmation = None
+        original_id = out_id
+        ticket = next((t for t in self._cached_tickets if t.get("id") == ticket_id), None)
+        if is_question:
+            if not chat_channel or (ticket and ticket_strength(ticket) == "inferred"):
+                return web.json_response({"status": "gone"}, status=410)
+            if ticket:
+                attention = active_attention(ticket)
+                if not attention or attention["id"] != body["attention_id"]:
+                    return web.json_response({"status": "gone"}, status=410)
+                text = attention.get("question") or text
+            question_text = text.strip()
+            text, confirmation = confirmation_message(question_text)
+            # Ignore regenerated attention IDs and orchestrator paraphrases on recovery.
+            key = json.dumps([ticket_id, linked_run["run_id"], question_text], ensure_ascii=False)
+            out_id = "attention-" + hashlib.sha256(key.encode()).hexdigest()[:32]
+        elif ticket and ticket_strength(ticket) == "inferred" and not is_ack:
+            ended = ticket.get("ended")
+            outcome = ended.get("outcome") if isinstance(ended, dict) else ended
+            if active_attention(ticket) or ticket.get("action") in ("blocked", "failed") or outcome == "dropped":
+                return web.json_response({"status": "gone"}, status=410)
+
+        existing = self.bridge.db.execute("SELECT * FROM outbound_receipts WHERE id=?", (out_id,)).fetchone()
+        if existing is None and is_question:
+            # Adopt pre-upgrade deliveries without suppressing a changed question that reused an ID.
+            existing = self.bridge.db.execute("SELECT * FROM outbound_receipts WHERE id=?", (original_id,)).fetchone()
+            if existing:
+                prior = self.store.db.execute("SELECT content,confirmation_json FROM messages WHERE id=?", (existing["message_id"],)).fetchone()
+                raw_question = (active_attention(ticket) or {}).get("question") if ticket else body.get("text")
+                legacy_match = prior and not prior["confirmation_json"] and raw_question and prior["content"].endswith(raw_question)
+                if not prior or (prior["content"] != text and not legacy_match):
+                    existing = None
+        if existing:
+            # Older receipts could precede push enqueue. Repair that gap idempotently on replay.
+            message = self.store.db.execute("SELECT * FROM messages WHERE id=?", (existing["message_id"],)).fetchone()
+            if message and not is_ack:
+                self.push.emit("terminal:" + message["source_key"], "final", run_id=message["run_id"],
+                               message=self.store._format_message(message), historical=False)
+            with self.bridge.db:
+                for alias in (out_id, original_id):
+                    self.bridge.db.execute("INSERT OR IGNORE INTO outbound_receipts VALUES(?,?,?,?,?,?)",
+                                           (alias, kind, channel_id, ticket_id, existing["message_id"], now))
+            return web.json_response({"status": "sent", "duplicate": True, "message_id": existing["message_id"]})
         if is_ack and (not chat_channel or linked_run["status"] not in ("queued", "started")):
             # Proactive work is silent until delivery. A late ack must not reopen a settled turn.
             with self.bridge.db:
@@ -4866,7 +4982,7 @@ class SuperAgentGateway:
                 )
 
         deliverables = None
-        if not is_ack:
+        if not is_ack and not is_question:
             deliverables = self._collect_ticket_attachments(ticket_id=ticket_id, text=text, source_key=f"superagent:{out_id}")
             text = self._clean_outbound_reply_text(text, deliverables)
         msg_id = self.store.append_assistant(
@@ -4875,13 +4991,17 @@ class SuperAgentGateway:
             now,
             run_id=run_id,
             attachments=deliverables,
+            confirmation=confirmation,
         )
         msg_row = self.store.db.execute("SELECT * FROM messages WHERE id=?", (msg_id,)).fetchone()
+        if not is_ack:
+            # Enqueue before acknowledging delivery; append and push both dedupe after a partial failure.
+            self.push.emit(f"terminal:superagent:{out_id}", "final", run_id=run_id,
+                           message=self.store._format_message(msg_row), historical=False)
         with self.bridge.db:
-            self.bridge.db.execute(
-                "INSERT INTO outbound_receipts VALUES(?,?,?,?,?,?)",
-                (out_id, kind, channel_id, ticket_id, msg_id, now),
-            )
+            for alias in (out_id, original_id):
+                self.bridge.db.execute("INSERT OR IGNORE INTO outbound_receipts VALUES(?,?,?,?,?,?)",
+                                       (alias, kind, channel_id, ticket_id, msg_id, now))
             if is_ack:
                 self.bridge.db.execute(
                     "UPDATE chat_runs SET status='started', ticket_id=coalesce(?, ticket_id), updated_at=? WHERE run_id=?",
@@ -4891,7 +5011,7 @@ class SuperAgentGateway:
                 self.bridge.db.execute(
                     """UPDATE chat_runs SET status='waiting_for_input', ticket_id=coalesce(?, ticket_id),
                        wait_reason='clarify', error=NULL, cancellable=1, updated_at=?
-                       WHERE run_id=? AND status IN ('queued','started','waiting_for_input','failed')""",
+                       WHERE run_id=? AND status IN ('queued','started','waiting_for_input','failed','completed')""",
                     (ticket_id, now, run_id),
                 )
             else:
@@ -4904,7 +5024,6 @@ class SuperAgentGateway:
         event = self._committed_chat_event(msg_row)
         self._emit_run_stream(run_id, event)
         if not is_ack:
-            self.push.emit(f"terminal:superagent:{out_id}", "final", run_id=run_id, message=event["message"], historical=False)
             if not is_question:
                 self._finish_run_stream(run_id, "completed")
         self.publish_live_state()
