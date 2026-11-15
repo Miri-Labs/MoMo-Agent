@@ -1,0 +1,70 @@
+{
+  "model": "gpt-6.1-sol",
+  "synthetic_only": true,
+  "before_checks": {
+    "home": false,
+    "multiple_workplaces": false,
+    "temporary_hotel": false,
+    "no_invented_family": false,
+    "remote_call_not_presence": false,
+    "repaired_budget": false,
+    "candidate_identity": true
+  },
+  "after": {
+    "home": "青禾苑",
+    "workplaces": [
+      "星河办公室",
+      "北岸共享办公室"
+    ],
+    "hotel_is_home": false,
+    "li_lives_with_user": null,
+    "li_present_at_home": false,
+    "budget_fixed": false,
+    "xiaoyu_identity_status": "未知",
+    "explanation": "跨日明确表达支持青禾苑是家、星河是办公点；北岸作为第二办公点有单次明确表达与手机位置支持，使用频率未确认。云际酒店仅为出差临住，不是家。李工是否与用户同住未知；2026-11-12的家中交流明确为视频通话，李工在公司，因此该次并未在用户家中，不外推其他时段。预算明确尚未定数字、对方未同意金额，五十万元定案的旧判断已撤回。小雨的确切身份及与用户的关系未获独立确认。"
+  },
+  "checks": {
+    "home": true,
+    "multiple_workplaces": true,
+    "temporary_hotel": true,
+    "no_invented_family": true,
+    "remote_call_not_presence": true,
+    "repaired_budget": true,
+    "candidate_identity": true,
+    "original_transcripts_preserved": true,
+    "no_label_without_consent": true,
+    "incidental_identity_stays_quiet": true,
+    "traceable_notes": true
+  },
+  "transient_errors": [],
+  "dream_receipt": "{\"memory_review\":{\"outcome\":\"updated\",\"reason\":\"复核5段完整录音及手机位置，撤回家与公司颠倒、李工为同住家人、酒店为另一个家及“五十万元已定案”的错误结论；建立4篇地点活页和李工工作交流背景页，重写预算页，保留疑似误听原词、原音链接、位置证据及未决歧义；删除已被替代的旧地点判断页，更新核心记忆索引。未修改原始转录、声纹或说话人标签。\"}}",
+  "verification": {
+    "python_tests": 140,
+    "superagent_tests": 12,
+    "typecheck": "passed",
+    "build": "passed",
+    "deployed": false
+  },
+  "tool_calls": [
+    "search_memory",
+    "phone_context",
+    "notebook",
+    "notebook",
+    "read_recording",
+    "read_recording",
+    "read_recording",
+    "read_recording",
+    "read_recording",
+    "read_memory_evidence",
+    "read_memory_evidence",
+    "notebook",
+    "notebook",
+    "notebook",
+    "notebook",
+    "notebook",
+    "notebook",
+    "notebook",
+    "memory"
+  ],
+  "speaker_proposals": []
+}

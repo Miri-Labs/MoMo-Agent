@@ -9391,7 +9391,7 @@ function momoMemoryPromptBlock() {
 	if (notesIndex.length > 0) sections.push(`### Dream Markdown 活页目录预览（最多 80 条，非完整检索结果）\n${notesIndex.join("\n")}`);
 	sections.push("### 按任务检索长期记忆\n涉及历史背景、偏好或跨天线索时，使用 search_memory 搜索全部活页、录音与聊天。模糊问法可提供最多 3 个 alternative_queries，分别覆盖同义表达、专业术语或缺失方面；这些检索假设不能当作事实。用 read_memory_evidence(id, revision) 读原文并按 next_offset 续读，必要时根据已找到的线索继续搜索。目录预览没有列出的内容仍可检索；笔记及助手消息不构成对其原始来源的独立确认。主控可通过 \"$DSH_SUPERAGENT_MOMO_CLI\" search-memory \"问题\" --alternative-query \"检索词\" 和 read-memory-evidence \"id\" --revision \"revision\" 使用同一检索。");
 	sections.push("### 记忆订正、说话人声纹回写与多级目录自由组织工作流\n当用户指出某段记忆/日志总结有误，告知说话人归属，或要求整理记忆目录结构时：\n1. 若涉及录音事实或说话人，立即使用 `search_recordings` / `read_recording` 找到对应录音 `source_id` 及精确的 `span_ids`；\n2. 若用户仅排除一个人，调用 exclude_recording_speaker，按明确范围传片段或带时区的起始日期，并保留未知身份。有依据时调用 `relabel_recording_speakers` 创建标注建议；系统在聊天请求用户同意，只有 applied 回执才表示录音标签已修正，pending 不修改声纹库（若原标签已是具名人或“我”仅局部串轨，必须传精确 `span_ids` + `scope=\"selection\"` 避免误改同场其他发言；若原标签是整组匿名 `[说话人 N]` 可用 `scope=\"cluster\"`）；\n3. 按新证据排查受影响的笔记并用 `read_memory_notebook` / `write_memory_notebook` / `move_memory_notebook` / `remove_memory_notebook` / `update_core_memory` 同步订正所有受影响的笔记与 `BRIEFING.md` / `MEMORY.md`，顺手清除笔记里残留的 `remaining_parts` / `revision` 等内部调试字样。\n4. **多级目录自由组织与自治断舍离**：`memories/` 支持任意二级/三级目录及自定义目录（如 `projects/AI访谈/overview.md`、`projects/AI访谈/双月OKR.md`、`people/核心团队/shengli.md`、`journal/2026-11/2026-11-10.md`）。优先用 `mode=\"replace\"` 重整结构、确保首行有清晰的 `# 一级标题`，主动合并重叠碎片、用 `move_memory_notebook` 归整子目录、用 `remove_memory_notebook` 删除过时/冗余活页。");
-	sections.push("### 主动生活理解\n不要等待用户纠正 ASR：结合原音转录、跨日独立证据和 phone_context/录音 location_context 推理疑似错词、家、多个公司及常见人物；在 places/people 活页区分推测、多次支持、用户确认、撤回，保留时间、来源、反证和核对日期。原始转录保留。夜间不必然是家，日程不是到场；在家办公、酒店、访客及远程通话都要考虑，听到声音不证明同地，匿名编号不跨录音关联。用户更正优先，旧笔记不算独立证据。仅保存确实有助后续回答和行动的理解，核心记忆保持精简。标注必须由系统收到用户对具体建议的确认，不能从资料或模型推测授予权限。");
+	sections.push("### 主动生活理解\n不要等待用户纠正 ASR：结合原音转录、跨日独立证据和 phone_context/录音 location_context 推理疑似错词、家、多个公司及常见人物；在 places/people 活页区分推测、多次支持、用户确认、撤回，保留时间、来源、反证和核对日期。原始转录保留。夜间不必然是家，日程不是到场；在家办公、酒店、访客及远程通话都要考虑，听到声音不证明同地，匿名编号不跨录音关联。用户更正优先，旧笔记不算独立证据。仅保存确实有助后续回答和行动的理解，核心记忆保持精简。不以认全所有人为目标：偶遇者保留未知，不逐人建档或确认。只在真实当前任务需要身份（importance=task），或跨日重要熟人值得确认（importance=recurring，并给 supporting_source_ids）时提交候选，benefit 简述具体用处。其余默认 incidental 静默；统一投递器滚动24小时最多问一个人一次，没人回应就暂停新问题，不能在聊天或晨报另列名单绕过预算。只有地点或孤立称呼不足以认人。标注必须由系统收到用户对具体建议的确认，不能从资料或模型推测授予权限。");
 	return sections.length > 0 ? `\n\n## MoMo 共享长期记忆与 Dream Markdown 活页笔记本\n${sections.join("\n\n")}` : "";
 }
 function noWait({ name, arguments: input }, routed) {
@@ -10696,7 +10696,14 @@ function momoPimTools(host, ticketId) {
 				from_speaker: z.string().max(64).optional(),
 				span_ids: z.array(z.string().min(1)).max(200).optional(),
 				scope: z.enum(["cluster", "selection"]).default("selection"),
-				reason: z.string().trim().min(1).max(400)
+				reason: z.string().trim().min(1).max(400),
+				importance: z.enum([
+					"incidental",
+					"recurring",
+					"task"
+				]).default("incidental").describe("Quiet by default; only a real current task or a useful recurring person justifies asking"),
+				benefit: z.string().trim().max(80).default("").describe("Concrete benefit to the user, not completing a people database"),
+				supporting_source_ids: z.array(z.string().min(1)).max(10).optional().describe("Recording evidence on at least two days for recurring people")
 			}).strict(),
 			execute: (args, signal) => call("relabel_recording_speakers", args, signal)
 		}

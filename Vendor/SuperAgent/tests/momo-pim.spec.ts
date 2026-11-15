@@ -121,6 +121,9 @@ it('requires speaker evidence without a model-controlled consent flag and pages 
   expect(relabel.schema.safeParse({ ...args, approved: true }).success).toBe(false)
   expect(relabel.schema.safeParse({ ...args, reason: '' }).success).toBe(false)
   expect(await relabel.execute(relabel.schema.parse(args), new AbortController().signal)).toMatchObject({ state: 'pending', changed: false })
+  expect(JSON.parse(fetch.mock.calls[0]![1].body).args).toMatchObject({ importance: 'incidental', benefit: '' })
+  expect(relabel.schema.safeParse({ ...args, importance: 'everyone' }).success).toBe(false)
+  expect(relabel.schema.safeParse({ ...args, supporting_source_ids: Array(11).fill('source') }).success).toBe(false)
   const read = tools.find(t => t.name === 'read_recording')!
   await read.execute(read.schema.parse({ source_id: 'recording', offset: 1200, location_offset: 30 }), new AbortController().signal)
   expect(JSON.parse(fetch.mock.calls[1]![1].body).args).toMatchObject({ offset: 1200, location_offset: 30 })

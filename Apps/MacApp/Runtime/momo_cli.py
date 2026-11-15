@@ -267,6 +267,9 @@ def _cmd_relabel_speakers(data: Path, args: argparse.Namespace) -> dict:
             span_ids=span_ids,
             scope=args.scope,
             reason=args.reason or "",
+            importance=args.importance,
+            benefit=args.benefit,
+            supporting_source_ids=args.supporting_source,
         )
     finally:
         store.close()
@@ -613,6 +616,9 @@ def main() -> int:
     relabel.add_argument("--is-owner", action="store_true")
     relabel.add_argument("--scope", choices=("cluster", "selection"), default="cluster")
     relabel.add_argument("--reason", required=True)
+    relabel.add_argument("--importance", choices=("incidental", "recurring", "task"), default="incidental")
+    relabel.add_argument("--benefit", default="")
+    relabel.add_argument("--supporting-source", action="append", default=[])
 
     conv = sub.add_parser("conversation", help="Read recent MoMo chat history")
     conv.add_argument("--limit", type=int, default=20)

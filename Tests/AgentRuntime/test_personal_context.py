@@ -95,14 +95,85 @@ class ConsentTests(unittest.TestCase):
         self.assertFalse(self.store.pending_speaker_relabels())
 
     def test_question_is_scoped_and_rate_limited(self):
-        first = self.store.relabel_speakers(**self.args)
+        useful = dict(self.args, importance='task', benefit='避免把同事负责的事项列到你的待办里。')
+        first = self.store.relabel_speakers(**useful)
         question = speaker_proposals.next_question(self.store, now=1000)
         self.assertIn(f"确认标注 {first['proposal_id']}", question['message'])
         self.assertIn(self.payload['session_id'] + '/' + self.args['span_ids'][0], question['message'])
         self.store.db.execute('UPDATE speaker_proposals SET delivered=1000 WHERE id=?', (first['proposal_id'],))
-        self.store.relabel_speakers(**dict(self.args, span_ids=[self.payload['spans'][1]['id']]))
+        self.store.relabel_speakers(**dict(useful, target_speaker='小余', span_ids=[self.payload['spans'][1]['id']]))
         self.assertIsNone(speaker_proposals.next_question(self.store, now=1001))
+        self.assertIsNone(speaker_proposals.next_question(self.store, now=87401))
+        speaker_proposals.decide(self.store, first['proposal_id'], False, 'owner-declined')
+        self.assertIsNone(speaker_proposals.next_question(self.store, now=87399))
         self.assertIsNotNone(speaker_proposals.next_question(self.store, now=87401))
+
+    def test_many_incidental_people_never_become_a_daily_roll_call(self):
+        for i in range(100):
+            result = self.store.relabel_speakers(**dict(self.args, target_speaker=f'参会者{i}'))
+            self.assertFalse(result['eligible_for_question'])
+        self.assertIsNone(speaker_proposals.next_question(self.store))
+        self.assertFalse(self.store.pending_speaker_relabels())
+
+    def test_old_quiet_candidate_can_be_promoted_without_refreshing_on_every_retry(self):
+        first = self.store.relabel_speakers(**self.args)
+        self.store.db.execute('UPDATE speaker_proposals SET created=?', (time.time() - 8 * 86400,))
+        useful = dict(self.args, importance='task', benefit='用户现在需要核对这场录音的负责人。')
+        promoted = self.store.relabel_speakers(**useful)
+        self.assertEqual(first['proposal_id'], promoted['proposal_id'])
+        self.assertEqual(first['proposal_id'], speaker_proposals.next_question(self.store)['id'])
+        created = self.store.db.execute('SELECT created FROM speaker_proposals').fetchone()[0]
+        self.store.relabel_speakers(**useful)
+        self.assertEqual(created, self.store.db.execute('SELECT created FROM speaker_proposals').fetchone()[0])
+
+    def test_recurring_requires_real_cross_day_evidence_and_concrete_benefit(self):
+        other, args = source(self.store)
+        recurring = dict(self.args, importance='recurring', benefit='减少以后讨论项目时重复交代这位合作人。',
+                         supporting_source_ids=[args['source_id']])
+        first = self.store.relabel_speakers(**recurring)
+        self.assertFalse(first['eligible_for_question'])
+        self.assertIsNone(speaker_proposals.next_question(self.store))
+        for span in other['spans']: span['recorded_at'] += 86400
+        other['version'] += 1
+        self.store.sync_source(other)
+        promoted = self.store.relabel_speakers(**recurring)
+        self.assertEqual(first['proposal_id'], promoted['proposal_id'])
+        self.assertTrue(promoted['eligible_for_question'])
+        self.assertEqual(first['proposal_id'], speaker_proposals.next_question(self.store)['id'])
+        self.store.relabel_speakers(**dict(recurring, benefit=''))
+        self.assertIsNone(speaker_proposals.next_question(self.store))
+
+    def test_task_priority_recent_name_suppression_and_candidate_expiry(self):
+        first = self.store.relabel_speakers(**dict(self.args, importance='task', benefit='用于当前请求的发言归属。'))
+        self.store.db.execute('UPDATE speaker_proposals SET delivered=? WHERE id=?', (time.time() - 90000, first['proposal_id']))
+        speaker_proposals.decide(self.store, first['proposal_id'], False, 'no')
+        _, other = source(self.store)
+        self.store.relabel_speakers(**dict(other, importance='task', benefit='新的录音同样涉及此人。'))
+        self.assertIsNone(speaker_proposals.next_question(self.store))  # Different recording, same candidate name.
+        newcomer = self.store.relabel_speakers(**dict(other, target_speaker='李老师', importance='task', benefit='当前约定的负责人需要核对。'))
+        self.assertEqual(newcomer['proposal_id'], speaker_proposals.next_question(self.store)['id'])
+        self.store.db.execute('UPDATE speaker_proposals SET created=?', (time.time() - 8 * 86400,))
+        self.assertIsNone(speaker_proposals.next_question(self.store))
+
+    def test_stale_unanswered_question_does_not_restart_daily_questions(self):
+        first = self.store.relabel_speakers(**dict(self.args, importance='task', benefit='用于当前请求的发言归属。'))
+        self.store.db.execute('UPDATE speaker_proposals SET delivered=? WHERE id=?', (time.time() - 90000, first['proposal_id']))
+        self.payload['spans'][0]['is_owner'] = True
+        self.store.sync_source(self.payload)
+        _, other = source(self.store)
+        self.store.relabel_speakers(**dict(other, target_speaker='另一位', importance='task', benefit='核对另一项请求的负责人。'))
+        self.assertIsNone(speaker_proposals.next_question(self.store))
+        self.assertEqual('obsolete', speaker_proposals.decide(self.store, first['proposal_id'], False, 'skip-stale')['state'])
+        self.assertIsNotNone(speaker_proposals.next_question(self.store))
+
+    def test_current_task_precedes_recurring_person(self):
+        other, args = source(self.store)
+        for span in other['spans']: span['recorded_at'] += 86400
+        other['version'] += 1
+        self.store.sync_source(other)
+        current = self.store.relabel_speakers(**dict(self.args, importance='task', benefit='核对用户当前请求的负责人。'))
+        self.store.relabel_speakers(**dict(args, target_speaker='熟人', importance='recurring', benefit='减少以后交代合作人背景。', supporting_source_ids=[self.args['source_id']]))
+        self.assertEqual(current['proposal_id'], speaker_proposals.next_question(self.store)['id'])
 
     def test_location_overlap_paging_uncertain_boundaries_and_disabled_access(self):
         device = str(uuid.uuid4())
@@ -136,7 +207,7 @@ class ChatConsentTests(unittest.IsolatedAsyncioTestCase):
             self.addCleanup(store.close)
             _, args = source(store)
             _, _, run = gateway._build_memory_review_session('test-consent')
-            proposal = json.loads(run('relabel_speakers', args))
+            proposal = json.loads(run('relabel_speakers', dict(args, importance='task', benefit='用于当前请求的发言归属。')))
             self.assertEqual('pending', proposal['state'])
             gateway._deliver_speaker_proposal()
             gateway._deliver_speaker_proposal()
