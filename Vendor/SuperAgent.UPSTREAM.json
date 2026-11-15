@@ -47,6 +47,11 @@
       "file": "src/app/sessions.ts, src/app/tools/momo-pim.ts",
       "reason": "Expose shared relevance-ranked Markdown/recording/chat retrieval and revision-checked evidence reading to Worker tools and the master CLI; describe the prompt directory as a bounded preview and let the existing Agent expand queries and verify original evidence.",
       "validation": "tests/momo-pim.spec.ts, typecheck/build, Tests/AgentRuntime/test_memory_search.py and memory_search_eval.py; implementation and EverOS reference are recorded in docs/implementation/memory-retrieval-20261115.md."
+    },
+    {
+      "file": "src/app/tools/momo-pim.ts",
+      "reason": "Align recording and shared-memory tool limits at 50 with the existing CLI recording search contract; preserve bounded input validation.",
+      "validation": "tests/momo-pim.spec.ts checks 50 accepted and 51 rejected for both tools; typecheck/build and Tests/AgentRuntime/test_memory_search.py pass."
     }
   ]
 }

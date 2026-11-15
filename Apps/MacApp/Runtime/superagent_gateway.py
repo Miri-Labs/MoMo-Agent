@@ -2276,7 +2276,7 @@ class SuperAgentGateway:
                     "properties": {
                         "query": {"type": "string", "description": "Words or phrase to rank across transcripts."},
                         "alternative_queries": copy.deepcopy(SEARCH_SCHEMA["parameters"]["properties"]["alternative_queries"]),
-                        "limit": {"type": "integer", "description": "Maximum matches to return (1..30, default 15)."},
+                        "limit": {**SEARCH_SCHEMA["parameters"]["properties"]["limit"], "description": "Maximum matches to return (1..50, default 15)."},
                     },
                     "required": ["query"],
                     "additionalProperties": False,

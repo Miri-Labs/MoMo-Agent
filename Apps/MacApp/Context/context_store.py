@@ -10,6 +10,7 @@ import sqlite3
 import threading
 import time
 import uuid
+from transcript_speakers import classify_transcript_span
 
 DEFAULT_DAY_START_HOUR = 8
 _CACHE_LOCK = threading.Lock()
@@ -233,7 +234,10 @@ class ContextStore:
                     if prev_payload != payload:
                         if _core_payload(prev_payload) != _core_payload(payload):
                             raise Conflict("Source metadata differs at the same revision")
-                        self.db.execute("UPDATE sources SET payload=? WHERE id=?", (canonical(payload), source_id))
+                        # Same-text owner enrichment must invalidate derived source caches,
+                        # even when two updates share a clock tick or the clock moves back.
+                        self.db.execute("UPDATE sources SET payload=?,updated=MAX(updated+0.000001,?) WHERE id=?",
+                                        (canonical(payload), time.time(), source_id))
                         self.advance()
                     return {"source_id": source_id, "source_revision": revision, "revision": self.revision}
                 if previous["deleted"] or (generation, version) <= (previous["generation"], previous["version"]):
@@ -666,22 +670,20 @@ class ContextStore:
         out = []
         for span in spans:
             sid = span["id"].lower()
-            text = span["text"]
-            prefix, sep, body = text.partition("] ")
-            labeled = prefix.startswith("[") and bool(sep)
+            speaker, _, body = classify_transcript_span(span)
             def excluded(name):
                 key = name.casefold()
                 return (name == "身份待确认" or key in selected.get(sid, ())
                         or span["recorded_at"] >= dated.get(key, math.inf))
 
-            name = str(span.get("speaker") or (prefix[1:] if labeled else ""))
+            name = speaker or ""
             override = overrides.get(sid)
             if override and not excluded(override[0]):
                 name = override[0]
-                out.append(dict(span, text=f"[{name}] {body if labeled else text}", speaker=name,
+                out.append(dict(span, text=f"[{name}] {body}", speaker=name,
                                 is_owner=override[1], speaker_inferred_by_dream=True))
-            elif excluded(name):
-                updated = dict(span, text=body if labeled else text)
+            elif excluded(name) or (override and excluded(override[0])):
+                updated = dict(span, text=body, speaker_attribution_excluded=True)
                 updated.pop("speaker", None)
                 updated.pop("is_owner", None)
                 out.append(updated)

@@ -97,6 +97,11 @@ it('bounds recall queries and forwards evidence revisions unchanged', async () =
   vi.stubGlobal('fetch', fetch)
   const tools = momoPimTools(host, ticket.id)
   const search = tools.find(t => t.name === 'search_memory')!
+  for (const name of ['search_memory', 'search_recordings']) {
+    const schema = tools.find(t => t.name === name)!.schema
+    expect(schema.safeParse({ query: 'release', limit: 50 }).success).toBe(true)
+    expect(schema.safeParse({ query: 'release', limit: 51 }).success).toBe(false)
+  }
   expect(search.schema.safeParse({ query: 'release', alternative_queries: ['a', 'b', 'c', 'd'] }).success).toBe(false)
   const args = search.schema.parse({ query: '发布扛不住', alternative_queries: ['连接池 高并发'], kind: 'recording' })
   await search.execute(args, new AbortController().signal)

@@ -14,7 +14,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'Apps/MacApp/Context'), str(ROOT / 'Apps/MacApp/Runtime')]
-from context_store import ContextStore, Conflict, digest
+from context_store import ContextStore, Conflict, canonical, digest
 from memory_search import MemorySearch
 from momo_memory import MoMoMemory
 
@@ -124,9 +124,82 @@ class MemorySearchTests(unittest.TestCase):
             self.search.read(old['id'], old['revision'])
         self.context.exclude_speaker('小林', source_id=source_id, span_ids=[span_id])
         self.assertEqual([], self.search.search('小林', kind='recording')['matches'])
+        self.assertEqual([], self.search.search('佳辰', kind='recording')['matches'])
         self.assertIsNone(self.search.search('连接池')['matches'][0]['speaker'])
         self.context.sync_source({**source, 'version': 2, 'deleted': True, 'spans': [], 'text_sha256': digest('')})
         self.assertEqual([], self.search.search('连接池')['matches'])
+
+    def test_phone_owner_enrichment_at_same_source_revision_invalidates_cached_evidence(self):
+        with patch('context_store.time.time', return_value=1000):
+            source_id, _, source = self.recording('连接池扩容。')
+            old = self.search.search('连接池')['matches'][0]
+            self.assertIsNone(old['is_owner'])
+            for owner in (True, False):
+                enriched = {**source, 'spans': [{**span, 'is_owner': owner} for span in source['spans']]}
+                receipt = self.context.sync_source(enriched)
+                self.assertEqual(old['source_revision'], receipt['source_revision'])
+                hit = self.search.search('连接池')['matches'][0]
+                self.assertIs(hit['is_owner'], owner)
+                with self.assertRaises(Conflict):
+                    self.search.read(old['id'], old['revision'])
+                old = hit
+
+    def test_late_recording_passage_retains_full_span_speaker_attribution(self):
+        from superagent_gateway import search_recording_evidence
+        self.recording('[我] ' + '背景材料。' * 600 + '最终确认的暗号 cobalt42。')
+        hit = search_recording_evidence(self.data, {'query': 'cobalt42'})['matches'][0]
+        self.assertGreater(hit['offset'], 0)
+        self.assertEqual('我', hit['speaker'])
+        self.assertEqual('owner', hit['speaker_role'])
+        self.assertIs(hit['is_owner'], True)
+        raw = self.search.search('cobalt42')['matches'][0]
+        self.assertEqual('我', raw['speaker'])
+        self.assertIs(raw['is_owner'], True)
+
+    def test_excluded_speaker_without_space_is_not_reinferred_from_body(self):
+        from superagent_gateway import search_recording_evidence
+        source_id, span_id, _ = self.recording('[小林][财务] 连接池成本讨论。')
+        self.context.exclude_speaker('小林', source_id=source_id, span_ids=[span_id])
+        self.assertEqual([], self.search.search('小林')['matches'])
+        hit = search_recording_evidence(self.data, {'query': '连接池'})['matches'][0]
+        self.assertIsNone(hit['speaker'])
+        self.assertEqual('unattributed', hit['speaker_role'])
+
+    def test_legacy_cli_search_retains_fifty_results_title_and_span_sequence(self):
+        _, _, source = self.recording('兼容检索测试。')
+        spans = [dict(id=str(uuid.uuid4()), text='兼容检索测试。', recorded_at=100 + i) for i in range(60)]
+        receipt = self.context.sync_source({**source, 'version': 2, 'title': '录音兼容验收', 'spans': spans,
+                                            'text_sha256': digest('\n'.join(s['text'] for s in spans))})
+        command = [sys.executable, str(ROOT / 'Apps/MacApp/Runtime/momo_cli.py'), '--data-dir', str(self.data),
+                   'search', '兼容检索', '--limit']
+        for requested, expected in ((50, 50), (100, 50), (0, 1)):
+            result = subprocess.run([*command, str(requested)], text=True, capture_output=True, check=True,
+                                    env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
+            response = json.loads(result.stdout)
+            hits = response['matches']
+            self.assertTrue(response['has_more'])
+            self.assertEqual(expected, len(hits))
+            for hit in hits:
+                self.assertEqual('录音兼容验收', hit['title'])
+                self.assertEqual(spans[hit['seq']]['id'], hit['span_id'])
+                self.assertEqual(receipt['source_revision'], hit['revision'])
+                self.assertEqual(hit['evidence_revision'], hit['read']['arguments']['revision'])
+
+    def test_index_from_initial_release_refreshes_recording_metadata(self):
+        source_id, _, _ = self.recording('[我] 连接池扩容。')
+        hit = self.search.search('连接池')['matches'][0]
+        legacy_signature = digest(canonical([hit['source_revision'], [], [], []]))
+        with sqlite3.connect(self.search.path) as db:
+            db.execute('UPDATE groups SET signature=? WHERE id=?', (legacy_signature, 'recording:' + source_id))
+            db.execute('UPDATE documents SET metadata=?,revision=? WHERE id=?',
+                       (canonical({'speaker': None, 'is_owner': None}), 'legacy-evidence', hit['id']))
+        restored = self.search.search('连接池')['matches'][0]
+        self.assertEqual('我', restored['speaker'])
+        self.assertIs(restored['is_owner'], True)
+        self.assertEqual(0, restored['seq'])
+        self.assertEqual(source_id, restored['title'])
+        with self.assertRaises(Conflict):
+            self.search.read(hit['id'], 'legacy-evidence')
 
     def test_chat_eligibility_attribution_long_content_and_later_steer_application(self):
         self.message(1, '我喜欢雨天散步。')
@@ -145,6 +218,21 @@ class MemorySearchTests(unittest.TestCase):
         hit = self.search.search('金丝雀 部署', kind='chat')['matches'][0]
         self.assertIn('金丝雀', hit['text'])
         self.assertGreater(hit['offset'], 1200)
+
+    def test_chat_edit_and_delete_invalidate_previously_read_evidence(self):
+        self.message(1, '出差去巴黎。')
+        old = self.search.search('巴黎', kind='chat')['matches'][0]
+        self.chat.execute("UPDATE messages SET content='出差改去东京。' WHERE seq=1")
+        self.chat.commit()
+        self.assertEqual([], self.search.search('巴黎', kind='chat')['matches'])
+        updated = self.search.search('东京', kind='chat')['matches'][0]
+        with self.assertRaises(Conflict):
+            self.search.read(old['id'], old['revision'])
+        self.chat.execute('DELETE FROM messages WHERE seq=1')
+        self.chat.commit()
+        self.assertEqual([], self.search.search('东京', kind='chat')['matches'])
+        with self.assertRaises(Conflict):
+            self.search.read(updated['id'], updated['revision'])
 
     def test_literals_validation_and_no_symlink_escape(self):
         self.note('people/a.md', '# Alice\n版本发布')
