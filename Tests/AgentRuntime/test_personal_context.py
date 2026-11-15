@@ -115,6 +115,17 @@ class ConsentTests(unittest.TestCase):
         self.assertIsNone(speaker_proposals.next_question(self.store))
         self.assertFalse(self.store.pending_speaker_relabels())
 
+    def test_old_quiet_candidate_can_be_promoted_without_refreshing_on_every_retry(self):
+        first = self.store.relabel_speakers(**self.args)
+        self.store.db.execute('UPDATE speaker_proposals SET created=?', (time.time() - 8 * 86400,))
+        useful = dict(self.args, importance='task', benefit='用户现在需要核对这场录音的负责人。')
+        promoted = self.store.relabel_speakers(**useful)
+        self.assertEqual(first['proposal_id'], promoted['proposal_id'])
+        self.assertEqual(first['proposal_id'], speaker_proposals.next_question(self.store)['id'])
+        created = self.store.db.execute('SELECT created FROM speaker_proposals').fetchone()[0]
+        self.store.relabel_speakers(**useful)
+        self.assertEqual(created, self.store.db.execute('SELECT created FROM speaker_proposals').fetchone()[0])
+
     def test_recurring_requires_real_cross_day_evidence_and_concrete_benefit(self):
         other, args = source(self.store)
         recurring = dict(self.args, importance='recurring', benefit='减少以后讨论项目时重复交代这位合作人。',

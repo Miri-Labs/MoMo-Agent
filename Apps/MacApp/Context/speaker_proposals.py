@@ -100,9 +100,12 @@ def propose(store, source_id, target_speaker, *, is_owner=False, from_speaker=No
             (fingerprint, source_id, stamp, canonical(display), time.time()))
         proposal = store.db.execute("SELECT * FROM speaker_proposals WHERE fingerprint=?", (fingerprint,)).fetchone()
         # New useful evidence can promote a quiet candidate, without changing its consent scope.
-        if proposal["state"] == "pending" and proposal["delivered"] is None:
-            store.db.execute("UPDATE speaker_proposals SET payload=? WHERE id=?", (canonical(display), proposal["id"]))
         eligible = _worth_asking(store, display)
+        if proposal["state"] == "pending" and proposal["delivered"] is None:
+            previous_importance = json.loads(proposal["payload"]).get("importance", "incidental")
+            promoted = eligible and IMPORTANCE[importance] > IMPORTANCE.get(previous_importance, 0)
+            store.db.execute("UPDATE speaker_proposals SET payload=?,created=? WHERE id=?",
+                             (canonical(display), time.time() if promoted else proposal["created"], proposal["id"]))
     return {"success": True, "changed": False, "proposal_id": proposal["id"], "state": proposal["state"],
             "eligible_for_question": eligible,
             "guidance": "No labels or voiceprints changed. Candidates are quiet by default. Only a useful recurring person "

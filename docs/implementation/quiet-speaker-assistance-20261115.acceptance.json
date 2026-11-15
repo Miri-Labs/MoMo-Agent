@@ -39,7 +39,7 @@
   "transient_errors": [],
   "dream_receipt": "{\"memory_review\":{\"outcome\":\"updated\",\"reason\":\"复核5段完整录音及手机位置，撤回家与公司颠倒、李工为同住家人、酒店为另一个家及“五十万元已定案”的错误结论；建立4篇地点活页和李工工作交流背景页，重写预算页，保留疑似误听原词、原音链接、位置证据及未决歧义；删除已被替代的旧地点判断页，更新核心记忆索引。未修改原始转录、声纹或说话人标签。\"}}",
   "verification": {
-    "python_tests": 139,
+    "python_tests": 140,
     "superagent_tests": 12,
     "typecheck": "passed",
     "build": "passed",
