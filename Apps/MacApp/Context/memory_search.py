@@ -138,20 +138,30 @@ class MemorySearch:
 
         memory = MoMoMemory(self.data)
         root = memory.memories_dir.resolve()
-        files = [p for _, _, p in memory._notebook_files()]
-        files += [memory.memories_dir / name for name in ("USER.md", "MEMORY.md")]
-        for path in files:
-            if not path.is_file() or not path.resolve().is_relative_to(root):
-                continue
-            relative = path.relative_to(memory.memories_dir).as_posix()
-            identity = "note:" + relative
-
-            def load_note(path=path, relative=relative, identity=identity):
-                text = path.read_text(encoding="utf-8")
-                return [_document(identity, "note", text, {"path": relative, "basis": "derived"},
-                                  relative + " " + next(iter(text.splitlines()), ""))]
-
-            sync(identity, _stamp(path), load_note)
+        notes = []
+        # Snapshot against Dream/CLI moves, releasing the vault before indexing.
+        with _file_lock(memory.memories_dir / ".notebooks.lock"):
+            files = [p for _, _, p in memory._notebook_files()]
+            files += [memory.memories_dir / name for name in ("USER.md", "MEMORY.md")]
+            for path in files:
+                if not path.is_file() or not path.resolve().is_relative_to(root):
+                    continue
+                relative = path.relative_to(memory.memories_dir).as_posix()
+                identity = "note:" + relative
+                try:
+                    signature = _stamp(path)
+                    if known.get(identity) == signature:
+                        live.add(identity)
+                        continue
+                    text = path.read_text(encoding="utf-8")
+                except FileNotFoundError:
+                    # External editors do not participate in the vault lock.
+                    continue
+                doc = _document(identity, "note", text, {"path": relative, "basis": "derived"},
+                                relative + " " + next(iter(text.splitlines()), ""))
+                notes.append((identity, signature, doc))
+        for identity, signature, doc in notes:
+            sync(identity, signature, lambda doc=doc: [doc])
 
         context_path = self.data / "context" / "context.sqlite"
         if context_path.is_file():

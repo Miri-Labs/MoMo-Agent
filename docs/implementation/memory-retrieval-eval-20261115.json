@@ -1,0 +1,2342 @@
+{
+  "model": "gpt-6.1-sol",
+  "date": "2026-11-15",
+  "scope": "12 synthetic questions, two repetitions, identical model/prompt/tool schema; isolated data; LIKE control also receives cross-source retrieval, alternative queries and versioned full reads. Not a production accuracy estimate.",
+  "scoring_note": "Destination question requires Tokyo only; removed an extraneous date requirement equally for both conditions. Answers and tool traces unchanged.",
+  "summary": {
+    "like": {
+      "passed": 19,
+      "search_calls": 51,
+      "read_calls": 19,
+      "total": 24,
+      "median_seconds": 15.01
+    },
+    "ranked": {
+      "passed": 24,
+      "search_calls": 32,
+      "read_calls": 24,
+      "total": 24,
+      "median_seconds": 12.54
+    }
+  },
+  "rounds": [
+    {
+      "like": {
+        "passed": 9,
+        "total": 12,
+        "search_calls": 26,
+        "read_calls": 9,
+        "median_seconds": 15.36
+      },
+      "ranked": {
+        "passed": 12,
+        "total": 12,
+        "search_calls": 16,
+        "read_calls": 12,
+        "median_seconds": 12.5
+      }
+    },
+    {
+      "like": {
+        "passed": 10,
+        "total": 12,
+        "search_calls": 25,
+        "read_calls": 10,
+        "median_seconds": 14.62
+      },
+      "ranked": {
+        "passed": 12,
+        "total": 12,
+        "search_calls": 16,
+        "read_calls": 12,
+        "median_seconds": 12.54
+      }
+    }
+  ],
+  "results": [
+    {
+      "case": "absent",
+      "mode": "like",
+      "repetition": 0,
+      "seconds": 12.08,
+      "rounds": 3,
+      "search_calls": 2,
+      "read_calls": 0,
+      "answer": {
+        "answer": "目前没有检索到你宠物名字的相关记录，暂时无法确认。",
+        "evidence_ids": [],
+        "insufficient": true
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "用户 宠物 名字",
+          "alternative_queries": [
+            "我养的 猫 狗 叫",
+            "宠物 名叫"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "宠物",
+          "alternative_queries": [
+            "猫咪 小狗",
+            "我家 养 名字"
+          ],
+          "limit": 10,
+          "hits": []
+        }
+      ]
+    },
+    {
+      "case": "absent",
+      "mode": "ranked",
+      "repetition": 0,
+      "seconds": 10.63,
+      "rounds": 3,
+      "search_calls": 2,
+      "read_calls": 0,
+      "answer": {
+        "answer": "目前检索到的资料不足以确认你养的宠物叫什么名字。",
+        "evidence_ids": [],
+        "insufficient": true
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "用户 养的宠物 名字",
+          "alternative_queries": [
+            "我的猫 我的狗 叫",
+            "宠物 名叫"
+          ],
+          "limit": 6,
+          "hits": [
+            "chat:11"
+          ]
+        },
+        {
+          "name": "search_memory",
+          "query": "宠物",
+          "alternative_queries": [
+            "猫",
+            "狗"
+          ],
+          "limit": 10,
+          "hits": []
+        }
+      ]
+    },
+    {
+      "case": "capacity",
+      "mode": "like",
+      "repetition": 0,
+      "seconds": 22.32,
+      "rounds": 5,
+      "search_calls": 3,
+      "read_calls": 1,
+      "answer": {
+        "answer": "有进展：小林说数据库连接池已从20扩到80，并计划周五进行高并发压测。目前资料里还没有压测结果，暂时不能确认上线后能否扛住。",
+        "evidence_ids": [
+          "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "上线 怕 扛不住 进展",
+          "alternative_queries": [
+            "上线 压力 容量 压测",
+            "上线 扛不住 并发"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "上线",
+          "alternative_queries": [
+            "压测",
+            "承载 性能 流量"
+          ],
+          "limit": 10,
+          "hits": [
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+          "revision": "7a9d99ae8f59e184fb7717ab1969587fbf95b57cf115d5b75169c1e1b1604c71",
+          "characters": 31,
+          "next_offset": null
+        },
+        {
+          "name": "search_memory",
+          "query": "连接池",
+          "alternative_queries": [
+            "高并发",
+            "扛"
+          ],
+          "limit": 10,
+          "hits": [
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "capacity",
+      "mode": "ranked",
+      "repetition": 0,
+      "seconds": 19.63,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "有进展：小林说数据库连接池已从20扩到80，并计划周五进行高并发压测。目前还没查到压测结果，因此暂不能确认上线承载风险已经解决。",
+        "evidence_ids": [
+          "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "上线 怕扛不住 进展",
+          "alternative_queries": [
+            "上线 压测 容量 并发",
+            "上线 担心 扛不住"
+          ],
+          "limit": 8,
+          "hits": [
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+          "revision": "7a9d99ae8f59e184fb7717ab1969587fbf95b57cf115d5b75169c1e1b1604c71",
+          "characters": 31,
+          "next_offset": null
+        },
+        {
+          "name": "search_memory",
+          "query": "连接池 压测",
+          "alternative_queries": [
+            "扛不住 上线 风险",
+            "小林 高并发 压测 结果"
+          ],
+          "limit": 10,
+          "hits": [
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+            "recording:3cad1425-11a5-59f7-83bd-a86db850699a/94d0894d-d5f6-5232-8e86-1ef3dadff4e1:37aae808-9d44-56bf-bbe8-5765c0f8b35f"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "combined",
+      "mode": "like",
+      "repetition": 0,
+      "seconds": 25.31,
+      "rounds": 6,
+      "search_calls": 3,
+      "read_calls": 2,
+      "answer": {
+        "answer": "上线承载能力处理进度：数据库连接池已从20扩到80，计划周五进行高并发压测。客户可用性指标：合同规定 SLA 为99.5%，可用性条款由陈总审核。",
+        "evidence_ids": [
+          "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+          "note:projects/contract.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "上线 承载能力 处理进度 客户 可用性 指标",
+          "alternative_queries": [
+            "上线 容量 进展 SLA 可用性",
+            "承载能力 客户 可用性"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "承载",
+          "alternative_queries": [
+            "可用性",
+            "上线"
+          ],
+          "limit": 20,
+          "hits": [
+            "note:projects/contract.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/contract.md",
+          "revision": "804823dd2161524614a679f22a2c057867085076dc0a27f6be6240ec006ee879",
+          "characters": 34,
+          "next_offset": null
+        },
+        {
+          "name": "search_memory",
+          "query": "承载能力",
+          "alternative_queries": [
+            "容量",
+            "压测"
+          ],
+          "limit": 10,
+          "hits": [
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+          "revision": "7a9d99ae8f59e184fb7717ab1969587fbf95b57cf115d5b75169c1e1b1604c71",
+          "characters": 31,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "combined",
+      "mode": "ranked",
+      "repetition": 0,
+      "seconds": 21.19,
+      "rounds": 5,
+      "search_calls": 2,
+      "read_calls": 2,
+      "answer": {
+        "answer": "承载能力处理进度：数据库连接池已从20扩到80，计划周五进行高并发压测。客户可用性指标：合同规定 SLA 为99.5%，可用性条款由陈总审核。",
+        "evidence_ids": [
+          "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+          "note:projects/contract.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "上线 承载能力 处理进度 客户 可用性 指标",
+          "alternative_queries": [
+            "上线 容量 处理进展 可用性 SLA",
+            "承载能力 客户 可用性"
+          ],
+          "limit": 8,
+          "hits": [
+            "note:projects/contract.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/contract.md",
+          "revision": "804823dd2161524614a679f22a2c057867085076dc0a27f6be6240ec006ee879",
+          "characters": 34,
+          "next_offset": null
+        },
+        {
+          "name": "search_memory",
+          "query": "承载",
+          "alternative_queries": [
+            "上线",
+            "容量 压测 进度"
+          ],
+          "limit": 15,
+          "hits": [
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+          "revision": "7a9d99ae8f59e184fb7717ab1969587fbf95b57cf115d5b75169c1e1b1604c71",
+          "characters": 31,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "contract",
+      "mode": "like",
+      "repetition": 0,
+      "seconds": 20.14,
+      "rounds": 3,
+      "search_calls": 2,
+      "read_calls": 0,
+      "answer": {
+        "answer": "现有资料中未检索到客户对服务不中断的具体要求，无法确认相关时长或可用性指标。请提供客户名称或相关文档。",
+        "evidence_ids": [],
+        "insufficient": true
+      },
+      "facts_present": false,
+      "citations_read": false,
+      "uncertainty_correct": false,
+      "passed": false,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "客户 服务不中断 要求",
+          "alternative_queries": [
+            "客户 业务连续性 停机 时间 要求",
+            "服务不中断 可用性 SLA 客户"
+          ],
+          "limit": 6,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "不中断",
+          "alternative_queries": [
+            "客户 可用性",
+            "停机"
+          ],
+          "limit": 10,
+          "hits": []
+        }
+      ]
+    },
+    {
+      "case": "contract",
+      "mode": "ranked",
+      "repetition": 0,
+      "seconds": 10.77,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "客户合同规定的服务可用性要求为 SLA 99.5%，可用性条款由陈总审核。",
+        "evidence_ids": [
+          "note:projects/contract.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "客户 服务不中断 要求",
+          "alternative_queries": [
+            "客户 业务连续性 停机时间 可用性",
+            "服务 不中断 要求 99.99"
+          ],
+          "limit": 6,
+          "hits": [
+            "note:projects/contract.md",
+            "note:noise/99.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/contract.md",
+          "revision": "804823dd2161524614a679f22a2c057867085076dc0a27f6be6240ec006ee879",
+          "characters": 34,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "deadline",
+      "mode": "like",
+      "repetition": 0,
+      "seconds": 16.99,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "陈总要求下周一之前把修订合同发给他，价格沿用上一版。",
+        "evidence_ids": [
+          "recording:730da17d-060c-56c0-85a4-4d844f9e3b99/14c098e6-69c9-5025-81d9-f2b7527b330b:95d458c1-2f84-57dd-a3ea-378ce31aeeca"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "陈总 合同 什么时候 发",
+          "alternative_queries": [
+            "陈总 合同 发送 时间",
+            "陈总等 合同"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "合同",
+          "alternative_queries": [
+            "陈总",
+            "发合同"
+          ],
+          "limit": 20,
+          "hits": [
+            "recording:730da17d-060c-56c0-85a4-4d844f9e3b99/14c098e6-69c9-5025-81d9-f2b7527b330b:95d458c1-2f84-57dd-a3ea-378ce31aeeca",
+            "note:projects/contract.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:730da17d-060c-56c0-85a4-4d844f9e3b99/14c098e6-69c9-5025-81d9-f2b7527b330b:95d458c1-2f84-57dd-a3ea-378ce31aeeca",
+          "revision": "4d942c5edd635f4ebc49fa3ee290084672ca8ef012d8791fafdb9ee159c7e029",
+          "characters": 26,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "deadline",
+      "mode": "ranked",
+      "repetition": 0,
+      "seconds": 14.14,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "陈总要求下周一之前把修订合同发给他，价格沿用上一版。",
+        "evidence_ids": [
+          "recording:730da17d-060c-56c0-85a4-4d844f9e3b99/14c098e6-69c9-5025-81d9-f2b7527b330b:95d458c1-2f84-57dd-a3ea-378ce31aeeca"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "陈总 合同 什么时候 发",
+          "alternative_queries": [
+            "陈总 合同 发送",
+            "陈总等 合同"
+          ],
+          "limit": 8,
+          "hits": [
+            "recording:730da17d-060c-56c0-85a4-4d844f9e3b99/14c098e6-69c9-5025-81d9-f2b7527b330b:95d458c1-2f84-57dd-a3ea-378ce31aeeca",
+            "note:projects/contract.md",
+            "recording:3cad1425-11a5-59f7-83bd-a86db850699a/94d0894d-d5f6-5232-8e86-1ef3dadff4e1:37aae808-9d44-56bf-bbe8-5765c0f8b35f",
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:730da17d-060c-56c0-85a4-4d844f9e3b99/14c098e6-69c9-5025-81d9-f2b7527b330b:95d458c1-2f84-57dd-a3ea-378ce31aeeca",
+          "revision": "4d942c5edd635f4ebc49fa3ee290084672ca8ef012d8791fafdb9ee159c7e029",
+          "characters": 26,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "food",
+      "mode": "like",
+      "repetition": 0,
+      "seconds": 12.0,
+      "rounds": 3,
+      "search_calls": 2,
+      "read_calls": 0,
+      "answer": {
+        "answer": "目前没有查到你对口味的偏好或忌口，暂时无法确定晚餐需要避开什么口味。你有哪些不喜欢或不能吃的口味？",
+        "evidence_ids": [],
+        "insufficient": true
+      },
+      "facts_present": false,
+      "citations_read": false,
+      "uncertainty_correct": false,
+      "passed": false,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "用户 晚餐 口味 忌口 不喜欢",
+          "alternative_queries": [
+            "饮食 喜好 不吃 辣 甜 油腻",
+            "晚饭 口味 避开"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "吃饭",
+          "alternative_queries": [
+            "口味",
+            "晚餐"
+          ],
+          "limit": 15,
+          "hits": []
+        }
+      ]
+    },
+    {
+      "case": "food",
+      "mode": "ranked",
+      "repetition": 0,
+      "seconds": 13.27,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "需要避开辣味，选不放辣椒的菜；你之前说过，你和家人都吃不了辣。",
+        "evidence_ids": [
+          "chat:3"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "用户 晚餐 口味 避开 饮食 喜好 忌口",
+          "alternative_queries": [
+            "不喜欢吃 口味 辣 甜 酸 晚饭",
+            "晚餐 饮食偏好 清淡"
+          ],
+          "limit": 8,
+          "hits": [
+            "chat:11",
+            "chat:3",
+            "note:projects/gift.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "chat:3",
+          "revision": "aa3c6ca074437b9af9e5eb72561ef730e3c5b516159e2183146a3167803f5a12",
+          "characters": 20,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "gift",
+      "mode": "like",
+      "repetition": 0,
+      "seconds": 14.76,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "妈妈喜欢园艺，但家里已有两套修枝剪，建议避开修枝剪，考虑其他园艺类礼物。现有资料没有列出其他已有物品，买前再确认一下，才能避免重复。",
+        "evidence_ids": [
+          "note:projects/gift.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "妈妈 生日 礼物 送过 重复",
+          "alternative_queries": [
+            "母亲 生日礼物 已经 买",
+            "妈妈 喜欢 礼物"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "妈妈",
+          "alternative_queries": [
+            "母亲",
+            "生日"
+          ],
+          "limit": 15,
+          "hits": [
+            "note:projects/gift.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/gift.md",
+          "revision": "171bcc44a43fef03c3847a50b3fbb3ab58f9149b32f18c0bbb338099fd3fa265",
+          "characters": 36,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "gift",
+      "mode": "ranked",
+      "repetition": 0,
+      "seconds": 11.74,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "妈妈喜欢园艺，但家里已有两套修枝剪，建议避开修枝剪，选其他园艺类礼物。现有资料没有完整的已购物品清单，选定后最好先确认她是否已有，避免重复。",
+        "evidence_ids": [
+          "note:projects/gift.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "妈妈 生日 礼物 送过 重复",
+          "alternative_queries": [
+            "母亲 生日礼物 已经 买",
+            "妈妈 喜欢 礼物"
+          ],
+          "limit": 8,
+          "hits": [
+            "note:projects/gift.md",
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/gift.md",
+          "revision": "171bcc44a43fef03c3847a50b3fbb3ab58f9149b32f18c0bbb338099fd3fa265",
+          "characters": 36,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "long",
+      "mode": "like",
+      "repetition": 0,
+      "seconds": 16.13,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "玄武迁移最终批准的窗口为周六 03:00；错误率超过 2% 就必须回滚。",
+        "evidence_ids": [
+          "note:projects/long.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "玄武 迁移 回滚",
+          "alternative_queries": [
+            "玄武 迁移 时间 窗口 回滚条件"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "玄武",
+          "alternative_queries": [
+            "Xuanwu migration rollback",
+            "迁移 回滚"
+          ],
+          "limit": 15,
+          "hits": [
+            "note:projects/long.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/long.md",
+          "revision": "b5c11a54874614697f0ac1e758942b722561fd9ba7f574faa3ebe9cfddf634c3",
+          "limit": 24000,
+          "characters": 18039,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "long",
+      "mode": "ranked",
+      "repetition": 0,
+      "seconds": 11.73,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "玄武迁移最终定在周六凌晨 03:00；错误率超过 2% 时必须回滚。",
+        "evidence_ids": [
+          "note:projects/long.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "玄武 迁移 时间 回滚 条件",
+          "alternative_queries": [
+            "玄武 切换 迁移 窗口 回滚阈值"
+          ],
+          "limit": 8,
+          "hits": [
+            "note:projects/long.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/long.md",
+          "revision": "b5c11a54874614697f0ac1e758942b722561fd9ba7f574faa3ebe9cfddf634c3",
+          "limit": 24000,
+          "characters": 18039,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "release",
+      "mode": "like",
+      "repetition": 0,
+      "seconds": 11.37,
+      "rounds": 3,
+      "search_calls": 2,
+      "read_calls": 0,
+      "answer": {
+        "answer": "目前没有检索到相关进度或确认记录，无法判断两个客户端现在能否一起上线。你指的是哪两个客户端？",
+        "evidence_ids": [],
+        "insufficient": true
+      },
+      "facts_present": false,
+      "citations_read": false,
+      "uncertainty_correct": false,
+      "passed": false,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "两个客户端 一起上线",
+          "alternative_queries": [
+            "双端 同时上线 客户端",
+            "两个客户端 上线 进度"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "客户端",
+          "alternative_queries": [
+            "上线",
+            "双端"
+          ],
+          "limit": 10,
+          "hits": []
+        }
+      ]
+    },
+    {
+      "case": "release",
+      "mode": "ranked",
+      "repetition": 0,
+      "seconds": 13.51,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "暂时不能一起上线。小林反馈 Android 已完成测试，但 iOS 仍在等待审核。",
+        "evidence_ids": [
+          "recording:3cad1425-11a5-59f7-83bd-a86db850699a/94d0894d-d5f6-5232-8e86-1ef3dadff4e1:37aae808-9d44-56bf-bbe8-5765c0f8b35f"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "两个客户端 一起上线",
+          "alternative_queries": [
+            "双端 同时上线 发布",
+            "两个客户端 上线 进度"
+          ],
+          "limit": 8,
+          "hits": [
+            "note:projects/contract.md",
+            "recording:3cad1425-11a5-59f7-83bd-a86db850699a/94d0894d-d5f6-5232-8e86-1ef3dadff4e1:37aae808-9d44-56bf-bbe8-5765c0f8b35f"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:3cad1425-11a5-59f7-83bd-a86db850699a/94d0894d-d5f6-5232-8e86-1ef3dadff4e1:37aae808-9d44-56bf-bbe8-5765c0f8b35f",
+          "revision": "9c2827da380520b424fcfe204b86349e30fa48d616ca42234f2f64349f80db81",
+          "characters": 39,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "style",
+      "mode": "like",
+      "repetition": 0,
+      "seconds": 13.56,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "你希望工作汇报先写结论，再给证据，不需要大段过程描述。",
+        "evidence_ids": [
+          "chat:6"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "工作汇报 顺序 希望",
+          "alternative_queries": [
+            "汇报 先写 再写 顺序",
+            "工作汇报 写作 偏好"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "汇报",
+          "alternative_queries": [
+            "周报",
+            "先结论 后过程"
+          ],
+          "limit": 10,
+          "hits": [
+            "chat:6"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "chat:6",
+          "revision": "e98ebb86ab21365db4bfe36b2cf2e2bbff6e1d686a90d602c9c36cd9c5c6e799",
+          "characters": 27,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "style",
+      "mode": "ranked",
+      "repetition": 0,
+      "seconds": 9.19,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "你希望工作汇报先写结论，再给证据，不需要大段过程描述。",
+        "evidence_ids": [
+          "chat:6"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "工作汇报 顺序 希望",
+          "alternative_queries": [
+            "汇报 先写 再写 结论",
+            "工作汇报 结构 偏好"
+          ],
+          "limit": 8,
+          "hits": [
+            "chat:6",
+            "note:projects/long.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "chat:6",
+          "revision": "e98ebb86ab21365db4bfe36b2cf2e2bbff6e1d686a90d602c9c36cd9c5c6e799",
+          "characters": 27,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "travel",
+      "mode": "like",
+      "repetition": 0,
+      "seconds": 15.95,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "出差目的地改成东京了，原定巴黎的安排已取消。",
+        "evidence_ids": [
+          "note:projects/travel.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "出差 目的地 改成 改去",
+          "alternative_queries": [
+            "出差 地点 调整 最新"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "出差",
+          "alternative_queries": [
+            "差旅",
+            "目的地"
+          ],
+          "limit": 10,
+          "hits": [
+            "note:projects/travel.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/travel.md",
+          "revision": "8cb91b277dd8adedfc6120af6646211d1a53f0e5d9cb399bbb7f924c0168ff9d",
+          "characters": 35,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "travel",
+      "mode": "ranked",
+      "repetition": 0,
+      "seconds": 11.53,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "出差目的地改成东京了，原来的巴黎行程已取消。",
+        "evidence_ids": [
+          "note:projects/travel.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "出差 目的地 改成",
+          "alternative_queries": [
+            "出差 改去 地点",
+            "行程变更 出差 最新"
+          ],
+          "limit": 8,
+          "hits": [
+            "note:projects/travel.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/travel.md",
+          "revision": "8cb91b277dd8adedfc6120af6646211d1a53f0e5d9cb399bbb7f924c0168ff9d",
+          "characters": 35,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "uncertain",
+      "mode": "like",
+      "repetition": 0,
+      "seconds": 14.33,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "目前无法确认海鸥计划已经确定的预算。检索到的资料只有助手未经用户确认的猜测，不能作为已确定预算的依据。",
+        "evidence_ids": [
+          "chat:11"
+        ],
+        "insufficient": true
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "海鸥计划 确定 预算",
+          "alternative_queries": [
+            "海鸥计划 预算 金额"
+          ],
+          "limit": 6,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "海鸥",
+          "alternative_queries": [
+            "海鸥 计划 经费",
+            "Seagull 预算"
+          ],
+          "limit": 10,
+          "hits": [
+            "chat:11"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "chat:11",
+          "revision": "687402f230bbead0d7b6f6205ab093e2e41a86c6fce91ced1a80e7f9ff1cbe18",
+          "characters": 27,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "uncertain",
+      "mode": "ranked",
+      "repetition": 0,
+      "seconds": 14.56,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "目前检索到的资料不足以确认海鸥计划已确定的预算；仅有助手未经用户确认的猜测，不能作为依据。",
+        "evidence_ids": [
+          "chat:11"
+        ],
+        "insufficient": true
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "海鸥计划 确定 预算",
+          "alternative_queries": [
+            "海鸥 预算 金额"
+          ],
+          "limit": 6,
+          "hits": [
+            "chat:11"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "chat:11",
+          "revision": "687402f230bbead0d7b6f6205ab093e2e41a86c6fce91ced1a80e7f9ff1cbe18",
+          "characters": 27,
+          "next_offset": null
+        },
+        {
+          "name": "search_memory",
+          "query": "海鸥",
+          "alternative_queries": [
+            "海鸥计划 批复 经费",
+            "海鸥计划 预算 确认"
+          ],
+          "limit": 10,
+          "hits": [
+            "chat:11"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "absent",
+      "mode": "like",
+      "repetition": 1,
+      "seconds": 7.93,
+      "rounds": 2,
+      "search_calls": 1,
+      "read_calls": 0,
+      "answer": {
+        "answer": "目前检索到的资料不足，无法确定你养的宠物叫什么名字。",
+        "evidence_ids": [],
+        "insufficient": true
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "宠物 名字 我养的",
+          "alternative_queries": [
+            "我家 猫 狗 叫",
+            "宠物 名叫"
+          ],
+          "limit": 8,
+          "hits": []
+        }
+      ]
+    },
+    {
+      "case": "absent",
+      "mode": "ranked",
+      "repetition": 1,
+      "seconds": 12.93,
+      "rounds": 3,
+      "search_calls": 2,
+      "read_calls": 0,
+      "answer": {
+        "answer": "目前没有足够资料确认你的宠物叫什么名字。",
+        "evidence_ids": [],
+        "insufficient": true
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "用户 宠物 名字",
+          "alternative_queries": [
+            "我养的猫 狗 叫",
+            "宠物 名叫"
+          ],
+          "limit": 8,
+          "hits": [
+            "chat:11"
+          ]
+        },
+        {
+          "name": "search_memory",
+          "query": "宠物",
+          "alternative_queries": [
+            "猫",
+            "狗"
+          ],
+          "limit": 10,
+          "hits": []
+        }
+      ]
+    },
+    {
+      "case": "capacity",
+      "mode": "like",
+      "repetition": 1,
+      "seconds": 22.2,
+      "rounds": 5,
+      "search_calls": 3,
+      "read_calls": 1,
+      "answer": {
+        "answer": "有进展：小林说数据库连接池已从20扩到80，并安排周五做高并发压测。目前没查到压测结果，还不能确认上线承载风险已解决。",
+        "evidence_ids": [
+          "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "上线 扛不住 进展",
+          "alternative_queries": [
+            "上线 压测 容量 性能 风险",
+            "上线 担心 扛不住"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "上线",
+          "alternative_queries": [
+            "压测",
+            "承载 并发"
+          ],
+          "limit": 10,
+          "hits": [
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+          "revision": "7a9d99ae8f59e184fb7717ab1969587fbf95b57cf115d5b75169c1e1b1604c71",
+          "characters": 31,
+          "next_offset": null
+        },
+        {
+          "name": "search_memory",
+          "query": "压测 结果",
+          "alternative_queries": [
+            "数据库 连接池",
+            "高并发 周五"
+          ],
+          "limit": 8,
+          "hits": []
+        }
+      ]
+    },
+    {
+      "case": "capacity",
+      "mode": "ranked",
+      "repetition": 1,
+      "seconds": 17.63,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "有进展：小林说数据库连接池已从20扩到80，并计划周五做高并发压测。目前查到的资料没有压测结果，还不能确认上线承载风险已解除。",
+        "evidence_ids": [
+          "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "上线 怕扛不住 进展",
+          "alternative_queries": [
+            "上线 压测 容量 扛不住",
+            "上线 担心 流量 性能"
+          ],
+          "limit": 8,
+          "hits": [
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+          "revision": "7a9d99ae8f59e184fb7717ab1969587fbf95b57cf115d5b75169c1e1b1604c71",
+          "characters": 31,
+          "next_offset": null
+        },
+        {
+          "name": "search_memory",
+          "query": "连接池 压测",
+          "alternative_queries": [
+            "上线 并发 风险",
+            "小林 周五 压测 结果"
+          ],
+          "limit": 10,
+          "hits": [
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+            "recording:3cad1425-11a5-59f7-83bd-a86db850699a/94d0894d-d5f6-5232-8e86-1ef3dadff4e1:37aae808-9d44-56bf-bbe8-5765c0f8b35f"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "combined",
+      "mode": "like",
+      "repetition": 1,
+      "seconds": 23.91,
+      "rounds": 6,
+      "search_calls": 3,
+      "read_calls": 2,
+      "answer": {
+        "answer": "上线承载能力方面：数据库连接池已从20扩到80，计划周五进行高并发压测。客户可用性指标：合同规定 SLA 为99.5%，可用性条款由陈总审核。",
+        "evidence_ids": [
+          "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+          "note:projects/contract.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "上线 承载能力 处理进度 客户 可用性 指标",
+          "alternative_queries": [
+            "上线 容量 承载 进度",
+            "客户 可用性 SLA 指标"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "承载",
+          "alternative_queries": [
+            "可用性",
+            "上线"
+          ],
+          "limit": 10,
+          "hits": [
+            "note:projects/contract.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/contract.md",
+          "revision": "804823dd2161524614a679f22a2c057867085076dc0a27f6be6240ec006ee879",
+          "characters": 34,
+          "next_offset": null
+        },
+        {
+          "name": "search_memory",
+          "query": "容量",
+          "alternative_queries": [
+            "压测",
+            "扩容"
+          ],
+          "limit": 10,
+          "hits": [
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+          "revision": "7a9d99ae8f59e184fb7717ab1969587fbf95b57cf115d5b75169c1e1b1604c71",
+          "characters": 31,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "combined",
+      "mode": "ranked",
+      "repetition": 1,
+      "seconds": 20.86,
+      "rounds": 5,
+      "search_calls": 2,
+      "read_calls": 2,
+      "answer": {
+        "answer": "上线承载能力处理进度：数据库连接池已从20扩至80，计划周五进行高并发压测。客户可用性指标：合同规定SLA为99.5%，可用性条款由陈总审核。",
+        "evidence_ids": [
+          "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+          "note:projects/contract.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "上线 承载能力 处理进度 客户 可用性 指标",
+          "alternative_queries": [
+            "上线 容量 进展 客户 SLA 可用性",
+            "承载能力 可用性"
+          ],
+          "limit": 8,
+          "hits": [
+            "note:projects/contract.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/contract.md",
+          "revision": "804823dd2161524614a679f22a2c057867085076dc0a27f6be6240ec006ee879",
+          "characters": 34,
+          "next_offset": null
+        },
+        {
+          "name": "search_memory",
+          "query": "上线 承载 能力",
+          "alternative_queries": [
+            "压测 扩容 进度",
+            "承载"
+          ],
+          "limit": 10,
+          "hits": [
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842",
+          "revision": "7a9d99ae8f59e184fb7717ab1969587fbf95b57cf115d5b75169c1e1b1604c71",
+          "characters": 31,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "contract",
+      "mode": "like",
+      "repetition": 1,
+      "seconds": 13.97,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "根据客户合同记录，服务可用性要求为 SLA 99.5%。",
+        "evidence_ids": [
+          "note:projects/contract.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "客户 服务不中断 要求",
+          "alternative_queries": [
+            "客户 业务连续性 可用性 SLA",
+            "服务 不中断 停机 时间 要求"
+          ],
+          "limit": 6,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "客户",
+          "alternative_queries": [
+            "不中断",
+            "可用性"
+          ],
+          "limit": 10,
+          "hits": [
+            "note:projects/contract.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/contract.md",
+          "revision": "804823dd2161524614a679f22a2c057867085076dc0a27f6be6240ec006ee879",
+          "characters": 34,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "contract",
+      "mode": "ranked",
+      "repetition": 1,
+      "seconds": 10.6,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "客户合同规定的服务可用性要求为 SLA 99.5%。",
+        "evidence_ids": [
+          "note:projects/contract.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "客户 服务不中断 要求",
+          "alternative_queries": [
+            "业务连续性 可用性 客户 要求",
+            "服务中断 停机 时间 要求"
+          ],
+          "limit": 6,
+          "hits": [
+            "note:projects/contract.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/contract.md",
+          "revision": "804823dd2161524614a679f22a2c057867085076dc0a27f6be6240ec006ee879",
+          "characters": 34,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "deadline",
+      "mode": "like",
+      "repetition": 1,
+      "seconds": 18.53,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "陈总要求下周一之前把修订合同发给他，价格沿用上一版。",
+        "evidence_ids": [
+          "recording:730da17d-060c-56c0-85a4-4d844f9e3b99/14c098e6-69c9-5025-81d9-f2b7527b330b:95d458c1-2f84-57dd-a3ea-378ce31aeeca"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "陈总 合同 什么时候 发",
+          "alternative_queries": [
+            "陈总 合同 发送 时间",
+            "陈总等 合同"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "合同",
+          "alternative_queries": [
+            "陈总",
+            "发合同"
+          ],
+          "limit": 12,
+          "hits": [
+            "recording:730da17d-060c-56c0-85a4-4d844f9e3b99/14c098e6-69c9-5025-81d9-f2b7527b330b:95d458c1-2f84-57dd-a3ea-378ce31aeeca",
+            "note:projects/contract.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:730da17d-060c-56c0-85a4-4d844f9e3b99/14c098e6-69c9-5025-81d9-f2b7527b330b:95d458c1-2f84-57dd-a3ea-378ce31aeeca",
+          "revision": "4d942c5edd635f4ebc49fa3ee290084672ca8ef012d8791fafdb9ee159c7e029",
+          "characters": 26,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "deadline",
+      "mode": "ranked",
+      "repetition": 1,
+      "seconds": 18.38,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "陈总要求下周一之前把修订合同发给他，价格沿用上一版。",
+        "evidence_ids": [
+          "recording:730da17d-060c-56c0-85a4-4d844f9e3b99/14c098e6-69c9-5025-81d9-f2b7527b330b:95d458c1-2f84-57dd-a3ea-378ce31aeeca"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "陈总 合同 什么时候 发",
+          "alternative_queries": [
+            "陈总 合同 发送",
+            "陈总 合同 时间"
+          ],
+          "limit": 8,
+          "hits": [
+            "recording:730da17d-060c-56c0-85a4-4d844f9e3b99/14c098e6-69c9-5025-81d9-f2b7527b330b:95d458c1-2f84-57dd-a3ea-378ce31aeeca",
+            "note:projects/contract.md",
+            "recording:3cad1425-11a5-59f7-83bd-a86db850699a/94d0894d-d5f6-5232-8e86-1ef3dadff4e1:37aae808-9d44-56bf-bbe8-5765c0f8b35f",
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:730da17d-060c-56c0-85a4-4d844f9e3b99/14c098e6-69c9-5025-81d9-f2b7527b330b:95d458c1-2f84-57dd-a3ea-378ce31aeeca",
+          "revision": "4d942c5edd635f4ebc49fa3ee290084672ca8ef012d8791fafdb9ee159c7e029",
+          "characters": 26,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "food",
+      "mode": "like",
+      "repetition": 1,
+      "seconds": 12.88,
+      "rounds": 3,
+      "search_calls": 2,
+      "read_calls": 0,
+      "answer": {
+        "answer": "目前没有查到你的口味偏好或忌口记录，暂时无法判断选晚餐时需要避开什么口味。你有哪些不喜欢或不能吃的口味？",
+        "evidence_ids": [],
+        "insufficient": true
+      },
+      "facts_present": false,
+      "citations_read": false,
+      "uncertainty_correct": false,
+      "passed": false,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "用户 晚餐 口味 忌口 不喜欢",
+          "alternative_queries": [
+            "饮食 偏好 不吃 辣 甜 酸",
+            "晚餐 避开 口味"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "吃饭 口味",
+          "alternative_queries": [
+            "晚饭",
+            "清淡 油腻 香菜 麻辣"
+          ],
+          "limit": 10,
+          "hits": []
+        }
+      ]
+    },
+    {
+      "case": "food",
+      "mode": "ranked",
+      "repetition": 1,
+      "seconds": 10.68,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "需要避开辣味，选不放辣椒的菜；你之前说过，你和家人都吃不了辣。",
+        "evidence_ids": [
+          "chat:3"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "用户 晚餐 口味 忌口 不喜欢",
+          "alternative_queries": [
+            "饮食 偏好 不吃 辣 甜 油腻",
+            "晚餐 避免 口味"
+          ],
+          "limit": 8,
+          "hits": [
+            "chat:11",
+            "chat:3",
+            "note:projects/gift.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "chat:3",
+          "revision": "aa3c6ca074437b9af9e5eb72561ef730e3c5b516159e2183146a3167803f5a12",
+          "characters": 20,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "gift",
+      "mode": "like",
+      "repetition": 1,
+      "seconds": 15.59,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "记录里提到妈妈喜欢园艺，但家里已有两套修枝剪，所以先排除修枝剪。可以考虑其他园艺类礼物，购买前确认她是否已有；目前资料不足以确定哪一件一定不重复。",
+        "evidence_ids": [
+          "note:projects/gift.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "妈妈 生日 礼物 重复",
+          "alternative_queries": [
+            "妈妈 送过 礼物 生日",
+            "母亲 生日 礼物 喜欢"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "妈妈",
+          "alternative_queries": [
+            "母亲",
+            "生日",
+            "礼物"
+          ],
+          "limit": 15,
+          "hits": [
+            "note:projects/gift.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/gift.md",
+          "revision": "171bcc44a43fef03c3847a50b3fbb3ab58f9149b32f18c0bbb338099fd3fa265",
+          "characters": 36,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "gift",
+      "mode": "ranked",
+      "repetition": 1,
+      "seconds": 12.34,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "妈妈喜欢园艺，但家里已有两套修枝剪，建议避开修枝剪。可以考虑其他园艺类礼物，不过目前没有其他已有物品的记录，选定后最好先确认家里是否已有。",
+        "evidence_ids": [
+          "note:projects/gift.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "妈妈 生日 礼物 送过 重复",
+          "alternative_queries": [
+            "母亲 生日 礼物 已经买",
+            "妈妈 喜欢 礼物"
+          ],
+          "limit": 8,
+          "hits": [
+            "note:projects/gift.md",
+            "recording:f7b402ef-8a70-568a-9c66-3dae495d3265/5e06bddf-47f5-58ce-8d3f-bfd6517eea11:c7fa3e37-a839-5f7d-b2a7-448d62b79842"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/gift.md",
+          "revision": "171bcc44a43fef03c3847a50b3fbb3ab58f9149b32f18c0bbb338099fd3fa265",
+          "characters": 36,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "long",
+      "mode": "like",
+      "repetition": 1,
+      "seconds": 13.84,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "玄武迁移最终批准的窗口为周六 03:00；错误率超过 2% 时必须回滚。",
+        "evidence_ids": [
+          "note:projects/long.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "玄武 迁移 时间 回滚 条件",
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "玄武",
+          "alternative_queries": [
+            "迁移 回滚",
+            "Xuanwu migration"
+          ],
+          "limit": 12,
+          "hits": [
+            "note:projects/long.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/long.md",
+          "revision": "b5c11a54874614697f0ac1e758942b722561fd9ba7f574faa3ebe9cfddf634c3",
+          "limit": 24000,
+          "characters": 18039,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "long",
+      "mode": "ranked",
+      "repetition": 1,
+      "seconds": 10.56,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "玄武迁移最终批准的窗口为周六凌晨 03:00；错误率超过 2% 时必须回滚。",
+        "evidence_ids": [
+          "note:projects/long.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "玄武 迁移 时间 回滚 条件",
+          "limit": 8,
+          "hits": [
+            "note:projects/long.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/long.md",
+          "revision": "b5c11a54874614697f0ac1e758942b722561fd9ba7f574faa3ebe9cfddf634c3",
+          "limit": 24000,
+          "characters": 18039,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "release",
+      "mode": "like",
+      "repetition": 1,
+      "seconds": 10.71,
+      "rounds": 3,
+      "search_calls": 2,
+      "read_calls": 0,
+      "answer": {
+        "answer": "目前没有检索到相关上线状态，无法确认两个客户端现在能否一起上线。请补充客户端名称及最新的测试、审核或发布状态。",
+        "evidence_ids": [],
+        "insufficient": true
+      },
+      "facts_present": false,
+      "citations_read": false,
+      "uncertainty_correct": false,
+      "passed": false,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "两个客户端 一起上线",
+          "alternative_queries": [
+            "双端 同时上线 发布",
+            "客户端 上线 两个"
+          ],
+          "limit": 6,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "客户端",
+          "alternative_queries": [
+            "上线",
+            "双端"
+          ],
+          "limit": 10,
+          "hits": []
+        }
+      ]
+    },
+    {
+      "case": "release",
+      "mode": "ranked",
+      "repetition": 1,
+      "seconds": 12.18,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "暂时不能一起上线。小林反馈，Android 已完成测试，但 iOS 还在等待审核。",
+        "evidence_ids": [
+          "recording:3cad1425-11a5-59f7-83bd-a86db850699a/94d0894d-d5f6-5232-8e86-1ef3dadff4e1:37aae808-9d44-56bf-bbe8-5765c0f8b35f"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "两个客户端 一起上线",
+          "alternative_queries": [
+            "双端 同时上线 发布",
+            "客户端 上线 时间 排期"
+          ],
+          "limit": 6,
+          "hits": [
+            "note:projects/contract.md",
+            "recording:3cad1425-11a5-59f7-83bd-a86db850699a/94d0894d-d5f6-5232-8e86-1ef3dadff4e1:37aae808-9d44-56bf-bbe8-5765c0f8b35f"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "recording:3cad1425-11a5-59f7-83bd-a86db850699a/94d0894d-d5f6-5232-8e86-1ef3dadff4e1:37aae808-9d44-56bf-bbe8-5765c0f8b35f",
+          "revision": "9c2827da380520b424fcfe204b86349e30fa48d616ca42234f2f64349f80db81",
+          "characters": 39,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "style",
+      "mode": "like",
+      "repetition": 1,
+      "seconds": 15.26,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "你希望工作汇报先写结论，再给证据，不需要大段过程描述。",
+        "evidence_ids": [
+          "chat:6"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "工作汇报 顺序 希望",
+          "alternative_queries": [
+            "汇报 先写 再写 顺序",
+            "周报 汇报 结构 偏好"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "汇报",
+          "alternative_queries": [
+            "报告 结论 过程",
+            "工作总结"
+          ],
+          "limit": 10,
+          "hits": [
+            "chat:6"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "chat:6",
+          "revision": "e98ebb86ab21365db4bfe36b2cf2e2bbff6e1d686a90d602c9c36cd9c5c6e799",
+          "characters": 27,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "style",
+      "mode": "ranked",
+      "repetition": 1,
+      "seconds": 11.59,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "你希望工作汇报先写结论，再给证据，不需要大段描述过程。",
+        "evidence_ids": [
+          "chat:6"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "工作汇报 顺序 希望 怎么写",
+          "alternative_queries": [
+            "汇报 先 结论 再",
+            "工作汇报 写作 顺序 偏好"
+          ],
+          "limit": 6,
+          "hits": [
+            "chat:6",
+            "note:projects/long.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "chat:6",
+          "revision": "e98ebb86ab21365db4bfe36b2cf2e2bbff6e1d686a90d602c9c36cd9c5c6e799",
+          "characters": 27,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "travel",
+      "mode": "like",
+      "repetition": 1,
+      "seconds": 13.79,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "改成去东京了，原定巴黎的安排已取消。",
+        "evidence_ids": [
+          "note:projects/travel.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "出差 目的地 改成",
+          "alternative_queries": [
+            "出差 改去 地点",
+            "出差 行程 变更"
+          ],
+          "limit": 8,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "出差",
+          "alternative_queries": [
+            "商务旅行",
+            "差旅"
+          ],
+          "limit": 10,
+          "hits": [
+            "note:projects/travel.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/travel.md",
+          "revision": "8cb91b277dd8adedfc6120af6646211d1a53f0e5d9cb399bbb7f924c0168ff9d",
+          "characters": 35,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "travel",
+      "mode": "ranked",
+      "repetition": 1,
+      "seconds": 12.75,
+      "rounds": 3,
+      "search_calls": 1,
+      "read_calls": 1,
+      "answer": {
+        "answer": "出差目的地改成东京了，原定巴黎的安排已取消。",
+        "evidence_ids": [
+          "note:projects/travel.md"
+        ],
+        "insufficient": false
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "出差 目的地 改成 改去",
+          "alternative_queries": [
+            "出差 行程 变更 地点",
+            "出差 不去 改"
+          ],
+          "limit": 8,
+          "hits": [
+            "note:projects/travel.md"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "note:projects/travel.md",
+          "revision": "8cb91b277dd8adedfc6120af6646211d1a53f0e5d9cb399bbb7f924c0168ff9d",
+          "characters": 35,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "uncertain",
+      "mode": "like",
+      "repetition": 1,
+      "seconds": 15.57,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "目前检索到的资料不足以确认海鸥计划已经确定的预算；仅有助手此前未经用户确认的猜测。",
+        "evidence_ids": [
+          "chat:11"
+        ],
+        "insufficient": true
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "海鸥计划 已确定 预算",
+          "alternative_queries": [
+            "海鸥 预算 确定 金额"
+          ],
+          "limit": 6,
+          "hits": []
+        },
+        {
+          "name": "search_memory",
+          "query": "海鸥",
+          "alternative_queries": [
+            "海鸥计划",
+            "Seagull budget"
+          ],
+          "limit": 8,
+          "hits": [
+            "chat:11"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "chat:11",
+          "revision": "687402f230bbead0d7b6f6205ab093e2e41a86c6fce91ced1a80e7f9ff1cbe18",
+          "characters": 27,
+          "next_offset": null
+        }
+      ]
+    },
+    {
+      "case": "uncertain",
+      "mode": "ranked",
+      "repetition": 1,
+      "seconds": 15.99,
+      "rounds": 4,
+      "search_calls": 2,
+      "read_calls": 1,
+      "answer": {
+        "answer": "目前资料不足以确认海鸥计划已确定的预算；仅找到助手未经用户确认的猜测，不能作为确定金额的依据。",
+        "evidence_ids": [
+          "chat:11"
+        ],
+        "insufficient": true
+      },
+      "facts_present": true,
+      "citations_read": true,
+      "uncertainty_correct": true,
+      "passed": true,
+      "trace": [
+        {
+          "name": "search_memory",
+          "query": "海鸥计划 已确定 预算",
+          "alternative_queries": [
+            "海鸥 预算 确认"
+          ],
+          "limit": 8,
+          "hits": [
+            "chat:11"
+          ]
+        },
+        {
+          "name": "read_memory_evidence",
+          "id": "chat:11",
+          "revision": "687402f230bbead0d7b6f6205ab093e2e41a86c6fce91ced1a80e7f9ff1cbe18",
+          "characters": 27,
+          "next_offset": null
+        },
+        {
+          "name": "search_memory",
+          "query": "海鸥",
+          "alternative_queries": [
+            "海鸥计划 预算 批准 金额"
+          ],
+          "limit": 20,
+          "hits": [
+            "chat:11",
+            "note:projects/long.md"
+          ]
+        }
+      ]
+    }
+  ]
+}

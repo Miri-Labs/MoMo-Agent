@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -168,6 +169,40 @@ class MemorySearchTests(unittest.TestCase):
         self.assertEqual(1, len({h['revision'] for h in hits}))
         with sqlite3.connect(self.search.path) as db:
             self.assertEqual(before, db.execute('SELECT rowid,* FROM passages').fetchall())
+
+    def test_search_during_notebook_moves_preserves_one_current_source(self):
+        self.note('projects/a.md', '# 并发\n连接池扩容。')
+
+        def move():
+            for i in range(100):
+                a, b = ('a', 'b') if i % 2 == 0 else ('b', 'a')
+                self.memory.move_notebook(path=f'projects/{a}.md', to_path=f'projects/{b}.md')
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            writer = pool.submit(move)
+            for _ in range(30):
+                hits = self.search.search('连接池')['matches']
+                self.assertEqual(1, len(hits))
+                self.assertIn(hits[0]['path'], ('projects/a.md', 'projects/b.md'))
+            writer.result()
+
+    def test_external_deletion_between_stat_and_read_drops_cached_evidence(self):
+        from memory_search import _stamp
+        self.note('projects/a.md', '# 连接池\n旧内容。')
+        old = self.search.search('连接池')['matches'][0]
+        path = self.memory.memories_dir / 'projects/a.md'
+        path.write_text('# 连接池\n新内容。')
+
+        def remove_after_stat(candidate):
+            signature = _stamp(candidate)
+            if candidate == path:
+                path.unlink()
+            return signature
+
+        with patch('memory_search._stamp', side_effect=remove_after_stat):
+            self.assertEqual([], self.search.search('连接池')['matches'])
+        with self.assertRaises(Conflict):
+            self.search.read(old['id'], old['revision'])
 
     def test_dream_worker_and_cli_use_same_search_and_revision_contract(self):
         from superagent_gateway import SuperAgentGateway
