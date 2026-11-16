@@ -277,10 +277,17 @@ struct DesktopSources: View {
                 }
                 if wide { Divider() }
                 if let illustration = selectedIllustration {
-                    LifeIllustrationJourneyMapView(store: model.lifeIllustrations, initialID: illustration.id, referenceDay: selectedDayKey,
-                        close: closeIllustration, showSource: { showSource(for: $0) })
-                        .id(selectedDayKey)
-                        .frame(maxWidth: .infinity)
+                    Group {
+                        if dayIllustrations.contains(where: { $0.coordinate != nil }) {
+                            LifeIllustrationJourneyMapView(store: model.lifeIllustrations, initialID: illustration.id, referenceDay: selectedDayKey,
+                                close: closeIllustration, showSource: { showSource(for: $0) })
+                        } else {
+                            LifeIllustrationViewer(store: model.lifeIllustrations, initialID: illustration.id, referenceDay: selectedDayKey,
+                                close: closeIllustration, showSource: { showSource(for: $0) })
+                        }
+                    }
+                    .id(selectedDayKey)
+                    .frame(maxWidth: .infinity)
                 } else if let selected {
                     DesktopSourceReader(
                         model: model,
