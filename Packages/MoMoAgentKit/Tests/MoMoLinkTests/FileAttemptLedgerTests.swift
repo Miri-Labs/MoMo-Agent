@@ -328,6 +328,34 @@ struct FileAttemptLedgerTests {
         #expect(journal.attempts[fresh.manifest.chunkID]?.cancellationRequestedAt == nil)
     }
 
+    @Test func combinedInteractiveLeasesKeepNinetySecondFloorForZeroProgressCopies() throws {
+        let queuedZero = try envelope(), wedgedPartial = try envelope()
+        let start = Date(timeIntervalSince1970: 1_000)
+        var journal = FileAttemptLedger()
+        let zeroID = try journal.begin(queuedZero, now: start)
+        let partialID = try journal.begin(wedgedPartial, now: start)
+        try journal.observe(envelope: wedgedPartial, attemptID: partialID, completedUnits: 35, now: start.addingTimeInterval(2))
+
+        let at50 = start.addingTimeInterval(50)
+        let at50Candidates = journal.stalledCandidates(
+            now: at50,
+            limit: 4,
+            interactiveZeroProgressLease: FileAttemptLedger.interactiveZeroProgressLease,
+            interactiveStallLease: FileAttemptLedger.interactiveStallLease
+        )
+        #expect(at50Candidates.map(\.attemptID) == [partialID])
+        #expect(!journal.hasRecentProgress(within: FileAttemptLedger.interactiveStallLease, now: at50))
+
+        let at91 = start.addingTimeInterval(91)
+        let at91Candidates = journal.stalledCandidates(
+            now: at91,
+            limit: 4,
+            interactiveZeroProgressLease: FileAttemptLedger.interactiveZeroProgressLease,
+            interactiveStallLease: FileAttemptLedger.interactiveStallLease
+        )
+        #expect(Set(at91Candidates.compactMap(\.attemptID)) == Set([zeroID, partialID]))
+    }
+
     @Test func interactiveAudioBlockEligibilityAllowsActiveQueueAndRejectsConfirmedOrConflictingChunks() throws {
         let file = try envelope(), id = file.manifest.chunkID
         var journal = FileAttemptLedger()

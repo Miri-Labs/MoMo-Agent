@@ -532,6 +532,42 @@ import MoMoContracts
         return store
     }
 
+    @Test func deliveredReceiptsAreSkippedViaIndexWithoutBlockingNewUndeliveredReceipts() async throws {
+        let fixture = try RecordingFixture()
+        defer { fixture.clean() }
+        let store = try await boundStore(fixture)
+        let chunks = try await addChunks(40, fixture: fixture, store: store)
+        for chunk in chunks {
+            let receipt = try Receipt(
+                receiverDeviceID: fixture.receiverID,
+                libraryInstanceID: fixture.libraryID,
+                chunkID: chunk.envelope.manifest.chunkID,
+                audioSHA256: chunk.envelope.manifest.audioSHA256,
+                manifestSHA256: chunk.envelope.manifestSHA256
+            )
+            let applied = try await store.applyReceipt(receipt)
+            try await store.markControlPreserved(.receiptApplied(applied),
+                                                 receiverDeviceID: fixture.receiverID,
+                                                 libraryInstanceID: fixture.libraryID)
+        }
+        #expect(try await !store.hasPendingControlMessages())
+        let reopened = try fixture.store()
+        #expect(try await !reopened.hasPendingControlMessages())
+
+        let extra = try await addChunks(1, startingAt: 40, fixture: fixture, store: reopened)
+        let newReceipt = try Receipt(
+            receiverDeviceID: fixture.receiverID,
+            libraryInstanceID: fixture.libraryID,
+            chunkID: extra[0].envelope.manifest.chunkID,
+            audioSHA256: extra[0].envelope.manifest.audioSHA256,
+            manifestSHA256: extra[0].envelope.manifestSHA256
+        )
+        let newApplied = try await reopened.applyReceipt(newReceipt)
+        #expect(try await reopened.hasPendingControlMessages())
+        let pending = try await reopened.controlBatch(kind: .receipt, after: 0, limit: 8)
+        #expect(pending.map(\.message) == [.receiptApplied(newApplied)])
+    }
+
     private func response(_ request: ReconcileRequest, state: (ReconcileChunkIdentity) throws -> ReconcileItemState) throws -> ReconcileResponse {
         try ReconcileResponse(requestID: request.messageID, requestSHA256: request.requestSHA256,
             sourceDeviceID: request.sourceDeviceID, receiverDeviceID: request.receiverDeviceID, libraryInstanceID: request.libraryInstanceID,

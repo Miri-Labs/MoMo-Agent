@@ -56,9 +56,9 @@ public struct TransportFailure: Error, Sendable, Equatable {
 /// Tracks only system transport work; durable retry and deletion belong to the stores.
 public struct LinkSubmissionState: Sendable {
     public static let maximumOutstandingFiles = 4
-    public static let bulkMaximumOutstandingFiles = 12
-    public static let initialReceiptWaitDelay: TimeInterval = 120
-    public static let maximumReceiptWaitDelay: TimeInterval = 1_800
+    public static let bulkMaximumOutstandingFiles = 6
+    public static let initialReceiptWaitDelay: TimeInterval = 900
+    public static let maximumReceiptWaitDelay: TimeInterval = 3_600
     public let maximumOutstandingCount: Int
     public private(set) var activation: LinkActivation = .inactive
     public private(set) var isReachable = false
@@ -68,14 +68,26 @@ public struct LinkSubmissionState: Sendable {
     private var requestedReplays: Set<UUID> = []
     private var retryNotBefore: [UUID: TimeInterval] = [:]
     private var retryBackoffs: [UUID: LinkRetryBackoff] = [:]
+    private var channelRetryNotBefore: TimeInterval?
+    private var channelProbeID: UUID?
+    private var channelBackoff = LinkRetryBackoff()
     private struct ReceiptWait: Sendable {
         var deadline: TimeInterval?
         var delay: TimeInterval = LinkSubmissionState.initialReceiptWaitDelay
     }
     private var awaitingReceipts: [UUID: ReceiptWait] = [:]
-    public var hasRetryableFiles: Bool { !retryNotBefore.isEmpty || awaitingReceipts.values.contains { $0.deadline != nil } }
+    public var hasRetryableFiles: Bool {
+        !retryNotBefore.isEmpty || channelRetryNotBefore != nil || awaitingReceipts.values.contains { $0.deadline != nil }
+    }
+    public var isRecoveringChannel: Bool { channelRetryNotBefore != nil }
+
+    public func isChannelCoolingDown(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        if let retryAt = channelRetryNotBefore, now < retryAt { return true }
+        return channelRetryNotBefore != nil && channelProbeID != nil
+    }
 
     public func hasDueFileRetries(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        if isChannelCoolingDown(now: now) { return false }
         if requestedReplays.contains(where: { id in outstanding[id] == nil && (retryNotBefore[id].map { now >= $0 } ?? true) }) {
             return true
         }
@@ -88,15 +100,20 @@ public struct LinkSubmissionState: Sendable {
     }
 
     public func nextRetryDelay(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval? {
+        if channelRetryNotBefore != nil, channelProbeID != nil { return nil }
+        let channelFloor = channelRetryNotBefore ?? -.infinity
         let retry = retryNotBefore.compactMap { id, retryAt -> TimeInterval? in
-            guard outstanding[id] == nil, retryAt > now else { return nil }
-            return retryAt - now
+            guard outstanding[id] == nil else { return nil }
+            let dueAt = max(retryAt, channelFloor)
+            return dueAt > now ? dueAt - now : nil
         }.min()
         let wait = awaitingReceipts.compactMap { id, entry -> TimeInterval? in
-            guard outstanding[id] == nil, let deadline = entry.deadline, deadline > now else { return nil }
-            return deadline - now
+            guard outstanding[id] == nil, let deadline = entry.deadline else { return nil }
+            let dueAt = max(deadline, channelFloor)
+            return dueAt > now ? dueAt - now : nil
         }.min()
-        return [retry, wait].compactMap { $0 }.min()
+        let channelOnly = channelRetryNotBefore.flatMap { $0 > now ? $0 - now : nil }
+        return [retry, wait, channelOnly].compactMap { $0 }.min()
     }
 
     public init(maximumOutstandingFiles: Int = Self.maximumOutstandingFiles) {
@@ -141,6 +158,7 @@ public struct LinkSubmissionState: Sendable {
         awaitingReceipts.removeValue(forKey: chunkID)
         retryNotBefore.removeValue(forKey: chunkID)
         retryBackoffs.removeValue(forKey: chunkID)
+        if channelProbeID == chunkID { channelProbeID = nil }
         requestedReplays.insert(chunkID)
     }
     public mutating func update(activation: LinkActivation, isReachable: Bool) {
@@ -163,10 +181,15 @@ public struct LinkSubmissionState: Sendable {
             submitted[id] = value.hash
         }
         for id in completed {
+            let finishedProbe = channelProbeID == id
             if retiring.remove(id) != nil {
                 submitted.removeValue(forKey: id)
                 awaitingReceipts.removeValue(forKey: id)
-            } else { waitForReceipt(chunkID: id, now: now) }
+                if finishedProbe { channelProbeID = nil }
+            } else {
+                waitForReceipt(chunkID: id, now: now)
+                if finishedProbe { recoverChannel() }
+            }
         }
     }
 
@@ -188,6 +211,9 @@ public struct LinkSubmissionState: Sendable {
                 return .alreadySubmitted
             }
         }
+        // A broken file channel must not chew through thousands of pending chunks one by one.
+        if let retryAt = channelRetryNotBefore, now < retryAt { return .deferred }
+        if channelRetryNotBefore != nil, let probe = channelProbeID, probe != id { return .deferred }
         if let retryAt = retryNotBefore[id], now < retryAt { return .retryLater }
         guard outstanding.values.reduce(0, { $0 + $1.count }) < maximumOutstandingCount else { return .deferred }
         return nil
@@ -199,6 +225,7 @@ public struct LinkSubmissionState: Sendable {
         // Reachability applies to interactive messages, not the background file queue.
         outstanding[id] = (envelope.manifestSHA256, 1)
         submitted[id] = envelope.manifestSHA256
+        if channelRetryNotBefore != nil { channelProbeID = id }
         var receiptWait = awaitingReceipts[id] ?? ReceiptWait()
         receiptWait.deadline = nil
         awaitingReceipts[id] = receiptWait
@@ -210,10 +237,12 @@ public struct LinkSubmissionState: Sendable {
     }
 
     @discardableResult public mutating func didFinish(chunkID: UUID, failed: Bool = false,
+        channelFailure: Bool = false,
         now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         // A validated application receipt can precede a late transport callback.
         let alreadyConfirmed = submitted[chunkID] != nil && awaitingReceipts[chunkID] == nil
         let deliveryFailed = failed && !alreadyConfirmed
+        let finishedProbe = channelProbeID == chunkID
         if deliveryFailed {
             submitted.removeValue(forKey: chunkID)
             var backoff = retryBackoffs[chunkID] ?? LinkRetryBackoff()
@@ -228,6 +257,11 @@ public struct LinkSubmissionState: Sendable {
             if known.count > 1 { outstanding[chunkID] = (known.hash, known.count - 1) }
             else { outstanding.removeValue(forKey: chunkID) }
         }
+        if deliveryFailed, channelFailure, now >= (channelRetryNotBefore ?? -.infinity) {
+            channelRetryNotBefore = now + channelBackoff.nextDelay()
+        }
+        if failed, finishedProbe { channelProbeID = nil }
+        if !failed, finishedProbe { recoverChannel() }
         if !failed, outstanding[chunkID] == nil { waitForReceipt(chunkID: chunkID, now: now) }
         return deliveryFailed
     }
@@ -241,7 +275,14 @@ public struct LinkSubmissionState: Sendable {
         awaitingReceipts.removeValue(forKey: id)
         retryNotBefore.removeValue(forKey: id)
         retryBackoffs.removeValue(forKey: id)
+        if channelProbeID == id { recoverChannel() }
         requestedReplays.remove(id)
+    }
+
+    private mutating func recoverChannel() {
+        channelRetryNotBefore = nil
+        channelProbeID = nil
+        channelBackoff.reset()
     }
 
     public func allowsInteractiveAudioBlock(_ envelope: ManifestEnvelope) throws -> Bool {
@@ -259,6 +300,10 @@ public struct LinkSubmissionState: Sendable {
 
     public func hasOutstandingFileTransfer(chunkID: UUID) -> Bool {
         outstanding[chunkID] != nil
+    }
+
+    public func isAwaitingReceipt(chunkID: UUID) -> Bool {
+        outstanding[chunkID] == nil && submitted[chunkID] != nil && awaitingReceipts[chunkID] != nil
     }
 
     private mutating func waitForReceipt(chunkID: UUID, now: TimeInterval) {

@@ -12,23 +12,17 @@ struct FileReplayTests {
         #expect(try state.reserve(file, now: 1_000) == .alreadySubmitted)
         state.didFinish(chunkID: id, now: 1_000)
         #expect(state.hasRetryableFiles)
-        #expect(try state.reserve(file, now: 1_119) == .alreadySubmitted)
-        #expect(try state.reserve(file, now: 1_120) == .submitted)
-        state.didFinish(chunkID: id, now: 1_121)
-        #expect(try state.reserve(file, now: 1_360) == .alreadySubmitted)
-        #expect(try state.reserve(file, now: 1_361) == .submitted)
-        state.didFinish(chunkID: id, now: 1_362)
-        #expect(try state.reserve(file, now: 1_841) == .alreadySubmitted)
-        #expect(try state.reserve(file, now: 1_842) == .submitted)
-        state.didFinish(chunkID: id, now: 1_843)
-        #expect(try state.reserve(file, now: 2_802) == .alreadySubmitted)
-        #expect(try state.reserve(file, now: 2_803) == .submitted)
-        state.didFinish(chunkID: id, now: 2_804)
-        #expect(try state.reserve(file, now: 4_603) == .alreadySubmitted)
-        #expect(try state.reserve(file, now: 4_604) == .submitted)
-        state.didFinish(chunkID: id, now: 4_605)
-        #expect(try state.reserve(file, now: 6_404) == .alreadySubmitted)
-        #expect(try state.reserve(file, now: 6_405) == .submitted)
+        #expect(try state.reserve(file, now: 1_899) == .alreadySubmitted)
+        #expect(try state.reserve(file, now: 1_900) == .submitted)
+        state.didFinish(chunkID: id, now: 1_901)
+        #expect(try state.reserve(file, now: 3_700) == .alreadySubmitted)
+        #expect(try state.reserve(file, now: 3_701) == .submitted)
+        state.didFinish(chunkID: id, now: 3_702)
+        #expect(try state.reserve(file, now: 7_301) == .alreadySubmitted)
+        #expect(try state.reserve(file, now: 7_302) == .submitted)
+        state.didFinish(chunkID: id, now: 7_303)
+        #expect(try state.reserve(file, now: 10_902) == .alreadySubmitted)
+        #expect(try state.reserve(file, now: 10_903) == .submitted)
     }
 
     @Test func completedAttemptPersistsAcrossRestartUntilReceiptDeadlineOrExplicitReplay() throws {
@@ -42,9 +36,9 @@ struct FileReplayTests {
         var restarted = LinkSubmissionState()
         restarted.update(activation: .activated, isReachable: false)
         restarted.seedCompletedFromLedger(persisted, nowWallClock: start.addingTimeInterval(25), nowUptime: 500)
-        // 120s receipt wait minus 20s elapsed => 100s remaining (deadline at uptime 600).
-        #expect(try restarted.reserve(file, now: 599) == .alreadySubmitted)
-        #expect(try restarted.reserve(file, now: 600) == .submitted)
+        // 900s receipt wait minus 20s elapsed => 880s remaining (deadline at uptime 1_380).
+        #expect(try restarted.reserve(file, now: 1_379) == .alreadySubmitted)
+        #expect(try restarted.reserve(file, now: 1_380) == .submitted)
 
         var explicit = LinkSubmissionState()
         explicit.update(activation: .activated, isReachable: true)
@@ -59,8 +53,8 @@ struct FileReplayTests {
         state.update(activation: .activated, isReachable: false)
         try state.reconcile([file], now: 0)
         try state.reconcile([], now: 10)
-        #expect(try state.reserve(file, now: 129) == .alreadySubmitted)
-        #expect(try state.reserve(file, now: 130) == .submitted)
+        #expect(try state.reserve(file, now: 909) == .alreadySubmitted)
+        #expect(try state.reserve(file, now: 910) == .submitted)
     }
 
     @Test func validatedReceiptStopsRetryDespiteALateCompletionAndRejectsChangedIdentity() throws {
