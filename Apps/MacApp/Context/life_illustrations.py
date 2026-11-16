@@ -122,7 +122,7 @@ def natural_projection(item, evidence):
             if not finite_number(at):
                 continue
             recorded_zone, quality = source_clock(span)
-            if quality == 'timezone_unknown':
+            if quality != 'recorded_offset':
                 if zone is None:
                     continue
                 recorded_zone, quality = zone, 'saved_timezone'

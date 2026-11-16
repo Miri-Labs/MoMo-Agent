@@ -21,12 +21,35 @@ final class DailyTranscriptProjectionTests: XCTestCase {
         XCTAssertEqual(eight.ordered[0].id, "window")
     }
 
-    func testUnknownLegacySourceTimezoneRemainsExplicit() throws {
+    func testLegacySourceUsesLocalClockAndDateWithoutConfirmation() throws {
         let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let source = try decoder.decode(ContextSource.self, from: Data(#"{"id":"source","revision":"1","recorded_at":1794787200,"total_characters":10,"preview":"历史原文"}"#.utf8))
-        let snapshot = DesktopTranscriptSnapshot.build(sources: [source], dayStartHour: 8, version: 1)
-        XCTAssertTrue(snapshot.ordered[0].rangeTimeLabel.contains("UTC（时区待确认）"))
-        XCTAssertEqual(snapshot.ordered.count, 1)
+        // 17:15 UTC is 01:15 the next day in Shanghai. Cover both old payload formats.
+        let at = ISO8601DateFormatter().date(from: "2026-11-15T17:15:00Z")!.timeIntervalSince1970
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        for windows in ["", #", "windows":[{"id":"window","source_id":"source","source_revision":"1","recorded_at":\#(at),"offset":0,"end":10,"total_characters":10,"timezone_offset":0,"natural_day":"2026-11-15","date_evidence":"timezone_unknown"}]"#] {
+            let source = try decoder.decode(ContextSource.self, from: Data(#"{"id":"source","revision":"1","recorded_at":\#(at),"total_characters":10\#(windows)}"#.utf8))
+            let item = try XCTUnwrap(DesktopTranscriptSnapshot.build(sources: [source], dayStartHour: 8, version: 1, calendar: calendar).ordered.first)
+            XCTAssertEqual(item.logicalDayKey, "2026-11-16")
+            XCTAssertEqual(item.rangeTimeLabel, "01:15")
+            XCTAssertEqual(item.window.displayTimeZone(fallback: calendar.timeZone), calendar.timeZone)
+        }
+    }
+
+    func testRecordedUTCIsPreservedAndLocalFallbackUsesHistoricalDST() throws {
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        for (date, expectedLocal) in [("2026-07-15T12:00:00Z", "08:00"), ("2026-11-15T12:00:00Z", "07:00")] {
+            let at = ISO8601DateFormatter().date(from: date)!.timeIntervalSince1970
+            for (metadata, expected) in [("", expectedLocal), (#", "timezone_offset":0,"date_evidence":"recorded_offset""#, "12:00")] {
+                let source = try decoder.decode(ContextSource.self, from: Data(#"{"id":"source","revision":"1","total_characters":10,"windows":[{"id":"window","source_id":"source","source_revision":"1","recorded_at":\#(at),"offset":0,"end":10,"total_characters":10\#(metadata)}]}"#.utf8))
+                let item = try XCTUnwrap(DesktopTranscriptSnapshot.build(sources: [source], dayStartHour: 8, version: 1, calendar: calendar).ordered.first)
+                XCTAssertEqual(item.rangeTimeLabel, expected)
+                let offset = item.window.displayTimeZone(fallback: calendar.timeZone).secondsFromGMT(for: Date(timeIntervalSince1970: at))
+                XCTAssertEqual(TranscriptReadingBoundary.isEarly(Date(timeIntervalSince1970: at), offset: offset, hour: 8), expected == "07:00")
+            }
+        }
     }
 
     func testCalendarIncludesRecordedFutureDateAfterTravellingWest() {

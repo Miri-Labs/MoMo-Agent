@@ -1,12 +1,26 @@
 """Source/memory boundaries independent of model output quality."""
 import copy
+from contextlib import contextmanager
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 import uuid
+
+
+@contextmanager
+def local_timezone(name):
+    from unittest.mock import patch
+    try:
+        with patch.dict(os.environ, {'TZ': name}):
+            time.tzset()
+            yield
+    finally:
+        time.tzset()
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'Apps/MacApp/Context'))
@@ -187,8 +201,8 @@ class ContextTests(unittest.TestCase):
                     payload['text_sha256'] = digest('\n'.join(s['text'] for s in payload['spans']))
                 receipt = self.store.sync_source(payload)
                 old = self.store.list_sources()['items'][0]['windows']
-                self.assertEqual('2026-11-15', old[0]['natural_day'])
-                self.assertEqual('timezone_unknown', old[0]['date_evidence'])
+                self.assertEqual(dt.datetime.fromtimestamp(at).date().isoformat(), old[0]['natural_day'])
+                self.assertEqual('local_timezone', old[0]['date_evidence'])
                 for span in payload['spans']:
                     span.update(timezone_offset=28800, end_at=span['recorded_at'] + 2)
                 # Wall-clock rollback must not make the old cache entry valid.
@@ -250,6 +264,39 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(groups[0]['natural_day'], groups[1]['natural_day'])
         self.assertEqual(['01:30', '01:30'], [dt.datetime.fromtimestamp(sp['recorded_at'], source_clock(sp)[0]).strftime('%H:%M') for sp in spans])
         del spans[0]['timezone_offset']
-        self.assertEqual('timezone_unknown', natural_groups(spans[:1], 8)[0]['date_evidence'])
+        self.assertEqual('local_timezone', natural_groups(spans[:1], 8)[0]['date_evidence'])
+
+    def test_legacy_local_projection_updates_warm_cache_without_changing_source(self):
+        import datetime as dt
+        payload = copy.deepcopy(self.payload)
+        payload['version'] += 1
+        start = dt.datetime(2026, 11, 15, 23, 59, tzinfo=dt.timezone(dt.timedelta(hours=8))).timestamp()
+        payload['spans'] = [dict(id=str(uuid.uuid4()), recorded_at=start + delta, text=text)
+                            for delta, text in [(0, '午夜前的原文'), (120, '午夜后的原文')]]
+        payload['text_sha256'] = digest('\n'.join(s['text'] for s in payload['spans']))
+        receipt = self.store.sync_source(payload)
+        before = self.store.db.execute('SELECT payload FROM sources WHERE id=?', (receipt['source_id'],)).fetchone()[0]
+        for zone, days, offsets in [('Asia/Shanghai', ['2026-11-15', '2026-11-16'], [28800, 28800]),
+                                   ('America/New_York', ['2026-11-15'], [-18000])]:
+            with local_timezone(zone):
+                listed = self.store.list_sources()['items'][0]['windows']
+                built = self.store.build_windows(receipt['source_id'], receipt['source_revision'], payload, False, {}, {}, set())
+                self.assertEqual(listed, built)
+                self.assertEqual(days, [w['natural_day'] for w in listed])
+                self.assertEqual(offsets, [w['timezone_offset'] for w in listed])
+                self.assertTrue(all(w['date_evidence'] == 'local_timezone' for w in listed))
+        self.assertEqual(before, self.store.db.execute('SELECT payload FROM sources WHERE id=?', (receipt['source_id'],)).fetchone()[0])
+
+    def test_legacy_local_clock_resolves_dst_at_recording_time(self):
+        import datetime as dt
+        from context_store import source_clock
+        with local_timezone('America/New_York'):
+            for month, expected in [(7, -14400), (11, -18000)]:
+                span = dict(recorded_at=dt.datetime(2026, month, 15, 12, tzinfo=dt.timezone.utc).timestamp())
+                zone, evidence = source_clock(span)
+                self.assertEqual(expected, zone.utcoffset(None).total_seconds())
+                self.assertEqual('local_timezone', evidence)
+                span['timezone_offset'] = 0
+                self.assertEqual((dt.timezone.utc, 'recorded_offset'), source_clock(span))
 
 if __name__=='__main__': unittest.main()
