@@ -151,16 +151,10 @@ struct ClientComposer: View {
                 Text("正在读取附件…").phoneText(.caption).foregroundStyle(MoMoPalette.muted)
                     .padding(.horizontal, 18).padding(.top, 8)
             }
-            inputField
-                .onKeyPress(.return, phases: .down) { key in
-                    guard key.modifiers.contains(.shift),
-                          let editor = NSApp.keyWindow?.firstResponder as? NSTextView,
-                          !editor.hasMarkedText() else { return .ignored }
-                    editor.insertNewlineIgnoringFieldEditor(nil)
-                    return .handled
-                }
-                .onSubmit { if canSend { send() } }
-                .padding(.horizontal, 18).padding(.top, attachments.isEmpty && !importingAttachments ? 18 : 6)
+            ComposerReturnKeyHandler(send: { if canSend { send() } }) {
+                inputField
+            }
+            .padding(.horizontal, 18).padding(.top, attachments.isEmpty && !importingAttachments ? 18 : 6)
             HStack {
                 if store != nil { attachmentButton }
                 Spacer()
