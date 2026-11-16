@@ -20,16 +20,27 @@ public struct WatchCaptureStatus: Codable, Equatable, Sendable {
     public let lastSampleAge: TimeInterval?
     /// Capability for explicit viewing requests; absent in older Watch builds.
     public let audioBatchVersion: Int?
+    public let batteryLevel: Double?
+    public let batteryState: String?
+    public let lowPowerMode: Bool?
+    public let thermalState: Int?
+    public let freeStorageBytes: Int64?
+
+    private static let validBatteryStates: Set<String> = ["unknown", "unplugged", "charging", "full"]
 
     public init(receiverLibraryInstanceID: UUID?, sessionID: UUID?, epochID: UUID?, activity: WatchCaptureActivity,
                 capturedDuration: TimeInterval, sealedDuration: TimeInterval, pendingChunkCount: Int, pendingBytes: Int64,
                 lastSampleFrame: Int64? = nil, timebaseHz: Double? = nil, lastSampleAge: TimeInterval? = nil,
-                audioBatchVersion: Int? = nil) throws {
+                audioBatchVersion: Int? = nil, batteryLevel: Double? = nil, batteryState: String? = nil,
+                lowPowerMode: Bool? = nil, thermalState: Int? = nil, freeStorageBytes: Int64? = nil) throws {
         self.receiverLibraryInstanceID = receiverLibraryInstanceID; self.sessionID = sessionID; self.epochID = epochID
         self.activity = activity; self.capturedDuration = capturedDuration; self.sealedDuration = sealedDuration
         self.pendingChunkCount = pendingChunkCount; self.pendingBytes = pendingBytes
         self.lastSampleFrame = lastSampleFrame; self.timebaseHz = timebaseHz; self.lastSampleAge = lastSampleAge
         self.audioBatchVersion = audioBatchVersion
+        self.batteryLevel = batteryLevel; self.batteryState = batteryState
+        self.lowPowerMode = lowPowerMode; self.thermalState = thermalState
+        self.freeStorageBytes = freeStorageBytes
         try validate()
     }
 
@@ -40,6 +51,10 @@ public struct WatchCaptureStatus: Codable, Equatable, Sendable {
               timebaseHz.map({ $0.isFinite && $0 > 0 }) ?? true,
               lastSampleAge.map({ $0.isFinite && $0 >= 0 }) ?? true,
               audioBatchVersion.map({ $0 > 0 }) ?? true,
+              batteryLevel.map({ $0.isFinite && (0.0...1.0).contains($0) }) ?? true,
+              batteryState.map({ Self.validBatteryStates.contains($0) }) ?? true,
+              thermalState.map({ (0...3).contains($0) }) ?? true,
+              freeStorageBytes.map({ $0 >= 0 }) ?? true,
               (lastSampleFrame == nil) == (timebaseHz == nil),
               epochID == nil || sessionID != nil,
               lastSampleFrame == nil || epochID != nil,
@@ -54,6 +69,7 @@ public struct WatchCaptureStatus: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case receiverLibraryInstanceID, sessionID, epochID, activity, capturedDuration, sealedDuration
         case pendingChunkCount, pendingBytes, lastSampleFrame, timebaseHz, lastSampleAge, audioBatchVersion
+        case batteryLevel, batteryState, lowPowerMode, thermalState, freeStorageBytes
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -63,7 +79,12 @@ public struct WatchCaptureStatus: Codable, Equatable, Sendable {
                       sealedDuration: c.decode(Double.self, forKey: .sealedDuration), pendingChunkCount: c.decode(Int.self, forKey: .pendingChunkCount),
                       pendingBytes: c.decode(Int64.self, forKey: .pendingBytes), lastSampleFrame: c.decodeIfPresent(Int64.self, forKey: .lastSampleFrame),
                       timebaseHz: c.decodeIfPresent(Double.self, forKey: .timebaseHz), lastSampleAge: c.decodeIfPresent(Double.self, forKey: .lastSampleAge),
-                      audioBatchVersion: c.decodeIfPresent(Int.self, forKey: .audioBatchVersion))
+                      audioBatchVersion: c.decodeIfPresent(Int.self, forKey: .audioBatchVersion),
+                      batteryLevel: c.decodeIfPresent(Double.self, forKey: .batteryLevel),
+                      batteryState: c.decodeIfPresent(String.self, forKey: .batteryState),
+                      lowPowerMode: c.decodeIfPresent(Bool.self, forKey: .lowPowerMode),
+                      thermalState: c.decodeIfPresent(Int.self, forKey: .thermalState),
+                      freeStorageBytes: c.decodeIfPresent(Int64.self, forKey: .freeStorageBytes))
     }
 }
 

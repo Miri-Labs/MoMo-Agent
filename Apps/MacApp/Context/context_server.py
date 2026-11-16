@@ -16,8 +16,11 @@ import transcript_ingestion
 import memory_review
 import recording_summary
 from life_illustrations import LifeIllustrations
+from device_telemetry import read_device_telemetry, sync_device_telemetry
 from health_store import read_health, sync_health
 from phone_sources import read_phone_sources, sync_phone_source
+from situational_context import read_situational_context
+import life_pulse
 
 
 class ContextService:
@@ -115,10 +118,15 @@ class ContextService:
                                     self.respond(503, {"error": {"code": "ingest_unavailable",
                                                                  "message": "Transcript saved; retry delivery"}})
                                     return
+                        elif url.path == "/v1/device-telemetry":
+                            result = sync_device_telemetry(store, body)
+                            service.maybe_emit_life_pulse(store)
                         elif url.path == "/v1/health":
                             result = sync_health(store, body)
+                            service.maybe_emit_life_pulse(store)
                         elif url.path == "/v1/phone-sources":
                             result = sync_phone_source(store, body)
+                            service.maybe_emit_life_pulse(store)
                         elif url.path == "/v1/summaries":
                             result = recording_summary.enqueue(store, body)
                         elif url.path == "/v1/memories/forget":
@@ -136,8 +144,12 @@ class ContextService:
                             self.respond(404, {"error": {"code": "not_found", "message": "Unknown MoMo route"}}); return
                     elif url.path == "/v1/summaries":
                         result = recording_summary.read(store, query['id'][0])
+                    elif url.path == "/v1/device-telemetry":
+                        result = read_device_telemetry(store, after, limit=min(limit, 50))
+                    elif url.path == "/v1/situation":
+                        result = read_situational_context(store, data_dir=service.data)
                     elif url.path == "/v1/health":
-                        result = read_health(store, after, limit=min(limit, 50))
+                        result = read_health(store, after, limit=min(limit, 50), category=query.get("category", ["all"])[0])
                     elif url.path == "/v1/phone-sources":
                         result = read_phone_sources(store, query.get("kind", [""])[0], after, limit=min(limit, 100))
                     elif url.path == "/v1/memories":
@@ -229,18 +241,41 @@ class ContextService:
         model = load_config(self.data).get('model') or {}
         return isinstance(model, dict) and notice['provider'] == canonical_provider(model.get('provider'))
 
+    def maybe_emit_life_pulse(self, store, now=None):
+        conn = getattr(self, "connection", None)
+        if not isinstance(conn, dict) or not conn.get("base_url") or not conn.get("assistant_id"):
+            return None
+        ts = time.time() if now is None else float(now)
+        try:
+            eng_file = Path(self.data) / "runtime/engine.json"
+            if eng_file.is_file() and json.loads(eng_file.read_text(encoding="utf-8")).get("proactive_mode") == "off":
+                return None
+            if self.background_quota_exhausted(ts):
+                return None
+            return life_pulse.maybe_emit_pulse(
+                store,
+                lambda payload: self.request("/momo/v1/proactive/ingest", payload),
+                data_dir=self.data,
+                now=ts,
+            )
+        except Exception:
+            return None
+
     def dispatch(self):
         # Only durable admission/reconciliation. Active runtime owns model calls, tools and execution.
         while not self.stopped.wait(2):
             store = ContextStore(self.directory)
             try:
+                now = time.time()
+                if time.monotonic() >= getattr(self, "next_pulse_dispatch", 0):
+                    self.next_pulse_dispatch = time.monotonic() + 30
+                    self.maybe_emit_life_pulse(store, now=now)
                 review = store.db.execute(
                     "SELECT * FROM memory_reviews WHERE state='running' OR (state='pending' AND first_attempt IS NOT NULL) ORDER BY rowid LIMIT 1"
                 ).fetchone()
                 if review:
                     self.advance_review(store, review)
                     continue
-                now = time.time()
                 job = transcript_ingestion.next_job(store, now, False)
                 if job:
                     self.advance_job(store, job)

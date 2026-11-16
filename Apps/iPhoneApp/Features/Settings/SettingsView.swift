@@ -31,8 +31,13 @@ struct SettingsView: View {
                     }
                 }
             }
-            if remoteAgent.health != nil || remoteAgent.sources != nil || remoteAgent.sourcesFailure != nil {
+            if remoteAgent.deviceTelemetry != nil || remoteAgent.health != nil || remoteAgent.sources != nil || remoteAgent.sourcesFailure != nil {
                 Section {
+                    if let telemetry = remoteAgent.deviceTelemetry {
+                        settingsLink("设备状态（电量与连接）", symbol: "battery.100percent", value: telemetry.enabled ? "已开启" : "未开启", id: "settings.deviceTelemetry") {
+                            PhoneDeviceTelemetrySettingsView(telemetry: telemetry)
+                        }
+                    }
                     if let health = remoteAgent.health {
                         settingsLink("健康", symbol: "heart", value: health.enabled ? "已开启" : "未开启", id: "settings.health") {
                             PhoneHealthSettingsView(health: health)

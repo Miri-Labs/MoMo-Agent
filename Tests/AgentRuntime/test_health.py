@@ -90,6 +90,55 @@ class HealthTests(unittest.TestCase):
         self.assertIsNone(permitted_route('POST', '/v1/health'))
         self.assertIsNone(permitted_route('DELETE', '/context/v1/health'))
 
+    def test_v2_metrics_sleep_workouts_rings_and_category_filtering(self):
+        v2 = dict(
+            device_id=str(uuid.uuid4()),
+            revision=1,
+            state='enabled',
+            observed_at=900000,
+            window_start=900000 - 10 * 86400,
+            window_end=900000,
+            timezone='Asia/Shanghai',
+            observations=[
+                dict(metric='steps', unit='count', value=7820, start=890000, end=899900,
+                     source_name='iPhone', source_bundle='com.apple.health.iphone'),
+                dict(metric='steps', unit='count', value=8100, start=890000, end=899950,
+                     source_name='Apple Watch', source_bundle='com.apple.health.watch'),
+                dict(metric='hrv_sdnn', unit='ms', value=54.2, start=899500, end=899560,
+                     source_name='Apple Watch', source_bundle='com.apple.health.watch'),
+                dict(metric='wrist_temperature', unit='degC', value=-0.35, start=880000, end=895000,
+                     source_name='Apple Watch', source_bundle='com.apple.health.watch'),
+                dict(metric='environmental_audio_exposure', unit='dBASPL', value=68.5, start=898000, end=899800,
+                     source_name='Apple Watch', source_bundle='com.apple.health.watch'),
+            ],
+            sleep_sessions=[
+                dict(id='sleep-1', start=860000, end=885200, asleep_seconds=23400, in_bed_seconds=25200,
+                     deep_seconds=5400, core_seconds=12600, rem_seconds=5400, awake_seconds=1800,
+                     source_name='Apple Watch', source_bundle='com.apple.health.watch'),
+            ],
+            workouts=[
+                dict(id='wk-1', activity_type='running', start=892000, end=894400, duration_seconds=2400,
+                     active_energy_kcal=340.5, distance_meters=5120.0,
+                     source_name='Apple Watch', source_bundle='com.apple.health.watch'),
+            ],
+            activity_summaries=[
+                dict(date='2026-11-16', active_energy_kcal=520, active_energy_goal_kcal=600,
+                     exercise_minutes=42, exercise_goal_minutes=30, stand_hours=11, stand_goal_hours=12),
+            ],
+        )
+        sync_health(self.store, v2)
+        sleep_only = read_health(self.store, now=900010, category='sleep')['items'][0]
+        self.assertEqual(1, len(sleep_only['sleep_sessions']))
+        self.assertEqual([], sleep_only['observations'])
+        self.assertEqual([], sleep_only['workouts'])
+        vitals_only = read_health(self.store, now=900010, category='vitals')['items'][0]
+        self.assertEqual({'hrv_sdnn', 'wrist_temperature'}, {o['metric'] for o in vitals_only['observations']})
+        audio_only = read_health(self.store, now=900010, category='audio')['items'][0]
+        self.assertEqual(['environmental_audio_exposure'], [o['metric'] for o in audio_only['observations']])
+        workouts_only = read_health(self.store, now=900010, category='workouts')['items'][0]
+        self.assertEqual('running', workouts_only['workouts'][0]['activity_type'])
+        self.assertAlmostEqual(6.5, sleep_only['summary']['latest_sleep']['asleep_hours'])
+
 
 class HealthMCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_actual_stdio_tool_reads_the_synced_copy_and_is_absent_from_memory_ingestion(self):

@@ -2421,8 +2421,8 @@ class SuperAgentGateway:
                     "properties": {
                         "kind": {
                             "type": "string",
-                            "enum": ["all", "visits", "calendar", "reminders", "health"],
-                            "description": "'all' (default) returns visits, calendar and reminders. 'health' reads steps and heart rate.",
+                            "enum": ["all", "visits", "calendar", "reminders", "motion", "health"],
+                            "description": "'all' (default) returns visits, calendar and reminders. 'motion' reads recent activity states. 'health' reads HealthKit snapshots.",
                         },
                         "after": {"type": "string", "description": "That kind's next_cursor. Omit for the first page."},
                     },
@@ -2616,9 +2616,11 @@ class SuperAgentGateway:
                 store = ContextStore(ctx_dir)
                 try:
                     out = {}
-                    for k in PHONE_SOURCE_KINDS:
+                    for k in ("visits", "calendar", "reminders"):
                         if kind in ("all", k):
                             out[k] = read_phone_sources(store, k, after, limit=40)
+                    if kind == "motion":
+                        out["motion"] = read_phone_sources(store, "motion", after, limit=40)
                     if kind == "health":
                         if after and str(uuid.UUID(after)) != after:
                             raise ValueError("Invalid health cursor")
@@ -3052,7 +3054,19 @@ class SuperAgentGateway:
             raw_sig = str(payload.get("id") or f"signal:{uuid.uuid4().hex[:12]}")
             event_id = raw_sig[len("momo:") :] if raw_sig.startswith("momo:") else raw_sig
             sig_id = f"momo:{event_id}"
-            thread_id = str(payload.get("thread_id") or f"signal:{event_id}")
+            raw_thread = str(payload.get("thread_id") or f"signal:{event_id}")
+            base_thread = raw_thread[len("momo:") :] if raw_thread.startswith("momo:") else raw_thread
+            ended_threads = {
+                th_s
+                for t in self._cached_tickets
+                if isinstance(t, dict) and (t.get("ended") or t.get("state") == "ended")
+                for th_s in self._thread_keys(t.get("threads"))
+            }
+            thread_id = base_thread
+            suffix_idx = 1
+            while f"momo:{thread_id}" in ended_threads:
+                suffix_idx += 1
+                thread_id = f"{base_thread}:r{suffix_idx}"
             self.bridge.enqueue_trigger(
                 trigger_id=sig_id,
                 kind=kind,
@@ -3355,7 +3369,7 @@ class SuperAgentGateway:
         is_signal = (
             (trig_row is not None and trig_row["kind"] == "life_signals")
             or basis_scope.get("stream") == "life_signals"
-            or any(th.removeprefix("momo:").startswith("signal:") for th in threads)
+            or any(th.removeprefix("momo:").startswith(("signal:", "pulse:")) for th in threads)
         )
         if is_transcript:
             origin_kind, origin_label = "proactive_transcript", "录音主动派发"
@@ -4645,6 +4659,34 @@ class SuperAgentGateway:
             if next_cursor:
                 payload["next"] = next_cursor
             return web.json_response(payload)
+        clean_tid = thread_id.removeprefix("momo:")
+        if clean_tid.startswith(("pulse:", "signal:")):
+            base_tid = re.sub(r":r\d+$", "", clean_tid)
+            sig_rows = self.bridge.db.execute(
+                """SELECT message_id, actor_id, at_iso, text FROM triggers
+                   WHERE kind='life_signals' AND (thread_id=? OR thread_id LIKE ?)
+                   ORDER BY seq DESC LIMIT ?""",
+                (base_tid, f"{base_tid}:r%", limit),
+            ).fetchall()
+            sig_messages = [
+                {
+                    "id": row["message_id"],
+                    "from": row["actor_id"] or "owner",
+                    "at": row["at_iso"],
+                    "text": row["text"],
+                }
+                for row in reversed(sig_rows)
+            ]
+            recent_tickets = self._recent_proactive_ticket_summaries(max_items=8)
+            return web.json_response(
+                {
+                    "messages": sig_messages,
+                    "body": {
+                        "thread_id": clean_tid,
+                        **({"recent_tickets": recent_tickets} if recent_tickets else {}),
+                    },
+                }
+            )
         rows = self.store.db.execute(
             "SELECT id, role, content, created_at FROM messages ORDER BY seq DESC LIMIT 30"
         ).fetchall()

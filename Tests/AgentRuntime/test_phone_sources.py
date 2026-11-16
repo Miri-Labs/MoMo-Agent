@@ -50,6 +50,20 @@ class PhoneSourceTests(unittest.TestCase):
             dict(id='visit', source_name='CoreLocation visits', start=999990, latitude=31.2, longitude=121.5, accuracy=50)]))
         for kind in ('visits', 'calendar', 'reminders'):
             self.assertTrue(read_phone_sources(self.store, kind)['items'][0]['records'])
+        sync_phone_source(self.store, dict(
+            device_id=self.payload['device_id'], kind='motion', revision=1, state='enabled',
+            observed_at=1000000, window_start=1000000 - 86400, window_end=1000030, timezone='Asia/Shanghai',
+            records=[dict(id='m1', title='automotive', source_name='CoreMotion', start=999500, end=1000010)],
+        ))
+        all_sources = read_phone_sources(self.store, 'all')
+        self.assertEqual({'calendar', 'reminders', 'visits', 'motion'}, set(all_sources.keys()))
+        self.assertEqual('automotive', all_sources['motion']['items'][0]['records'][0]['title'])
+        with self.assertRaises(ValueError):
+            sync_phone_source(self.store, dict(
+                device_id=self.payload['device_id'], kind='motion', revision=2, state='enabled',
+                observed_at=1000000, window_start=990000, window_end=1000000, timezone='Asia/Shanghai',
+                records=[dict(id='bad', title='flying', source_name='CoreMotion', start=999500)],
+            ))
         self.assertEqual(0, self.store.db.execute('SELECT COUNT(*) FROM jobs').fetchone()[0])
         self.assertEqual(0, self.store.db.execute('SELECT COUNT(*) FROM sources').fetchone()[0])
 

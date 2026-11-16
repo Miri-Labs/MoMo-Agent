@@ -2,6 +2,7 @@ import Foundation
 import Network
 import Observation
 import Security
+import UIKit
 import MoMoAgentClient
 import MoMoAgentRTC
 import MoMoArchive
@@ -23,10 +24,17 @@ final class PhoneRemoteAgent {
         guard let summaries = context?.recordingSummaries else { return [:] }
         return try await summaries.summaries(for: windows)
     }
+    private(set) var deviceTelemetry: PhoneDeviceTelemetrySync?
     private(set) var health: PhoneHealthSync?
     private(set) var sources: PhoneSourcesSync?
     private(set) var sourcesFailure: String?
     private(set) var network: AgentRTCTransport?
+    @ObservationIgnored private var latestWatchStatus: WatchStatusObservation?
+
+    func updateWatchStatus(_ observation: WatchStatusObservation?) {
+        latestWatchStatus = observation
+        deviceTelemetry?.updateWatchStatus(observation, expectedLibraryID: archive.libraryInstanceID)
+    }
     @ObservationIgnored private let archive: ArchiveStore
     @ObservationIgnored private let deviceID: UUID
     private(set) var store: RemoteTaskStore?
@@ -70,6 +78,7 @@ final class PhoneRemoteAgent {
                 if case AgentClientError.http(401, _, _, _) = error { self.store?.recordConnectionFailure(error) }
                 throw error
             }
+            await self.piggybackSituationalContextAfterDelivery()
         }, prepare: { [weak self] in
             guard let self else { return }
             if self.connection?.network == "tailscale" {
@@ -122,7 +131,7 @@ final class PhoneRemoteAgent {
                 if let connection {
                     let key = try Self.readKey(connection.instanceID)
                     let restored = try makeStore(connection, key: key)
-                    store = restored.tasks; context = restored.sync; health = restored.health; sources = restored.sources; network = restored.network; desktopClient = restored.desktop
+                    store = restored.tasks; context = restored.sync; deviceTelemetry = restored.telemetry; health = restored.health; sources = restored.sources; network = restored.network; desktopClient = restored.desktop
                     if let pending = pairing.pending, pending.invitation.canReuseCredential(from: connection), pending.credential == key {
                         try? pairing.clear()
                         if setupStep == .connect { advanceSetup(.completed) }
@@ -170,8 +179,8 @@ final class PhoneRemoteAgent {
             }
             cancelRecovery()
             contextDelivery.expire()
-            store?.background(); context?.background(); health?.background(); sources?.background(); network?.suspend()
-            connection = proposed; store = restored.tasks; context = restored.sync; health = restored.health; sources = restored.sources; network = restored.network; desktopClient = restored.desktop; failure = nil
+            store?.background(); context?.background(); deviceTelemetry?.background(); health?.background(); sources?.background(); network?.suspend()
+            connection = proposed; store = restored.tasks; context = restored.sync; deviceTelemetry = restored.telemetry; health = restored.health; sources = restored.sources; network = restored.network; desktopClient = restored.desktop; failure = nil
             desktopClientID = UUID()
             notifications.start()
             pairingInProgress = false
@@ -286,9 +295,33 @@ final class PhoneRemoteAgent {
         ancillaryStarted = true
         tailnet.diagnostics.recordLink("recovery", "authenticated", details: ["attempt": recoveryID.uuidString,
             "generation": sceneGeneration.uuidString])
-        health?.foreground(); sources?.foreground(); notifications.foreground()
+        deviceTelemetry?.foreground(); health?.foreground(); sources?.foreground(); notifications.foreground()
         lifeIllustrations.startPolling()
         contextDelivery.request()
+    }
+
+    private func hasBackgroundBudget(minimumSeconds: TimeInterval) -> Bool {
+        guard UIApplication.shared.applicationState == .background else { return true }
+        return UIApplication.shared.backgroundTimeRemaining >= minimumSeconds
+    }
+
+    private func piggybackSituationalContextAfterDelivery() async {
+        guard !Task.isCancelled, store?.canContactServer != false else { return }
+        if hasBackgroundBudget(minimumSeconds: 4),
+           let telemetry = deviceTelemetry,
+           telemetry.shouldRefreshOpportunistically(minimumInterval: 5 * 60) {
+            await telemetry.refresh()
+        }
+        guard !Task.isCancelled, store?.canContactServer != false else { return }
+        if hasBackgroundBudget(minimumSeconds: 8),
+           let health,
+           health.shouldRefreshOpportunistically(minimumInterval: 15 * 60) {
+            await health.refresh()
+        }
+        guard !Task.isCancelled, store?.canContactServer != false else { return }
+        if hasBackgroundBudget(minimumSeconds: 8), let sources {
+            await sources.refreshOpportunistically(minimumInterval: 15 * 60)
+        }
     }
 
     private nonisolated static func probeCapabilities(_ client: AgentClient, timeout: Duration) async throws {
@@ -321,7 +354,7 @@ final class PhoneRemoteAgent {
         active = false
         cancelRecovery()
         stopPathMonitor()
-        context?.stopPolling(); health?.background(); sources?.background(); notifications.background()
+        context?.stopPolling(); deviceTelemetry?.background(); health?.background(); sources?.background(); notifications.background()
         lifeIllustrations.stopPolling()
         replyContinuation.leavingForeground()
         if lifeIllustrations.settings.enabled || lifeIllustrations.isRefreshing {
@@ -441,12 +474,21 @@ final class PhoneRemoteAgent {
         return connection.network == "tailscale" ? EmbeddedTailnetTransport(network: tailnet, endpoint: connection.baseURL) : nil
     }
 
-    private func makeStore(_ connection: AgentConnection, key: String, configuration: URLSessionConfiguration = .ephemeral) throws -> (tasks: RemoteTaskStore, sync: PhoneContextSync, health: PhoneHealthSync?, sources: PhoneSourcesSync?, network: AgentRTCTransport?, desktop: AgentClient) {
+    private func makeStore(_ connection: AgentConnection, key: String, configuration: URLSessionConfiguration = .ephemeral) throws -> (tasks: RemoteTaskStore, sync: PhoneContextSync, telemetry: PhoneDeviceTelemetrySync?, health: PhoneHealthSync?, sources: PhoneSourcesSync?, network: AgentRTCTransport?, desktop: AgentClient) {
         let network = connection.network == nil ? try AgentRTCTransport(connection: connection, credential: key) : nil
         let route = try transport(for: connection) ?? network
         let client = try AgentClient(baseURL: connection.baseURL, credential: key, assistantID: connection.assistantID, configuration: configuration, transport: route)
         let sync = try PhoneContextSync(directory: directory, archive: archive, deviceID: deviceID, connection: connection, key: key, transport: route)
         sync.configurationFingerprint = transcriptionFingerprint
+        let telemetry = try? PhoneDeviceTelemetrySync(
+            directory: directory,
+            deviceID: deviceID,
+            connection: connection,
+            key: key,
+            transport: route,
+            expectedLibraryID: archive.libraryInstanceID,
+            initialWatchStatus: latestWatchStatus
+        )
         let health = try? PhoneHealthSync(directory: directory, deviceID: deviceID, connection: connection, key: key, transport: route)
         let sources: PhoneSourcesSync?
         do {
@@ -462,7 +504,7 @@ final class PhoneRemoteAgent {
         tasks.onAuthenticationRequired = { [weak self, weak tasks, weak sync] in
             guard let self, let tasks, self.store === tasks else { return }
             self.cancelRecovery()
-            sync?.background(); self.health?.background(); self.sources?.background(); self.network?.suspend(); self.notifications.background()
+            sync?.background(); self.deviceTelemetry?.background(); self.health?.background(); self.sources?.background(); self.network?.suspend(); self.notifications.background()
             self.lifeIllustrations.stopPolling()
             self.lifeIllustrations.invalidateSupport()
         }
@@ -477,6 +519,7 @@ final class PhoneRemoteAgent {
         sync.onAuthenticationRequired = { [weak tasks] error in tasks?.recordConnectionFailure(error) }
         sync.recordingSummaries?.onAuthenticationRequired = { [weak tasks] error in tasks?.recordConnectionFailure(error) }
         sync.recordingSummaries?.onChanged = { [weak self] in self?.onSummariesChanged?() }
+        telemetry?.onAuthenticationRequired = { [weak tasks] error in tasks?.recordConnectionFailure(error) }
         health?.onAuthenticationRequired = { [weak tasks] error in tasks?.recordConnectionFailure(error) }
         sources?.onAuthenticationRequired = { [weak tasks] error in tasks?.recordConnectionFailure(error) }
         tasks.prepareSubmission = { task in
@@ -486,7 +529,7 @@ final class PhoneRemoteAgent {
             let dataClient = try AgentClient(baseURL: endpoint, credential: key, assistantID: connection.assistantID, transport: route)
             lifeIllustrations.configure(client: dataClient, scope: connection.workspaceID.uuidString)
         }
-        return (tasks, sync, health, sources, network, client)
+        return (tasks, sync, telemetry, health, sources, network, client)
     }
 
     private static func openTaskStore(file: URL, connection: AgentConnection, client: AgentClient) throws -> RemoteTaskStore {

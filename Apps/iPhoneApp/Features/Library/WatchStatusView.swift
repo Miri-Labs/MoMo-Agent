@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import MoMoArchive
 import MoMoContracts
 
@@ -101,6 +102,21 @@ struct WatchStatusPopover: View {
                 }
                 Text(status.subtitle).phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
                     .fixedSize(horizontal: false, vertical: true)
+                let watchBattery = Self.watchBatteryDisplay(from: observation)
+                let phoneBattery = Self.phoneBatteryDisplay()
+                if watchBattery != nil || phoneBattery != nil {
+                    HStack(spacing: 8) {
+                        if let watchBattery {
+                            batteryPill(symbol: "applewatch", display: watchBattery)
+                                .accessibilityIdentifier("\(accessibilityPrefix).watchStatus.watchBattery")
+                        }
+                        if let phoneBattery {
+                            batteryPill(symbol: "iphone", display: phoneBattery)
+                                .accessibilityIdentifier("\(accessibilityPrefix).watchStatus.phoneBattery")
+                        }
+                    }
+                    .accessibilityIdentifier("\(accessibilityPrefix).watchStatus.battery")
+                }
                 if let observation, case .watch(let report) = observation.snapshot.payload {
                     Text(report.pendingChunkCount > 0
                          ? String(localized: "上次报告：\(report.pendingChunkCount) 段待接收确认 · \(report.pendingBytes.formatted(.byteCount(style: .file)))")
@@ -129,6 +145,66 @@ struct WatchStatusPopover: View {
             .accessibilityIdentifier("\(accessibilityPrefix).watchStatus.popover")
         }
         .presentationBackground(MoMoPalette.paper)
+    }
+
+    private struct BatteryDisplay: Equatable {
+        let percent: Int
+        let isCharging: Bool
+        let isLowBattery: Bool
+        let isLowPowerMode: Bool
+    }
+
+    @ViewBuilder
+    private func batteryPill(symbol: String, display: BatteryDisplay) -> some View {
+        let tint: Color = display.isCharging
+            ? .green
+            : (display.isLowBattery ? MoMoPalette.failure : (display.isLowPowerMode ? .orange : MoMoPalette.ink))
+        HStack(spacing: 4) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+            if display.isCharging {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.green)
+            }
+            Text("\(display.percent)%")
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(MoMoPalette.surface, in: Capsule())
+        .overlay { Capsule().strokeBorder(MoMoPalette.line, lineWidth: 0.5) }
+    }
+
+    private static func watchBatteryDisplay(from observation: WatchStatusObservation?) -> BatteryDisplay? {
+        guard let observation,
+              case .watch(let report) = observation.snapshot.payload,
+              let level = report.batteryLevel, level.isFinite else { return nil }
+        let percent = min(100, max(0, Int((level * 100).rounded())))
+        let charging = report.batteryState == "charging" || report.batteryState == "full"
+        return BatteryDisplay(
+            percent: percent,
+            isCharging: charging,
+            isLowBattery: !charging && percent <= 20,
+            isLowPowerMode: report.lowPowerMode == true
+        )
+    }
+
+    @MainActor
+    private static func phoneBatteryDisplay() -> BatteryDisplay? {
+        let device = UIDevice.current
+        if !device.isBatteryMonitoringEnabled { device.isBatteryMonitoringEnabled = true }
+        let raw = device.batteryLevel
+        guard raw >= 0 else { return nil }
+        let percent = min(100, max(0, Int((Double(raw) * 100).rounded())))
+        let charging = device.batteryState == .charging || device.batteryState == .full
+        return BatteryDisplay(
+            percent: percent,
+            isCharging: charging,
+            isLowBattery: !charging && percent <= 20,
+            isLowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled
+        )
     }
 }
 

@@ -179,6 +179,7 @@ final class WatchRuntime {
     @ObservationIgnored private var lastWidgetPublication: TimeInterval = -.infinity
     @ObservationIgnored private var widgetRevision: UInt64 = 0
     @ObservationIgnored private var widgetHasQueueObservation = false
+    @ObservationIgnored nonisolated(unsafe) private var powerObservationTasks: [Task<Void, Never>] = []
     #if DEBUG && targetEnvironment(simulator)
     @ObservationIgnored private var simulatorTestCapture = false
 
@@ -205,6 +206,23 @@ final class WatchRuntime {
         self.recoverySleep = recoverySleep
         captureMeter.setVisible(false)
         audioSession.onEvent = { [weak self] event in await self?.handleAudioEvent(event) }
+        let names: [Notification.Name] = [
+            Notification.Name("WKInterfaceDeviceBatteryStateDidChangeNotification"),
+            .NSProcessInfoPowerStateDidChange
+        ]
+        powerObservationTasks = names.map { name in
+            Task { @MainActor [weak self] in
+                for await _ in NotificationCenter.default.notifications(named: name) {
+                    guard let self, self.captureReady, self.linkActivated, self.transport.isReachable, !self.connectivityGrant else { continue }
+                    self.statusDirty = true
+                    self.requestStatusPublication()
+                }
+            }
+        }
+    }
+
+    deinit {
+        for task in powerObservationTasks { task.cancel() }
     }
 
     func bootstrap() async {
@@ -2243,6 +2261,7 @@ final class WatchRuntime {
                prevStatus.activity == observedCaptureActivity,
                prevStatus.pendingChunkCount == pendingChunkCount,
                prevStatus.pendingBytes == pendingBytes,
+               prevStatus.batteryState == Self.currentWatchBatteryStateString(),
                loopUptime - lastPassiveRecordingStatusAt < 300 {
                 statusBudget.beganAttempt(now: loopUptime)
                 statusBudget.succeeded()
@@ -2293,15 +2312,48 @@ final class WatchRuntime {
         let sampledAtUptime = ProcessInfo.processInfo.systemUptime
         let sampleUptime = observedSampleUptime
         let sampled = epochID != nil && sampleUptime != nil
+        let device = WKInterfaceDevice.current()
+        if !device.isBatteryMonitoringEnabled { device.isBatteryMonitoringEnabled = true }
+        let rawBattery = device.batteryLevel
+        let batteryLevel: Double? = rawBattery >= 0 ? min(1.0, Double(rawBattery)) : nil
+        let batteryState = Self.currentWatchBatteryStateString(device.batteryState)
+        let lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let thermalState = min(3, max(0, ProcessInfo.processInfo.thermalState.rawValue))
+        let freeStorageBytes = Self.currentWatchFreeStorageBytes(near: encoderDirectory)
         let payload = try WatchCaptureStatus(receiverLibraryInstanceID: receiver?.libraryInstanceID,
             sessionID: sessionID, epochID: epochID, activity: observedCaptureActivity,
             capturedDuration: sessionID == nil ? 0 : max(elapsedSeconds, sealedSeconds),
             sealedDuration: sessionID == nil ? 0 : sealedSeconds, pendingChunkCount: pendingChunkCount, pendingBytes: pendingBytes,
             lastSampleFrame: sampled ? observedFrames : nil, timebaseHz: sampled ? 16_000 : nil,
             lastSampleAge: sampled ? sampleUptime.map { max(0, sampledAtUptime - $0) } : nil,
-            audioBatchVersion: 1)
+            audioBatchVersion: 1,
+            batteryLevel: batteryLevel, batteryState: batteryState,
+            lowPowerMode: lowPowerMode, thermalState: thermalState,
+            freeStorageBytes: freeStorageBytes)
         return try await store.saveStatus(sourceDeviceID: sourceDeviceID, sourceBuild: sourceBuild, payload: payload,
             refreshObservation: refreshObservation)
+    }
+
+    private static func currentWatchBatteryStateString(_ state: WKInterfaceDeviceBatteryState = WKInterfaceDevice.current().batteryState) -> String {
+        switch state {
+        case .unknown: return "unknown"
+        case .unplugged: return "unplugged"
+        case .charging: return "charging"
+        case .full: return "full"
+        @unknown default: return "unknown"
+        }
+    }
+
+    private static func currentWatchFreeStorageBytes(near url: URL) -> Int64? {
+        let probeURL = FileManager.default.fileExists(atPath: url.path) ? url : URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        if let available = try? probeURL.resourceValues(forKeys: [.volumeAvailableCapacityKey]).volumeAvailableCapacity, available >= 0 {
+            return Int64(available)
+        }
+        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: probeURL.path),
+           let free = attrs[.systemFreeSize] as? NSNumber, free.int64Value >= 0 {
+            return free.int64Value
+        }
+        return nil
     }
 
     private var observedCaptureActivity: WatchCaptureActivity {

@@ -17,7 +17,7 @@ struct PhoneHealthSettingsView: View {
                     .accessibilityIdentifier("health.enabled")
                     }.padding(.horizontal, 18).frame(minHeight: 58)
                 }
-                Text("最近 7 天步数和最新心率，同步到你的 Mac。相关问题由所选 AI 服务分析。")
+                Text("最近 7 天睡眠、运动、活动三环、步数、心率、心率变异性、血氧、呼吸频率与环境音量，同步到你的 Mac。相关问题由所选 AI 服务分析。")
                     .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
                 if !health.available { Text("此设备不支持健康数据。").phoneText(.metadata).foregroundStyle(MoMoPalette.muted) }
                 if health.enabled || health.deletionPending {
@@ -25,6 +25,14 @@ struct PhoneHealthSettingsView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             if health.enabled, let date = health.lastSynced {
                                 PhoneSettingsValueRow(title: "上次同步", value: Text(date, style: .relative))
+                            }
+                            if health.enabled && !health.deletionPending && health.available {
+                                Button("补充授权睡眠、运动与体征数据") {
+                                    Task { await health.reauthorize() }
+                                }
+                                .buttonStyle(PhoneActionButtonStyle())
+                                .disabled(health.isSyncing)
+                                .accessibilityIdentifier("health.reauthorize")
                             }
                             Button { Task { await health.refresh() } } label: {
                                 HStack { Text(health.deletionPending ? "重试移除 Mac 副本" : "立即同步"); Spacer(); if health.isSyncing { ProgressView().controlSize(.small) } }

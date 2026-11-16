@@ -139,6 +139,68 @@ struct StatusSnapshotTests {
         }
     }
 
+    @Test func watchTelemetryPiggybackFieldsRoundTripAndValidate() throws {
+        let legacyJSON = #"{"activity":"idle","capturedDuration":0,"pendingBytes":0,"pendingChunkCount":0,"sealedDuration":0}"#
+        let decodedLegacy = try WireJSON.decode(WatchCaptureStatus.self, from: Data(legacyJSON.utf8))
+        #expect(decodedLegacy.batteryLevel == nil)
+        #expect(decodedLegacy.batteryState == nil)
+        #expect(decodedLegacy.lowPowerMode == nil)
+        #expect(decodedLegacy.thermalState == nil)
+        #expect(decodedLegacy.freeStorageBytes == nil)
+
+        let withTelemetry = try WatchCaptureStatus(
+            receiverLibraryInstanceID: UUID(), sessionID: UUID(), epochID: UUID(),
+            activity: .recording, capturedDuration: 12.5, sealedDuration: 10.0,
+            pendingChunkCount: 2, pendingBytes: 8192, lastSampleFrame: 200_000, timebaseHz: 16_000,
+            lastSampleAge: 0.4, audioBatchVersion: 1,
+            batteryLevel: 0.42, batteryState: "charging", lowPowerMode: false,
+            thermalState: 1, freeStorageBytes: 4_294_967_296
+        )
+        let snapshot = try StatusSnapshot(
+            sourceDeviceID: UUID(), sourceBuild: "watch-telemetry-test",
+            sourceStoreInstanceID: UUID(), revision: 3, sampledAt: Date(timeIntervalSince1970: 1_700_000_000),
+            payload: .watch(withTelemetry)
+        )
+        let metadata = try LinkWireFormat.statusMetadata(snapshot)
+        let roundTripped = try LinkWireFormat.statusSnapshot(metadata)
+        #expect(roundTripped == snapshot)
+        if case .watch(let payload) = roundTripped.payload {
+            #expect(payload.batteryLevel == 0.42)
+            #expect(payload.batteryState == "charging")
+            #expect(payload.lowPowerMode == false)
+            #expect(payload.thermalState == 1)
+            #expect(payload.freeStorageBytes == 4_294_967_296)
+        } else {
+            Issue.record("Expected watch status payload")
+        }
+
+        #expect(throws: ContractError.invalidField("watch_status")) {
+            try WatchCaptureStatus(receiverLibraryInstanceID: nil, sessionID: nil, epochID: nil,
+                activity: .idle, capturedDuration: 0, sealedDuration: 0, pendingChunkCount: 0, pendingBytes: 0,
+                batteryLevel: 1.2)
+        }
+        #expect(throws: ContractError.invalidField("watch_status")) {
+            try WatchCaptureStatus(receiverLibraryInstanceID: nil, sessionID: nil, epochID: nil,
+                activity: .idle, capturedDuration: 0, sealedDuration: 0, pendingChunkCount: 0, pendingBytes: 0,
+                batteryLevel: -0.1)
+        }
+        #expect(throws: ContractError.invalidField("watch_status")) {
+            try WatchCaptureStatus(receiverLibraryInstanceID: nil, sessionID: nil, epochID: nil,
+                activity: .idle, capturedDuration: 0, sealedDuration: 0, pendingChunkCount: 0, pendingBytes: 0,
+                batteryState: "plugged")
+        }
+        #expect(throws: ContractError.invalidField("watch_status")) {
+            try WatchCaptureStatus(receiverLibraryInstanceID: nil, sessionID: nil, epochID: nil,
+                activity: .idle, capturedDuration: 0, sealedDuration: 0, pendingChunkCount: 0, pendingBytes: 0,
+                thermalState: 4)
+        }
+        #expect(throws: ContractError.invalidField("watch_status")) {
+            try WatchCaptureStatus(receiverLibraryInstanceID: nil, sessionID: nil, epochID: nil,
+                activity: .idle, capturedDuration: 0, sealedDuration: 0, pendingChunkCount: 0, pendingBytes: 0,
+                freeStorageBytes: -1)
+        }
+    }
+
     private func watchSnapshot(device: UUID = UUID(), store: UUID = UUID(), revision: Int64 = 1,
                                sampledAt: TimeInterval = 100, pending: Int = 1) throws -> StatusSnapshot {
         try StatusSnapshot(sourceDeviceID: device, sourceBuild: "status-test", sourceStoreInstanceID: store,

@@ -146,6 +146,8 @@ class ContextStore:
                 CREATE TABLE IF NOT EXISTS mutations (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, receipt TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS health_snapshots (
                     device_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, synced_at REAL NOT NULL);
+                CREATE TABLE IF NOT EXISTS device_telemetry_snapshots (
+                    device_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, synced_at REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS phone_source_snapshots (
                     device_id TEXT NOT NULL, kind TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL,
                     synced_at REAL NOT NULL, PRIMARY KEY(device_id,kind));
