@@ -287,7 +287,7 @@ class ProductStore:
                 self.db.execute(f'ALTER TABLE inputs ADD COLUMN {name} {declaration}')
         for table, name, declaration in [('works','active_context',"TEXT NOT NULL DEFAULT '[]'"),
                 ('work_cancels','target_run_id','TEXT'),('completions','report_attempt','INTEGER NOT NULL DEFAULT 0'),
-                ('messages','attachments_json','TEXT')]:
+                ('messages','attachments_json','TEXT'), ('messages','confirmation_json','TEXT')]:
             if name not in {row[1] for row in self.db.execute(f'PRAGMA table_info({table})')}:
                 self.db.execute(f'ALTER TABLE {table} ADD COLUMN {name} {declaration}')
         self.db.executescript('''
@@ -344,6 +344,9 @@ class ProductStore:
         if raw:
             try: item['attachments'] = json.loads(raw)
             except ValueError: pass
+        confirmation = item.pop('confirmation_json', None)
+        if confirmation:
+            item['confirmation'] = json.loads(confirmation)
         return item
 
     def message_states(self):
@@ -361,7 +364,7 @@ class ProductStore:
         data = [self._format_message(row) for row in rows]
         return dict(data=data, next_cursor=(data[0 if before is not None else -1]['seq'] if data else cursor), has_more=more)
 
-    def append_assistant(self, key, content, created, run_id=None, attachments=None):
+    def append_assistant(self, key, content, created, run_id=None, attachments=None, confirmation=None):
         attachments_json = json.dumps(attachments, ensure_ascii=False) if attachments else None
         with self.db:
             found = self.db.execute('SELECT id, attachments_json FROM messages WHERE source_key=?', (key,)).fetchone()
@@ -371,8 +374,9 @@ class ProductStore:
                 return found['id']
             identifier = 'assistant-' + hashlib.sha256(key.encode()).hexdigest()[:32]
             self.db.execute(
-                'INSERT INTO messages(id,role,content,created_at,run_id,source_key,attachments_json) VALUES(?,?,?,?,?,?,?)',
-                (identifier, 'assistant', content, created, run_id, key, attachments_json),
+                'INSERT INTO messages(id,role,content,created_at,run_id,source_key,attachments_json,confirmation_json) VALUES(?,?,?,?,?,?,?,?)',
+                (identifier, 'assistant', content, created, run_id, key, attachments_json,
+                 json.dumps(confirmation, ensure_ascii=False) if confirmation else None),
             )
             self.message_event(identifier)
         return identifier
