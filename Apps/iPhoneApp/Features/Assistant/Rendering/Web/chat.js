@@ -96,7 +96,10 @@
         code.innerHTML = DOMPurify.sanitize(hljs.highlight(code.textContent,{ language,ignoreIllegals:true }).value,
           { USE_PROFILES:{ html:true } });
       }
-      header.append(element('span','',language));
+      header.append(
+        element('span','',language),
+        replyButton(t("复制代码"),'copy-code','<svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><rect x="7" y="7" width="9" height="9" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M4 13V5a2 2 0 0 1 2-2h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>')
+      );
       pre.replaceWith(wrapper); wrapper.append(header,pre);
     });
     template.content.querySelectorAll('code').forEach(code => {
@@ -512,10 +515,14 @@
     }
     if (!view.actions) {
       view.actions = element('div','actions');
-      view.actions.append(replyButton(t("重新生成回复"),'regenerate','<svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M16 7a6.3 6.3 0 1 0 .2 5M16 3.5V7h-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'),element('span','end-status'));
+      view.actions.append(
+        replyButton(t("复制回复"),'copy-reply','<svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><rect x="7" y="7" width="9" height="9" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M4 13V5a2 2 0 0 1 2-2h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>'),
+        replyButton(t("重新生成回复"),'regenerate','<svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M16 7a6.3 6.3 0 1 0 .2 5M16 3.5V7h-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'),
+        element('span','end-status')
+      );
       view.node.append(view.actions);
     }
-    view.actions.hidden = turn.state === 'streaming' || !turn.text || (latest.canRegenerate === false && !['failed','truncated'].includes(turn.state));
+    view.actions.hidden = turn.state === 'streaming' || !turn.text;
     view.actions.querySelector('[data-action=regenerate]').disabled = latest.busy;
     view.actions.querySelector('[data-action=regenerate]').hidden = latest.canRegenerate === false;
     view.actions.dataset.message = turn.messageID;
@@ -676,6 +683,15 @@
     jump.classList.toggle('has-new', Boolean(label));
     jump.setAttribute('aria-label',label || t('回到最新消息'));
   }
+  function firstVisibleTurnIndex(children, minBottom) {
+    let lo = 0, hi = children.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (children[mid].getBoundingClientRect().bottom <= minBottom) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
   function saveReadingPosition() {
     clearTimeout(readingTimer); readingTimer = null;
     if (!latest || session === 'new' || restoring || jumpMotion || openingChat) return;
@@ -683,22 +699,27 @@
     // Preserve the last settled position during native overscroll. Do not turn
     // an out-of-bounds visible offset into a seemingly valid persisted anchor.
     if (top < 0 || top > maximumScrollTop()) { scheduleReadingPosition(); return; }
-    const anchor = [...root.children].find(node => node.getBoundingClientRect().bottom > headerInset());
+    const children = root.children;
+    const minBottom = headerInset();
+    const startIdx = firstVisibleTurnIndex(children, minBottom);
+    const anchor = startIdx < children.length ? children[startIdx] : null;
     const visibleMessageIDs = [];
-    for (const row of root.children) {
+    for (let i = startIdx; i < children.length; i++) {
+      const row = children[i];
       const rect = row.getBoundingClientRect();
-      if (rect.bottom <= headerInset() || rect.top >= innerHeight) continue;
+      if (rect.top >= innerHeight) break;
+      if (rect.bottom <= minBottom) continue;
       const ends = new Map();
       for (const part of row.querySelectorAll('[data-source-message]')) {
         if (part.dataset.sourceMessage && part.getBoundingClientRect().height > 0) ends.set(part.dataset.sourceMessage,part);
       }
       for (const id of JSON.parse(row.dataset.sourceIds || '[]')) {
         const bottom = ends.get(id)?.getBoundingClientRect().bottom ?? rect.bottom;
-        if (bottom > headerInset() && bottom <= innerHeight) visibleMessageIDs.push(id);
+        if (bottom > minBottom && bottom <= innerHeight) visibleMessageIDs.push(id);
       }
     }
     const value = { sessionID:session, following:pin.pinned, top, visibleMessageIDs:visibleMessageIDs.slice(-500),
-      anchorID:anchor?.dataset.message || null, anchorOffset:anchor ? anchor.getBoundingClientRect().top - headerInset() : 0 };
+      anchorID:anchor?.dataset.message || null, anchorOffset:anchor ? anchor.getBoundingClientRect().top - minBottom : 0 };
     const encoded = JSON.stringify(value);
     if (encoded !== lastReading) { lastReading = encoded; post('readingPosition',value); }
   }

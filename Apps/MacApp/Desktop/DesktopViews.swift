@@ -7,8 +7,9 @@ import MoMoContracts
 struct DesktopRoot: View {
     @Bindable var model: DesktopModel
     @State private var sidebarVisible = true
-    @State private var visitedTabs: Set<String> = ["chat"]
+    @State private var sidebarExpandedWidth: CGFloat = 224
     @State private var sourcesResetToken: UInt64 = 0
+    @State private var composerFocusToken: UInt64 = 0
     @State private var recordingCitation: RecordingCitation?
     @State private var previewingMemoryNote: ContextMemory?
     @Environment(\.openWindow) private var openWindow
@@ -18,6 +19,8 @@ struct DesktopRoot: View {
             DesktopSidebarRail(
                 selection: model.selection,
                 online: model.status?.agentOnline == true,
+                busy: model.taskStore?.hasActiveTask == true,
+                memoryCount: model.vaultSnapshot.activeMemories.count,
                 sidebarVisible: $sidebarVisible,
                 onSelect: { target in
                     if target == "sources" && model.selection == "sources" {
@@ -26,81 +29,74 @@ struct DesktopRoot: View {
                         model.selection = target
                     }
                 },
+                onQuickAsk: {
+                    model.selection = "chat"
+                    composerFocusToken &+= 1
+                },
                 onOpenSettings: {
                     openWindow(id: MoMoAgentMacApp.settingsID)
                 }
             )
-            .frame(width: sidebarVisible ? 216 : 76)
+            .frame(width: sidebarVisible ? sidebarExpandedWidth : 76)
             .background(MoMoPalette.sidebar)
             .overlay(alignment: .trailing) {
-                Rectangle()
-                    .fill(MoMoPalette.borderSubtle)
-                    .frame(width: 0.5)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                DesktopSidebarResizeHandle(
+                    sidebarVisible: $sidebarVisible,
+                    expandedWidth: $sidebarExpandedWidth
+                )
             }
 
+            // Grok Bot / Anysphere inset rounded stage: only mount the active stage (WarmChatWebPool & WarmAvatarWebPool preserve instant WebKit state).
             VStack(spacing: 0) {
                 if let failure = model.failure {
                     HStack(spacing: 10) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 13))
+                            .font(.system(size: 12.5))
                             .foregroundStyle(MoMoPalette.failure)
                         Text(failure)
-                            .font(.system(size: 13))
+                            .font(.system(size: 12.5))
+                            .lineLimit(2)
                         Spacer()
                         Button("关闭") { model.failure = nil }
                             .buttonStyle(.plain)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(MoMoPalette.muted)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 12)
-                    .padding(.top, 28)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
                     .background(MoMoPalette.failureBackground)
                     .overlay(alignment: .bottom) {
                         Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
                     }
                     .accessibilityIdentifier("desktop.failure")
                 }
-                ZStack {
-                    if visitedTabs.contains("chat") || model.selection == "chat" {
-                        let active = model.selection == "chat"
-                        DesktopChat(model: model, isActive: active)
-                            .padding(.top, 24)
-                            .opacity(active ? 1 : 0)
-                            .allowsHitTesting(active)
-                            .accessibilityHidden(!active)
-                            .zIndex(active ? 1 : 0)
-                    }
-                    if visitedTabs.contains("memory") || model.selection == "memory" {
-                        let active = model.selection == "memory"
-                        DesktopMemory(model: model, isActive: active)
-                            .padding(.top, 28)
-                            .opacity(active ? 1 : 0)
-                            .allowsHitTesting(active)
-                            .accessibilityHidden(!active)
-                            .zIndex(active ? 1 : 0)
-                    }
-                    if visitedTabs.contains("sources") || model.selection == "sources" {
-                        let active = model.selection == "sources"
-                        DesktopSources(model: model, isActive: active, resetToken: sourcesResetToken)
-                            .padding(.top, 28)
-                            .opacity(active ? 1 : 0)
-                            .allowsHitTesting(active)
-                            .accessibilityHidden(!active)
-                            .zIndex(active ? 1 : 0)
+
+                Group {
+                    switch model.selection {
+                    case "memory":
+                        DesktopMemory(model: model, isActive: true)
+                    case "sources":
+                        DesktopSources(model: model, isActive: true, resetToken: sourcesResetToken)
+                    default:
+                        DesktopChat(
+                            model: model,
+                            isActive: true,
+                            composerFocusToken: composerFocusToken
+                        )
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onChange(of: model.selection, initial: true) {
-                    visitedTabs.insert(model.selection)
-                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(MoMoPalette.canvas)
+            .sandInsetStage(
+                cornerRadius: 12,
+                fill: model.selection == "chat" ? MoMoPalette.canvas : MoMoPalette.pane
+            )
+            .padding(.top, 7)
+            .padding(.bottom, 7)
+            .padding(.trailing, 7)
         }
-        .background(MoMoPalette.canvas)
+        .background(MoMoPalette.sidebar)
         .background(DesktopWindowChrome())
         .ignoresSafeArea(.container)
         .environment(\.openURL, OpenURLAction { url in
@@ -156,12 +152,52 @@ struct DesktopRoot: View {
     }
 }
 
-/// Isolated sidebar view so hover and modifier-key states never invalidate DesktopChat / DesktopMemory / DesktopSources.
+/// Draggable resize handle with Grok Bot 10pt collapse hysteresis (collapses < 168pt, expands > 178pt).
+private struct DesktopSidebarResizeHandle: View {
+    @Binding var sidebarVisible: Bool
+    @Binding var expandedWidth: CGFloat
+    @State private var dragStartWidth: CGFloat?
+
+    var body: some View {
+        Color.clear
+            .frame(width: 7)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() }
+                else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                    .onChanged { value in
+                        let base = dragStartWidth ?? (sidebarVisible ? expandedWidth : 76)
+                        if dragStartWidth == nil { dragStartWidth = base }
+                        let proposed = base + value.translation.width
+                        if sidebarVisible && proposed < 168 {
+                            sidebarVisible = false
+                        } else if !sidebarVisible && proposed > 178 {
+                            sidebarVisible = true
+                            expandedWidth = min(284, max(204, proposed))
+                        } else if sidebarVisible {
+                            expandedWidth = min(284, max(204, proposed))
+                        }
+                    }
+                    .onEnded { _ in
+                        dragStartWidth = nil
+                    }
+            )
+            .accessibilityHidden(true)
+    }
+}
+
+/// Grok Bot (`sand-sidebar`) navigation rail with isolated leaf hover states.
 private struct DesktopSidebarRail: View {
     let selection: String
     let online: Bool
+    let busy: Bool
+    let memoryCount: Int
     @Binding var sidebarVisible: Bool
     let onSelect: (String) -> Void
+    let onQuickAsk: () -> Void
     let onOpenSettings: () -> Void
     @State private var commandHeld = false
     @State private var flagsMonitor: Any?
@@ -170,70 +206,93 @@ private struct DesktopSidebarRail: View {
     var body: some View {
         VStack(alignment: sidebarVisible ? .leading : .center, spacing: 0) {
             if sidebarVisible {
-                HStack {
-                    Spacer()
+                ZStack(alignment: .trailing) {
+                    DesktopWindowDragRegion()
                     sidebarToggle
+                        .padding(.trailing, 10)
                 }
-                .padding(.trailing, 10)
-                .frame(height: 38)
+                .frame(height: 44)
 
-                HStack(spacing: 9) {
-                    PhoneBrandIcon(size: 20)
-                    PhoneBrandWordmark(size: 14)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, 8)
-                .padding(.bottom, 16)
+                DesktopSidebarQuickAskButton(
+                    keycap: commandHeld ? "⌘N" : nil,
+                    action: onQuickAsk
+                )
+                .padding(.horizontal, 12)
+                .padding(.top, 4)
+                .padding(.bottom, 12)
 
-                VStack(spacing: 3) {
-                    DesktopSidebarNavButton(title: "首页", icon: "house", isSelected: selection == "chat", keycap: commandHeld ? "⌘1" : nil, accessibilityID: "desktop.destination.chat") {
+                Text("工作台")
+                    .font(.system(size: 11, weight: .medium))
+                    .tracking(0.2)
+                    .foregroundStyle(MoMoPalette.tertiaryInk)
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 5)
+
+                VStack(spacing: 2.5) {
+                    DesktopSidebarNavButton(
+                        title: "对话",
+                        icon: "bubble.left.and.text.bubble.right",
+                        isSelected: selection == "chat",
+                        badgeText: nil,
+                        isWorking: busy,
+                        keycap: commandHeld ? "⌘1" : nil,
+                        accessibilityID: "desktop.destination.chat"
+                    ) {
                         onSelect("chat")
                     }
-                    DesktopSidebarNavButton(title: "记忆", icon: "brain", isSelected: selection == "memory", keycap: commandHeld ? "⌘2" : nil, accessibilityID: "desktop.destination.memory") {
+                    DesktopSidebarNavButton(
+                        title: "记忆",
+                        icon: "book.pages",
+                        isSelected: selection == "memory",
+                        badgeText: memoryCount > 0 ? "\(memoryCount)" : nil,
+                        isWorking: false,
+                        keycap: commandHeld ? "⌘2" : nil,
+                        accessibilityID: "desktop.destination.memory"
+                    ) {
                         onSelect("memory")
                     }
-                    DesktopSidebarNavButton(title: "转录", icon: "waveform", isSelected: selection == "sources", keycap: commandHeld ? "⌘3" : nil, accessibilityID: "desktop.destination.sources") {
+                    DesktopSidebarNavButton(
+                        title: "转录",
+                        icon: "waveform",
+                        isSelected: selection == "sources",
+                        badgeText: nil,
+                        isWorking: false,
+                        keycap: commandHeld ? "⌘3" : nil,
+                        accessibilityID: "desktop.destination.sources"
+                    ) {
                         onSelect("sources")
                     }
                 }
                 .padding(.horizontal, 10)
 
-                Spacer(minLength: 24)
+                Spacer(minLength: 16)
+                    .background(DesktopWindowDragRegion())
 
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(online ? MoMoPalette.ink.opacity(0.72) : MoMoPalette.muted.opacity(0.4))
-                            .frame(width: 6, height: 6)
-                            .accessibilityHidden(true)
-                        Text(online ? "MoMo 正在运行" : "MoMo 尚未运行")
-                            .font(.system(size: 11.5, weight: .regular))
-                            .foregroundStyle(MoMoPalette.muted)
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 4)
-
-                    DesktopSidebarNavButton(title: "设置", icon: "gearshape", isSelected: false, keycap: commandHeld ? "⌘," : nil, accessibilityID: nil, action: onOpenSettings)
-                }
+                // Grok Bot `sand-kit-user-profile` style Agent Pod footer
+                DesktopSidebarAgentPod(
+                    online: online,
+                    busy: busy,
+                    keycap: commandHeld ? "⌘," : nil,
+                    onSelectChat: { onSelect("chat") },
+                    onOpenSettings: onOpenSettings
+                )
                 .padding(.horizontal, 10)
-                .padding(.bottom, 16)
+                .padding(.bottom, 12)
             } else {
-                Spacer().frame(height: 38)
+                DesktopWindowDragRegion()
+                    .frame(height: 42)
 
                 VStack(spacing: 8) {
                     sidebarToggle
-                    PhoneBrandIcon(size: 20)
-                        .padding(.vertical, 4)
+                    DesktopSidebarQuickAskCompactButton(action: onQuickAsk)
                 }
                 .padding(.bottom, 12)
 
                 VStack(spacing: 5) {
-                    DesktopSidebarIconButton(title: "首页", helpText: "首页（⌘1）", icon: "house", isSelected: selection == "chat", accessibilityID: "desktop.destination.chat") {
+                    DesktopSidebarIconButton(title: "对话", helpText: "对话（⌘1）", icon: "bubble.left.and.text.bubble.right", isSelected: selection == "chat", accessibilityID: "desktop.destination.chat") {
                         onSelect("chat")
                     }
-                    DesktopSidebarIconButton(title: "记忆", helpText: "记忆（⌘2）", icon: "brain", isSelected: selection == "memory", accessibilityID: "desktop.destination.memory") {
+                    DesktopSidebarIconButton(title: "记忆", helpText: "记忆（⌘2）", icon: "book.pages", isSelected: selection == "memory", accessibilityID: "desktop.destination.memory") {
                         onSelect("memory")
                     }
                     DesktopSidebarIconButton(title: "转录", helpText: "转录（⌘3）", icon: "waveform", isSelected: selection == "sources", accessibilityID: "desktop.destination.sources") {
@@ -241,18 +300,16 @@ private struct DesktopSidebarRail: View {
                     }
                 }
 
-                Spacer(minLength: 24)
+                Spacer(minLength: 16)
+                    .background(DesktopWindowDragRegion())
 
-                VStack(spacing: 10) {
-                    Circle()
-                        .fill(online ? MoMoPalette.ink.opacity(0.72) : MoMoPalette.muted.opacity(0.4))
-                        .frame(width: 6.5, height: 6.5)
-                        .help(online ? "MoMo 正在运行" : "MoMo 尚未运行")
-                        .accessibilityLabel(online ? "MoMo 正在运行" : "MoMo 尚未运行")
+                VStack(spacing: 8) {
+                    SandNativeAvatarBadge(size: 26, online: online, busy: busy, ringBackground: MoMoPalette.sidebar)
+                        .help(online ? (busy ? "MoMo 正在执行任务" : "MoMo 在线就绪") : "MoMo 尚未运行")
 
                     DesktopSidebarIconButton(title: "设置", helpText: "设置（⌘,）", icon: "gearshape", isSelected: false, accessibilityID: nil, action: onOpenSettings)
                 }
-                .padding(.bottom, 16)
+                .padding(.bottom, 12)
             }
         }
         .onAppear {
@@ -283,6 +340,168 @@ private struct DesktopSidebarRail: View {
     }
 }
 
+/// Native zero-WebKit MoMo avatar with Grok Bot `--sand-status-dot-ring` cutout badge.
+struct SandNativeAvatarBadge: View {
+    var size: CGFloat = 26
+    var online: Bool = true
+    var busy: Bool = false
+    var ringBackground: Color = MoMoPalette.canvas
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            ZStack {
+                RoundedRectangle(cornerRadius: size * 0.32, style: .continuous)
+                    .fill(MoMoPalette.ink.opacity(0.07))
+                Image("MoMoStill")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(MoMoPalette.ink)
+                    .frame(width: size * 0.72, height: size * 0.72)
+            }
+            .frame(width: size, height: size)
+
+            Circle()
+                .fill(busy ? Color(red: 0.12, green: 0.53, blue: 0.99) : (online ? MoMoPalette.ink.opacity(0.75) : MoMoPalette.muted.opacity(0.38)))
+                .frame(width: 7, height: 7)
+                .overlay {
+                    Circle().stroke(ringBackground, lineWidth: 1.8)
+                }
+                .offset(x: 1.5, y: 1.5)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct DesktopSidebarQuickAskButton: View {
+    let keycap: String?
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(MoMoPalette.ink)
+                Text("向 MoMo 提问")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(MoMoPalette.ink)
+                Spacer(minLength: 4)
+                if let keycap {
+                    SandKeyCapBadge(text: keycap)
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 33)
+            .momoElevatedCard(cornerRadius: 999, isFocused: hovered, shadowStrength: hovered ? 0.95 : 0.55)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.98))
+        .onHover { hovered = $0 }
+        .keyboardShortcut("n", modifiers: [.command])
+        .help("聚焦输入框向 MoMo 提问（⌘N）")
+    }
+}
+
+private struct DesktopSidebarQuickAskCompactButton: View {
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundStyle(MoMoPalette.ink)
+                .frame(width: 34, height: 34)
+                .momoElevatedCard(cornerRadius: 999, isFocused: hovered, shadowStrength: 0.6)
+                .contentShape(Circle())
+        }
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
+        .onHover { hovered = $0 }
+        .keyboardShortcut("n", modifiers: [.command])
+        .help("向 MoMo 提问（⌘N）")
+    }
+}
+
+private struct SandKeyCapBadge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+            .foregroundStyle(MoMoPalette.muted)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(MoMoPalette.ink.opacity(0.055), in: RoundedRectangle(cornerRadius: 4.5, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                    .strokeBorder(MoMoPalette.borderSubtle, lineWidth: 0.5)
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+private struct DesktopSidebarAgentPod: View {
+    let online: Bool
+    let busy: Bool
+    let keycap: String?
+    let onSelectChat: () -> Void
+    let onOpenSettings: () -> Void
+    @State private var podHovered = false
+    @State private var gearHovered = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(action: onSelectChat) {
+                HStack(spacing: 9) {
+                    SandNativeAvatarBadge(size: 28, online: online, busy: busy, ringBackground: MoMoPalette.sidebar)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("MoMo")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(MoMoPalette.ink)
+                        Text(online ? (busy ? "正在处理任务…" : "在线就绪") : "尚未运行")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(MoMoPalette.muted)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    podHovered ? MoMoPalette.hoverFill : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .onHover { podHovered = $0 }
+
+            Button(action: onOpenSettings) {
+                HStack(spacing: 4) {
+                    if let keycap {
+                        SandKeyCapBadge(text: keycap)
+                    }
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 13.5, weight: .regular))
+                        .foregroundStyle(gearHovered ? MoMoPalette.ink : MoMoPalette.muted)
+                        .frame(width: 28, height: 28)
+                        .background(
+                            gearHovered ? MoMoPalette.hoverFill : Color.clear,
+                            in: Circle()
+                        )
+                        .contentShape(Circle())
+                }
+            }
+            .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
+            .onHover { gearHovered = $0 }
+            .help("设置（⌘,）")
+            .accessibilityLabel("设置")
+        }
+    }
+}
+
 private struct DesktopSidebarToggleButton: View {
     let sidebarVisible: Bool
     let action: () -> Void
@@ -296,9 +515,9 @@ private struct DesktopSidebarToggleButton: View {
                 .frame(width: 28, height: 28)
                 .background(
                     hovered ? MoMoPalette.hoverFill : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    in: Circle()
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .contentShape(Circle())
         }
         .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
         .onHover { hovered = $0 }
@@ -313,6 +532,8 @@ private struct DesktopSidebarNavButton: View {
     let title: String
     let icon: String
     let isSelected: Bool
+    let badgeText: String?
+    let isWorking: Bool
     let keycap: String?
     let accessibilityID: String?
     let action: () -> Void
@@ -322,35 +543,36 @@ private struct DesktopSidebarNavButton: View {
         let btn = Button(action: action) {
             HStack(spacing: 9) {
                 Image(systemName: icon)
-                    .font(.system(size: 13.5, weight: isSelected ? .medium : .regular))
+                    .font(.system(size: 14, weight: isSelected ? .medium : .regular))
                     .foregroundStyle(isSelected ? MoMoPalette.ink : MoMoPalette.muted)
                     .frame(width: 18)
                     .accessibilityHidden(true)
                 Text(LocalizedStringKey(title))
-                    .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                    .font(.system(size: 13.5, weight: isSelected ? .medium : .regular))
+                    .tracking(-0.06)
                     .foregroundStyle(isSelected ? MoMoPalette.ink : MoMoPalette.ink.opacity(0.84))
                 Spacer(minLength: 4)
                 if let keycap {
-                    Text(keycap)
-                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    SandKeyCapBadge(text: keycap)
+                } else if isWorking {
+                    SandWorkingDots()
+                } else if let badgeText {
+                    Text(badgeText)
+                        .font(.system(size: 10.5, weight: .regular).monospacedDigit())
                         .foregroundStyle(MoMoPalette.muted)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1.5)
-                        .background(MoMoPalette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 4.5, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 4.5, style: .continuous)
-                                .strokeBorder(MoMoPalette.borderSubtle, lineWidth: 0.5)
-                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(MoMoPalette.ink.opacity(0.055), in: Capsule())
                         .accessibilityHidden(true)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 33, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
             .padding(.horizontal, 10)
             .background(
                 isSelected ? MoMoPalette.activeFill : (hovered ? MoMoPalette.hoverFill : Color.clear),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(MoMoPressableButtonStyle(scale: 0.985))
         .onHover { hovered = $0 }
@@ -381,9 +603,9 @@ private struct DesktopSidebarIconButton: View {
                 .frame(width: 36, height: 34)
                 .background(
                     isSelected ? MoMoPalette.activeFill : (hovered ? MoMoPalette.hoverFill : Color.clear),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
         .onHover { hovered = $0 }
@@ -396,6 +618,27 @@ private struct DesktopSidebarIconButton: View {
         } else {
             btn
         }
+    }
+}
+
+/// Grok Bot `sand-kit-working-badge` lightweight 3-dot pulse without WebKit overhead.
+struct SandWorkingDots: View {
+    @State private var pulsing = false
+
+    var body: some View {
+        HStack(spacing: 2.5) {
+            ForEach(0..<3, id: \.self) { idx in
+                Circle()
+                    .fill(MoMoPalette.ink.opacity(pulsing ? 0.85 : 0.25))
+                    .frame(width: 3.5, height: 3.5)
+                    .animation(
+                        .easeInOut(duration: 0.65).repeatForever(autoreverses: true).delay(Double(idx) * 0.16),
+                        value: pulsing
+                    )
+            }
+        }
+        .onAppear { pulsing = true }
+        .accessibilityHidden(true)
     }
 }
 
@@ -580,131 +823,392 @@ struct PairingQRCode: View {
 
 struct DesktopChat: View {
     @Environment(\.openWindow) private var openWindow
-    private let headerOverlap: CGFloat = 12
     @Bindable var model: DesktopModel
     var isActive: Bool = true
+    var composerFocusToken: UInt64 = 0
     @State private var composeRevision = 0
     @State private var previewAttachment: AgentAttachment?
     @State private var showingActiveTasks = false
     @State private var dismissedBriefingCardIDs: Set<String> = DreamDismissedCardsStore.load()
     @State private var showingBriefingDetail = false
-    @Environment(\.accessibilityReduceMotion) private var reduced
 
     private var briefingDocument: DreamBriefingDocument? {
         model.vaultSnapshot.briefingDocument
     }
 
+    private static var timeGreeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12: return String(localized: "早上好，今天想推进什么？")
+        case 12..<18: return String(localized: "下午好，有什么交给 MoMo？")
+        case 18..<23: return String(localized: "晚上好，有什么交给 MoMo？")
+        default: return String(localized: "夜深了，有什么想交给 MoMo？")
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if let store = model.taskStore {
-                let snapshot = ChatRenderSnapshot(store: store, readingPosition: model.readingPosition)
-                let isEmpty = store.isEmpty || snapshot.messages.isEmpty
-                let draftEmpty = !store.hasDraftContent
-                VStack(spacing: isEmpty ? 18 : 6) {
-                    PersonalAgentSlot(size: isEmpty ? 144 : 56, active: isActive && store.hasActiveTask, expression: store.hasActiveTask ? .thinking : .present)
-                    PhoneBrandWordmark(.momo, size: isEmpty ? 22 : 12)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(maxHeight: isEmpty ? .infinity : nil)
-                .padding(.top, isEmpty ? 0 : 12)
-                .padding(.bottom, isEmpty ? 0 : 8)
-                .zIndex(1)
-                if !isEmpty {
-                    ChatRendererView(snapshot: snapshot, scrollToBottomRequest: composeRevision, isChatVisible: isActive && !showingActiveTasks && !showingBriefingDetail && previewAttachment == nil, isChatSelected: isActive, headerInset: headerOverlap, onReadingPosition: model.rememberReadingPosition,
-                        onAttachment: { id in previewAttachment = store.attachment(id: id) },
-                        onRetryMessage: { id in
-                            do {
-                                if try store.reselectRecording(id: id) {
-                                    model.failure = nil
-                                    model.selection = "sources"
-                                } else { Task { await store.checkAgain(id: id) } }
-                            } catch { model.failure = error.localizedDescription }
-                        })
-                        .frame(maxWidth: 780)
-                        .padding(.top, -headerOverlap)
-                }
-                if draftEmpty, !store.hasActiveTask, let doc = briefingDocument,
-                   !doc.cards.filter({ !$0.isDismissed(in: dismissedBriefingCardIDs, headline: doc.headline) }).isEmpty {
-                    DreamHomeCardsSection(
-                        document: doc,
-                        dismissedIDs: $dismissedBriefingCardIDs,
-                        compact: !isEmpty,
-                        onSelectCard: { card in
-                            do {
-                                try store.enqueueIndependentMessage(card.prompt)
-                                composeRevision += 1
-                                Task { await store.refresh(userInitiated: true) }
-                            } catch {
-                                model.failure = error.localizedDescription
-                            }
-                        },
-                        onOpenBriefing: { showingBriefingDetail = true },
-                        onOpenNotebook: { model.selection = "memory" }
-                    )
-                    .frame(maxWidth: 760)
-                    .padding(.top, isEmpty ? 0 : 8)
-                    .padding(.bottom, 6)
-                }
-                RemoteTaskControlsView(store: store, returnDesktop: {
-                    do { try model.desktopHost?.returnControl() }
-                    catch { model.failure = error.localizedDescription }
-                }).frame(maxWidth: 780)
-                RemoteTaskRecoveryView(store: store).frame(maxWidth: 780)
-                if let failure = store.interactionFailure { Text(failure).font(.footnote).foregroundStyle(MoMoPalette.failure) }
-                DesktopComposerHost(
+                let isEmpty = store.isEmpty
+                // Grok Bot (`sand`) unified 44pt stage header bar (uses native vector avatar instead of a second WKWebView)
+                DesktopChatHeaderBar(
                     store: store,
-                    onSent: { composeRevision += 1 },
-                    onPreviewAttachment: { previewAttachment = $0 },
-                    onError: { model.failure = $0 }
+                    showIdentity: !isEmpty,
+                    showingActiveTasks: $showingActiveTasks
                 )
-                .frame(maxWidth: 740).padding(.horizontal, 28).padding(.bottom, 20).padding(.top, 8)
+
+                if isEmpty {
+                    // Grok Bot zero-state hero: centered mascot, optical heading, inline composer, and X-Card suggestions
+                    Spacer(minLength: 24)
+                    VStack(spacing: 20) {
+                        VStack(spacing: 12) {
+                            PersonalAgentSlot(
+                                size: 104,
+                                active: isActive && store.hasActiveTask,
+                                playful: true,
+                                expression: store.hasActiveTask ? .thinking : .present
+                            )
+                            Text(Self.timeGreeting)
+                                .font(.system(size: 21, weight: .medium))
+                                .tracking(-0.32)
+                                .foregroundStyle(MoMoPalette.ink)
+                        }
+
+                        DesktopComposerHost(
+                            store: store,
+                            focusRequestToken: composerFocusToken,
+                            onSent: { composeRevision += 1 },
+                            onPreviewAttachment: { previewAttachment = $0 },
+                            onError: { model.failure = $0 }
+                        )
+                        .frame(maxWidth: 680)
+                        .padding(.horizontal, 28)
+
+                        DesktopHomeSuggestionsHost(
+                            store: store,
+                            briefingDocument: briefingDocument,
+                            compact: false,
+                            dismissedBriefingCardIDs: $dismissedBriefingCardIDs,
+                            onSent: { composeRevision += 1 },
+                            onOpenBriefing: { showingBriefingDetail = true },
+                            onOpenNotebook: { model.selection = "memory" },
+                            onError: { model.failure = $0 }
+                        )
+                        .frame(maxWidth: 696)
+                    }
+                    Spacer(minLength: 36)
+                } else {
+                    // Isolated transcript host: never re-evaluates or rebuilds 400+ message snapshot when typing in draft!
+                    DesktopChatTranscriptStage(
+                        store: store,
+                        readingPosition: model.readingPosition,
+                        composeRevision: composeRevision,
+                        isChatVisible: isActive && !showingActiveTasks && !showingBriefingDetail && previewAttachment == nil,
+                        isChatSelected: isActive,
+                        onReadingPosition: model.rememberReadingPosition,
+                        onPreviewAttachment: { previewAttachment = $0 },
+                        onNavigateSources: {
+                            model.failure = nil
+                            model.selection = "sources"
+                        },
+                        onError: { model.failure = $0 }
+                    )
+
+                    DesktopHomeSuggestionsHost(
+                        store: store,
+                        briefingDocument: briefingDocument,
+                        compact: true,
+                        dismissedBriefingCardIDs: $dismissedBriefingCardIDs,
+                        onSent: { composeRevision += 1 },
+                        onOpenBriefing: { showingBriefingDetail = true },
+                        onOpenNotebook: { model.selection = "memory" },
+                        onError: { model.failure = $0 }
+                    )
+                    .frame(maxWidth: 724)
+
+                    RemoteTaskControlsView(store: store, returnDesktop: {
+                        do { try model.desktopHost?.returnControl() }
+                        catch { model.failure = error.localizedDescription }
+                    })
+                    .frame(maxWidth: 724)
+
+                    RemoteTaskRecoveryView(store: store)
+                        .frame(maxWidth: 724)
+
+                    if let failure = store.interactionFailure {
+                        Text(failure)
+                            .font(.system(size: 12))
+                            .foregroundStyle(MoMoPalette.failure)
+                            .padding(.bottom, 4)
+                    }
+
+                    DesktopComposerHost(
+                        store: store,
+                        focusRequestToken: composerFocusToken,
+                        onSent: { composeRevision += 1 },
+                        onPreviewAttachment: { previewAttachment = $0 },
+                        onError: { model.failure = $0 }
+                    )
+                    .frame(maxWidth: 724)
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 16)
+                    .padding(.top, 6)
+                }
             } else {
-                Spacer(); PersonalAgentSlot(size: 144, active: false, expression: .concerned)
-                PhoneBrandWordmark(.momo, size: 24).padding()
-                Text("MoMo 暂时没有连接上").phoneText(.heading)
+                ZStack {
+                    DesktopWindowDragRegion()
+                }
+                .frame(height: 44)
+                Spacer()
+                PersonalAgentSlot(size: 116, active: false, expression: .concerned)
+                PhoneBrandWordmark(.momo, size: 22).padding(.top, 10)
+                Text("MoMo 暂时没有连接上")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(MoMoPalette.muted)
+                    .padding(.top, 4)
                 Button("检查连接") {
                     model.managingConnection = true
                     openWindow(id: MoMoAgentMacApp.settingsID)
                 }
-                    .buttonStyle(DesktopSetupButton(minimumHeight: 48, fontSize: 14)).frame(width: 240).padding(); Spacer()
+                .buttonStyle(DesktopSetupButton(minimumHeight: 42, fontSize: 13.5))
+                .frame(width: 200)
+                .padding(.top, 14)
+                Spacer()
             }
-        }.frame(maxWidth: .infinity).background(MoMoPalette.canvas)
-            .overlay(alignment: .topTrailing) {
-                DesktopActiveTasksBadgeButton(store: model.taskStore, showingActiveTasks: $showingActiveTasks)
-                    .padding(.top, 14)
-                    .padding(.trailing, 18)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(MoMoPalette.canvas)
+        .task {
+            if model.memories.isEmpty {
+                await model.loadContextIfStale(maxAge: 15)
             }
-            .task { if model.memories.isEmpty { await model.loadContextIfStale(maxAge: 15) } }
-            .sheet(item: $previewAttachment) { ClientAttachmentPreview(attachment: $0) }
-            .sheet(isPresented: $showingBriefingDetail) {
-                if let doc = briefingDocument {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack {
-                            Text(doc.headline).phoneText(.heading)
-                            Spacer()
-                            Button("完成") { showingBriefingDetail = false }
-                                .buttonStyle(.plain)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(MoMoPalette.muted)
-                        }
-                        Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
-                        ScrollView {
-                            MarkdownReadingView(markdown: MemoryCardDigest.cleanNotebookMarkdownForDetail(doc.rawMarkdown), accessibilityID: "desktop.dreamBriefingMarkdown", handwriting: true)
-                                .equatable()
-                                .memoryNotebookPage()
-                        }
+        }
+        .sheet(item: $previewAttachment) { ClientAttachmentPreview(attachment: $0) }
+        .sheet(isPresented: $showingBriefingDetail) {
+            if let doc = briefingDocument {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Text(doc.headline).phoneText(.heading)
+                        Spacer()
+                        Button("完成") { showingBriefingDetail = false }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(MoMoPalette.muted)
                     }
-                    .padding(24)
-                    .frame(minWidth: 520, minHeight: 420)
-                    .background(MoMoPalette.paper)
+                    Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
+                    ScrollView {
+                        MarkdownReadingView(markdown: MemoryCardDigest.cleanNotebookMarkdownForDetail(doc.rawMarkdown), accessibilityID: "desktop.dreamBriefingMarkdown", handwriting: true)
+                            .equatable()
+                            .memoryNotebookPage()
+                    }
+                }
+                .padding(24)
+                .frame(minWidth: 520, minHeight: 420)
+                .background(MoMoPalette.paper)
+            }
+        }
+    }
+}
+
+/// Strictly isolated transcript stage so typing in `store.draft` NEVER rebuilds `ChatRenderSnapshot`.
+private struct DesktopChatTranscriptStage: View {
+    let store: RemoteTaskStore
+    let readingPosition: ChatReadingPosition?
+    let composeRevision: Int
+    let isChatVisible: Bool
+    let isChatSelected: Bool
+    let onReadingPosition: (ChatReadingPosition) -> Void
+    let onPreviewAttachment: (AgentAttachment) -> Void
+    let onNavigateSources: () -> Void
+    let onError: (String) -> Void
+
+    var body: some View {
+        let snapshot = ChatRenderSnapshot(store: store, readingPosition: readingPosition)
+        ChatRendererView(
+            snapshot: snapshot,
+            scrollToBottomRequest: composeRevision,
+            isChatVisible: isChatVisible,
+            isChatSelected: isChatSelected,
+            headerInset: 4,
+            onReadingPosition: onReadingPosition,
+            onAttachment: { id in
+                if let att = store.attachment(id: id) {
+                    onPreviewAttachment(att)
+                }
+            },
+            onRetryMessage: { id in
+                do {
+                    if try store.reselectRecording(id: id) {
+                        onNavigateSources()
+                    } else {
+                        Task { await store.checkAgain(id: id) }
+                    }
+                } catch {
+                    onError(error.localizedDescription)
                 }
             }
-            .animation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.86), value: model.taskStore?.tasks.isEmpty)
+        )
+        .frame(maxWidth: 760)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct DesktopHomeSuggestionsHost: View {
+    let store: RemoteTaskStore
+    let briefingDocument: DreamBriefingDocument?
+    let compact: Bool
+    @Binding var dismissedBriefingCardIDs: Set<String>
+    let onSent: () -> Void
+    let onOpenBriefing: () -> Void
+    let onOpenNotebook: () -> Void
+    let onError: (String) -> Void
+
+    var body: some View {
+        if !store.hasDraftContent,
+           !store.hasActiveTask,
+           let doc = briefingDocument,
+           !doc.cards.filter({ !$0.isDismissed(in: dismissedBriefingCardIDs, headline: doc.headline) }).isEmpty {
+            DreamHomeCardsSection(
+                document: doc,
+                dismissedIDs: $dismissedBriefingCardIDs,
+                compact: compact,
+                onSelectCard: { card in
+                    do {
+                        try store.enqueueIndependentMessage(card.prompt)
+                        onSent()
+                        Task { await store.refresh(userInitiated: true) }
+                    } catch {
+                        onError(error.localizedDescription)
+                    }
+                },
+                onOpenBriefing: onOpenBriefing,
+                onOpenNotebook: onOpenNotebook
+            )
+            .padding(.top, compact ? 6 : 2)
+            .padding(.bottom, compact ? 4 : 0)
+        }
+    }
+}
+
+/// Grok Bot (`sand`) unified 44pt stage header bar with native avatar, mode toggle pill, and async tasks island.
+private struct DesktopChatHeaderBar: View {
+    let store: RemoteTaskStore
+    let showIdentity: Bool
+    @Binding var showingActiveTasks: Bool
+
+    var body: some View {
+        ZStack {
+            DesktopWindowDragRegion()
+            HStack(spacing: 10) {
+                if showIdentity {
+                    HStack(spacing: 8) {
+                        SandNativeAvatarBadge(
+                            size: 24,
+                            online: true,
+                            busy: store.hasActiveTask,
+                            ringBackground: MoMoPalette.canvas
+                        )
+                        Text("MoMo")
+                            .font(.system(size: 13.5, weight: .medium))
+                            .tracking(-0.1)
+                            .foregroundStyle(MoMoPalette.ink)
+                        if store.hasActiveTask {
+                            HStack(spacing: 5) {
+                                SandWorkingDots()
+                                Text("思考中")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(MoMoPalette.muted)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(MoMoPalette.ink.opacity(0.045), in: Capsule())
+                        }
+                    }
+                }
+                Spacer(minLength: 12)
+                DesktopChatModeCapsule(store: store)
+                DesktopActiveTasksBadgeButton(store: store, showingActiveTasks: $showingActiveTasks)
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(height: 44)
+        .overlay(alignment: .bottom) {
+            if showIdentity {
+                Rectangle()
+                    .fill(MoMoPalette.borderSubtle)
+                    .frame(height: 0.5)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+/// Grok Bot inline segmented capsule for switching Standard vs Creator mode directly from the stage header.
+private struct DesktopChatModeCapsule: View {
+    let store: RemoteTaskStore
+    @State private var currentMode: ChatMode = .standard
+    @State private var loaded = false
+    @State private var switching = false
+
+    var body: some View {
+        HStack(spacing: 1) {
+            modeOption(.standard, title: "日常")
+            modeOption(.creator, title: "创作")
+        }
+        .padding(2.5)
+        .background(MoMoPalette.ink.opacity(0.05), in: Capsule())
+        .overlay {
+            Capsule().strokeBorder(MoMoPalette.borderSubtle, lineWidth: 0.5)
+        }
+        .task(id: ObjectIdentifier(store)) {
+            if let fetched = try? await store.chatMode() {
+                currentMode = fetched
+                loaded = true
+            }
+        }
+        .opacity(loaded ? 1 : 0.75)
+    }
+
+    private func modeOption(_ mode: ChatMode, title: String) -> some View {
+        let selected = currentMode == mode
+        return Button {
+            guard !switching, currentMode != mode else { return }
+            let previous = currentMode
+            currentMode = mode
+            switching = true
+            Task {
+                defer { switching = false }
+                if let updated = try? await store.chatMode(setting: mode) {
+                    currentMode = updated
+                } else {
+                    currentMode = previous
+                }
+            }
+        } label: {
+            Text(LocalizedStringKey(title))
+                .font(.system(size: 11.5, weight: selected ? .medium : .regular))
+                .foregroundStyle(selected ? MoMoPalette.ink : MoMoPalette.muted)
+                .padding(.horizontal, 9)
+                .frame(height: 23)
+                .background {
+                    if selected {
+                        Capsule()
+                            .fill(MoMoPalette.paper)
+                            .overlay {
+                                Capsule().strokeBorder(MoMoPalette.borderSubtle, lineWidth: 0.5)
+                            }
+                    }
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(mode == .creator ? "切换至深度创作模式" : "切换至日常对话模式")
     }
 }
 
 private struct DesktopComposerHost: View {
     let store: RemoteTaskStore
+    var focusRequestToken: UInt64 = 0
     let onSent: () -> Void
     let onPreviewAttachment: (AgentAttachment) -> Void
     let onError: (String) -> Void
@@ -715,7 +1219,8 @@ private struct DesktopComposerHost: View {
             store: store,
             inputID: "desktop.message",
             sendID: "desktop.send",
-            prompt: "发消息给 MoMo",
+            prompt: "发消息给 MoMo…",
+            focusRequestToken: focusRequestToken,
             onPreviewAttachment: onPreviewAttachment,
             onError: onError
         ) {
@@ -740,16 +1245,20 @@ private struct DesktopActiveTasksBadgeButton: View {
         Button {
             showingActiveTasks.toggle()
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "checklist")
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(hovered || showingActiveTasks ? MoMoPalette.ink : MoMoPalette.muted)
-                    .accessibilityHidden(true)
+            HStack(spacing: 5.5) {
+                if tasksSnap.count > 0 {
+                    SandWorkingDots()
+                } else {
+                    Image(systemName: "checklist")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(hovered || showingActiveTasks ? MoMoPalette.ink : MoMoPalette.muted)
+                        .accessibilityHidden(true)
+                }
                 Text("任务")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11.5, weight: .medium))
                 if let badge = tasksSnap.badgeText {
                     Text(badge)
-                        .font(.system(size: 10, weight: .bold).monospacedDigit())
+                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
                         .foregroundStyle(MoMoPalette.canvas)
                         .padding(.horizontal, 5)
                         .frame(minWidth: 16, minHeight: 16)
@@ -758,12 +1267,12 @@ private struct DesktopActiveTasksBadgeButton: View {
                 }
             }
             .foregroundStyle(MoMoPalette.ink)
-            .padding(.horizontal, 11)
-            .frame(height: 30)
+            .padding(.horizontal, 10)
+            .frame(height: 28)
             .momoElevatedCard(
-                cornerRadius: 15,
+                cornerRadius: 999,
                 isFocused: hovered || showingActiveTasks,
-                shadowStrength: hovered ? 1.15 : 0.7
+                shadowStrength: hovered ? 1.0 : 0.55
             )
             .contentShape(Capsule())
         }

@@ -46,6 +46,7 @@ struct ClientComposer: View {
     var inputID = "remote.input"
     var sendID = "remote.send"
     var prompt: LocalizedStringKey = "发消息给 MoMo"
+    var focusRequestToken: UInt64 = 0
     var onCompose: () -> Void = {}
     var onPreviewAttachment: ((AgentAttachment) -> Void)? = nil
     var onError: ((String) -> Void)? = nil
@@ -61,6 +62,9 @@ struct ClientComposer: View {
     #if os(macOS)
     @State private var attachHovered = false
     @State private var sendHovered = false
+    @State private var isDragOver = false
+    @State private var heldReasonMessage: String?
+    @State private var heldReasonDismissTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #else
     @Environment(\.scenePhase) private var scenePhase
@@ -75,7 +79,18 @@ struct ClientComposer: View {
     private var attachments: [AgentAttachment] { store?.draftAttachments ?? [] }
     #if os(macOS)
     private var isExpandedMacComposer: Bool {
-        !attachments.isEmpty || importingAttachments || text.contains("\n") || text.count > 56
+        !attachments.isEmpty || importingAttachments || text.contains("\n") || text.count > 52
+    }
+
+    private func presentHeldReason(_ reason: String) {
+        heldReasonDismissTask?.cancel()
+        heldReasonMessage = reason
+        heldReasonDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.2))
+            if !Task.isCancelled {
+                heldReasonMessage = nil
+            }
+        }
     }
     #endif
     private var voiceIsActive: Bool {
@@ -91,6 +106,11 @@ struct ClientComposer: View {
     }
     var body: some View {
         composerBody
+            #if os(macOS)
+            .onChange(of: focusRequestToken) { _, _ in
+                focused = true
+            }
+            #endif
             .fileImporter(isPresented: $showingFiles, allowedContentTypes: ClientAttachmentImporter.allowedTypes, allowsMultipleSelection: true) { result in
                 do {
                     let urls = try result.get()
@@ -155,57 +175,97 @@ struct ClientComposer: View {
     @ViewBuilder private var composerBody: some View {
         #if os(macOS)
         let expanded = isExpandedMacComposer
-        let radius: CGFloat = expanded ? 18 : 23
-        Group {
-            if expanded {
-                VStack(alignment: .leading, spacing: 8) {
-                    if !attachments.isEmpty {
-                        ClientAttachmentStrip(attachments: attachments, remove: { store?.removeAttachment($0) },
-                                              preview: { onPreviewAttachment?($0) })
-                            .padding(.top, 4)
+        let radius: CGFloat = expanded ? 18 : 22
+        VStack(alignment: .trailing, spacing: 6) {
+            if let reason = heldReasonMessage {
+                Text(reason)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(MoMoPalette.ink.opacity(0.86))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 5)
+                    .momoElevatedCard(cornerRadius: 999, shadowStrength: 0.8)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottomTrailing)))
+            }
+            Group {
+                if expanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !attachments.isEmpty {
+                            ClientAttachmentStrip(attachments: attachments, remove: { store?.removeAttachment($0) },
+                                                  preview: { onPreviewAttachment?($0) })
+                                .padding(.top, 5)
+                        }
+                        if importingAttachments {
+                            Text("正在读取附件…").phoneText(.caption).foregroundStyle(MoMoPalette.muted)
+                                .padding(.horizontal, 16).padding(.top, 8)
+                        }
+                        ComposerReturnKeyHandler(send: { if canSend { send() } }) {
+                            inputField
+                        }
+                        .padding(.horizontal, 15)
+                        .padding(.top, attachments.isEmpty && !importingAttachments ? 13 : 4)
+                        HStack(spacing: 8) {
+                            if store != nil { attachmentButton }
+                            Spacer(minLength: 8)
+                            Text("⇧⏎ 换行")
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundStyle(MoMoPalette.muted.opacity(0.58))
+                                .accessibilityHidden(true)
+                            sendControl
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 7)
                     }
-                    if importingAttachments {
-                        Text("正在读取附件…").phoneText(.caption).foregroundStyle(MoMoPalette.muted)
-                            .padding(.horizontal, 16).padding(.top, 8)
-                    }
-                    ComposerReturnKeyHandler(send: { if canSend { send() } }) {
-                        inputField
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, attachments.isEmpty && !importingAttachments ? 14 : 4)
-                    HStack(spacing: 8) {
+                } else {
+                    HStack(alignment: .center, spacing: 7) {
                         if store != nil { attachmentButton }
-                        Spacer(minLength: 8)
-                        Text("⇧⏎ 换行")
-                            .font(.system(size: 11, weight: .regular))
-                            .foregroundStyle(MoMoPalette.muted.opacity(0.65))
-                            .accessibilityHidden(true)
+                        ComposerReturnKeyHandler(send: { if canSend { send() } }) {
+                            inputField
+                        }
+                        .padding(.leading, store == nil ? 10 : 2)
+                        .padding(.vertical, 8)
                         sendControl
                     }
-                    .padding(.horizontal, 9)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, 7)
+                    .frame(minHeight: 44)
                 }
-            } else {
-                HStack(alignment: .center, spacing: 6) {
-                    if store != nil { attachmentButton }
-                    ComposerReturnKeyHandler(send: { if canSend { send() } }) {
-                        inputField
+            }
+            .momoElevatedCard(
+                cornerRadius: radius,
+                isFocused: focused || isDragOver,
+                shadowStrength: focused ? 1.35 : 1.0
+            )
+            .onDrop(of: [.fileURL], isTargeted: $isDragOver) { providers in
+                guard store != nil else { return false }
+                let remaining = 4 - attachments.count
+                guard remaining > 0 else {
+                    presentHeldReason(String(localized: "一次最多添加 4 个附件"))
+                    return false
+                }
+                importingAttachments = true
+                Task {
+                    defer { importingAttachments = false }
+                    var urls: [URL] = []
+                    for provider in providers.prefix(remaining) {
+                        if let item = try? await provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier),
+                           let data = item as? Data,
+                           let url = URL(dataRepresentation: data, relativeTo: nil) {
+                            urls.append(url)
+                        }
                     }
-                    .padding(.leading, store == nil ? 10 : 2)
-                    .padding(.vertical, 9)
-                    sendControl
+                    guard !urls.isEmpty else { return }
+                    do {
+                        let values = try await Task.detached(priority: .userInitiated) { try urls.map(ClientAttachmentImporter.file) }.value
+                        try store?.addAttachments(values)
+                    } catch {
+                        onError?(error.localizedDescription)
+                    }
                 }
-                .padding(.horizontal, 8)
-                .frame(minHeight: 46)
+                return true
             }
         }
-        .momoElevatedCard(
-            cornerRadius: radius,
-            isFocused: focused,
-            shadowStrength: focused ? 1.35 : 1.0
-        )
-        .animation(reduceMotion ? nil : .spring(duration: 0.24, bounce: 0.0), value: expanded)
+        .animation(reduceMotion ? nil : .spring(duration: 0.22, bounce: 0.0), value: expanded)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: focused)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: heldReasonMessage != nil)
         .tint(MoMoPalette.ink)
         #else
         VStack(alignment: .leading, spacing: 4) {
@@ -252,26 +312,27 @@ struct ClientComposer: View {
         #if os(macOS)
         let atLimit = attachments.count >= 4
         Button {
-            if atLimit {
-                onError?(String(localized: "一次最多添加 4 个附件。"))
+            if importingAttachments {
+                presentHeldReason(String(localized: "正在处理上一个附件…"))
+            } else if atLimit {
+                presentHeldReason(String(localized: "一次最多添加 4 个附件"))
             } else {
                 showingFiles = true
             }
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(atLimit ? MoMoPalette.muted.opacity(0.6) : MoMoPalette.ink.opacity(attachHovered ? 1.0 : 0.78))
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundStyle(atLimit ? MoMoPalette.muted.opacity(0.55) : MoMoPalette.ink.opacity(attachHovered ? 1.0 : 0.72))
                 .frame(width: 30, height: 30)
                 .background(
-                    MoMoPalette.ink.opacity(attachHovered && !atLimit ? 0.09 : 0.045),
+                    MoMoPalette.ink.opacity(attachHovered && !atLimit ? 0.085 : 0.045),
                     in: Circle()
                 )
                 .contentShape(Circle())
         }
         .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
-        .disabled(importingAttachments)
         .onHover { attachHovered = $0 }
-        .help(atLimit ? "一次最多添加 4 个附件" : "添加照片或文件")
+        .help(atLimit ? "一次最多添加 4 个附件" : "添加照片或文件（也可直接拖入）")
         .accessibilityLabel("添加照片或文件")
         .accessibilityIdentifier("assistant.attachments")
         #else
@@ -357,19 +418,28 @@ struct ClientComposer: View {
     }
     @ViewBuilder private var sendControl: some View {
         #if os(macOS)
-        Button(action: send) {
+        Button {
+            if canSend {
+                heldReasonMessage = nil
+                send()
+            } else if importingAttachments {
+                presentHeldReason(String(localized: "附件还在读取中，稍等片刻即可发送"))
+            } else {
+                focused = true
+                presentHeldReason(String(localized: "先输入内容或拖入附件再发送"))
+            }
+        } label: {
             Image(systemName: "arrow.up")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 13.5, weight: .semibold))
                 .frame(width: 30, height: 30)
                 .background(
-                    MoMoPalette.ink.opacity(canSend ? (sendHovered ? 0.88 : 1.0) : 0.07),
+                    MoMoPalette.ink.opacity(canSend ? (sendHovered ? 0.86 : 1.0) : 0.065),
                     in: Circle()
                 )
-                .foregroundStyle(canSend ? MoMoPalette.canvas : MoMoPalette.muted.opacity(0.55))
+                .foregroundStyle(canSend ? MoMoPalette.canvas : MoMoPalette.muted.opacity(0.52))
                 .contentShape(Circle())
         }
         .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
-        .disabled(!canSend)
         .onHover { sendHovered = $0 }
         .help(canSend ? "发送给 MoMo（⏎）" : "输入消息或添加附件后发送")
         .accessibilityLabel("发送给 MoMo")
@@ -3200,34 +3270,36 @@ private struct DreamHomeCardItem: View {
                 DreamDismissedCardsStore.markDismissed(card, headline: headline, into: &dismissedIDs)
                 onSelectCard(card)
             } label: {
-                HStack(spacing: 11) {
+                HStack(spacing: 12) {
                     DreamDotMatrixArtwork(kind: card.motif, isDark: isDark)
-                        .frame(width: compact ? 54 : 60, height: compact ? 54 : 60)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(card.title)
-                            .font(.system(size: 13, weight: .medium))
-                            .tracking(-0.06)
-                            .foregroundStyle(MoMoPalette.ink)
-                            .lineLimit(2)
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(card.subtitle)
-                                .font(.system(size: 11.5, weight: .regular))
-                                .lineSpacing(2)
-                                .lineLimit(2)
+                        .frame(width: compact ? 46 : 52, height: compact ? 46 : 52)
+                    VStack(alignment: .leading, spacing: 3.5) {
+                        HStack(spacing: 6) {
+                            Text(card.title)
+                                .font(.system(size: 13.5, weight: .medium))
+                                .tracking(-0.08)
+                                .foregroundStyle(MoMoPalette.ink)
+                                .lineLimit(1)
+                            Spacer(minLength: 2)
                             Image(systemName: "arrow.up.right")
-                                .font(.system(size: 8.5, weight: .medium))
-                                .opacity(isHovered ? 0.9 : 0.5)
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundStyle(isHovered ? MoMoPalette.ink : MoMoPalette.muted.opacity(0.45))
                                 .accessibilityHidden(true)
                         }
-                        .foregroundStyle(MoMoPalette.muted)
+                        Text(card.subtitle)
+                            .font(.system(size: 12, weight: .regular))
+                            .lineSpacing(2)
+                            .lineLimit(2)
+                            .foregroundStyle(MoMoPalette.muted)
                     }
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.leading, 10)
-                .padding(.vertical, compact ? 9 : 11)
+                .padding(.leading, 12)
+                .padding(.trailing, 4)
+                .padding(.vertical, compact ? 10 : 12)
                 .frame(maxHeight: .infinity)
-                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(DreamCardButtonStyle())
             .accessibilityIdentifier("assistant.suggestion.\(card.id)")
@@ -3248,8 +3320,8 @@ private struct DreamHomeCardItem: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(MoMoPalette.muted)
                     #if os(macOS)
-                    .opacity(isHovered ? 0.9 : 0.25)
-                    .frame(width: 28, height: 28)
+                    .opacity(isHovered ? 0.85 : 0.0)
+                    .frame(width: 26, height: 26)
                     #else
                     .frame(width: 44, height: 44)
                     #endif
@@ -3262,9 +3334,9 @@ private struct DreamHomeCardItem: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .momoElevatedCard(
-            cornerRadius: 14,
+            cornerRadius: 16,
             isFocused: isHovered,
-            shadowStrength: isHovered ? 1.1 : 0.7
+            shadowStrength: isHovered ? 1.15 : 0.65
         )
         #if os(macOS)
         .onHover { isHovered = $0 }

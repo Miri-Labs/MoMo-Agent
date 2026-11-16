@@ -190,7 +190,7 @@ struct DesktopMemory: View {
                 if wide || active == nil {
                     vaultExplorerSidebar(tree: tree, activeID: active?.id)
                         .frame(width: sidebarWidth, height: totalHeight)
-                        .background(MoMoPalette.canvas)
+                        .background(MoMoPalette.subpane)
                 }
 
                 if wide {
@@ -211,15 +211,10 @@ struct DesktopMemory: View {
                 }
             }
         }
-        .background(MoMoPalette.canvas)
+        .background(MoMoPalette.pane)
         .task(id: isActive) {
             guard isActive else { return }
-            await model.loadContextIfStale(maxAge: 6)
-            while !Task.isCancelled {
-                let retryDelay: Int = (model.memories.isEmpty && model.memoryError != nil) ? 2 : 8
-                do { try await Task.sleep(for: .seconds(retryDelay)) } catch { return }
-                await model.loadContext(silent: true)
-            }
+            await model.loadContextIfStale(maxAge: 8)
         }
         .sheet(item: $inspecting) { memory in
             DesktopMemoryDetail(model: model, memory: memory)
@@ -306,11 +301,19 @@ struct DesktopMemory: View {
     }
 
     private func vaultExplorerSidebar(tree: MemoryVaultTree, activeID: String?) -> some View {
-        VStack(spacing: 8) {
-            explorerToolbar
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-                .padding(.bottom, 2)
+        VStack(spacing: 0) {
+            ZStack {
+                DesktopWindowDragRegion()
+                explorerToolbar
+                    .padding(.horizontal, 14)
+            }
+            .frame(height: 44)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(MoMoPalette.borderSubtle)
+                    .frame(height: 0.5)
+                    .allowsHitTesting(false)
+            }
 
             if searching {
                 HStack(spacing: 7) {
@@ -332,9 +335,11 @@ struct DesktopMemory: View {
                     }
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 6.5)
-                .momoElevatedCard(cornerRadius: 9, shadowStrength: 0.45)
+                .frame(height: 30)
+                .momoElevatedCard(cornerRadius: 999, isFocused: true, shadowStrength: 0.45)
                 .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
             }
 
             if let error = model.memoryError {
@@ -454,7 +459,7 @@ struct DesktopMemory: View {
                     .frame(height: 0.5)
                     .accessibilityHidden(true)
 
-                MacNoteDocumentReader(
+                MacNoteDocumentReaderHost(
                     memory: memory,
                     outgoingMemories: outgoing,
                     incomingMemories: incoming,
@@ -483,14 +488,17 @@ struct DesktopMemory: View {
                         NSWorkspace.shared.open(url)
                     }
                 )
-                .momoScrollEdgeFade(top: 12)
+                .momoScrollEdgeFade(top: 12, surface: MoMoPalette.pane)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .background(MoMoPalette.canvas)
+            .background(MoMoPalette.pane)
         } else {
-            ContentUnavailableView("选择一篇笔记", systemImage: "doc.text", description: Text("从左侧目录点击任一笔记或日志即可阅读。"))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(MoMoPalette.canvas)
+            VStack(spacing: 0) {
+                DesktopWindowDragRegion().frame(height: 44)
+                ContentUnavailableView("选择一篇笔记", systemImage: "doc.text", description: Text("从左侧目录点击任一笔记或日志即可阅读。"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .background(MoMoPalette.pane)
         }
     }
 }
@@ -526,7 +534,7 @@ private struct DesktopNoteTopBar: View {
                 try await handler(fullPrompt)
                 instructionDraft = ""
                 showingInstructionBar = false
-                instructionReceipt = "已交给 MoMo 修正记忆与说话人（可在首页查看进度，完成后将自动同步）"
+                instructionReceipt = "已交给 MoMo 修正记忆与说话人（可在对话页查看进度，完成后自动同步）"
             } catch {
                 instructionError = error.localizedDescription
             }
@@ -536,128 +544,130 @@ private struct DesktopNoteTopBar: View {
     var body: some View {
         let digest = MemoryCardDigest.cached(for: memory)
 
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 6) {
-                if onBack != nil || onForward != nil {
-                    HStack(spacing: 2) {
-                        Button {
-                            onBack?()
-                        } label: {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 11.5, weight: .semibold))
-                                .foregroundStyle(onBack != nil ? colors.ink : colors.secondaryInk.opacity(0.35))
-                                .frame(width: 26, height: 26)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(onBack == nil)
-                        .help(backLabel ?? "后退")
-                        .accessibilityLabel(backLabel ?? "返回")
-
-                        if onForward != nil {
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                DesktopWindowDragRegion()
+                HStack(alignment: .center, spacing: 8) {
+                    if onBack != nil || onForward != nil {
+                        HStack(spacing: 1) {
                             Button {
-                                onForward?()
+                                onBack?()
                             } label: {
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 11.5, weight: .semibold))
-                                    .foregroundStyle(canGoForward ? colors.ink : colors.secondaryInk.opacity(0.35))
-                                    .frame(width: 26, height: 26)
-                                    .contentShape(Rectangle())
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(onBack != nil ? colors.ink : colors.secondaryInk.opacity(0.35))
+                                    .frame(width: 24, height: 24)
+                                    .contentShape(Circle())
                             }
                             .buttonStyle(.plain)
-                            .disabled(!canGoForward)
-                            .help("前进")
-                            .accessibilityLabel("前进")
+                            .disabled(onBack == nil)
+                            .help(backLabel ?? "后退")
+                            .accessibilityLabel(backLabel ?? "返回")
+
+                            if onForward != nil {
+                                Button {
+                                    onForward?()
+                                } label: {
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(canGoForward ? colors.ink : colors.secondaryInk.opacity(0.35))
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(!canGoForward)
+                                .help("前进")
+                                .accessibilityLabel("前进")
+                            }
                         }
+                        .padding(2)
+                        .momoElevatedCard(cornerRadius: 999, shadowStrength: 0.4)
                     }
-                    .padding(.horizontal, 2)
-                    .background(colors.surface.opacity(0.75), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
 
-                HStack(spacing: 5) {
-                    Image(systemName: DreamMemoryCategory.folderSymbol(for: memory.kind))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(colors.tabAccent(memory.kind))
-                    Text(MemoryVaultTree.breadcrumbText(for: memory))
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(colors.secondaryInk)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 8.5, weight: .semibold))
-                        .foregroundStyle(colors.secondaryInk.opacity(0.55))
-                    Text(digest.title)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(colors.ink)
-                        .lineLimit(1)
-                }
-                .accessibilityHidden(true)
+                    HStack(spacing: 5) {
+                        Image(systemName: DreamMemoryCategory.folderSymbol(for: memory.kind))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(colors.secondaryInk)
+                        Text(MemoryVaultTree.breadcrumbText(for: memory))
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(colors.secondaryInk)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8.5, weight: .semibold))
+                            .foregroundStyle(colors.secondaryInk.opacity(0.5))
+                        Text(digest.title)
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(colors.ink)
+                            .lineLimit(1)
+                    }
+                    .accessibilityHidden(true)
 
-                Spacer(minLength: 6)
+                    Spacer(minLength: 8)
 
-                if onInstruct != nil {
-                    Button {
-                        showingInstructionBar.toggle()
-                        instructionError = nil
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "wand.and.stars")
-                                .font(.system(size: 11, weight: .medium))
-                            Text("指令修改")
-                                .font(.system(size: 11.5, weight: .medium))
+                    if onInstruct != nil {
+                        Button {
+                            showingInstructionBar.toggle()
+                            instructionError = nil
+                        } label: {
+                            HStack(spacing: 4.5) {
+                                Image(systemName: "wand.and.stars")
+                                    .font(.system(size: 11, weight: .medium))
+                                Text("指令修改")
+                                    .font(.system(size: 11.5, weight: .medium))
+                            }
+                            .foregroundStyle(showingInstructionBar ? colors.ink : colors.secondaryInk)
+                            .padding(.horizontal, 10)
+                            .frame(height: 27)
+                            .momoElevatedCard(cornerRadius: 999, isFocused: showingInstructionBar, shadowStrength: 0.45)
+                            .contentShape(Capsule())
                         }
-                        .foregroundStyle(showingInstructionBar ? colors.ink : colors.secondaryInk)
-                        .padding(.horizontal, 8)
-                        .frame(height: 26)
-                        .background(
-                            showingInstructionBar ? colors.surface : colors.surface.opacity(0.75),
-                            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        )
-                        .contentShape(Rectangle())
+                        .buttonStyle(MoMoPressableButtonStyle(scale: 0.96))
+                        .help("通过自然语言指令让 MoMo 修改这篇记忆或纠正说话人")
+                        .accessibilityIdentifier("remote.memoryInstructToggle")
                     }
-                    .buttonStyle(.plain)
-                    .help("通过自然语言指令让 MoMo 修改这篇记忆或纠正说话人")
-                    .accessibilityIdentifier("remote.memoryInstructToggle")
-                }
 
-                Menu {
-                    Button {
-                        MemoryCardDigest.copyToPasteboard(memory.text)
-                        copied = true
+                    Menu {
+                        Button {
+                            MemoryCardDigest.copyToPasteboard(memory.text)
+                            copied = true
+                        } label: {
+                            Label(copied ? "已复制 Markdown" : "复制 Markdown", systemImage: "doc.on.doc")
+                        }
+                        Button {
+                            MemoryCardDigest.shareText(memory.text)
+                        } label: {
+                            Label("分享", systemImage: "square.and.arrow.up")
+                        }
+                        Divider()
+                        Button(role: .destructive, action: onDelete) {
+                            Label(memory.kind == "person" ? "删除该人物" : "忘记这条记忆", systemImage: "trash")
+                        }
                     } label: {
-                        Label(copied ? "已复制 Markdown" : "复制 Markdown", systemImage: "doc.on.doc")
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(colors.secondaryInk)
+                            .frame(width: 27, height: 27)
+                            .momoElevatedCard(cornerRadius: 999, shadowStrength: 0.45)
+                            .contentShape(Circle())
                     }
-                    Button {
-                        MemoryCardDigest.shareText(memory.text)
-                    } label: {
-                        Label("分享", systemImage: "square.and.arrow.up")
-                    }
-                    Divider()
-                    Button(role: .destructive, action: onDelete) {
-                        Label(memory.kind == "person" ? "删除该人物" : "忘记这条记忆", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(colors.secondaryInk)
-                        .frame(width: 26, height: 26)
-                        .background(colors.surface.opacity(0.75), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .contentShape(Rectangle())
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("更多操作")
+                    .accessibilityLabel("更多操作")
+                    .accessibilityIdentifier("remote.inlineMemoryMore")
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("更多操作")
-                .accessibilityLabel("更多操作")
-                .accessibilityIdentifier("remote.inlineMemoryMore")
+                .padding(.horizontal, 18)
             }
+            .frame(height: 44)
 
             if showingInstructionBar, let onInstruct {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         Image(systemName: "wand.and.stars")
                             .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(colors.tabAccent(memory.kind))
+                            .foregroundStyle(colors.secondaryInk)
                         TextField("告诉 MoMo 怎么改（如：这个 OKR 是 shengli 说的，帮我纠正说话人和相关记忆）…", text: $instructionDraft)
                             .textFieldStyle(.plain)
                             .font(.system(size: 13))
@@ -677,7 +687,7 @@ private struct DesktopNoteTopBar: View {
                                 Text("发送")
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(instructionDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? colors.secondaryInk : MoMoPalette.canvas)
-                                    .padding(.horizontal, 10)
+                                    .padding(.horizontal, 11)
                                     .padding(.vertical, 4.5)
                                     .background(
                                         instructionDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -691,9 +701,9 @@ private struct DesktopNoteTopBar: View {
                             .accessibilityIdentifier("remote.memoryInstructSend")
                         }
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 7)
-                    .momoElevatedCard(cornerRadius: 9, shadowStrength: 0.5)
+                    .momoElevatedCard(cornerRadius: 999, shadowStrength: 0.5)
 
                     if let instructionError {
                         Text(instructionError)
@@ -701,6 +711,8 @@ private struct DesktopNoteTopBar: View {
                             .foregroundStyle(MoMoPalette.failure)
                     }
                 }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
             } else if let receipt = instructionReceipt {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
@@ -719,13 +731,13 @@ private struct DesktopNoteTopBar: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(colors.surface.opacity(0.55), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(colors.surface.opacity(0.55), in: Capsule())
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 9)
         .onChange(of: memory.id) {
             instructionError = nil
             instructionReceipt = nil
@@ -797,10 +809,10 @@ private enum MacVaultPalette {
         }
     }
 
-    static var ink: NSColor { NSColor(named: "PhoneInk") ?? .labelColor }
-    static var muted: NSColor { NSColor(named: "PhoneMuted") ?? .secondaryLabelColor }
-    static var surface: NSColor { NSColor(named: "PhoneSurface") ?? .quaternaryLabelColor }
-    static var line: NSColor { NSColor(named: "PhoneLine") ?? .separatorColor }
+    nonisolated static var ink: NSColor { NSColor(named: "PhoneInk") ?? .labelColor }
+    nonisolated static var muted: NSColor { NSColor(named: "PhoneMuted") ?? .secondaryLabelColor }
+    nonisolated static var surface: NSColor { NSColor(named: "PhoneSurface") ?? .quaternaryLabelColor }
+    nonisolated static var line: NSColor { NSColor(named: "PhoneLine") ?? .separatorColor }
 }
 
 private final class MacVaultRowCellView: NSTableCellView {
@@ -1284,32 +1296,49 @@ private enum MacFullNoteComposer {
         return c
     }()
 
-    private static let linkColor = NSColor(name: nil) { appearance in
+    private nonisolated static let linkColor = NSColor(name: nil) { appearance in
         let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         return dark
             ? NSColor(srgbRed: 0.96, green: 0.96, blue: 0.96, alpha: 1.0)
             : NSColor(srgbRed: 0.11, green: 0.11, blue: 0.11, alpha: 1.0)
     }
 
-    private static let linkUnderlineColor = NSColor(name: nil) { appearance in
+    private nonisolated static let linkUnderlineColor = NSColor(name: nil) { appearance in
         let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         return dark
             ? NSColor(white: 1.0, alpha: 0.24)
             : NSColor(white: 0.0, alpha: 0.20)
     }
 
-    static func compose(
+    nonisolated static func makeCacheKey(
         memory: ContextMemory,
         outgoing: [ContextMemory],
         incoming: [ContextMemory]
-    ) -> ComposedNote {
+    ) -> String {
         var hasher = Hasher()
         hasher.combine(memory.id)
         hasher.combine(memory.revision)
         hasher.combine(memory.text.utf8.count)
         hasher.combine(outgoing.map(\.id))
         hasher.combine(incoming.map(\.id))
-        let key = "v3|\(memory.id)|\(memory.revision)|\(outgoing.count)|\(incoming.count)|\(hasher.finalize())"
+        return "v4|\(memory.id)|\(memory.revision)|\(outgoing.count)|\(incoming.count)|\(hasher.finalize())"
+    }
+
+    nonisolated static func cached(
+        memory: ContextMemory,
+        outgoing: [ContextMemory],
+        incoming: [ContextMemory]
+    ) -> ComposedNote? {
+        let key = makeCacheKey(memory: memory, outgoing: outgoing, incoming: incoming)
+        return cache.object(forKey: key as NSString)
+    }
+
+    nonisolated static func compose(
+        memory: ContextMemory,
+        outgoing: [ContextMemory],
+        incoming: [ContextMemory]
+    ) -> ComposedNote {
+        let key = makeCacheKey(memory: memory, outgoing: outgoing, incoming: incoming)
         let nsKey = key as NSString
         if let hit = cache.object(forKey: nsKey) {
             return hit
@@ -1668,10 +1697,49 @@ private final class MacNoteDocumentScrollView: NSScrollView {
     }
 }
 
-private struct MacNoteDocumentReader: NSViewRepresentable {
+private struct MacNoteDocumentReaderHost: View {
     let memory: ContextMemory
     let outgoingMemories: [ContextMemory]
     let incomingMemories: [ContextMemory]
+    let onOpenLink: (URL) -> Void
+    @State private var composedNote: MacFullNoteComposer.ComposedNote?
+
+    private var triggerKey: String {
+        MacFullNoteComposer.makeCacheKey(
+            memory: memory,
+            outgoing: outgoingMemories,
+            incoming: incomingMemories
+        )
+    }
+
+    var body: some View {
+        MacNoteDocumentReader(
+            composed: composedNote ?? MacFullNoteComposer.cached(
+                memory: memory,
+                outgoing: outgoingMemories,
+                incoming: incomingMemories
+            ),
+            onOpenLink: onOpenLink
+        )
+        .task(id: triggerKey) {
+            let mem = memory
+            let out = outgoingMemories
+            let inc = incomingMemories
+            if let hit = MacFullNoteComposer.cached(memory: mem, outgoing: out, incoming: inc) {
+                composedNote = hit
+                return
+            }
+            let built = await Task.detached(priority: .userInitiated) {
+                MacFullNoteComposer.compose(memory: mem, outgoing: out, incoming: inc)
+            }.value
+            guard !Task.isCancelled else { return }
+            composedNote = built
+        }
+    }
+}
+
+private struct MacNoteDocumentReader: NSViewRepresentable {
+    let composed: MacFullNoteComposer.ComposedNote?
     let onOpenLink: (URL) -> Void
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -1749,11 +1817,7 @@ private struct MacNoteDocumentReader: NSViewRepresentable {
     }
 
     private func apply(to textView: MacNoteDocumentTextView, in scrollView: MacNoteDocumentScrollView) {
-        let composed = MacFullNoteComposer.compose(
-            memory: memory,
-            outgoing: outgoingMemories,
-            incoming: incomingMemories
-        )
+        guard let composed else { return }
         guard textView.currentComposedKey != composed.key else { return }
         let noteChanged = textView.currentMemoryID != composed.memoryID
         textView.currentComposedKey = composed.key

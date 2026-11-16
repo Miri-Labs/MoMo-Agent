@@ -370,7 +370,7 @@ private struct ChatWebSurface: ChatWebRepresentable {
         web.underPageBackgroundColor = canvas
         #else
         web.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        web.underPageBackgroundColor = NSColor(white: dark ? 22 / 255.0 : 250 / 255.0, alpha: 1)
+        web.underPageBackgroundColor = NSColor(white: dark ? 18 / 255.0 : 252 / 255.0, alpha: 1)
         #endif
     }
 
@@ -407,8 +407,8 @@ extension ChatWebCoordinator: UIGestureRecognizerDelegate {
 }
 #endif
 
-struct ChatRenderPayload: Encodable, Equatable {
-    struct Appearance: Encodable, Equatable {
+struct ChatRenderPayload: Encodable, Equatable, Sendable {
+    struct Appearance: Encodable, Equatable, Sendable {
         let dark: Bool
         let reduceMotion: Bool
         let scale: Double
@@ -424,7 +424,7 @@ struct ChatRenderPayload: Encodable, Equatable {
         appearance == other.appearance && snapshot.isSameSessionRenderEquivalent(to: other.snapshot)
     }
 
-    func encode(to encoder: any Encoder) throws {
+    nonisolated func encode(to encoder: any Encoder) throws {
         try snapshot.encode(to: encoder)
         var container = encoder.container(keyedBy: Keys.self)
         try container.encode(appearance, forKey: .appearance)
@@ -612,22 +612,21 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
             return
         }
         guard payload != sent || pendingScroll != sentScroll else { return }
-        do {
-            let scroll = pendingScroll
-            let requestChanged = scroll != sentScroll
-            let tailPatch: ChatRenderSnapshot.Message? = (!requestChanged && didRender && sent != nil)
-                ? Self.streamingTailPatch(from: sent!, to: payload)
-                : nil
-            let tailJSON: Any = try tailPatch.map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) } ?? NSNull()
-            let payloadJSON: Any = (tailPatch == nil && payload != sent)
-                ? String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
-                : NSNull()
-            let document = documentID
-            sending = true
-            lastFlushTime = .now
-            // Structured arguments keep model text out of executable JavaScript.
-            // Rendering updates the DOM synchronously. An opacity-zero WKWebView can suspend
-            // animation frames, so waiting for one before revealing it deadlocks first paint.
+        let scroll = pendingScroll
+        let requestChanged = scroll != sentScroll
+        let tailPatch: ChatRenderSnapshot.Message? = (!requestChanged && didRender && sent != nil)
+            ? Self.streamingTailPatch(from: sent!, to: payload)
+            : nil
+        let needsFullPayload = (tailPatch == nil && payload != sent)
+        let document = documentID
+        sending = true
+        lastFlushTime = .now
+
+        func sendToWeb(tailJSON: Any, payloadJSON: Any) {
+            guard self.webView === webView, document == self.documentID else {
+                self.sending = false
+                return
+            }
             let script = "if (tailJSON) MoMoChat.patchTailMessage(JSON.parse(tailJSON)); else if (payloadJSON) MoMoChat.render(JSON.parse(payloadJSON)); if (openChat) MoMoChat.openChat(); if (latest) MoMoChat.scrollToBottom();"
             webView.callAsyncJavaScript(script, arguments: [
                 "tailJSON": tailJSON,
@@ -636,23 +635,48 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
                 "latest": requestChanged && scroll?.destination == .latest && payload.snapshot.focus == nil],
                 in: nil, in: .page, completionHandler: { [weak self] result in
                 guard let self, self.webView === webView, document == self.documentID else { return }
-                sending = false
+                self.sending = false
                 switch result {
                 case .success:
-                    reloads = 0
-                    sent = payload
-                    sentScroll = scroll
-                    // Do not replace the native first message with a previously sent empty page
-                    // or a stale session while the latest payload is still waiting to paint.
-                    if !didRender, !payload.snapshot.messages.isEmpty,
-                       payload.snapshot.sessionID == pending?.snapshot.sessionID {
-                        didRender = true; rendered()
+                    self.reloads = 0
+                    self.sent = payload
+                    self.sentScroll = scroll
+                    if !self.didRender, !payload.snapshot.messages.isEmpty,
+                       payload.snapshot.sessionID == self.pending?.snapshot.sessionID {
+                        self.didRender = true; self.rendered()
                     }
-                    scheduleFlush()
-                case .failure(let error): recover(from: error)
+                    self.scheduleFlush()
+                case .failure(let error): self.recover(from: error)
                 }
             })
-        } catch { recover(from: error) }
+        }
+
+        if needsFullPayload && payload.snapshot.messages.count > 20 {
+            Task.detached(priority: .userInitiated) { [weak self] in
+                do {
+                    let encoded = String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
+                    await MainActor.run {
+                        sendToWeb(tailJSON: NSNull(), payloadJSON: encoded)
+                    }
+                } catch {
+                    await MainActor.run {
+                        self?.sending = false
+                        self?.recover(from: error)
+                    }
+                }
+            }
+        } else {
+            do {
+                let tailJSON: Any = try tailPatch.map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) } ?? NSNull()
+                let payloadJSON: Any = needsFullPayload
+                    ? String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
+                    : NSNull()
+                sendToWeb(tailJSON: tailJSON, payloadJSON: payloadJSON)
+            } catch {
+                sending = false
+                recover(from: error)
+            }
+        }
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
