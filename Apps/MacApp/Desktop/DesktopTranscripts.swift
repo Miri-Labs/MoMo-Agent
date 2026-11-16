@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import MoMoAgentClient
 import MoMoContracts
@@ -231,8 +232,7 @@ struct DesktopSources: View {
     }
 
     private var illustrations: [LifeIllustration] {
-        model.lifeIllustrations.items.filter { model.lifeIllustrations.imageURL(for: $0) != nil }
-            .sorted { $0.windowStart < $1.windowStart }
+        model.lifeIllustrations.readyItems
     }
 
     private var selectedIllustration: LifeIllustration? {
@@ -241,8 +241,7 @@ struct DesktopSources: View {
     }
 
     private var dayIllustrations: [LifeIllustration] {
-        let dayKey = DesktopTranscriptSnapshot.dayKey(for: day, calendar: calendar)
-        return illustrations.filter { $0.belongs(to: dayKey) }
+        model.lifeIllustrations.readyItems(forDay: selectedDayKey)
     }
 
     private func overlaps(_ window: DesktopTranscriptWindow, illustration: LifeIllustration) -> Bool {
@@ -334,7 +333,7 @@ struct DesktopSources: View {
         .onChange(of: snapshot.version) {
             if selectedID != nil && selected == nil { selectedID = nil }
         }
-        .onChange(of: illustrations.map(\.id)) {
+        .onChange(of: model.lifeIllustrations.readyItems) {
             if selectedIllustrationID != nil && selectedIllustration == nil { closeIllustration() }
         }
         .alert("生活插画", isPresented: Binding(
@@ -348,7 +347,18 @@ struct DesktopSources: View {
     }
 
     private var timeline: some View {
-        VStack(spacing: 14) {
+        let currentVisible = visible
+        let early = currentVisible.filter(isEarly)
+        let daytime = currentVisible.filter { !isEarly($0) }
+        let hasDaytime = !daytime.isEmpty
+        let expanded = expandedDays[selectedDayKey] ?? TranscriptReadingBoundary.initiallyExpanded(
+            hasDaytime: hasDaytime,
+            isToday: calendar.isDate(day, inSameDayAs: logicalToday),
+            hour: model.dayStartHour
+        )
+        let windows = !query.isEmpty || expanded ? currentVisible : daytime
+        let currentDayIllustrations = (!searching && query.isEmpty) ? dayIllustrations : []
+        return VStack(spacing: 14) {
             HStack(spacing: 12) {
                 Text("转录").font(.system(size: 22, weight: .semibold)).accessibilityAddTraits(.isHeader)
                 Spacer()
@@ -368,13 +378,10 @@ struct DesktopSources: View {
                 }.padding(.horizontal, 24)
             }
             ScrollView {
-                let early = visible.filter(isEarly)
-                let expanded = earlyExpanded
-                let windows = !query.isEmpty || expanded ? visible : visible.filter { !isEarly($0) }
                 LazyVStack(spacing: 0) {
                 Color.clear.frame(height: 1).id("masthead")
-                if !searching, query.isEmpty, !dayIllustrations.isEmpty {
-                    LifeIllustrationStripView(items: dayIllustrations, store: model.lifeIllustrations, horizontalMargin: 16,
+                if !currentDayIllustrations.isEmpty {
+                    LifeIllustrationStripView(items: currentDayIllustrations, store: model.lifeIllustrations, horizontalMargin: 16,
                         open: { selectedIllustrationID = $0.id }, showSource: { showSource(for: $0) },
                         failure: { illustrationError = $0 })
                         .padding(.bottom, 8)
@@ -423,7 +430,7 @@ struct DesktopSources: View {
                         }
                         .id(item.id)
                     }
-                    if query.isEmpty, !early.isEmpty, !visible.contains(where: { !isEarly($0) }) {
+                    if query.isEmpty, !early.isEmpty, !hasDaytime {
                         Text("当天暂无 \(TranscriptReadingBoundary.label(for: model.dayStartHour)) 后记录")
                             .phoneText(.caption).foregroundStyle(MoMoPalette.muted)
                     }
@@ -445,8 +452,8 @@ struct DesktopSources: View {
                 Spacer().frame(height: 24)
             }
             .scrollPosition(id: $timelineAnchor, anchor: .top)
-            .onChange(of: visible.isEmpty, initial: true) { _, empty in
-                if !empty, expandedDays[selectedDayKey] == nil { expandedDays[selectedDayKey] = earlyExpanded }
+            .onChange(of: currentVisible.isEmpty, initial: true) { _, empty in
+                if !empty, expandedDays[selectedDayKey] == nil { expandedDays[selectedDayKey] = expanded }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -531,7 +538,7 @@ struct DesktopSourceReader: View {
     let source: ContextSource
     var window: ContextSourceWindow? = nil
     var initialSpanID: String? = nil
-    @State private var readerAnchor: String?
+    @State private var pendingScrollSpanID: String?
     @State private var readRequest: UUID?
     var close: (() -> Void)?
     var onDiscuss: (() -> Void)? = nil
@@ -542,37 +549,41 @@ struct DesktopSourceReader: View {
     @State private var error: String?
 
     private static let clockFormat = Date.FormatStyle().hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
-    private static let secondFormat = Date.FormatStyle().hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits)
 
     private var recordedAt: Double? { window?.recordedAt ?? source.recordedAt }
     private var endAt: Double? { window?.endAt ?? recordedAt }
     private var summary: String? { window?.summary ?? source.summary }
     private var startOffset: Int { window?.offset ?? 0 }
     private var endOffset: Int { window?.end ?? source.totalCharacters }
+    private var documentID: String { "\(source.id)|\(window?.id ?? "full")" }
     private var hasMore: Bool {
         guard let page else { return true }
         guard let next = page.nextOffset else { return false }
         return next < endOffset
     }
 
+    private var sourceTimeZone: TimeZone {
+        window?.displayTimeZone() ?? .current
+    }
+
     private var sourceCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = window?.displayTimeZone() ?? .current
+        calendar.timeZone = sourceTimeZone
         return calendar
     }
 
-    private func spanClock(_ timestamp: Double, offset: Int?) -> String {
-        var format = Self.secondFormat
-        format.timeZone = offset.flatMap(TimeZone.init(secondsFromGMT:)) ?? sourceCalendar.timeZone
-        return Date(timeIntervalSince1970: timestamp).formatted(format)
+    private var headerDateLabel: String? {
+        guard let timestamp = recordedAt else { return nil }
+        let date = Date(timeIntervalSince1970: timestamp)
+        return window?.naturalDay ?? DesktopTranscriptSnapshot.dayKey(for: date, calendar: sourceCalendar)
     }
 
-    private var headerTimeLabel: String {
-        guard let timestamp = recordedAt else { return "" }
+    private var headerTimeLabel: String? {
+        guard let timestamp = recordedAt else { return nil }
         let start = Date(timeIntervalSince1970: timestamp)
         let end = Date(timeIntervalSince1970: endAt ?? timestamp)
         var clock = Self.clockFormat
-        clock.timeZone = sourceCalendar.timeZone
+        clock.timeZone = sourceTimeZone
         let startLabel = start.formatted(clock)
         let endLabel = end.formatted(clock)
         return startLabel == endLabel ? startLabel : "\(startLabel)–\(endLabel)"
@@ -590,54 +601,44 @@ struct DesktopSourceReader: View {
                         .buttonStyle(.plain).help("分享完整原文")
                 }
             }.padding(.horizontal, 24).frame(height: 44)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        if let timestamp = recordedAt {
-                            let date = Date(timeIntervalSince1970: timestamp)
-                            TranscriptDetailDateHeader(
-                                date: window?.naturalDay ?? DesktopTranscriptSnapshot.dayKey(for: date, calendar: sourceCalendar),
-                                time: headerTimeLabel
-                            )
-                        }
-                        if let summary, !summary.isEmpty {
-                            TimelineSummaryView(text: summary).padding(.top, 10)
-                        }
-                    }.padding(.top, 20)
 
-                    let visibleSpans = spans.filter { ($0.text ?? "").isEmpty == false }
-                    if !visibleSpans.isEmpty {
-                        ForEach(visibleSpans) { span in
-                            VStack(alignment: .leading, spacing: 6) {
-                                if let spanTime = span.recordedAt {
-                                    Text(spanClock(spanTime, offset: span.timezoneOffset))
-                                        .phoneText(.caption)
-                                        .foregroundStyle(MoMoPalette.muted)
-                                        .monospacedDigit()
-                                }
-                                TranscriptParagraphText(
-                                    text: span.text ?? "",
-                                    accessibilityID: "transcript.text.\(span.id)"
-                                )
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }.id(span.id)
-                        }
-                    } else if !text.isEmpty {
-                        TranscriptParagraphText(text: text, accessibilityID: "desktop.source.text")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+            MacSourceTranscriptReader(
+                documentID: documentID,
+                sourceRevision: source.revision,
+                dateLabel: headerDateLabel,
+                timeLabel: headerTimeLabel,
+                summary: summary,
+                spans: spans,
+                fallbackText: text,
+                defaultTimeZone: sourceTimeZone,
+                scrollSpanID: pendingScrollSpanID,
+                onConsumedScrollSpan: { pendingScrollSpanID = nil }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    if hasMore || error != nil {
-                        Button(error == nil ? "继续读取原文" : "重试读取") { Task { await more(replacing: error != nil) } }
-                            .buttonStyle(.plain).disabled(loading)
+            if loading || hasMore || error != nil {
+                HStack(spacing: 12) {
+                    if loading {
+                        ProgressView().controlSize(.small)
+                        Text("正在读取原文").phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
                     }
-                    if loading { ProgressView("正在读取原文") }
-                    if let error { Text(error).phoneText(.metadata).foregroundStyle(MoMoPalette.failure) }
+                    if let error {
+                        Text(error).phoneText(.metadata).foregroundStyle(MoMoPalette.failure)
+                    }
+                    Spacer(minLength: 0)
+                    if (!loading && hasMore) || error != nil {
+                        Button(error == nil ? "继续读取原文" : "重试读取") {
+                            Task { await more(replacing: error != nil) }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(loading)
+                    }
                 }
-                .scrollTargetLayout()
-                .padding(.horizontal, 24).padding(.bottom, 24)
-                .frame(maxWidth: 680, alignment: .leading).frame(maxWidth: .infinity)
-            }.scrollPosition(id: $readerAnchor, anchor: .top)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 8)
+                .frame(maxWidth: 680, alignment: .leading)
+                .frame(maxWidth: .infinity)
+            }
         }
         .safeAreaInset(edge: .bottom) {
             if !text.isEmpty {
@@ -651,10 +652,10 @@ struct DesktopSourceReader: View {
                 }.frame(maxWidth: 680).frame(maxWidth: .infinity)
             }
         }
-        .task(id: source.revision) { await more(replacing: true) }
-        .task(id: initialSpanID) {
-            if let initialSpanID, spans.contains(where: { $0.id == initialSpanID }) { readerAnchor = initialSpanID }
+        .onChange(of: initialSpanID, initial: true) { _, nextSpan in
+            if let nextSpan { pendingScrollSpanID = nextSpan }
         }
+        .task(id: "\(documentID)|\(source.revision)") { await more(replacing: true) }
     }
 
     private func more(replacing: Bool = false) async {
@@ -666,27 +667,451 @@ struct DesktopSourceReader: View {
         var nextPage = replacing ? nil : page
         var nextText = replacing ? "" : text
         var nextSpans = replacing ? [] : spans
+        var seenSpanIDs = Set(nextSpans.map(\.id))
+        var pagesFetched = 0
         do {
             while nextPage == nil || (nextPage?.nextOffset.map { $0 < endOffset } ?? false) {
                 let currentOffset = nextPage?.nextOffset ?? startOffset
-                let next = try await model.readSource(source, offset: currentOffset, limit: min(4000, max(1, endOffset - currentOffset)))
+                let pageLimit = min(12_000, max(1, endOffset - currentOffset))
+                let next = try await model.readSource(source, offset: currentOffset, limit: pageLimit)
                 try Task.checkCancellation()
                 guard next.end > currentOffset || next.nextOffset == nil else { throw URLError(.cannotParseResponse) }
+                if !nextText.isEmpty && !next.text.isEmpty && !nextText.hasSuffix("\n") {
+                    nextText += "\n"
+                }
                 nextText += next.text
-                let existing = Set(nextSpans.map(\.id))
-                nextSpans += (next.spans ?? []).filter { !existing.contains($0.id) }
+                if let incomingSpans = next.spans {
+                    for span in incomingSpans where seenSpanIDs.insert(span.id).inserted {
+                        nextSpans.append(span)
+                    }
+                }
                 nextPage = next
-            }
-            guard readRequest == request else { return }
-            let savedAnchor = readerAnchor
-            text = nextText; spans = nextSpans; page = nextPage; error = nil
-            if let savedAnchor, nextSpans.contains(where: { $0.id == savedAnchor }) {
-                readerAnchor = savedAnchor
-            } else if let initialSpanID, nextSpans.contains(where: { $0.id == initialSpanID }) {
-                readerAnchor = initialSpanID
+                pagesFetched += 1
+                let isLastPage = !(next.nextOffset.map { $0 < endOffset } ?? false)
+                if pagesFetched == 1 || isLastPage || pagesFetched.isMultiple(of: 2) {
+                    guard readRequest == request else { return }
+                    text = nextText
+                    spans = nextSpans
+                    page = nextPage
+                    error = nil
+                }
             }
         } catch is CancellationError {} catch {
             if readRequest == request { self.error = error.localizedDescription }
+        }
+    }
+}
+
+// MARK: - Native AppKit 120fps Tiled Transcript Reader
+
+private enum MacSourceTranscriptComposer {
+    final class ComposedTranscript: NSObject, @unchecked Sendable {
+        let key: String
+        let documentID: String
+        let attributedString: NSAttributedString
+        let summaryCardRange: NSRange?
+        let summaryQuoteRanges: [NSRange]
+        let spanCharRanges: [String: NSRange]
+
+        init(
+            key: String,
+            documentID: String,
+            attributedString: NSAttributedString,
+            summaryCardRange: NSRange?,
+            summaryQuoteRanges: [NSRange],
+            spanCharRanges: [String: NSRange]
+        ) {
+            self.key = key
+            self.documentID = documentID
+            self.attributedString = attributedString
+            self.summaryCardRange = summaryCardRange
+            self.summaryQuoteRanges = summaryQuoteRanges
+            self.spanCharRanges = spanCharRanges
+        }
+    }
+
+    private nonisolated(unsafe) static let cache: NSCache<NSString, ComposedTranscript> = {
+        let c = NSCache<NSString, ComposedTranscript>()
+        c.countLimit = 96
+        return c
+    }()
+
+    private static var inkColor: NSColor { NSColor(named: "PhoneInk") ?? .labelColor }
+    private static var mutedColor: NSColor { NSColor(named: "PhoneMuted") ?? .secondaryLabelColor }
+
+    private static func formatWallClock(timestamp: Double, offsetSeconds: Int) -> String {
+        let localSeconds = Int(floor(timestamp)) + offsetSeconds
+        let secOfDay = ((localSeconds % 86_400) + 86_400) % 86_400
+        let hh = secOfDay / 3600
+        let mm = (secOfDay % 3600) / 60
+        let ss = secOfDay % 60
+        return String(format: "%02d:%02d:%02d", hh, mm, ss)
+    }
+
+    static func compose(
+        documentID: String,
+        sourceRevision: String,
+        dateLabel: String?,
+        timeLabel: String?,
+        summary: String?,
+        spans: [SourceTextSpan],
+        fallbackText: String,
+        defaultTimeZone: TimeZone
+    ) -> ComposedTranscript {
+        var hasher = Hasher()
+        hasher.combine(documentID)
+        hasher.combine(sourceRevision)
+        hasher.combine(dateLabel)
+        hasher.combine(timeLabel)
+        hasher.combine(summary)
+        hasher.combine(spans.count)
+        hasher.combine(spans.first?.id)
+        hasher.combine(spans.last?.id)
+        hasher.combine(fallbackText.utf8.count)
+        hasher.combine(defaultTimeZone.identifier)
+        let key = "\(documentID)|\(sourceRevision)|\(spans.count)|\(fallbackText.utf8.count)|\(hasher.finalize())"
+        let nsKey = key as NSString
+        if let hit = cache.object(forKey: nsKey) {
+            return hit
+        }
+
+        let ink = inkColor
+        let muted = mutedColor
+        let result = NSMutableAttributedString()
+        var summaryCardRange: NSRange?
+        var summaryQuotes: [NSRange] = []
+        var spanRanges: [String: NSRange] = [:]
+        spanRanges.reserveCapacity(spans.count)
+
+        if let dateLabel, !dateLabel.isEmpty {
+            let dateStyle = NSMutableParagraphStyle()
+            dateStyle.lineSpacing = 3
+            dateStyle.paragraphSpacing = (timeLabel?.isEmpty == false) ? 8 : 20
+            result.append(NSAttributedString(
+                string: dateLabel + "\n",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: PhoneTextStyle.metadata.size, weight: .regular),
+                    .foregroundColor: muted,
+                    .paragraphStyle: dateStyle,
+                ]
+            ))
+        }
+
+        if let timeLabel, !timeLabel.isEmpty {
+            let timeStyle = NSMutableParagraphStyle()
+            timeStyle.lineSpacing = 4
+            timeStyle.paragraphSpacing = 20
+            result.append(NSAttributedString(
+                string: timeLabel + "\n",
+                attributes: [
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: PhoneTextStyle.heading.size, weight: .medium),
+                    .foregroundColor: ink,
+                    .paragraphStyle: timeStyle,
+                ]
+            ))
+        }
+
+        if let summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let cardInset: CGFloat = 18
+            let cardStart = result.length
+            let headerStyle = NSMutableParagraphStyle()
+            headerStyle.firstLineHeadIndent = cardInset
+            headerStyle.headIndent = cardInset
+            headerStyle.tailIndent = -cardInset
+            headerStyle.paragraphSpacingBefore = 14
+            headerStyle.paragraphSpacing = 8
+            result.append(NSAttributedString(
+                string: String(localized: "总结") + "\n",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: PhoneTextStyle.menu.size, weight: .semibold),
+                    .foregroundColor: ink,
+                    .paragraphStyle: headerStyle,
+                ]
+            ))
+
+            let renderedSummary = MacMarkdownRenderer.render(markdown: summary, handwriting: false, plainTextOnly: false)
+            let summaryMutable = NSMutableAttributedString(attributedString: renderedSummary.attributedString)
+            if summaryMutable.length == 0 || !summaryMutable.string.hasSuffix("\n") {
+                summaryMutable.append(NSAttributedString(string: "\n"))
+            }
+            let fullRange = NSRange(location: 0, length: summaryMutable.length)
+            summaryMutable.enumerateAttribute(.paragraphStyle, in: fullRange, options: []) { value, range, _ in
+                let base = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+                base.firstLineHeadIndent += cardInset
+                base.headIndent += cardInset
+                base.tailIndent = -cardInset
+                if !base.tabStops.isEmpty {
+                    base.tabStops = base.tabStops.map { NSTextTab(textAlignment: $0.alignment, location: $0.location + cardInset, options: $0.options) }
+                }
+                if NSMaxRange(range) >= summaryMutable.length {
+                    base.paragraphSpacing = max(base.paragraphSpacing, 14)
+                }
+                summaryMutable.addAttribute(.paragraphStyle, value: base, range: range)
+            }
+            let bodyOffset = result.length
+            result.append(summaryMutable)
+            for qr in renderedSummary.quoteCharRanges {
+                summaryQuotes.append(NSRange(location: qr.location + bodyOffset, length: qr.length))
+            }
+            summaryCardRange = NSRange(location: cardStart, length: result.length - cardStart)
+        }
+
+        let visibleSpans = spans.filter { ($0.text ?? "").isEmpty == false }
+        if !visibleSpans.isEmpty {
+            let bodyStyle = NSMutableParagraphStyle()
+            bodyStyle.lineSpacing = 4.5
+            bodyStyle.paragraphSpacing = 18
+            let bodyAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: PhoneTextStyle.body.size, weight: .regular),
+                .foregroundColor: ink,
+                .paragraphStyle: bodyStyle,
+            ]
+
+            let firstStampStyle = NSMutableParagraphStyle()
+            firstStampStyle.paragraphSpacingBefore = summaryCardRange != nil ? 22 : 4
+            firstStampStyle.paragraphSpacing = 5
+            let stampStyle = NSMutableParagraphStyle()
+            stampStyle.paragraphSpacing = 5
+            let stampFont = NSFont.monospacedDigitSystemFont(ofSize: PhoneTextStyle.caption.size, weight: .regular)
+
+            let fixedDefaultOffset: Int? = defaultTimeZone.isDaylightSavingTime() ? nil : defaultTimeZone.secondsFromGMT()
+
+            for (idx, span) in visibleSpans.enumerated() {
+                let spanStart = result.length
+                if let spanTime = span.recordedAt {
+                    let offsetSec = span.timezoneOffset
+                        ?? fixedDefaultOffset
+                        ?? defaultTimeZone.secondsFromGMT(for: Date(timeIntervalSince1970: spanTime))
+                    let clock = formatWallClock(timestamp: spanTime, offsetSeconds: offsetSec)
+                    result.append(NSAttributedString(
+                        string: clock + "\n",
+                        attributes: [
+                            .font: stampFont,
+                            .foregroundColor: muted,
+                            .paragraphStyle: idx == 0 ? firstStampStyle : stampStyle,
+                        ]
+                    ))
+                } else if idx == 0, summaryCardRange != nil {
+                    let topBodyStyle = bodyStyle.mutableCopy() as! NSMutableParagraphStyle
+                    topBodyStyle.paragraphSpacingBefore = 22
+                    result.append(NSAttributedString(
+                        string: (span.text ?? "") + "\n",
+                        attributes: [
+                            .font: NSFont.systemFont(ofSize: PhoneTextStyle.body.size, weight: .regular),
+                            .foregroundColor: ink,
+                            .paragraphStyle: topBodyStyle,
+                        ]
+                    ))
+                    spanRanges[span.id] = NSRange(location: spanStart, length: result.length - spanStart)
+                    continue
+                }
+                result.append(NSAttributedString(string: (span.text ?? "") + "\n", attributes: bodyAttrs))
+                spanRanges[span.id] = NSRange(location: spanStart, length: result.length - spanStart)
+            }
+        } else if !fallbackText.isEmpty {
+            let bodyStyle = NSMutableParagraphStyle()
+            bodyStyle.paragraphSpacingBefore = summaryCardRange != nil ? 22 : 4
+            bodyStyle.lineSpacing = 4.5
+            bodyStyle.paragraphSpacing = 12
+            result.append(NSAttributedString(
+                string: fallbackText + "\n",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: PhoneTextStyle.body.size, weight: .regular),
+                    .foregroundColor: ink,
+                    .paragraphStyle: bodyStyle,
+                ]
+            ))
+        }
+
+        let composed = ComposedTranscript(
+            key: key,
+            documentID: documentID,
+            attributedString: result,
+            summaryCardRange: summaryCardRange,
+            summaryQuoteRanges: summaryQuotes,
+            spanCharRanges: spanRanges
+        )
+        cache.setObject(composed, forKey: nsKey)
+        return composed
+    }
+}
+
+private final class MacSourceDocumentTextView: NSTextView {
+    var currentComposedKey: String = ""
+    var currentDocumentID: String = ""
+    var summaryCardRange: NSRange?
+    var summaryQuoteRanges: [NSRange] = []
+
+    override func draw(_ dirtyRect: NSRect) {
+        if let cardRange = summaryCardRange,
+           let lm = layoutManager, let tc = textContainer, let ts = textStorage,
+           cardRange.location >= 0, NSMaxRange(cardRange) <= ts.length {
+            let glyphRange = lm.glyphRange(forCharacterRange: cardRange, actualCharacterRange: nil)
+            let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+            if rect.height > 4 {
+                let origin = textContainerOrigin
+                let bgRect = NSRect(
+                    x: origin.x,
+                    y: origin.y + rect.minY + 2,
+                    width: tc.containerSize.width,
+                    height: rect.height + 2
+                )
+                if bgRect.intersects(dirtyRect) {
+                    (NSColor(named: "PhoneSurface") ?? .quaternaryLabelColor).setFill()
+                    NSBezierPath(roundedRect: bgRect, xRadius: 16, yRadius: 16).fill()
+                }
+            }
+        }
+        super.draw(dirtyRect)
+        if !summaryQuoteRanges.isEmpty,
+           let lm = layoutManager, let tc = textContainer, let ts = textStorage {
+            let origin = textContainerOrigin
+            let totalLen = ts.length
+            (NSColor(named: "PhoneLine") ?? .separatorColor).setFill()
+            for charRange in summaryQuoteRanges where charRange.location >= 0 && NSMaxRange(charRange) <= totalLen {
+                let glyphRange = lm.glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
+                let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+                guard rect.height > 1 else { continue }
+                let barRect = NSRect(
+                    x: origin.x + 18.5,
+                    y: origin.y + rect.minY + 1,
+                    width: 2.5,
+                    height: max(4, rect.height - 2)
+                )
+                if barRect.intersects(dirtyRect) {
+                    NSBezierPath(roundedRect: barRect, xRadius: 1.25, yRadius: 1.25).fill()
+                }
+            }
+        }
+    }
+}
+
+private final class MacSourceDocumentScrollView: NSScrollView {
+    override func layout() {
+        super.layout()
+        guard let tv = documentView as? MacSourceDocumentTextView else { return }
+        let vw = max(220, contentView.bounds.width)
+        let readableWidth = max(180, min(632, floor(vw - 48)))
+        let sideInset = max(24, floor((vw - readableWidth) * 0.5))
+        if abs(tv.textContainerInset.width - sideInset) >= 0.5 || abs(tv.textContainerInset.height - 20) >= 0.5 {
+            tv.textContainerInset = NSSize(width: sideInset, height: 20)
+        }
+        if abs(tv.frame.width - vw) >= 0.5 {
+            tv.setFrameSize(NSSize(width: vw, height: tv.frame.height))
+        }
+    }
+}
+
+private struct MacSourceTranscriptReader: NSViewRepresentable {
+    let documentID: String
+    let sourceRevision: String
+    let dateLabel: String?
+    let timeLabel: String?
+    let summary: String?
+    let spans: [SourceTextSpan]
+    let fallbackText: String
+    let defaultTimeZone: TimeZone
+    let scrollSpanID: String?
+    let onConsumedScrollSpan: () -> Void
+
+    final class Coordinator: NSObject {
+        weak var textView: MacSourceDocumentTextView?
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> MacSourceDocumentScrollView {
+        let scrollView = MacSourceDocumentScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.borderType = .noBorder
+
+        let textView = MacSourceDocumentTextView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.drawsBackground = false
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = true
+        textView.importsGraphics = false
+        textView.allowsUndo = false
+        textView.usesFontPanel = false
+        textView.usesFindBar = true
+        textView.isAutomaticLinkDetectionEnabled = false
+        textView.isAutomaticDataDetectionEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.isContinuousSpellCheckingEnabled = false
+        textView.isGrammarCheckingEnabled = false
+        textView.textContainerInset = NSSize(width: 24, height: 20)
+        textView.textContainer?.containerSize = NSSize(width: 592, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.layoutManager?.allowsNonContiguousLayout = true
+        textView.setAccessibilityIdentifier("desktop.source.text")
+
+        context.coordinator.textView = textView
+        scrollView.documentView = textView
+        apply(to: textView, in: scrollView)
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: MacSourceDocumentScrollView, context: Context) {
+        guard let textView = context.coordinator.textView else { return }
+        apply(to: textView, in: scrollView)
+    }
+
+    private func apply(to textView: MacSourceDocumentTextView, in scrollView: MacSourceDocumentScrollView) {
+        let composed = MacSourceTranscriptComposer.compose(
+            documentID: documentID,
+            sourceRevision: sourceRevision,
+            dateLabel: dateLabel,
+            timeLabel: timeLabel,
+            summary: summary,
+            spans: spans,
+            fallbackText: fallbackText,
+            defaultTimeZone: defaultTimeZone
+        )
+        let documentChanged = textView.currentDocumentID != composed.documentID
+        if textView.currentComposedKey != composed.key {
+            let previousOrigin = scrollView.contentView.bounds.origin
+            textView.currentComposedKey = composed.key
+            textView.currentDocumentID = composed.documentID
+            textView.summaryCardRange = composed.summaryCardRange
+            textView.summaryQuoteRanges = composed.summaryQuoteRanges
+            if documentChanged, textView.selectedRange().length > 0 {
+                textView.setSelectedRange(NSRange(location: 0, length: 0))
+            }
+            textView.textStorage?.setAttributedString(composed.attributedString)
+            textView.needsDisplay = true
+            if documentChanged {
+                scrollView.contentView.scroll(to: .zero)
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            } else if previousOrigin.y > 0 {
+                scrollView.contentView.scroll(to: previousOrigin)
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            }
+        }
+        if let targetID = scrollSpanID,
+           let charRange = composed.spanCharRanges[targetID],
+           let lm = textView.layoutManager,
+           let tc = textView.textContainer {
+            lm.ensureLayout(forCharacterRange: NSRange(location: 0, length: NSMaxRange(charRange)))
+            let glyphRange = lm.glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
+            let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+            let targetY = max(0, textView.textContainerOrigin.y + rect.minY - 14)
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            DispatchQueue.main.async {
+                onConsumedScrollSpan()
+            }
         }
     }
 }

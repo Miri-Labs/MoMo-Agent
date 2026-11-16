@@ -80,6 +80,13 @@ final class DesktopNotchCompanion: NSObject {
     private func expand() {
         guard !presentation.expanded, let layout else { return }
         hoverTask?.cancel(); presentation.expanded = true; panel?.hasShadow = true
+        host?.layoutSubtreeIfNeeded()
+        if let fitting = host?.fittingSize.height {
+            let measuredCardHeight = fitting - layout.topPadding
+            if measuredCardHeight > 40 {
+                contentHeight = measuredCardHeight
+            }
+        }
         setFrame(layout.expandedFrame(contentHeight: contentHeight))
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor in self?.collapse() }
@@ -153,7 +160,8 @@ struct DesktopNotchView: View {
     }
 
     private var topControl: some View {
-        Button(action: toggle) {
+        let companion = model.companionState
+        return Button(action: toggle) {
             HStack(spacing: 0) {
                 Group {
                     if presentation.expanded { Image(systemName: presentation.pinned ? "pin.fill" : "pin").font(.system(size: 11)) }
@@ -161,13 +169,13 @@ struct DesktopNotchView: View {
                 }.frame(width: 44)
                 Color.clear.frame(width: layout.notch.width)
                 Group {
-                    if let badge = model.companionState.badge {
+                    if let badge = companion.badge {
                         Text(badge).font(.system(size: 11, weight: .bold, design: .rounded)).monospacedDigit()
-                    } else { Circle().fill(model.companionState.online ? .white.opacity(0.55) : .white.opacity(0.25)).frame(width: 4, height: 4) }
+                    } else { Circle().fill(companion.online ? .white.opacity(0.55) : .white.opacity(0.25)).frame(width: 4, height: 4) }
                 }.frame(width: 44)
             }.frame(height: layout.topPadding).contentShape(Rectangle())
         }.buttonStyle(.plain)
-            .accessibilityLabel(presentation.expanded ? (presentation.pinned ? "收起 MoMo" : "固定 MoMo") : "MoMo，\(model.companionState.subtitle)")
+            .accessibilityLabel(presentation.expanded ? (presentation.pinned ? "收起 MoMo" : "固定 MoMo") : "MoMo，\(companion.subtitle)")
             .accessibilityIdentifier("companion.notch")
     }
 }

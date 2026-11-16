@@ -420,6 +420,10 @@ struct ChatRenderPayload: Encodable, Equatable {
     let snapshot: ChatRenderSnapshot
     let appearance: Appearance
 
+    func isSameSessionRenderEquivalent(to other: ChatRenderPayload) -> Bool {
+        appearance == other.appearance && snapshot.isSameSessionRenderEquivalent(to: other.snapshot)
+    }
+
     func encode(to encoder: any Encoder) throws {
         try snapshot.encode(to: encoder)
         var container = encoder.container(keyedBy: Keys.self)
@@ -499,13 +503,30 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
 
     func setActive(_ value: Bool) {
         let resumed = value && !active
+        let suspended = !value && active
         active = value
         if !value {
             coalescedFlushTask?.cancel(); coalescedFlushTask = nil
+            if suspended, ready {
+                webView?.callAsyncJavaScript(
+                    "if (window.MoMoChat?.setSuspended) window.MoMoChat.setSuspended(true);",
+                    arguments: [:], in: nil, in: .page, completionHandler: nil
+                )
+            }
         }
         if resumed {
             reloads = 0
-            if needsReload { reloadDocument() } else { flush() }
+            if needsReload {
+                reloadDocument()
+            } else {
+                if ready {
+                    webView?.callAsyncJavaScript(
+                        "if (window.MoMoChat?.setSuspended) window.MoMoChat.setSuspended(false);",
+                        arguments: [:], in: nil, in: .page, completionHandler: nil
+                    )
+                }
+                flush()
+            }
         }
     }
 
@@ -529,9 +550,36 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
         recoveryNavigation = webView.loadFileURL(resourceDirectory.appendingPathComponent("index.html"), allowingReadAccessTo: resourceDirectory)
     }
 
+    private static func streamingTailPatch(from previous: ChatRenderPayload, to next: ChatRenderPayload) -> ChatRenderSnapshot.Message? {
+        guard previous.appearance == next.appearance,
+              previous.snapshot.sessionID == next.snapshot.sessionID,
+              previous.snapshot.locale == next.snapshot.locale,
+              previous.snapshot.focus == nil, next.snapshot.focus == nil,
+              previous.snapshot.busy == next.snapshot.busy,
+              previous.snapshot.stopped == next.snapshot.stopped,
+              previous.snapshot.canRegenerate == next.snapshot.canRegenerate,
+              previous.snapshot.contextState == next.snapshot.contextState,
+              previous.snapshot.waitingForReply == next.snapshot.waitingForReply,
+              previous.snapshot.firstUnreadMessageID == next.snapshot.firstUnreadMessageID,
+              previous.snapshot.chatEntryReady == next.snapshot.chatEntryReady,
+              previous.snapshot.messages.count == next.snapshot.messages.count,
+              let prevLast = previous.snapshot.messages.last,
+              let nextLast = next.snapshot.messages.last,
+              prevLast.state == "streaming", nextLast.state == "streaming",
+              prevLast.role == "assistant", nextLast.role == "assistant",
+              prevLast.turnID == nextLast.turnID,
+              previous.snapshot.messages.dropLast() == next.snapshot.messages.dropLast()
+        else { return nil }
+        return prevLast == nextLast ? nil : nextLast
+    }
+
     private func scheduleFlush() {
-        guard active, ready, !sending, let payload = pending,
-              payload != sent || pendingScroll != sentScroll else { return }
+        guard active, ready, !sending, let payload = pending else { return }
+        if let sent, pendingScroll == sentScroll, payload.isSameSessionRenderEquivalent(to: sent) {
+            self.sent = payload
+            return
+        }
+        guard payload != sent || pendingScroll != sentScroll else { return }
         if let sent,
            pendingScroll == sentScroll,
            payload.appearance == sent.appearance,
@@ -558,20 +606,32 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
 
     private func flush() {
         coalescedFlushTask?.cancel(); coalescedFlushTask = nil
-        guard active, ready, !sending, let webView, let payload = pending,
-              payload != sent || pendingScroll != sentScroll else { return }
+        guard active, ready, !sending, let webView, let payload = pending else { return }
+        if let sent, pendingScroll == sentScroll, payload.isSameSessionRenderEquivalent(to: sent) {
+            self.sent = payload
+            return
+        }
+        guard payload != sent || pendingScroll != sentScroll else { return }
         do {
-            let payloadJSON: Any = payload != sent ? String(decoding: try JSONEncoder().encode(payload), as: UTF8.self) : NSNull()
             let scroll = pendingScroll
+            let requestChanged = scroll != sentScroll
+            let tailPatch: ChatRenderSnapshot.Message? = (!requestChanged && didRender && sent != nil)
+                ? Self.streamingTailPatch(from: sent!, to: payload)
+                : nil
+            let tailJSON: Any = try tailPatch.map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) } ?? NSNull()
+            let payloadJSON: Any = (tailPatch == nil && payload != sent)
+                ? String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
+                : NSNull()
             let document = documentID
             sending = true
             lastFlushTime = .now
             // Structured arguments keep model text out of executable JavaScript.
             // Rendering updates the DOM synchronously. An opacity-zero WKWebView can suspend
             // animation frames, so waiting for one before revealing it deadlocks first paint.
-            let requestChanged = scroll != sentScroll
-            let script = "if (payloadJSON) MoMoChat.render(JSON.parse(payloadJSON)); if (openChat) MoMoChat.openChat(); if (latest) MoMoChat.scrollToBottom();"
-            webView.callAsyncJavaScript(script, arguments: ["payloadJSON": payloadJSON,
+            let script = "if (tailJSON) MoMoChat.patchTailMessage(JSON.parse(tailJSON)); else if (payloadJSON) MoMoChat.render(JSON.parse(payloadJSON)); if (openChat) MoMoChat.openChat(); if (latest) MoMoChat.scrollToBottom();"
+            webView.callAsyncJavaScript(script, arguments: [
+                "tailJSON": tailJSON,
+                "payloadJSON": payloadJSON,
                 "openChat": requestChanged && (scroll?.destination == .entry || scroll?.destination == .resumeTab),
                 "latest": requestChanged && scroll?.destination == .latest && payload.snapshot.focus == nil],
                 in: nil, in: .page, completionHandler: { [weak self] result in

@@ -9,6 +9,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -278,19 +279,39 @@ def node_environment(base_env: dict[str, str]) -> dict[str, str]:
     return env
 
 
+_FINGERPRINT_CACHE_LOCK = threading.Lock()
+_FINGERPRINT_CACHE: tuple[tuple[tuple[int, int, int], ...], dict] | None = None
+
+
 def superagent_fingerprint() -> dict:
-    upstream = json.loads(SUPERAGENT_UPSTREAM.read_text(encoding="utf-8"))
+    global _FINGERPRINT_CACHE
     manifest = SUPERAGENT_SOURCE / "package.json"
     bundle = SUPERAGENT_SOURCE / "lib/index.js"
     if not bundle.is_file():
         raise ValueError("Vendor/SuperAgent/lib/index.js is missing; build Vendor/SuperAgent first")
-    return {
+    try:
+        stamp = tuple(
+            (st.st_mtime_ns, st.st_size, st.st_ino)
+            for st in (SUPERAGENT_UPSTREAM.stat(), manifest.stat(), bundle.stat())
+        )
+    except OSError:
+        stamp = None
+    if stamp is not None:
+        with _FINGERPRINT_CACHE_LOCK:
+            if _FINGERPRINT_CACHE is not None and _FINGERPRINT_CACHE[0] == stamp:
+                return dict(_FINGERPRINT_CACHE[1])
+    upstream = json.loads(SUPERAGENT_UPSTREAM.read_text(encoding="utf-8"))
+    computed = {
         "source": str(SUPERAGENT_SOURCE),
         "upstream_commit": upstream["commit"],
         "dsh_version": DSH_VERSION,
         "manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
         "bundle_sha256": hashlib.sha256(bundle.read_bytes()).hexdigest(),
     }
+    if stamp is not None:
+        with _FINGERPRINT_CACHE_LOCK:
+            _FINGERPRINT_CACHE = (stamp, computed)
+    return dict(computed)
 
 
 def _superagent_identity(record: dict) -> dict:

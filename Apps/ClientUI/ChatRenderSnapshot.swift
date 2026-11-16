@@ -52,6 +52,20 @@ struct ChatRenderSnapshot: Encodable, Equatable {
     var chatEntryReady = true
     let readingPosition: ChatReadingPosition?
 
+    func isSameSessionRenderEquivalent(to other: ChatRenderSnapshot) -> Bool {
+        guard sessionID == other.sessionID else { return false }
+        return focus == other.focus
+            && locale == other.locale
+            && busy == other.busy
+            && stopped == other.stopped
+            && canRegenerate == other.canRegenerate
+            && contextState == other.contextState
+            && waitingForReply == other.waitingForReply
+            && firstUnreadMessageID == other.firstUnreadMessageID
+            && chatEntryReady == other.chatEntryReady
+            && messages == other.messages
+    }
+
     // Match the Web renderer even when a system event follows the last outgoing message.
     var deliveryReceiptMessageID: String? {
         guard let index = messages.lastIndex(where: { $0.role == "user" }),
@@ -221,55 +235,94 @@ struct ChatRenderSnapshot: Encodable, Equatable {
             return rows
         }
         let displayed = store.displayMessages
-        var lastDisplayIndexByRun: [String: Int] = [:]
-        var assistantCountByRun: [String: Int] = [:]
-        for (index, row) in displayed.enumerated() {
-            if let runID = row.runID {
-                lastDisplayIndexByRun[runID] = index
-                if row.role == "assistant" { assistantCountByRun[runID, default: 0] += 1 }
+        var receiptHasher = Hasher()
+        receiptHasher.combine(displayed.count)
+        for row in displayed where row.role == "user" {
+            receiptHasher.combine(row.id)
+            receiptHasher.combine(receipt(runID: row.runID, operationID: row.operationID, messageState: row.deliveryState, serverConfirmed: true))
+            if let opID = row.operationID, let localTask = tasksByID[opID] {
+                receiptHasher.combine(localTask.createdAt)
+                receiptHasher.combine(localTask.attachments?.count ?? 0)
             }
         }
-        var remoteRows: [Message] = []
-        remoteRows.reserveCapacity(displayed.count + store.sharedRunReplies.count)
-        var renderedLiveRuns: Set<String> = []
-        for (index, row) in displayed.enumerated() {
-            let outgoing = row.role == "user" ? row.operationID?.uuidString : nil
-            let attachments = row.attachments ?? (row.operationID.flatMap { tasksByID[$0]?.attachments }) ?? []
-            var blocks: [Message.Block] = attachments.map { item in
-                .init(id: row.id + ":attachment:\(item.id.uuidString)", type: "attachment", name: item.name,
-                    preview: AttachmentPreviewDataURLCache.dataURL(for: item.id, preview: item.preview), kind: item.kind.rawValue,
-                    format: item.displayFormat, size: item.displaySize, attachmentID: item.id.uuidString)
-            }
-            if !row.content.isEmpty || blocks.isEmpty {
-                blocks.append(.init(id: row.id + ":text", type: "text", text: row.content))
-            }
-            // Keep the local outgoing timestamp on server echo so timestamp headers never jump.
-            let rowSentAtMs: Double? = if row.role == "system" {
-                nil
-            } else if row.role == "user", let opID = row.operationID, let localCreatedAt = tasksByID[opID]?.createdAt {
-                Self.epochMilliseconds(localCreatedAt)
-            } else {
-                Self.epochMilliseconds(seconds: row.createdAt)
-            }
-            remoteRows.append(Message(id: outgoing.map { $0 + ":user" } ?? row.id, turnID: outgoing ?? (row.role == "system" ? row.id : row.runID ?? row.id),
-                role: row.role, state: "complete", blocks: blocks, sentAtMs: rowSentAtMs,
-                delivery: row.role == "user" ? receipt(runID: row.runID, operationID: row.operationID,
-                    messageState: row.deliveryState, serverConfirmed: true) : nil))
-            if let runID = row.runID, lastDisplayIndexByRun[runID] == index {
-                let run = sharedRunsByID[runID] ?? tasksByRunID[runID]?.run
-                if run?.isTerminal != true,
-                   let reply = store.sharedRunReplies[runID] ?? tasksByRunID[runID]?.reply {
-                    let turnID = tasksByRunID[runID]?.id.uuidString ?? runID
-                    let liveSentAtMs = Self.epochMilliseconds(tasksByRunID[runID]?.firstTextReceivedAt)
-                        ?? Self.epochMilliseconds(seconds: run?.createdAt)
-                        ?? Self.epochMilliseconds(seconds: row.createdAt)
-                    if let live = liveStreamingMessage(turnID: turnID, reply: reply,
-                                                       committedAssistantCount: assistantCountByRun[runID] ?? 0,
-                                                       sentAtMs: liveSentAtMs) {
-                        remoteRows.append(live)
-                    }
-                    renderedLiveRuns.insert(runID)
+        let cacheKey = CommittedHistoryCache.Key(
+            storeID: ObjectIdentifier(store),
+            displayRevision: store.displayMessagesRevision,
+            userSignature: receiptHasher.finalize()
+        )
+        let baseHistory: CommittedHistoryCache.Entry
+        if let hit = CommittedHistoryCache.entry, hit.key == cacheKey {
+            baseHistory = hit
+        } else {
+            var lastIdxByRun: [String: Int] = [:]
+            var asstCountByRun: [String: Int] = [:]
+            for (index, row) in displayed.enumerated() {
+                if let runID = row.runID {
+                    lastIdxByRun[runID] = index
+                    if row.role == "assistant" { asstCountByRun[runID, default: 0] += 1 }
                 }
+            }
+            var committed: [Message] = []
+            committed.reserveCapacity(displayed.count)
+            for row in displayed {
+                let outgoing = row.role == "user" ? row.operationID?.uuidString : nil
+                let attachments = row.attachments ?? (row.operationID.flatMap { tasksByID[$0]?.attachments }) ?? []
+                var blocks: [Message.Block] = attachments.map { item in
+                    .init(id: row.id + ":attachment:\(item.id.uuidString)", type: "attachment", name: item.name,
+                        preview: AttachmentPreviewDataURLCache.dataURL(for: item.id, preview: item.preview), kind: item.kind.rawValue,
+                        format: item.displayFormat, size: item.displaySize, attachmentID: item.id.uuidString)
+                }
+                if !row.content.isEmpty || blocks.isEmpty {
+                    blocks.append(.init(id: row.id + ":text", type: "text", text: row.content))
+                }
+                // Keep the local outgoing timestamp on server echo so timestamp headers never jump.
+                let rowSentAtMs: Double? = if row.role == "system" {
+                    nil
+                } else if row.role == "user", let opID = row.operationID, let localCreatedAt = tasksByID[opID]?.createdAt {
+                    Self.epochMilliseconds(localCreatedAt)
+                } else {
+                    Self.epochMilliseconds(seconds: row.createdAt)
+                }
+                committed.append(Message(id: outgoing.map { $0 + ":user" } ?? row.id, turnID: outgoing ?? (row.role == "system" ? row.id : row.runID ?? row.id),
+                    role: row.role, state: "complete", blocks: blocks, sentAtMs: rowSentAtMs,
+                    delivery: row.role == "user" ? receipt(runID: row.runID, operationID: row.operationID,
+                        messageState: row.deliveryState, serverConfirmed: true) : nil))
+            }
+            baseHistory = CommittedHistoryCache.Entry(
+                key: cacheKey,
+                committedRows: committed,
+                lastDisplayIndexByRun: lastIdxByRun,
+                assistantCountByRun: asstCountByRun
+            )
+            CommittedHistoryCache.entry = baseHistory
+        }
+
+        let lastDisplayIndexByRun = baseHistory.lastDisplayIndexByRun
+        let assistantCountByRun = baseHistory.assistantCountByRun
+        var liveInsertions: [(afterIndex: Int, message: Message)] = []
+        var renderedLiveRuns: Set<String> = []
+        for (runID, index) in lastDisplayIndexByRun where displayed.indices.contains(index) {
+            let run = sharedRunsByID[runID] ?? tasksByRunID[runID]?.run
+            if run?.isTerminal != true,
+               let reply = store.sharedRunReplies[runID] ?? tasksByRunID[runID]?.reply {
+                let row = displayed[index]
+                let turnID = tasksByRunID[runID]?.id.uuidString ?? runID
+                let liveSentAtMs = Self.epochMilliseconds(tasksByRunID[runID]?.firstTextReceivedAt)
+                    ?? Self.epochMilliseconds(seconds: run?.createdAt)
+                    ?? Self.epochMilliseconds(seconds: row.createdAt)
+                if let live = liveStreamingMessage(turnID: turnID, reply: reply,
+                                                   committedAssistantCount: assistantCountByRun[runID] ?? 0,
+                                                   sentAtMs: liveSentAtMs) {
+                    liveInsertions.append((index, live))
+                }
+                renderedLiveRuns.insert(runID)
+            }
+        }
+        var remoteRows = baseHistory.committedRows
+        if !liveInsertions.isEmpty {
+            liveInsertions.sort { $0.afterIndex > $1.afterIndex }
+            for insertion in liveInsertions {
+                remoteRows.insert(insertion.message, at: insertion.afterIndex + 1)
             }
         }
         for run in store.sharedRuns where !run.isTerminal && !renderedLiveRuns.contains(run.runID) && tasksByRunID[run.runID] == nil {
@@ -315,6 +368,21 @@ struct ChatRenderSnapshot: Encodable, Equatable {
                 sentAtMs: Self.epochMilliseconds(message.sentAt))
         }
     }
+}
+
+@MainActor private enum CommittedHistoryCache {
+    struct Key: Equatable {
+        let storeID: ObjectIdentifier
+        let displayRevision: UInt64
+        let userSignature: Int
+    }
+    struct Entry {
+        let key: Key
+        let committedRows: [ChatRenderSnapshot.Message]
+        let lastDisplayIndexByRun: [String: Int]
+        let assistantCountByRun: [String: Int]
+    }
+    static var entry: Entry?
 }
 
 private enum AttachmentPreviewDataURLCache {

@@ -9,7 +9,10 @@ public final class LifeIllustrationStore {
     public private(set) var isRefreshing = false
     public var isConfigured: Bool { client != nil }
     public var items: [LifeIllustration] { cachedItems }
+    public private(set) var readyItems: [LifeIllustration] = []
+    public private(set) var readyItemsByDay: [String: [LifeIllustration]] = [:]
     private var cachedItems: [LifeIllustration] = []
+    @ObservationIgnored private var cachedItemIDs: Set<String> = []
     private var assetURLs: [String: URL] = [:]
     @ObservationIgnored private let directory: URL
     @ObservationIgnored private var cache: LifeIllustrationCache?
@@ -34,7 +37,8 @@ public final class LifeIllustrationStore {
         self.scope = scope
         let cache = LifeIllustrationCache(directory: directory.appendingPathComponent(LifeIllustrationCache.digest(Data(scope.utf8))))
         self.cache = cache
-        settings = LifeIllustrationSettings(); hasLoadedSettings = false; cachedItems = []; assetURLs = [:]
+        settings = LifeIllustrationSettings(); hasLoadedSettings = false
+        cachedItems = []; cachedItemIDs = []; assetURLs = [:]; readyItems = []; readyItemsByDay = [:]
         refreshedAt = .distantPast; error = nil; isRefreshing = false
         synchronizationFailure = nil
         let currentRevision = revision
@@ -61,14 +65,19 @@ public final class LifeIllustrationStore {
         guard let cachedURLs = try? await cache.existingAssetURLs(for: Array(snapshot.items.values)),
               self.revision == revision,
               !self.hasLoadedSettings else { return }
-        self.settings = snapshot.lastVerifiedSettings ?? LifeIllustrationSettings()
-        self.assetURLs = cachedURLs
+        let nextSettings = snapshot.lastVerifiedSettings ?? LifeIllustrationSettings()
+        if self.settings != nextSettings { self.settings = nextSettings }
+        if self.assetURLs != cachedURLs { self.assetURLs = cachedURLs }
         self.publish(snapshot)
     }
 
     public func imageURL(for item: LifeIllustration, thumbnail: Bool = true) -> URL? {
-        guard cachedItems.contains(where: { $0.id == item.id }) else { return nil }
+        guard cachedItemIDs.contains(item.id) else { return nil }
         return assetURLs[thumbnail ? item.thumbnailSha256 : item.assetSha256]
+    }
+
+    public func readyItems(forDay dayKey: String) -> [LifeIllustration] {
+        readyItemsByDay[dayKey] ?? []
     }
 
     public func startPolling() {
@@ -129,14 +138,14 @@ public final class LifeIllustrationStore {
                 guard LifeIllustrationSettings.allowedIntervals.contains(settings.intervalHours) else { throw LifeIllustrationError.invalidInterval }
                 try? await cache.saveSettings(settings)
                 try checkCurrent(revision)
-                self.settings = settings
-                self.hasLoadedSettings = true
+                if self.settings != settings { self.settings = settings }
+                if !self.hasLoadedSettings { self.hasLoadedSettings = true }
                 refreshedAt = Date()
                 var snapshot = try await cache.load()
                 if cachedItems.isEmpty, !snapshot.items.isEmpty {
                     let cachedURLs = try await cache.existingAssetURLs(for: Array(snapshot.items.values))
                     try checkCurrent(revision)
-                    assetURLs = cachedURLs
+                    if assetURLs != cachedURLs { assetURLs = cachedURLs }
                     publish(snapshot)
                 }
                 var cursor = snapshot.cursor
@@ -227,6 +236,16 @@ public final class LifeIllustrationStore {
                 if cursor != snapshot.cursor || !tombstones.isEmpty {
                     snapshot = try await cache.apply([], cursor: cursor)
                 }
+                // Fast path: when no manifest delta arrived and all expected files remain verified on disk,
+                // skip per-item actor hops and avoid emitting redundant @Observable mutations.
+                let expectedHashes = Set(snapshot.items.values.flatMap { [$0.thumbnailSha256, $0.assetSha256] })
+                if changes.isEmpty,
+                   cachedItems.count == snapshot.items.count,
+                   expectedHashes.isSubset(of: assetURLs.keys),
+                   await cache.allVerified(hashes: expectedHashes) {
+                    if error != nil { error = nil }
+                    return
+                }
                 // Restored cache may have been purged by the OS or interrupted before all bytes reached disk.
                 var urls: [String: URL] = [:]
                 for item in snapshot.items.values {
@@ -242,9 +261,9 @@ public final class LifeIllustrationStore {
                     }
                 }
                 try checkCurrent(revision)
-                assetURLs = urls
+                if assetURLs != urls { assetURLs = urls }
                 publish(snapshot)
-                error = nil
+                if error != nil { error = nil }
             } catch {
                 guard self.revision == revision else { return }
                 self.synchronizationFailure = error
@@ -338,13 +357,36 @@ public final class LifeIllustrationStore {
     }
 
     private func publish(_ snapshot: LifeIllustrationCache.Snapshot) {
-        cachedItems = snapshot.items.values.sorted {
+        let sorted = snapshot.items.values.sorted {
             $0.windowStart == $1.windowStart ? $0.id < $1.id : $0.windowStart < $1.windowStart
         }
+        if cachedItems != sorted {
+            cachedItems = sorted
+            cachedItemIDs = Set(sorted.map(\.id))
+        }
+        rebuildReadyProjection()
     }
 
     private func pruneAssetURLs() {
         let referenced = Set(cachedItems.flatMap { [$0.assetSha256, $0.thumbnailSha256] })
-        assetURLs = assetURLs.filter { referenced.contains($0.key) }
+        let filtered = assetURLs.filter { referenced.contains($0.key) }
+        if assetURLs != filtered {
+            assetURLs = filtered
+            rebuildReadyProjection()
+        }
+    }
+
+    private func rebuildReadyProjection() {
+        let nextReady = cachedItems.filter { assetURLs[$0.thumbnailSha256] != nil }
+        if readyItems != nextReady {
+            readyItems = nextReady
+            var byDay: [String: [LifeIllustration]] = [:]
+            for item in nextReady {
+                for day in item.naturalDays {
+                    byDay[day, default: []].append(item)
+                }
+            }
+            readyItemsByDay = byDay
+        }
     }
 }

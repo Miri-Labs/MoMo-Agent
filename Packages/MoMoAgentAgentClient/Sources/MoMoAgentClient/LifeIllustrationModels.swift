@@ -184,10 +184,29 @@ public struct LifeIllustration: Codable, Equatable, Identifiable, Sendable {
     }
 
     private static func validDay(_ value: String) -> Bool {
-        let format = DateFormatter()
-        format.locale = Locale(identifier: "en_US_POSIX"); format.timeZone = TimeZone(secondsFromGMT: 0)
-        format.dateFormat = "yyyy-MM-dd"; format.isLenient = false
-        return value.count == 10 && format.date(from: value).map { format.string(from: $0) == value } == true
+        let utf8 = Array(value.utf8)
+        guard utf8.count == 10, utf8[4] == 45, utf8[7] == 45 else { return false }
+        func digit(_ index: Int) -> Int? {
+            let b = utf8[index]
+            return (48...57).contains(b) ? Int(b - 48) : nil
+        }
+        guard let y0 = digit(0), let y1 = digit(1), let y2 = digit(2), let y3 = digit(3),
+              let m0 = digit(5), let m1 = digit(6),
+              let d0 = digit(8), let d1 = digit(9) else { return false }
+        let year = y0 * 1000 + y1 * 100 + y2 * 10 + y3
+        let month = m0 * 10 + m1
+        let day = d0 * 10 + d1
+        guard year >= 1, (1...12).contains(month), day >= 1 else { return false }
+        let maxDay: Int
+        switch month {
+        case 1, 3, 5, 7, 8, 10, 12: maxDay = 31
+        case 4, 6, 9, 11: maxDay = 30
+        case 2:
+            let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+            maxDay = leap ? 29 : 28
+        default: return false
+        }
+        return day <= maxDay
     }
 
     private var validPlace: Bool {

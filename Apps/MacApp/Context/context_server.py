@@ -148,6 +148,8 @@ class ContextService:
                         result = {"application": "MoMoAgent", "workspace_id": connection["workspace_id"],
                                   "engine": "superagent",
                                   "revision": store.revision, "source_sync": True,
+                                  "memories_watermark": service.memory.stat_watermark(),
+                                  "sources_watermark": store.sources_watermark(),
                                   "memory_writer": "SuperAgent",
                                   "memory_pending": store.db.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('pending','running')").fetchone()[0],
                                   "memory_needs_review": store.db.execute("SELECT COUNT(*) FROM jobs WHERE state='needs_review'").fetchone()[0]}

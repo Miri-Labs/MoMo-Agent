@@ -109,7 +109,23 @@ Task { @MainActor in
         let reduced = try await clickJump(reduceMotion: true)
         guard reduced == 0 else { throw NSError(domain: "Reduced-motion jump had \(reduced) intermediate offsets", code: 1) }
         try await check("atBottom()")
-        print("PASS real WebKit: reduced motion, composing, viewport resizing and history reading")
+        // Verify O(1) streaming tail patch preserves earlier DOM nodes and suspension pauses animations.
+        _ = try await web.evaluateJavaScript(#"""
+        fixture.appearance.reduceMotion = false;
+        fixture.busy = true;
+        fixture.messages.push({id:'live-tail',turnID:'r-live',role:'assistant',state:'streaming',blocks:[{id:'b-live',type:'text',text:'第一句'}]});
+        MoMoChat.render(fixture);
+        window.firstTurnNode = document.querySelector('.turn');
+        window.tailTurnNode = document.querySelector('.turn:last-child');
+        window.patchedOk = MoMoChat.patchTailMessage({id:'live-tail',turnID:'r-live',role:'assistant',state:'streaming',blocks:[{id:'b-live',type:'text',text:'第一句，流式增量更新成功。'}]});
+        true;
+        """#)
+        try await settle()
+        try await check("window.patchedOk === true && window.firstTurnNode === document.querySelector('.turn') && window.tailTurnNode === document.querySelector('.turn:last-child') && document.querySelector('.turn:last-child').textContent.includes('流式增量更新成功')")
+        _ = try await web.evaluateJavaScript("MoMoChat.setSuspended(true)")
+        try await check("document.documentElement.dataset.activityAnimating === 'false'")
+        _ = try await web.evaluateJavaScript("MoMoChat.setSuspended(false)")
+        print("PASS real WebKit: reduced motion, composing, tail-patching, suspension, viewport resizing and history reading")
         application.terminate(nil)
     } catch { print("FAIL \(error)"); exit(1) }
 }
