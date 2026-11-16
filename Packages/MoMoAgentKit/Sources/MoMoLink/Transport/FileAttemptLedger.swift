@@ -230,18 +230,28 @@ public struct FileAttemptLedger: Codable, Sendable, Equatable {
         return true
     }
 
+    public func hasRecentProgress(within window: TimeInterval, now: Date) -> Bool {
+        guard window > 0 else { return false }
+        return attempts.values.contains {
+            $0.outstanding && $0.cancellationRequestedAt == nil
+                && $0.completedUnits > 0 && now.timeIntervalSince($0.lastProgressAt) < window
+        }
+    }
+
     private static func requiredStallLease(for attempt: FileTransferAttempt,
                                            baseLease: TimeInterval,
                                            interactiveZeroProgressLease: TimeInterval?,
                                            interactiveStallLease: TimeInterval?) -> TimeInterval {
-        var required = baseLease
+        if attempt.completedUnits == 0 {
+            if let interactiveZeroProgressLease {
+                return min(baseLease, interactiveZeroProgressLease)
+            }
+            return baseLease
+        }
         if let interactiveStallLease {
-            required = min(required, interactiveStallLease)
+            return min(baseLease, interactiveStallLease)
         }
-        if attempt.completedUnits == 0, let interactiveZeroProgressLease {
-            required = min(required, interactiveZeroProgressLease)
-        }
-        return required
+        return baseLease
     }
 
     public func acceptsFileCallback(chunkID: UUID, attemptID: UUID?) -> Bool {

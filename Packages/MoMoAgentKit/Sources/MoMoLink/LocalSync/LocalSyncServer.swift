@@ -44,6 +44,7 @@ public final class LocalSyncServer: @unchecked Sendable {
     private var listeningPort: UInt16?
     private var activeConnections = 0
     private var stopped = false
+    private var wifiAvailable = true
     private var lastPublishedURLs: [String] = []
 
     public init(handlers: LocalSyncHandlers, includeLoopback: Bool = false) throws {
@@ -93,8 +94,16 @@ public final class LocalSyncServer: @unchecked Sendable {
             self?.accept(connection)
         }
         let monitor = NWPathMonitor()
-        monitor.pathUpdateHandler = { [weak self] _ in
+        monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
+            #if os(iOS) && !targetEnvironment(simulator)
+            let hasWiFi = path.status == .satisfied && path.usesInterfaceType(.wifi)
+            #else
+            let hasWiFi = path.status == .satisfied
+            #endif
+            self.lock.lock()
+            self.wifiAvailable = hasWiFi
+            self.lock.unlock()
             let urls = self.currentEndpoint()?.baseURLs ?? []
             var changed = false
             self.lock.lock()
@@ -131,9 +140,10 @@ public final class LocalSyncServer: @unchecked Sendable {
         lock.lock()
         let port = listeningPort
         let isStopped = stopped
+        let allowLAN = wifiAvailable
         lock.unlock()
         guard !isStopped, let port, port > 0 else { return nil }
-        var urls = Self.activeLANAddresses().prefix(4).map { "http://\($0):\(port)" }
+        var urls = allowLAN ? Self.activeLANAddresses().prefix(4).map { "http://\($0):\(port)" } : []
         if includeLoopback {
             urls.insert("http://127.0.0.1:\(port)", at: 0)
         }
@@ -325,7 +335,12 @@ public final class LocalSyncServer: @unchecked Sendable {
                 continue
             }
             let name = String(cString: current.pointee.ifa_name)
+            #if os(iOS) && !targetEnvironment(simulator)
+            // Only en0 is iPhone Wi-Fi; en1/en2/bridge* expose cellular/USB private IPs unreachable from Watch Wi-Fi.
+            guard name == "en0" else { continue }
+            #else
             guard name.hasPrefix("en") || name.hasPrefix("bridge") else { continue }
+            #endif
             var hostBuffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             guard getnameinfo(addr, socklen_t(addr.pointee.sa_len), &hostBuffer, socklen_t(hostBuffer.count),
                               nil, 0, NI_NUMERICHOST) == 0 else { continue }

@@ -118,6 +118,25 @@ public actor RecordingStore {
                 try db.execute("PRAGMA user_version = 7")
             }
         }
+        let receiptColumns = Set(try db.rows("PRAGMA table_info(receipts)") { RecordingDatabase.text($0, 1) })
+        if !receiptColumns.contains("application_id") || !receiptColumns.contains("delivered") {
+            try db.transaction {
+                if !receiptColumns.contains("application_id") {
+                    try db.execute("ALTER TABLE receipts ADD COLUMN application_id TEXT")
+                }
+                if !receiptColumns.contains("delivered") {
+                    try db.execute("ALTER TABLE receipts ADD COLUMN delivered INTEGER NOT NULL DEFAULT 0")
+                }
+                try db.execute("UPDATE receipts SET application_id=json_extract(CAST(application AS TEXT),'$.messageID') WHERE application_id IS NULL")
+                try db.execute("UPDATE receipts SET delivered=CASE WHEN application_id IN (SELECT id FROM control_deliveries) THEN 1 ELSE 0 END")
+            }
+        } else if version < 6 {
+            try db.execute("UPDATE receipts SET delivered=0 WHERE delivered!=0")
+        }
+        try db.execute("CREATE INDEX IF NOT EXISTS idx_receipts_undelivered ON receipts(delivered)")
+        try db.execute("CREATE INDEX IF NOT EXISTS idx_receipts_application_id ON receipts(application_id)")
+        try db.execute("CREATE INDEX IF NOT EXISTS idx_chunks_state ON chunks(state)")
+        try db.execute("CREATE INDEX IF NOT EXISTS idx_chunks_session ON chunks(session_id)")
         self.database = db
     }
 
@@ -286,7 +305,7 @@ public actor RecordingStore {
         let query: String
         switch kind {
         case .capture: query = "SELECT rowid,payload FROM capture_events WHERE session_id NOT IN (SELECT session_id FROM deletions) AND id NOT IN (SELECT id FROM control_deliveries) AND rowid>? ORDER BY rowid LIMIT ?"
-        case .receipt: query = "SELECT rowid,application FROM receipts WHERE rowid>? AND chunk_id NOT IN (SELECT chunk_id FROM reconciliation_receipt_holds) AND json_extract(CAST(application AS TEXT),'$.messageID') NOT IN (SELECT id FROM control_deliveries) ORDER BY rowid LIMIT ?"
+        case .receipt: query = "SELECT rowid,application FROM receipts WHERE delivered=0 AND rowid>? AND chunk_id NOT IN (SELECT chunk_id FROM reconciliation_receipt_holds) AND COALESCE(application_id,json_extract(CAST(application AS TEXT),'$.messageID')) NOT IN (SELECT id FROM control_deliveries) ORDER BY rowid LIMIT ?"
         case .deletion: query = "SELECT rowid,application FROM deletion_applications WHERE completed=1 AND rowid>? AND json_extract(CAST(application AS TEXT),'$.messageID') NOT IN (SELECT id FROM control_deliveries) ORDER BY rowid LIMIT ?"
         }
         return try database.rows(query, [.integer(sequence), .integer(Int64(min(32, max(0, limit))))]) { row in
@@ -314,6 +333,9 @@ public actor RecordingStore {
             guard saved == hash else { throw RecordingError.contentConflict(message.messageID) }
         } else {
             try database.execute("INSERT INTO control_deliveries(id,payload_hash) VALUES(?,?)", [.text(message.messageID.uuidString), .text(hash)])
+        }
+        if case .receiptApplied = message {
+            try database.execute("UPDATE receipts SET delivered=1 WHERE application_id=? AND delivered!=1", [.text(message.messageID.uuidString)])
         }
     }
 
@@ -462,7 +484,7 @@ public actor RecordingStore {
                 application = try decode(ReceiptApplied.self, saved.1)
             } else {
                 application = ReceiptApplied(receipt: receipt)
-                try database.execute("INSERT INTO receipts(receipt_id, chunk_id, payload, application) VALUES (?, ?, ?, ?)", [.text(receipt.receiptID.uuidString), .text(receipt.chunkID.uuidString), .blob(try encode(receipt)), .blob(try encode(application))])
+                try database.execute("INSERT INTO receipts(receipt_id, chunk_id, payload, application, application_id, delivered) VALUES (?, ?, ?, ?, ?, 0)", [.text(receipt.receiptID.uuidString), .text(receipt.chunkID.uuidString), .blob(try encode(receipt)), .blob(try encode(application)), .text(application.messageID.uuidString)])
             }
             try database.execute("DELETE FROM reconciliation_file_actions WHERE chunk_id=?", [.text(receipt.chunkID.uuidString)])
             try database.execute("DELETE FROM reconciliation_receipt_holds WHERE chunk_id=?", [.text(receipt.chunkID.uuidString)])
@@ -472,6 +494,7 @@ public actor RecordingStore {
             let shouldRequeueDelivery = reconciliationRequestID == nil || saved == nil || existingHold != nil || (chunk.state != .acknowledged && chunk.state != .removed)
             if shouldRequeueDelivery {
                 try database.execute("DELETE FROM control_deliveries WHERE id=?", [.text(application.messageID.uuidString)])
+                try database.execute("UPDATE receipts SET delivered=0 WHERE receipt_id=? AND delivered!=0", [.text(receipt.receiptID.uuidString)])
             }
             let alreadyDelivered = try !shouldRequeueDelivery && !database.rows("SELECT 1 FROM control_deliveries WHERE id=? LIMIT 1", [.text(application.messageID.uuidString)], read: { _ in true }).isEmpty
             if !alreadyDelivered, saved != nil {

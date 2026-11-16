@@ -136,6 +136,14 @@ private struct FileQueueDiagnostic: Encodable {
         submissions.hasSubmittedFileTransfer(chunkID: chunkID)
     }
 
+    public func hasOutstandingFileTransfer(chunkID: UUID) -> Bool {
+        submissions.hasOutstandingFileTransfer(chunkID: chunkID)
+    }
+
+    public func isAwaitingFileReceipt(chunkID: UUID) -> Bool {
+        submissions.isAwaitingReceipt(chunkID: chunkID)
+    }
+
     public func refreshFileQueue() throws {
         _ = try refreshOutstanding()
     }
@@ -225,14 +233,16 @@ private struct FileQueueDiagnostic: Encodable {
                                    allowAudioBlockRecovery: Bool = false,
                                    allowInteractiveFastPath: Bool = false) throws -> [(FileTransferAttempt, ManifestEnvelope)] {
         let transfers = try refreshOutstanding()
+        let now = Date()
         let eligible = Set(transfers.filter { $0.1.manifest.byteCount <= maximumValidationBytes }.map { $0.1.manifest.chunkID })
         let blockRecoveryReady = allowAudioBlockRecovery && session.isReachable && peerState == .available
         let stallLease = blockRecoveryReady ? FileAttemptLedger.lease : FileAttemptLedger.backgroundLease
-        let fastLease: TimeInterval? = (blockRecoveryReady && allowInteractiveFastPath)
+        let queueMoving = fileAttempts.hasRecentProgress(within: FileAttemptLedger.interactiveStallLease, now: now)
+        let fastLease: TimeInterval? = (blockRecoveryReady && allowInteractiveFastPath && !queueMoving)
             ? FileAttemptLedger.interactiveZeroProgressLease : nil
         let interactiveLease: TimeInterval? = (blockRecoveryReady && allowInteractiveFastPath)
             ? FileAttemptLedger.interactiveStallLease : nil
-        return fileAttempts.stalledCandidates(now: Date(), limit: LinkSubmissionState.maximumOutstandingFiles,
+        return fileAttempts.stalledCandidates(now: now, limit: LinkSubmissionState.maximumOutstandingFiles,
             eligibleChunkIDs: eligible, stallLease: stallLease, interactiveZeroProgressLease: fastLease,
             interactiveStallLease: interactiveLease).compactMap { candidate in
                 transfers.first(where: { $0.1.manifest.chunkID == candidate.chunkID }).map { (candidate, $0.1) }
@@ -243,14 +253,16 @@ private struct FileQueueDiagnostic: Encodable {
                                          allowAudioBlockRecovery: Bool = false,
                                          allowInteractiveFastPath: Bool = false) throws {
         let transfers = try refreshOutstanding()
+        let now = Date()
         let blockRecoveryReady = allowAudioBlockRecovery && session.isReachable && peerState == .available
         let stallLease = blockRecoveryReady ? FileAttemptLedger.lease : FileAttemptLedger.backgroundLease
-        let fastLease: TimeInterval? = (blockRecoveryReady && allowInteractiveFastPath)
+        let queueMoving = fileAttempts.hasRecentProgress(within: FileAttemptLedger.interactiveStallLease, now: now)
+        let fastLease: TimeInterval? = (blockRecoveryReady && allowInteractiveFastPath && !queueMoving)
             ? FileAttemptLedger.interactiveZeroProgressLease : nil
         let interactiveLease: TimeInterval? = (blockRecoveryReady && allowInteractiveFastPath)
             ? FileAttemptLedger.interactiveStallLease : nil
         var next = fileAttempts
-        guard next.requestCancellation(candidate, now: Date(), stallLease: stallLease,
+        guard next.requestCancellation(candidate, now: now, stallLease: stallLease,
                                        interactiveZeroProgressLease: fastLease,
                                        interactiveStallLease: interactiveLease) else { return } // Progress may have advanced during validation.
         try saveAttempts(next)
@@ -365,7 +377,7 @@ private struct FileQueueDiagnostic: Encodable {
         guard result == .submitted else { return result }
         var next = fileAttempts
         let attemptID = try next.begin(envelope, now: Date())
-        do { try saveAttempts(next) }
+        do { try saveAttempts(next, immediate: false) }
         catch { submissions.retireFileAttempt(chunkID: envelope.manifest.chunkID); throw error }
         var metadata = LinkWireFormat.fileMetadata(envelope)
         metadata["file_attempt_id"] = attemptID.uuidString
@@ -529,7 +541,12 @@ private struct FileQueueDiagnostic: Encodable {
     public var hasDueControlRetries: Bool { controlSubmissions.hasDueControlRetries() || interactiveControls.hasDueControlRetries() }
     public var hasRetryableFiles: Bool { submissions.hasRetryableFiles }
     public var hasDueFileRetries: Bool { submissions.hasDueFileRetries() }
+    public var isFileChannelCoolingDown: Bool { submissions.isChannelCoolingDown() }
     public var outstandingFileCount: Int { session.outstandingFileTransfers.count }
+    public var outstandingControlCount: Int { session.outstandingUserInfoTransfers.count }
+    public var canAdmitMoreFiles: Bool {
+        !submissions.isChannelCoolingDown() && session.outstandingFileTransfers.count < submissions.maximumOutstandingCount
+    }
 
     public func nextRetryDelay(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval? {
         let blockDelay: TimeInterval? = (audioBlockTask == nil && audioBlockRetryAt > now && session.isReachable)
@@ -1040,7 +1057,10 @@ private struct FileQueueDiagnostic: Encodable {
                 next.finish(chunkID: envelope.manifest.chunkID, attemptID: attemptID, succeededAt: failure == nil ? Date() : nil)
                 do { try self.saveAttempts(next, immediate: false) }
                 catch { self.event(.failed(TransportFailure(error))) }
-                let deliveryFailed = self.submissions.didFinish(chunkID: envelope.manifest.chunkID, failed: failure != nil)
+                let deliveryFailed = self.submissions.didFinish(
+                    chunkID: envelope.manifest.chunkID,
+                    failed: failure != nil,
+                    channelFailure: failure.map(Self.isControlChannelFailure) ?? false)
                 if let failure, deliveryFailed {
                     self.logger.error("Background file: \(failure.domain, privacy: .public) / \(failure.code), underlying=\(failure.underlyingDomain ?? "none", privacy: .public) / \(failure.underlyingCode ?? 0), reachable=\(session.isReachable), outstanding=\(session.outstandingFileTransfers.count)")
                 }

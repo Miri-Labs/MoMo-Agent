@@ -71,16 +71,16 @@ private func linkEnvelope() throws -> ManifestEnvelope {
     #expect(try state.reserve(failed, now: 130) == .submitted)
     #expect(!state.hasDueFileRetries(now: 130))
     state.didFinish(chunkID: unacknowledged.manifest.chunkID, failed: false, now: 130)
-    #expect(!state.hasDueFileRetries(now: 249))
-    #expect(state.nextRetryDelay(now: 200) == 50)
-    #expect(state.hasDueFileRetries(now: 250))
-    #expect(try state.reserve(unacknowledged, now: 250) == .submitted)
+    #expect(!state.hasDueFileRetries(now: 1_029))
+    #expect(state.nextRetryDelay(now: 980) == 50)
+    #expect(state.hasDueFileRetries(now: 1_030))
+    #expect(try state.reserve(unacknowledged, now: 1_030) == .submitted)
     let explicitReplay = try linkEnvelope()
-    #expect(try state.reserve(explicitReplay, now: 260) == .submitted)
-    state.didFinish(chunkID: explicitReplay.manifest.chunkID, failed: false, now: 261)
-    #expect(!state.hasDueFileRetries(now: 262))
+    #expect(try state.reserve(explicitReplay, now: 1_040) == .submitted)
+    state.didFinish(chunkID: explicitReplay.manifest.chunkID, failed: false, now: 1_041)
+    #expect(!state.hasDueFileRetries(now: 1_042))
     state.allowFileReplay(chunkIDs: [explicitReplay.manifest.chunkID])
-    #expect(state.hasDueFileRetries(now: 262))
+    #expect(state.hasDueFileRetries(now: 1_042))
 }
 
 @Test func repeatedReconciliationCanReplayOnlyItsResponseWithoutDuplicatingQueuedControls() throws {
@@ -161,7 +161,7 @@ private func linkEnvelope() throws -> ManifestEnvelope {
     #expect(freedSlot)
 
     let bulkLimit = LinkSubmissionState.bulkMaximumOutstandingFiles
-    #expect(bulkLimit == 12)
+    #expect(bulkLimit == 6)
     var bulkState = LinkSubmissionState(maximumOutstandingFiles: bulkLimit)
     bulkState.update(activation: .activated, isReachable: false)
     for _ in 0..<bulkLimit {
@@ -300,8 +300,8 @@ private func linkEnvelope() throws -> ManifestEnvelope {
         now += 1
     }
     #expect(cursor == 32)
-    // Advance past the 120s receipt wait so chunks 1..32 constantly report due retries.
-    now = 300
+    // Advance past the 900s receipt wait so chunks 1..32 constantly report due retries.
+    now = 1_100
     #expect(state.hasDueFileRetries(now: now))
 
     var newlySubmitted: [Int64] = []
@@ -396,4 +396,37 @@ private func linkEnvelope() throws -> ManifestEnvelope {
     #expect(outcome.cursor == 384)
     #expect(outcome.deferred)
     #expect(try state.precheckReservation(items[384].envelope, now: now) == .deferred)
+}
+
+@Test func brokenFileChannelBacksOffWholeChannelInsteadOfFailingEntireBacklog() throws {
+    let backlog = try (0..<200).map { _ in try linkEnvelope() }
+    var state = LinkSubmissionState(maximumOutstandingFiles: LinkSubmissionState.bulkMaximumOutstandingFiles)
+    state.update(activation: .activated, isReachable: false)
+
+    #expect(try state.reserve(backlog[0], now: 10) == .submitted)
+    let firstFailed = state.didFinish(chunkID: backlog[0].manifest.chunkID, failed: true, channelFailure: true, now: 11)
+    #expect(firstFailed)
+    #expect(state.isRecoveringChannel)
+    #expect(state.isChannelCoolingDown(now: 40))
+
+    // During cooldown, none of the remaining 199 chunks may enter WCSession.transferFile.
+    for item in backlog.dropFirst() {
+        #expect(try state.reserve(item, now: 40) == .deferred)
+    }
+    #expect(state.nextRetryDelay(now: 25) == 16)
+
+    // At cooldown expiry (t=41), exactly one half-open probe is admitted.
+    #expect(!state.isChannelCoolingDown(now: 41))
+    #expect(try state.reserve(backlog[1], now: 41) == .submitted)
+    #expect(state.isChannelCoolingDown(now: 41))
+    #expect(try state.reserve(backlog[2], now: 41) == .deferred)
+
+    // Probe succeeds -> full concurrency reopens immediately.
+    let probeFailed = state.didFinish(chunkID: backlog[1].manifest.chunkID, failed: false, channelFailure: false, now: 42)
+    #expect(!probeFailed)
+    #expect(!state.isRecoveringChannel)
+    #expect(state.isAwaitingReceipt(chunkID: backlog[1].manifest.chunkID))
+    for index in 2..<8 {
+        #expect(try state.reserve(backlog[index], now: 42) == .submitted)
+    }
 }
