@@ -179,6 +179,7 @@ struct DesktopTranscriptSnapshot: Equatable, Sendable {
 struct DesktopSources: View {
     @Bindable var model: DesktopModel
     var isActive: Bool = true
+    var resetToken: UInt64 = 0
     @State private var day = Calendar.current.startOfDay(for: Date())
     @State private var observedToday = Calendar.current.startOfDay(for: Date())
     @State private var selectedID: String?
@@ -191,22 +192,20 @@ struct DesktopSources: View {
     @State private var savedAnchors: [String: String] = [:]
     @State private var expandedDays: [String: Bool] = [:]
     @State private var selectedSpanID: String?
-    @State private var hoveredWindowID: String?
-    @State private var refreshHovered = false
-    @State private var hoveredDateControl: String?
-    private var selectedDayKey: String { DesktopTranscriptSnapshot.dayKey(for: day, calendar: calendar) }
-    private func isEarly(_ item: DesktopTranscriptWindow) -> Bool {
-        guard let timestamp = item.recordedAt else { return false }
-        let date = Date(timeIntervalSince1970: timestamp)
-        return TranscriptReadingBoundary.isEarly(date,
-            offset: item.window.displayTimeZone().secondsFromGMT(for: date), hour: model.dayStartHour)
-    }
-    private var earlyExpanded: Bool {
-        expandedDays[selectedDayKey] ?? TranscriptReadingBoundary.initiallyExpanded(
-            hasDaytime: visible.contains { !isEarly($0) }, isToday: calendar.isDate(day, inSameDayAs: logicalToday),
-            hour: model.dayStartHour)
-    }
     private let calendar = Calendar.current
+    private let defaultLocalOffset = TimeZone.current.secondsFromGMT()
+
+    private var selectedDayKey: String { DesktopTranscriptSnapshot.dayKey(for: day, calendar: calendar) }
+
+    /// Fast integer hour check without per-row TimeZone/Calendar allocations on the main thread.
+    private func isEarly(_ item: DesktopTranscriptWindow) -> Bool {
+        let limitHour = model.dayStartHour
+        guard limitHour > 0, let timestamp = item.recordedAt else { return false }
+        let offset = (item.window.dateEvidence != "timezone_unknown" ? item.window.timezoneOffset : nil) ?? defaultLocalOffset
+        let localSec = Int(floor(timestamp)) + offset
+        let secOfDay = ((localSec % 86_400) + 86_400) % 86_400
+        return (secOfDay / 3600) < limitHour
+    }
 
     private func logicalDay(for date: Date) -> Date {
         calendar.startOfDay(for: date)
@@ -268,50 +267,52 @@ struct DesktopSources: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            let wide = geometry.size.width >= 720
-            HStack(spacing: 0) {
-                if wide || (selected == nil && selectedIllustration == nil) {
-                    timeline
-                        .frame(width: wide ? 340 : nil)
-                        .frame(maxWidth: wide ? nil : .infinity)
-                        .clipped()
-                }
-                if wide {
-                    Rectangle()
-                        .fill(MoMoPalette.borderSubtle)
-                        .frame(width: 0.5)
-                        .accessibilityHidden(true)
-                }
-                if let illustration = selectedIllustration {
-                    Group {
-                        if dayIllustrations.contains(where: { $0.coordinate != nil }) {
-                            LifeIllustrationJourneyMapView(store: model.lifeIllustrations, initialID: illustration.id, referenceDay: selectedDayKey,
-                                close: closeIllustration, showSource: { showSource(for: $0) })
-                        } else {
-                            LifeIllustrationViewer(store: model.lifeIllustrations, initialID: illustration.id, referenceDay: selectedDayKey,
-                                close: closeIllustration, showSource: { showSource(for: $0) })
-                        }
+        Group {
+            if let illustration = selectedIllustration {
+                Group {
+                    if dayIllustrations.contains(where: { $0.coordinate != nil }) {
+                        LifeIllustrationJourneyMapView(
+                            store: model.lifeIllustrations,
+                            initialID: illustration.id,
+                            referenceDay: selectedDayKey,
+                            close: closeIllustration,
+                            showSource: { showSource(for: $0) }
+                        )
+                    } else {
+                        LifeIllustrationViewer(
+                            store: model.lifeIllustrations,
+                            initialID: illustration.id,
+                            referenceDay: selectedDayKey,
+                            close: closeIllustration,
+                            showSource: { showSource(for: $0) }
+                        )
                     }
-                    .id(selectedDayKey)
-                    .frame(maxWidth: .infinity)
-                } else if let selected {
-                    DesktopSourceReader(
-                        model: model,
-                        source: selected.source,
-                        window: selected.window,
-                        initialSpanID: selectedSpanID,
-                        close: wide ? nil : { selectedID = nil }
-                    )
-                    .id(selected.id)
-                    .frame(maxWidth: .infinity)
-                } else if wide {
-                    ContentUnavailableView("选择一段转录", systemImage: "text.alignleft")
-                        .frame(maxWidth: .infinity)
                 }
+                .id(selectedDayKey)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let selected {
+                DesktopSourceReader(
+                    model: model,
+                    source: selected.source,
+                    window: selected.window,
+                    initialSpanID: selectedSpanID,
+                    close: { selectedID = nil }
+                )
+                .id(selected.id)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                timeline
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .background(MoMoPalette.canvas)
+        .onChange(of: resetToken) {
+            if selectedIllustrationID != nil {
+                selectedIllustrationID = nil
+            } else if selectedID != nil {
+                selectedID = nil
+            }
+        }
         .task(id: isActive) {
             guard isActive else { return }
             let initialToday = logicalToday
@@ -366,134 +367,126 @@ struct DesktopSources: View {
         )
         let windows = !query.isEmpty || expanded ? currentVisible : daytime
         let currentDayIllustrations = (!searching && query.isEmpty) ? dayIllustrations : []
-        return VStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Text("转录")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(MoMoPalette.ink)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                Button {
-                    Task { await model.loadContext() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(refreshHovered ? MoMoPalette.ink : MoMoPalette.muted)
-                        .frame(width: 26, height: 26)
-                        .background(
-                            refreshHovered ? MoMoPalette.hoverFill : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 6.5, style: .continuous)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 6.5, style: .continuous))
-                }
-                .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
-                .onHover { refreshHovered = $0 }
-                .disabled(model.contextLoading)
-                .help("刷新转录")
-                .accessibilityLabel("刷新")
-                .accessibilityIdentifier("desktop.transcripts.refresh")
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-
-            dateBar
-
-            if searching {
-                HStack(spacing: 7) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(MoMoPalette.muted)
-                    TextField("搜索已同步的摘要与片段…", text: $query)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12.5))
-                        .accessibilityIdentifier("desktop.transcripts.search")
-                    if !query.isEmpty {
-                        Button {
-                            query = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 12))
-                                .foregroundStyle(MoMoPalette.muted)
-                        }
-                        .buttonStyle(.plain)
+        return VStack(spacing: 0) {
+            VStack(spacing: 12) {
+                HStack(spacing: 10) {
+                    Text("转录")
+                        .font(.system(size: 18, weight: .semibold))
+                        .tracking(-0.3)
+                        .foregroundStyle(MoMoPalette.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer()
+                    dateBar
+                    TranscriptIconActionButton(
+                        symbol: "arrow.clockwise",
+                        isActive: false,
+                        disabled: model.contextLoading,
+                        helpText: "刷新转录",
+                        accessibilityLabel: "刷新",
+                        accessibilityID: "desktop.transcripts.refresh"
+                    ) {
+                        Task { await model.loadContext() }
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6.5)
-                .momoElevatedCard(cornerRadius: 9, shadowStrength: 0.45)
-                .padding(.horizontal, 16)
+
+                if searching {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(MoMoPalette.muted)
+                        TextField("搜索已同步的摘要与片段…", text: $query)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13))
+                            .accessibilityIdentifier("desktop.transcripts.search")
+                        if !query.isEmpty {
+                            Button {
+                                query = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(MoMoPalette.muted)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .momoElevatedCard(cornerRadius: 10, shadowStrength: 0.45)
+                }
+
+                if let error = model.memoryError {
+                    HStack(spacing: 8) {
+                        Text(error).phoneText(.caption).foregroundStyle(MoMoPalette.failure)
+                        Spacer()
+                        Button("重试") { Task { await model.loadContext() } }
+                            .font(.caption)
+                    }
+                }
             }
-            if let error = model.memoryError {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(error).phoneText(.caption).foregroundStyle(MoMoPalette.failure)
-                    Button("重试") { Task { await model.loadContext() } }
-                }.padding(.horizontal, 24)
-            }
+            .frame(maxWidth: 680)
+            .padding(.horizontal, 28)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity)
+
             ScrollView {
                 LazyVStack(spacing: 0) {
-                Color.clear.frame(height: 1).id("masthead")
-                if !currentDayIllustrations.isEmpty {
-                    LifeIllustrationStripView(items: currentDayIllustrations, store: model.lifeIllustrations, horizontalMargin: 16,
-                        open: { selectedIllustrationID = $0.id }, showSource: { showSource(for: $0) },
-                        failure: { illustrationError = $0 })
-                        .padding(.bottom, 8)
-                }
+                    Color.clear.frame(height: 1).id("masthead")
+                    if !currentDayIllustrations.isEmpty {
+                        LifeIllustrationStripView(
+                            items: currentDayIllustrations,
+                            store: model.lifeIllustrations,
+                            horizontalMargin: 12,
+                            open: { selectedIllustrationID = $0.id },
+                            showSource: { showSource(for: $0) },
+                            failure: { illustrationError = $0 }
+                        )
+                        .padding(.bottom, 10)
+                    }
                     if query.isEmpty, !early.isEmpty {
                         Button {
                             expandedDays[selectedDayKey] = !expanded
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
                                 Text("凌晨记录 · \(early.count) 段")
                                 Spacer()
                                 Text("00:00–" + TranscriptReadingBoundary.label(for: model.dayStartHour))
-                            }.phoneText(.caption).foregroundStyle(MoMoPalette.muted).frame(minHeight: 44)
-                        }.buttonStyle(.plain).padding(.horizontal, 12)
-                            .accessibilityIdentifier("desktop.transcripts.early.toggle")
-                            .accessibilityValue(expanded ? "已展开" : "已折叠")
+                                    .monospacedDigit()
+                            }
+                            .phoneText(.caption)
+                            .foregroundStyle(MoMoPalette.muted)
+                            .frame(minHeight: 38)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 12)
+                        .accessibilityIdentifier("desktop.transcripts.early.toggle")
+                        .accessibilityValue(expanded ? "已展开" : "已折叠")
                     }
                     ForEach(windows) { item in
-                        let isSelected = selectedID == item.id && selectedIllustrationID == nil
-                        let isHovered = hoveredWindowID == item.id
-                        VStack(alignment: .leading, spacing: 0) {
-                            Button {
-                                closeIllustration()
-                                selectedSpanID = nil
-                                if !query.isEmpty {
-                                    selectSourceDay(item.logicalDayKey)
-                                    expandedDays[item.logicalDayKey] = true
-                                }
-                                selectedID = item.id
-                            } label: {
-                                ClientTranscriptRow(
-                                    time: query.isEmpty ? item.rangeTimeLabel : item.datedTimeLabel,
-                                    preview: item.displayPreview,
-                                    status: nil,
-                                    connected: item.id != windows.last?.id,
-                                    isFinal: true,
-                                    continuesFromPrevious: item.id != windows.first?.id
-                                ) {
-                                    EmptyView()
-                                }
-                                .padding(.horizontal, 12)
-                                .background(
-                                    isSelected ? MoMoPalette.activeFill : (isHovered ? MoMoPalette.hoverFill : Color.clear),
-                                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                )
+                        TranscriptTimelineRowItem(
+                            item: item,
+                            timeLabel: query.isEmpty ? item.rangeTimeLabel : item.datedTimeLabel,
+                            connected: item.id != windows.last?.id,
+                            continuesFromPrevious: item.id != windows.first?.id
+                        ) {
+                            closeIllustration()
+                            selectedSpanID = nil
+                            if !query.isEmpty {
+                                selectSourceDay(item.logicalDayKey)
+                                expandedDays[item.logicalDayKey] = true
                             }
-                            .buttonStyle(.plain)
-                            .onHover { hovering in
-                                if hovering { hoveredWindowID = item.id }
-                                else if hoveredWindowID == item.id { hoveredWindowID = nil }
-                            }
-                            .accessibilityIdentifier("desktop.source.\(item.id)")
-                            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+                            savedAnchors[selectedDayKey] = item.id
+                            selectedID = item.id
                         }
                         .id(item.id)
                     }
                     if query.isEmpty, !early.isEmpty, !hasDaytime {
                         Text("当天暂无 \(TranscriptReadingBoundary.label(for: model.dayStartHour)) 后记录")
-                            .phoneText(.caption).foregroundStyle(MoMoPalette.muted)
+                            .phoneText(.caption)
+                            .foregroundStyle(MoMoPalette.muted)
+                            .padding(.top, 16)
                     }
                     if windows.isEmpty && !model.contextLoading && model.memoryError == nil {
                         ContentUnavailableView(
@@ -501,23 +494,36 @@ struct DesktopSources: View {
                             systemImage: "waveform",
                             description: Text(query.isEmpty ? "手机同步的录音稿会按日期出现在这里。" : "搜索范围为已同步的摘要与原文片段。")
                         )
+                        .padding(.top, 36)
                         if query.isEmpty, snapshot.latestRecordedAt != nil,
                            snapshot.ordered.last?.logicalDayKey != selectedDayKey {
-                            Button("查看最近的转录") { if let key = snapshot.ordered.last?.logicalDayKey { selectSourceDay(key) } }
+                            Button("查看最近的转录") {
+                                if let key = snapshot.ordered.last?.logicalDayKey { selectSourceDay(key) }
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(MoMoPalette.ink)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .momoElevatedCard(cornerRadius: 16, shadowStrength: 0.5)
                         }
                     }
-                    if model.contextLoading && windows.isEmpty { ProgressView("正在读取记录").padding(24) }
+                    if model.contextLoading && windows.isEmpty {
+                        ProgressView("正在读取记录").padding(32)
+                    }
                 }
                 .scrollTargetLayout()
-                .padding(.horizontal, 12)
-                Spacer().frame(height: 24)
+                .frame(maxWidth: 680)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity)
+                Spacer().frame(height: 28)
             }
             .momoScrollEdgeFade(top: 12)
             .scrollPosition(id: $timelineAnchor, anchor: .top)
             .onChange(of: currentVisible.isEmpty, initial: true) { _, empty in
                 if !empty, expandedDays[selectedDayKey] == nil { expandedDays[selectedDayKey] = expanded }
             }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     private func closeIllustration() {
@@ -556,41 +562,14 @@ struct DesktopSources: View {
         let canNext = day < latestSelectableDay && query.isEmpty
         return HStack(spacing: 8) {
             HStack(spacing: 2) {
-                Button {
+                TranscriptStepButton(symbol: "chevron.left", enabled: canPrev, label: "前一天") {
                     moveDay(-1)
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(canPrev ? MoMoPalette.ink : MoMoPalette.muted.opacity(0.35))
-                        .frame(width: 28, height: 28)
-                        .background(
-                            hoveredDateControl == "prev" && canPrev ? MoMoPalette.hoverFill : Color.clear,
-                            in: Circle()
-                        )
-                        .contentShape(Circle())
                 }
-                .disabled(!canPrev)
-                .onHover { hoveredDateControl = $0 ? "prev" : (hoveredDateControl == "prev" ? nil : hoveredDateControl) }
-                .accessibilityLabel("前一天")
 
-                Button {
-                    choosingDate = true
-                } label: {
-                    HStack(spacing: 5) {
-                        Text(query.isEmpty ? dayTitle(day) : String(localized: "全部日期"))
-                            .font(.system(size: 12.5, weight: .medium).monospacedDigit())
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9.5, weight: .semibold))
-                            .foregroundStyle(MoMoPalette.muted)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 28)
-                    .background(
-                        hoveredDateControl == "date" ? MoMoPalette.hoverFill : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                }
-                .onHover { hoveredDateControl = $0 ? "date" : (hoveredDateControl == "date" ? nil : hoveredDateControl) }
+                TranscriptDateLabelButton(
+                    title: query.isEmpty ? dayTitle(day) : String(localized: "全部日期"),
+                    action: { choosingDate = true }
+                )
                 .popover(isPresented: $choosingDate) {
                     VStack(spacing: 14) {
                         DatePicker("选择日期", selection: $day, in: earliest...latestSelectableDay, displayedComponents: .date)
@@ -605,45 +584,26 @@ struct DesktopSources: View {
                     .frame(width: 300)
                 }
 
-                Button {
+                TranscriptStepButton(symbol: "chevron.right", enabled: canNext, label: "后一天") {
                     moveDay(1)
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(canNext ? MoMoPalette.ink : MoMoPalette.muted.opacity(0.35))
-                        .frame(width: 28, height: 28)
-                        .background(
-                            hoveredDateControl == "next" && canNext ? MoMoPalette.hoverFill : Color.clear,
-                            in: Circle()
-                        )
-                        .contentShape(Circle())
                 }
-                .disabled(!canNext)
-                .onHover { hoveredDateControl = $0 ? "next" : (hoveredDateControl == "next" ? nil : hoveredDateControl) }
-                .accessibilityLabel("后一天")
             }
             .padding(3)
-            .momoElevatedCard(cornerRadius: 17, shadowStrength: 0.45)
+            .momoElevatedCard(cornerRadius: 16, shadowStrength: 0.45)
 
-            Button {
+            TranscriptIconActionButton(
+                symbol: searching ? "xmark" : "magnifyingglass",
+                isActive: searching,
+                disabled: false,
+                helpText: searching ? "关闭搜索" : "搜索转录",
+                accessibilityLabel: searching ? "关闭搜索" : "搜索转录",
+                accessibilityID: nil
+            ) {
                 searching.toggle()
                 if !searching { query = "" }
-            } label: {
-                Image(systemName: searching ? "xmark" : "magnifyingglass")
-                    .font(.system(size: 12, weight: searching ? .semibold : .medium))
-                    .foregroundStyle(searching || hoveredDateControl == "search" ? MoMoPalette.ink : MoMoPalette.muted)
-                    .frame(width: 34, height: 34)
-                    .momoElevatedCard(cornerRadius: 17, isFocused: searching, shadowStrength: 0.45)
-                    .contentShape(Circle())
             }
-            .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
-            .onHover { hoveredDateControl = $0 ? "search" : (hoveredDateControl == "search" ? nil : hoveredDateControl) }
-            .help(searching ? "关闭搜索" : "搜索转录")
-            .accessibilityLabel(searching ? "关闭搜索" : "搜索转录")
         }
-        .buttonStyle(.plain)
         .foregroundStyle(MoMoPalette.ink)
-        .padding(.horizontal, 16)
     }
 
     private func moveDay(_ value: Int) {
@@ -663,6 +623,153 @@ struct DesktopSources: View {
     }
 }
 
+/// Leaf row button so hover state never invalidates DesktopSources or re-filters the timeline.
+private struct TranscriptTimelineRowItem: View {
+    let item: DesktopTranscriptWindow
+    let timeLabel: String
+    let connected: Bool
+    let continuesFromPrevious: Bool
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            ClientTranscriptRow(
+                time: timeLabel,
+                preview: item.displayPreview,
+                status: nil,
+                connected: connected,
+                isFinal: true,
+                continuesFromPrevious: continuesFromPrevious
+            ) {
+                EmptyView()
+            }
+            .padding(.horizontal, 14)
+            .background(
+                hovered ? MoMoPalette.hoverFill : Color.clear,
+                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .accessibilityIdentifier("desktop.source.\(item.id)")
+    }
+}
+
+private struct TranscriptStepButton: View {
+    let symbol: String
+    let enabled: Bool
+    let label: String
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(enabled ? MoMoPalette.ink : MoMoPalette.muted.opacity(0.35))
+                .frame(width: 26, height: 26)
+                .background(
+                    hovered && enabled ? MoMoPalette.hoverFill : Color.clear,
+                    in: Circle()
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .onHover { hovered = $0 }
+        .accessibilityLabel(LocalizedStringKey(label))
+    }
+}
+
+private struct TranscriptDateLabelButton: View {
+    let title: String
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Text(title)
+                    .font(.system(size: 12.5, weight: .medium).monospacedDigit())
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(MoMoPalette.muted)
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: 26)
+            .background(
+                hovered ? MoMoPalette.hoverFill : Color.clear,
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+    }
+}
+
+private struct TranscriptIconActionButton: View {
+    let symbol: String
+    let isActive: Bool
+    let disabled: Bool
+    let helpText: String
+    let accessibilityLabel: String
+    let accessibilityID: String?
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        let btn = Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: isActive ? .semibold : .regular))
+                .foregroundStyle(isActive || hovered ? MoMoPalette.ink : MoMoPalette.muted)
+                .frame(width: 32, height: 32)
+                .momoElevatedCard(cornerRadius: 16, isFocused: isActive || hovered, shadowStrength: 0.45)
+                .contentShape(Circle())
+        }
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
+        .disabled(disabled)
+        .onHover { hovered = $0 }
+        .help(helpText)
+        .accessibilityLabel(LocalizedStringKey(accessibilityLabel))
+
+        if let accessibilityID {
+            btn.accessibilityIdentifier(accessibilityID)
+        } else {
+            btn
+        }
+    }
+}
+
+private struct TranscriptBackButton: View {
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11.5, weight: .semibold))
+                Text("转录列表")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .foregroundStyle(hovered ? MoMoPalette.ink : MoMoPalette.muted)
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(
+                hovered ? MoMoPalette.hoverFill : Color.clear,
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.96))
+        .onHover { hovered = $0 }
+        .keyboardShortcut("[", modifiers: .command)
+        .help("返回转录列表（⌘[）")
+    }
+}
+
 struct DesktopSourceReader: View {
     let model: DesktopModel
     let source: ContextSource
@@ -675,6 +782,7 @@ struct DesktopSourceReader: View {
     @State private var page: SourceTextPage?
     @State private var text = ""
     @State private var spans: [SourceTextSpan] = []
+    @State private var composedDocument: MacSourceTranscriptComposer.ComposedTranscript?
     @State private var loading = false
     @State private var error: String?
 
@@ -686,6 +794,7 @@ struct DesktopSourceReader: View {
     private var startOffset: Int { window?.offset ?? 0 }
     private var endOffset: Int { window?.end ?? source.totalCharacters }
     private var documentID: String { "\(source.id)|\(window?.id ?? "full")" }
+    private var composeTriggerKey: String { "\(documentID)|\(source.revision)|\(spans.count)|\(text.utf8.count)" }
     private var hasMore: Bool {
         guard let page else { return true }
         guard let next = page.nextOffset else { return false }
@@ -722,19 +831,32 @@ struct DesktopSourceReader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                if let close { Button("返回", action: close).buttonStyle(.plain).foregroundStyle(.secondary) }
+                if let close {
+                    TranscriptBackButton(action: close)
+                }
                 Spacer()
-                Text("转录详情").font(.system(size: 13, weight: .medium)).foregroundStyle(MoMoPalette.muted)
-                Spacer()
+                if loading {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("正在读取原文…")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(MoMoPalette.muted)
+                    }
+                }
                 if !hasMore && !text.isEmpty {
                     ShareLink(item: text) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 13))
                             .foregroundStyle(MoMoPalette.muted)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain).help("分享完整原文")
+                    .buttonStyle(.plain)
+                    .help("分享完整原文")
                 }
-            }.padding(.horizontal, 24).frame(height: 40)
+            }
+            .padding(.horizontal, 20)
+            .frame(height: 40)
 
             Rectangle()
                 .fill(MoMoPalette.borderSubtle)
@@ -742,37 +864,24 @@ struct DesktopSourceReader: View {
                 .accessibilityHidden(true)
 
             MacSourceTranscriptReader(
-                documentID: documentID,
-                sourceRevision: source.revision,
-                dateLabel: headerDateLabel,
-                timeLabel: headerTimeLabel,
-                summary: summary,
-                spans: spans,
-                fallbackText: text,
-                defaultTimeZone: sourceTimeZone,
+                composed: composedDocument,
                 scrollSpanID: pendingScrollSpanID,
                 onConsumedScrollSpan: { pendingScrollSpanID = nil }
             )
             .momoScrollEdgeFade(top: 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if loading || hasMore || error != nil {
+            if (!loading && hasMore) || error != nil {
                 HStack(spacing: 12) {
-                    if loading {
-                        ProgressView().controlSize(.small)
-                        Text("正在读取原文").phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
-                    }
                     if let error {
                         Text(error).phoneText(.metadata).foregroundStyle(MoMoPalette.failure)
                     }
                     Spacer(minLength: 0)
-                    if (!loading && hasMore) || error != nil {
-                        Button(error == nil ? "继续读取原文" : "重试读取") {
-                            Task { await more(replacing: error != nil) }
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(loading)
+                    Button(error == nil ? "继续读取原文" : "重试读取") {
+                        Task { await more(replacing: error != nil) }
                     }
+                    .buttonStyle(.plain)
+                    .disabled(loading)
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 8)
@@ -781,19 +890,56 @@ struct DesktopSourceReader: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if !text.isEmpty {
-                TranscriptDiscussAction(title: "围绕这段录音提问", enabled: model.taskStore != nil) {
-                    guard let store = model.taskStore else { return }
-                    let at = recordedAt.map { Date(timeIntervalSince1970: $0).formatted(.dateTime.locale(AppLanguage.current.locale).year().month().day().hour().minute().second()) }
-                    let reference = String(localized: "围绕") + (at.map { $0 + String(localized: "的") } ?? "") + String(localized: "这段录音，我想问：\n")
-                    store.setDraft(store.draft.isEmpty ? reference : store.draft + "\n\n" + reference)
-                    model.selection = "chat"
-                    onDiscuss?()
-                }.frame(maxWidth: 680).frame(maxWidth: .infinity)
+            TranscriptDiscussAction(title: "围绕这段录音提问", enabled: model.taskStore != nil && (!text.isEmpty || summary != nil)) {
+                guard let store = model.taskStore else { return }
+                let at = recordedAt.map { Date(timeIntervalSince1970: $0).formatted(.dateTime.locale(AppLanguage.current.locale).year().month().day().hour().minute().second()) }
+                let reference = String(localized: "围绕") + (at.map { $0 + String(localized: "的") } ?? "") + String(localized: "这段录音，我想问：\n")
+                store.setDraft(store.draft.isEmpty ? reference : store.draft + "\n\n" + reference)
+                model.selection = "chat"
+                onDiscuss?()
             }
+            .frame(maxWidth: 680)
+            .frame(maxWidth: .infinity)
         }
         .onChange(of: initialSpanID, initial: true) { _, nextSpan in
             if let nextSpan { pendingScrollSpanID = nextSpan }
+        }
+        .task(id: composeTriggerKey) {
+            let docID = documentID
+            let rev = source.revision
+            let dLabel = headerDateLabel
+            let tLabel = headerTimeLabel
+            let sum = summary
+            let curSpans = spans
+            let curText = text
+            let tz = sourceTimeZone
+            if let hit = MacSourceTranscriptComposer.cached(
+                documentID: docID,
+                sourceRevision: rev,
+                dateLabel: dLabel,
+                timeLabel: tLabel,
+                summary: sum,
+                spans: curSpans,
+                fallbackText: curText,
+                defaultTimeZone: tz
+            ) {
+                composedDocument = hit
+                return
+            }
+            let built = await Task.detached(priority: .userInitiated) {
+                MacSourceTranscriptComposer.compose(
+                    documentID: docID,
+                    sourceRevision: rev,
+                    dateLabel: dLabel,
+                    timeLabel: tLabel,
+                    summary: sum,
+                    spans: curSpans,
+                    fallbackText: curText,
+                    defaultTimeZone: tz
+                )
+            }.value
+            guard !Task.isCancelled else { return }
+            composedDocument = built
         }
         .task(id: "\(documentID)|\(source.revision)") { await more(replacing: true) }
     }
@@ -812,7 +958,7 @@ struct DesktopSourceReader: View {
         do {
             while nextPage == nil || (nextPage?.nextOffset.map { $0 < endOffset } ?? false) {
                 let currentOffset = nextPage?.nextOffset ?? startOffset
-                let pageLimit = min(12_000, max(1, endOffset - currentOffset))
+                let pageLimit = min(16_000, max(1, endOffset - currentOffset))
                 let next = try await model.readSource(source, offset: currentOffset, limit: pageLimit)
                 try Task.checkCancellation()
                 guard next.end > currentOffset || next.nextOffset == nil else { throw URLError(.cannotParseResponse) }
@@ -828,7 +974,8 @@ struct DesktopSourceReader: View {
                 nextPage = next
                 pagesFetched += 1
                 let isLastPage = !(next.nextOffset.map { $0 < endOffset } ?? false)
-                if pagesFetched == 1 || isLastPage || pagesFetched.isMultiple(of: 2) {
+                // Commit first page immediately for instant paint, then commit once when complete (eliminates O(N^2) intermediate relayouts).
+                if pagesFetched == 1 || isLastPage {
                     guard readRequest == request else { return }
                     text = nextText
                     spans = nextSpans
@@ -876,10 +1023,10 @@ private enum MacSourceTranscriptComposer {
         return c
     }()
 
-    private static var inkColor: NSColor { NSColor(named: "PhoneInk") ?? .labelColor }
-    private static var mutedColor: NSColor { NSColor(named: "PhoneMuted") ?? .secondaryLabelColor }
+    private nonisolated static var inkColor: NSColor { NSColor(named: "PhoneInk") ?? .labelColor }
+    private nonisolated static var mutedColor: NSColor { NSColor(named: "PhoneMuted") ?? .secondaryLabelColor }
 
-    private static func formatWallClock(timestamp: Double, offsetSeconds: Int) -> String {
+    private nonisolated static func formatWallClock(timestamp: Double, offsetSeconds: Int) -> String {
         let localSeconds = Int(floor(timestamp)) + offsetSeconds
         let secOfDay = ((localSeconds % 86_400) + 86_400) % 86_400
         let hh = secOfDay / 3600
@@ -888,7 +1035,7 @@ private enum MacSourceTranscriptComposer {
         return String(format: "%02d:%02d:%02d", hh, mm, ss)
     }
 
-    static func compose(
+    private nonisolated static func makeCacheKey(
         documentID: String,
         sourceRevision: String,
         dateLabel: String?,
@@ -897,7 +1044,7 @@ private enum MacSourceTranscriptComposer {
         spans: [SourceTextSpan],
         fallbackText: String,
         defaultTimeZone: TimeZone
-    ) -> ComposedTranscript {
+    ) -> String {
         var hasher = Hasher()
         hasher.combine(documentID)
         hasher.combine(sourceRevision)
@@ -909,7 +1056,52 @@ private enum MacSourceTranscriptComposer {
         hasher.combine(spans.last?.id)
         hasher.combine(fallbackText.utf8.count)
         hasher.combine(defaultTimeZone.identifier)
-        let key = "\(documentID)|\(sourceRevision)|\(spans.count)|\(fallbackText.utf8.count)|\(hasher.finalize())"
+        return "v4|\(documentID)|\(sourceRevision)|\(spans.count)|\(fallbackText.utf8.count)|\(hasher.finalize())"
+    }
+
+    nonisolated static func cached(
+        documentID: String,
+        sourceRevision: String,
+        dateLabel: String?,
+        timeLabel: String?,
+        summary: String?,
+        spans: [SourceTextSpan],
+        fallbackText: String,
+        defaultTimeZone: TimeZone
+    ) -> ComposedTranscript? {
+        let key = makeCacheKey(
+            documentID: documentID,
+            sourceRevision: sourceRevision,
+            dateLabel: dateLabel,
+            timeLabel: timeLabel,
+            summary: summary,
+            spans: spans,
+            fallbackText: fallbackText,
+            defaultTimeZone: defaultTimeZone
+        )
+        return cache.object(forKey: key as NSString)
+    }
+
+    nonisolated static func compose(
+        documentID: String,
+        sourceRevision: String,
+        dateLabel: String?,
+        timeLabel: String?,
+        summary: String?,
+        spans: [SourceTextSpan],
+        fallbackText: String,
+        defaultTimeZone: TimeZone
+    ) -> ComposedTranscript {
+        let key = makeCacheKey(
+            documentID: documentID,
+            sourceRevision: sourceRevision,
+            dateLabel: dateLabel,
+            timeLabel: timeLabel,
+            summary: summary,
+            spans: spans,
+            fallbackText: fallbackText,
+            defaultTimeZone: defaultTimeZone
+        )
         let nsKey = key as NSString
         if let hit = cache.object(forKey: nsKey) {
             return hit
@@ -926,11 +1118,11 @@ private enum MacSourceTranscriptComposer {
         if let dateLabel, !dateLabel.isEmpty {
             let dateStyle = NSMutableParagraphStyle()
             dateStyle.lineSpacing = 3
-            dateStyle.paragraphSpacing = (timeLabel?.isEmpty == false) ? 8 : 20
+            dateStyle.paragraphSpacing = (timeLabel?.isEmpty == false) ? 5 : 18
             result.append(NSAttributedString(
                 string: dateLabel + "\n",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: PhoneTextStyle.metadata.size, weight: .regular),
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .regular),
                     .foregroundColor: muted,
                     .paragraphStyle: dateStyle,
                 ]
@@ -939,12 +1131,13 @@ private enum MacSourceTranscriptComposer {
 
         if let timeLabel, !timeLabel.isEmpty {
             let timeStyle = NSMutableParagraphStyle()
-            timeStyle.lineSpacing = 4
-            timeStyle.paragraphSpacing = 20
+            timeStyle.lineSpacing = 3
+            timeStyle.paragraphSpacing = 18
             result.append(NSAttributedString(
                 string: timeLabel + "\n",
                 attributes: [
-                    .font: NSFont.monospacedDigitSystemFont(ofSize: PhoneTextStyle.heading.size, weight: .medium),
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 18, weight: .medium),
+                    .kern: -0.3,
                     .foregroundColor: ink,
                     .paragraphStyle: timeStyle,
                 ]
@@ -952,26 +1145,29 @@ private enum MacSourceTranscriptComposer {
         }
 
         if let summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let cardInset: CGFloat = 18
+            let cardInset: CGFloat = 22
             let cardStart = result.length
             let headerStyle = NSMutableParagraphStyle()
             headerStyle.firstLineHeadIndent = cardInset
             headerStyle.headIndent = cardInset
             headerStyle.tailIndent = -cardInset
-            headerStyle.paragraphSpacingBefore = 14
-            headerStyle.paragraphSpacing = 8
+            headerStyle.paragraphSpacingBefore = 22
+            headerStyle.paragraphSpacing = 10
             result.append(NSAttributedString(
                 string: String(localized: "总结") + "\n",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: PhoneTextStyle.menu.size, weight: .semibold),
-                    .foregroundColor: ink,
+                    .font: NSFont.systemFont(ofSize: 12.5, weight: .medium),
+                    .foregroundColor: muted,
                     .paragraphStyle: headerStyle,
                 ]
             ))
 
             let renderedSummary = MacMarkdownRenderer.render(markdown: summary, handwriting: false, plainTextOnly: false)
             let summaryMutable = NSMutableAttributedString(attributedString: renderedSummary.attributedString)
-            if summaryMutable.length == 0 || !summaryMutable.string.hasSuffix("\n") {
+            if summaryMutable.length > 0 && !summaryMutable.string.hasSuffix("\n") {
+                let tailAttrs = summaryMutable.attributes(at: summaryMutable.length - 1, effectiveRange: nil)
+                summaryMutable.append(NSAttributedString(string: "\n", attributes: tailAttrs))
+            } else if summaryMutable.length == 0 {
                 summaryMutable.append(NSAttributedString(string: "\n"))
             }
             let fullRange = NSRange(location: 0, length: summaryMutable.length)
@@ -984,7 +1180,7 @@ private enum MacSourceTranscriptComposer {
                     base.tabStops = base.tabStops.map { NSTextTab(textAlignment: $0.alignment, location: $0.location + cardInset, options: $0.options) }
                 }
                 if NSMaxRange(range) >= summaryMutable.length {
-                    base.paragraphSpacing = max(base.paragraphSpacing, 14)
+                    base.paragraphSpacing = 0
                 }
                 summaryMutable.addAttribute(.paragraphStyle, value: base, range: range)
             }
@@ -999,16 +1195,16 @@ private enum MacSourceTranscriptComposer {
         let visibleSpans = spans.filter { ($0.text ?? "").isEmpty == false }
         if !visibleSpans.isEmpty {
             let bodyStyle = NSMutableParagraphStyle()
-            bodyStyle.lineSpacing = 4.5
-            bodyStyle.paragraphSpacing = 18
+            bodyStyle.lineSpacing = 6.2
+            bodyStyle.paragraphSpacing = 16
             let bodyAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: PhoneTextStyle.body.size, weight: .regular),
+                .font: NSFont.systemFont(ofSize: 13.8, weight: .regular),
                 .foregroundColor: ink,
                 .paragraphStyle: bodyStyle,
             ]
 
             let firstStampStyle = NSMutableParagraphStyle()
-            firstStampStyle.paragraphSpacingBefore = summaryCardRange != nil ? 22 : 4
+            firstStampStyle.paragraphSpacingBefore = summaryCardRange != nil ? 42 : 6
             firstStampStyle.paragraphSpacing = 5
             let stampStyle = NSMutableParagraphStyle()
             stampStyle.paragraphSpacing = 5
@@ -1033,11 +1229,11 @@ private enum MacSourceTranscriptComposer {
                     ))
                 } else if idx == 0, summaryCardRange != nil {
                     let topBodyStyle = bodyStyle.mutableCopy() as! NSMutableParagraphStyle
-                    topBodyStyle.paragraphSpacingBefore = 22
+                    topBodyStyle.paragraphSpacingBefore = 42
                     result.append(NSAttributedString(
                         string: (span.text ?? "") + "\n",
                         attributes: [
-                            .font: NSFont.systemFont(ofSize: PhoneTextStyle.body.size, weight: .regular),
+                            .font: NSFont.systemFont(ofSize: 13.8, weight: .regular),
                             .foregroundColor: ink,
                             .paragraphStyle: topBodyStyle,
                         ]
@@ -1050,13 +1246,13 @@ private enum MacSourceTranscriptComposer {
             }
         } else if !fallbackText.isEmpty {
             let bodyStyle = NSMutableParagraphStyle()
-            bodyStyle.paragraphSpacingBefore = summaryCardRange != nil ? 22 : 4
-            bodyStyle.lineSpacing = 4.5
-            bodyStyle.paragraphSpacing = 12
+            bodyStyle.paragraphSpacingBefore = summaryCardRange != nil ? 42 : 6
+            bodyStyle.lineSpacing = 6.2
+            bodyStyle.paragraphSpacing = 14
             result.append(NSAttributedString(
                 string: fallbackText + "\n",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: PhoneTextStyle.body.size, weight: .regular),
+                    .font: NSFont.systemFont(ofSize: 13.8, weight: .regular),
                     .foregroundColor: ink,
                     .paragraphStyle: bodyStyle,
                 ]
@@ -1077,30 +1273,67 @@ private enum MacSourceTranscriptComposer {
 }
 
 private final class MacSourceDocumentTextView: NSTextView {
-    var currentComposedKey: String = ""
+    var currentComposedKey: String = "" {
+        didSet {
+            if currentComposedKey != oldValue {
+                cachedSummaryCardRect = nil
+            }
+        }
+    }
     var currentDocumentID: String = ""
-    var summaryCardRange: NSRange?
+    var summaryCardRange: NSRange? {
+        didSet { cachedSummaryCardRect = nil }
+    }
     var summaryQuoteRanges: [NSRange] = []
 
+    private var cachedSummaryCardRect: NSRect?
+    private var cachedSummaryWidth: CGFloat = -1
+    private var cachedSummaryOrigin: NSPoint = .zero
+
+    override func setFrameSize(_ newSize: NSSize) {
+        if abs(newSize.width - frame.size.width) >= 0.5 {
+            cachedSummaryCardRect = nil
+        }
+        super.setFrameSize(newSize)
+    }
+
+    private func resolvedSummaryCardRect() -> NSRect? {
+        guard let cardRange = summaryCardRange,
+              let lm = layoutManager, let tc = textContainer, let ts = textStorage,
+              cardRange.location >= 0, NSMaxRange(cardRange) <= ts.length else {
+            return nil
+        }
+        let cw = tc.containerSize.width
+        let origin = textContainerOrigin
+        if let cached = cachedSummaryCardRect,
+           abs(cachedSummaryWidth - cw) < 0.5,
+           abs(cachedSummaryOrigin.x - origin.x) < 0.5,
+           abs(cachedSummaryOrigin.y - origin.y) < 0.5 {
+            return cached
+        }
+        let glyphRange = lm.glyphRange(forCharacterRange: cardRange, actualCharacterRange: nil)
+        let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+        guard rect.height > 4 else { return nil }
+        let bgRect = NSRect(
+            x: origin.x,
+            y: origin.y + rect.minY - 18,
+            width: cw,
+            height: rect.height + 36
+        )
+        cachedSummaryCardRect = bgRect
+        cachedSummaryWidth = cw
+        cachedSummaryOrigin = origin
+        return bgRect
+    }
+
     override func draw(_ dirtyRect: NSRect) {
-        if let cardRange = summaryCardRange,
-           let lm = layoutManager, let tc = textContainer, let ts = textStorage,
-           cardRange.location >= 0, NSMaxRange(cardRange) <= ts.length {
-            let glyphRange = lm.glyphRange(forCharacterRange: cardRange, actualCharacterRange: nil)
-            let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
-            if rect.height > 4 {
-                let origin = textContainerOrigin
-                let bgRect = NSRect(
-                    x: origin.x,
-                    y: origin.y + rect.minY + 2,
-                    width: tc.containerSize.width,
-                    height: rect.height + 2
-                )
-                if bgRect.intersects(dirtyRect) {
-                    (NSColor(named: "PhoneSurface") ?? .quaternaryLabelColor).setFill()
-                    NSBezierPath(roundedRect: bgRect, xRadius: 16, yRadius: 16).fill()
-                }
-            }
+        if let bgRect = resolvedSummaryCardRect(), bgRect.intersects(dirtyRect) {
+            let path = NSBezierPath(roundedRect: bgRect, xRadius: 14, yRadius: 14)
+            (NSColor(named: "PhoneSurface") ?? .quaternaryLabelColor).setFill()
+            path.fill()
+            (NSColor(named: "PhoneInk") ?? .labelColor).withAlphaComponent(0.065).setStroke()
+            path.lineWidth = 0.5
+            path.stroke()
         }
         super.draw(dirtyRect)
         if !summaryQuoteRanges.isEmpty,
@@ -1113,13 +1346,13 @@ private final class MacSourceDocumentTextView: NSTextView {
                 let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
                 guard rect.height > 1 else { continue }
                 let barRect = NSRect(
-                    x: origin.x + 18.5,
+                    x: origin.x + 22.5,
                     y: origin.y + rect.minY + 1,
-                    width: 2.5,
+                    width: 2.0,
                     height: max(4, rect.height - 2)
                 )
                 if barRect.intersects(dirtyRect) {
-                    NSBezierPath(roundedRect: barRect, xRadius: 1.25, yRadius: 1.25).fill()
+                    NSBezierPath(roundedRect: barRect, xRadius: 1.0, yRadius: 1.0).fill()
                 }
             }
         }
@@ -1133,8 +1366,8 @@ private final class MacSourceDocumentScrollView: NSScrollView {
         let vw = max(220, contentView.bounds.width)
         let readableWidth = max(180, min(632, floor(vw - 48)))
         let sideInset = max(24, floor((vw - readableWidth) * 0.5))
-        if abs(tv.textContainerInset.width - sideInset) >= 0.5 || abs(tv.textContainerInset.height - 20) >= 0.5 {
-            tv.textContainerInset = NSSize(width: sideInset, height: 20)
+        if abs(tv.textContainerInset.width - sideInset) >= 0.5 || abs(tv.textContainerInset.height - 28) >= 0.5 {
+            tv.textContainerInset = NSSize(width: sideInset, height: 28)
         }
         if abs(tv.frame.width - vw) >= 0.5 {
             tv.setFrameSize(NSSize(width: vw, height: tv.frame.height))
@@ -1143,14 +1376,7 @@ private final class MacSourceDocumentScrollView: NSScrollView {
 }
 
 private struct MacSourceTranscriptReader: NSViewRepresentable {
-    let documentID: String
-    let sourceRevision: String
-    let dateLabel: String?
-    let timeLabel: String?
-    let summary: String?
-    let spans: [SourceTextSpan]
-    let fallbackText: String
-    let defaultTimeZone: TimeZone
+    let composed: MacSourceTranscriptComposer.ComposedTranscript?
     let scrollSpanID: String?
     let onConsumedScrollSpan: () -> Void
 
@@ -1190,7 +1416,7 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isContinuousSpellCheckingEnabled = false
         textView.isGrammarCheckingEnabled = false
-        textView.textContainerInset = NSSize(width: 24, height: 20)
+        textView.textContainerInset = NSSize(width: 24, height: 28)
         textView.textContainer?.containerSize = NSSize(width: 592, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineFragmentPadding = 0
@@ -1209,16 +1435,7 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
     }
 
     private func apply(to textView: MacSourceDocumentTextView, in scrollView: MacSourceDocumentScrollView) {
-        let composed = MacSourceTranscriptComposer.compose(
-            documentID: documentID,
-            sourceRevision: sourceRevision,
-            dateLabel: dateLabel,
-            timeLabel: timeLabel,
-            summary: summary,
-            spans: spans,
-            fallbackText: fallbackText,
-            defaultTimeZone: defaultTimeZone
-        )
+        guard let composed else { return }
         let documentChanged = textView.currentDocumentID != composed.documentID
         if textView.currentComposedKey != composed.key {
             let previousOrigin = scrollView.contentView.bounds.origin

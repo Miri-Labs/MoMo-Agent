@@ -264,18 +264,19 @@ struct DesktopMemory: View {
         HStack(spacing: 4) {
             HStack(spacing: 6) {
                 Text("记忆")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 13.5, weight: .medium))
+                    .tracking(-0.08)
                     .foregroundStyle(MoMoPalette.ink)
                     .accessibilityAddTraits(.isHeader)
 
                 if !vault.activeMemories.isEmpty {
                     Text("\(vault.activeMemories.count)")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10.5, weight: .regular))
                         .monospacedDigit()
                         .foregroundStyle(MoMoPalette.muted)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1.5)
-                        .background(MoMoPalette.surface, in: Capsule())
+                        .background(MoMoPalette.ink.opacity(0.055), in: Capsule())
                 }
             }
 
@@ -780,12 +781,12 @@ private enum MacVaultPalette {
             let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             let hex: UInt32
             switch kind {
-            case "briefing": hex = dark ? 0x9C95DC : 0x6B63B5
-            case "project": hex = dark ? 0x7BA4CF : 0x4A78A8
-            case "journal": hex = dark ? 0x72B59D : 0x3F8A71
-            case "person": hex = dark ? 0xCFA082 : 0xA66E4E
-            case "topic": hex = dark ? 0x76AAB8 : 0x467F91
-            default: hex = dark ? 0x9A9A96 : 0x6E6E6A
+            case "briefing": hex = dark ? 0xDCDCDC : 0x2E2E2E
+            case "project": hex = dark ? 0xB8C2CC : 0x4A5562
+            case "journal": hex = dark ? 0xBEBBB6 : 0x57534E
+            case "person": hex = dark ? 0xC9BBAE : 0x695B50
+            case "topic": hex = dark ? 0xB0B7C0 : 0x525B66
+            default: hex = dark ? 0xA3A3A3 : 0x666666
             }
             return NSColor(
                 srgbRed: CGFloat((hex >> 16) & 0xFF) / 255.0,
@@ -862,24 +863,23 @@ private final class MacVaultRowCellView: NSTableCellView {
             }
 
             let chevronName = isExpanded ? "chevron.down" : "chevron.right"
-            drawSymbol(chevronName, pointSize: 9, weight: .semibold, color: MacVaultPalette.muted.withAlphaComponent(0.85), in: NSRect(x: pillRect.minX + 6, y: pillRect.minY, width: 11, height: pillRect.height))
+            drawSymbol(chevronName, pointSize: 8.5, weight: .medium, color: MacVaultPalette.muted.withAlphaComponent(0.75), in: NSRect(x: pillRect.minX + 6, y: pillRect.minY, width: 11, height: pillRect.height))
 
             let folderSym = DreamMemoryCategory.folderSymbol(for: sectionID, depth: depth)
-            drawSymbol(folderSym, pointSize: 11.5, weight: .medium, color: MacVaultPalette.nsAccent(for: accentKind), in: NSRect(x: pillRect.minX + 21, y: pillRect.minY, width: 15, height: pillRect.height))
+            drawSymbol(folderSym, pointSize: 11, weight: .regular, color: MacVaultPalette.nsAccent(for: accentKind), in: NSRect(x: pillRect.minX + 21, y: pillRect.minY, width: 15, height: pillRect.height))
 
             let countStr = "\(itemCount)" as NSString
             let countAttrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .regular),
-                .foregroundColor: MacVaultPalette.muted
+                .foregroundColor: MacVaultPalette.muted.withAlphaComponent(0.72)
             ]
             let countSize = countStr.size(withAttributes: countAttrs)
             let countX = pillRect.maxX - 7 - countSize.width
             countStr.draw(at: NSPoint(x: countX, y: pillRect.midY - countSize.height * 0.5), withAttributes: countAttrs)
 
-            let titleX = pillRect.minX + 40
+            let titleX = pillRect.minX + 39
             let titleWidth = max(10, countX - titleX - 6)
-            let weight: NSFont.Weight = depth == 0 ? .semibold : .medium
-            drawTruncatedText(title, font: .systemFont(ofSize: 12.5, weight: weight), color: MacVaultPalette.ink.withAlphaComponent(0.9), in: NSRect(x: titleX, y: pillRect.minY, width: titleWidth, height: pillRect.height))
+            drawTruncatedText(title, font: .systemFont(ofSize: 12, weight: .medium), color: MacVaultPalette.ink.withAlphaComponent(depth == 0 ? 0.84 : 0.76), in: NSRect(x: titleX, y: pillRect.minY, width: titleWidth, height: pillRect.height))
 
         case let .note(memory, title, symbol, shortJournalDate, isSelected, depth):
             if depth > 0 {
@@ -891,17 +891,17 @@ private final class MacVaultRowCellView: NSTableCellView {
             let indent = CGFloat(depth) * stepIndent
             let pillRect = NSRect(x: outerInset + indent, y: 0.5, width: max(10, b.width - outerInset * 2 - indent), height: max(10, b.height - 1))
             if isSelected {
-                MacVaultPalette.ink.withAlphaComponent(0.08).setFill()
+                MacVaultPalette.ink.withAlphaComponent(0.085).setFill()
                 NSBezierPath(roundedRect: pillRect, xRadius: 7, yRadius: 7).fill()
-                MacVaultPalette.nsAccent(for: memory.kind).setFill()
-                let barRect = NSRect(x: pillRect.minX, y: pillRect.minY + 5.5, width: 2, height: max(4, pillRect.height - 11))
+                MacVaultPalette.ink.withAlphaComponent(0.85).setFill()
+                let barRect = NSRect(x: pillRect.minX, y: pillRect.minY + 6, width: 2, height: max(4, pillRect.height - 12))
                 NSBezierPath(roundedRect: barRect, xRadius: 1, yRadius: 1).fill()
             } else if isHovered {
                 MacVaultPalette.ink.withAlphaComponent(0.048).setFill()
                 NSBezierPath(roundedRect: pillRect, xRadius: 7, yRadius: 7).fill()
             }
 
-            let symColor = isSelected ? MacVaultPalette.nsAccent(for: memory.kind) : MacVaultPalette.muted.withAlphaComponent(0.85)
+            let symColor = isSelected ? MacVaultPalette.ink : MacVaultPalette.muted.withAlphaComponent(0.82)
             drawSymbol(symbol, pointSize: 11, weight: .regular, color: symColor, in: NSRect(x: pillRect.minX + 8, y: pillRect.minY, width: 12, height: pillRect.height))
 
             var rightEdge = pillRect.maxX - 8
@@ -919,8 +919,8 @@ private final class MacVaultRowCellView: NSTableCellView {
 
             let titleX = pillRect.minX + 25
             let titleWidth = max(10, rightEdge - titleX)
-            let titleColor = isSelected ? MacVaultPalette.ink : MacVaultPalette.ink.withAlphaComponent(0.88)
-            drawTruncatedText(title, font: .systemFont(ofSize: 13, weight: isSelected ? .medium : .regular), color: titleColor, in: NSRect(x: titleX, y: pillRect.minY, width: titleWidth, height: pillRect.height))
+            let titleColor = isSelected ? MacVaultPalette.ink : MacVaultPalette.ink.withAlphaComponent(0.84)
+            drawTruncatedText(title, font: .systemFont(ofSize: 12.5, weight: isSelected ? .medium : .regular), color: titleColor, in: NSRect(x: titleX, y: pillRect.minY, width: titleWidth, height: pillRect.height))
         }
     }
 
@@ -1287,8 +1287,15 @@ private enum MacFullNoteComposer {
     private static let linkColor = NSColor(name: nil) { appearance in
         let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         return dark
-            ? NSColor(srgbRed: 0.54, green: 0.73, blue: 0.93, alpha: 1.0)
-            : NSColor(srgbRed: 0.18, green: 0.39, blue: 0.62, alpha: 1.0)
+            ? NSColor(srgbRed: 0.96, green: 0.96, blue: 0.96, alpha: 1.0)
+            : NSColor(srgbRed: 0.11, green: 0.11, blue: 0.11, alpha: 1.0)
+    }
+
+    private static let linkUnderlineColor = NSColor(name: nil) { appearance in
+        let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return dark
+            ? NSColor(white: 1.0, alpha: 0.24)
+            : NSColor(white: 0.0, alpha: 0.20)
     }
 
     static func compose(
@@ -1302,7 +1309,7 @@ private enum MacFullNoteComposer {
         hasher.combine(memory.text.utf8.count)
         hasher.combine(outgoing.map(\.id))
         hasher.combine(incoming.map(\.id))
-        let key = "\(memory.id)|\(memory.revision)|\(outgoing.count)|\(incoming.count)|\(hasher.finalize())"
+        let key = "v3|\(memory.id)|\(memory.revision)|\(outgoing.count)|\(incoming.count)|\(hasher.finalize())"
         let nsKey = key as NSString
         if let hit = cache.object(forKey: nsKey) {
             return hit
@@ -1316,15 +1323,16 @@ private enum MacFullNoteComposer {
         var shiftedQuotes: [NSRange] = []
         var ruleIndices: [Int] = []
 
-        // 1. Clean Obsidian-style Inline H1 Title + Quiet Optional Date
+        // 1. Editorial H1 Title + Quiet Optional Date (no top strikethrough rule)
         let hasSeparateDate = (digest.dateBadge != nil) && !digest.title.contains(digest.dateBadge!)
         let titleStyle = NSMutableParagraphStyle()
-        titleStyle.lineSpacing = 4
-        titleStyle.paragraphSpacing = hasSeparateDate ? 6 : 20
+        titleStyle.lineSpacing = 3
+        titleStyle.paragraphSpacing = hasSeparateDate ? 5 : 22
         result.append(NSAttributedString(
             string: digest.title + "\n",
             attributes: [
-                .font: NSFont.systemFont(ofSize: 22, weight: .bold),
+                .font: NSFont.systemFont(ofSize: 19.5, weight: .semibold),
+                .kern: -0.35,
                 .foregroundColor: ink,
                 .paragraphStyle: titleStyle
             ]
@@ -1333,19 +1341,18 @@ private enum MacFullNoteComposer {
         if let date = digest.dateBadge, hasSeparateDate {
             let dateStyle = NSMutableParagraphStyle()
             dateStyle.lineSpacing = 3
-            dateStyle.paragraphSpacing = 18
+            dateStyle.paragraphSpacing = 22
             result.append(NSAttributedString(
                 string: date + "\n",
                 attributes: [
-                    .font: NSFont.monospacedDigitSystemFont(ofSize: 12.5, weight: .regular),
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular),
                     .foregroundColor: muted,
                     .paragraphStyle: dateStyle
                 ]
             ))
         }
-        ruleIndices.append(max(0, result.length - 1))
 
-        // 3. Main Markdown Body
+        // 2. Main Markdown Body
         let bodyMarkdown = digest.isNotebookMarkdown ? digest.cleanedNotebookMarkdown : memory.text
         let bodyRendered = MacMarkdownRenderer.render(
             markdown: bodyMarkdown,
@@ -1358,96 +1365,128 @@ private enum MacFullNoteComposer {
             shiftedQuotes.append(NSRange(location: qr.location + bodyOffset, length: qr.length))
         }
 
-        // 4. Bidirectional Links & Evidence Footer
+        // 3. Bidirectional Links & Evidence Footer
         let hasFooter = !outgoing.isEmpty || !digest.linkedPaths.isEmpty || !incoming.isEmpty || !memory.evidence.isEmpty
         if hasFooter {
+            if !result.string.hasSuffix("\n") {
+                result.append(NSAttributedString(string: "\n"))
+            }
             let sepStyle = NSMutableParagraphStyle()
-            sepStyle.paragraphSpacingBefore = 18
-            sepStyle.paragraphSpacing = 14
-            result.append(NSAttributedString(string: "\n", attributes: [.font: NSFont.systemFont(ofSize: 12), .paragraphStyle: sepStyle]))
-            ruleIndices.append(max(0, result.length - 1))
+            sepStyle.paragraphSpacingBefore = 24
+            sepStyle.paragraphSpacing = 20
+            let sepCharIndex = result.length
+            result.append(NSAttributedString(
+                string: "\u{200B}\n",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 4),
+                    .paragraphStyle: sepStyle
+                ]
+            ))
+            ruleIndices.append(sepCharIndex)
 
             let secHeaderStyle = NSMutableParagraphStyle()
-            secHeaderStyle.paragraphSpacingBefore = 10
-            secHeaderStyle.paragraphSpacing = 5
+            secHeaderStyle.paragraphSpacingBefore = 6
+            secHeaderStyle.paragraphSpacing = 8
+
+            let rowStyle = NSMutableParagraphStyle()
+            rowStyle.firstLineHeadIndent = 0
+            rowStyle.headIndent = 18
+            rowStyle.lineSpacing = 4
+            rowStyle.paragraphSpacing = 6
 
             // Outgoing Links
             if !outgoing.isEmpty {
                 result.append(NSAttributedString(
-                    string: "↗ 关联笔记  \(outgoing.count)\n",
+                    string: "关联笔记 · \(outgoing.count)\n",
                     attributes: [
-                        .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold),
+                        .font: NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium),
+                        .kern: 0.2,
                         .foregroundColor: muted,
                         .paragraphStyle: secHeaderStyle
                     ]
                 ))
-                let outStyle = NSMutableParagraphStyle()
-                outStyle.lineSpacing = 5
-                outStyle.paragraphSpacing = 10
-                let line = NSMutableAttributedString()
                 for (idx, item) in outgoing.enumerated() {
-                    if idx > 0 {
-                        line.append(NSAttributedString(
-                            string: "    ",
-                            attributes: [.font: NSFont.systemFont(ofSize: 12.5), .foregroundColor: muted, .paragraphStyle: outStyle]
-                        ))
-                    }
+                    let isLastItem = idx == outgoing.count - 1
+                    let itemStyle = rowStyle.mutableCopy() as! NSMutableParagraphStyle
+                    if isLastItem { itemStyle.paragraphSpacing = 14 }
                     let targetTitle = MemoryCardDigest.cached(for: item).title
                     let encodedID = item.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? item.id
+                    let line = NSMutableAttributedString()
+                    line.append(NSAttributedString(
+                        string: "↗  ",
+                        attributes: [
+                            .font: NSFont.systemFont(ofSize: 11.5, weight: .regular),
+                            .foregroundColor: muted,
+                            .paragraphStyle: itemStyle
+                        ]
+                    ))
                     var attrs: [NSAttributedString.Key: Any] = [
-                        .font: NSFont.systemFont(ofSize: 12.5, weight: .medium),
+                        .font: NSFont.systemFont(ofSize: 13, weight: .medium),
                         .foregroundColor: linkColor,
-                        .paragraphStyle: outStyle
+                        .underlineStyle: NSUnderlineStyle.single.rawValue,
+                        .underlineColor: linkUnderlineColor,
+                        .paragraphStyle: itemStyle
                     ]
                     if let url = URL(string: "momoagent://memory-id/\(encodedID)") {
                         attrs[.link] = url
+                        attrs[.cursor] = NSCursor.pointingHand
                     }
                     line.append(NSAttributedString(string: targetTitle, attributes: attrs))
+                    line.append(NSAttributedString(string: "\n", attributes: [.font: NSFont.systemFont(ofSize: 13), .paragraphStyle: itemStyle]))
+                    result.append(line)
                 }
-                line.append(NSAttributedString(string: "\n", attributes: [.font: NSFont.systemFont(ofSize: 12.5), .paragraphStyle: outStyle]))
-                result.append(line)
             } else if !digest.linkedPaths.isEmpty {
                 result.append(NSAttributedString(
-                    string: "↗ 关联笔记  \(digest.linkedPaths.count)\n",
+                    string: "关联笔记 · \(digest.linkedPaths.count)\n",
                     attributes: [
-                        .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold),
+                        .font: NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium),
+                        .kern: 0.2,
                         .foregroundColor: muted,
                         .paragraphStyle: secHeaderStyle
                     ]
                 ))
-                let outStyle = NSMutableParagraphStyle()
-                outStyle.lineSpacing = 5
-                outStyle.paragraphSpacing = 10
-                let line = NSMutableAttributedString()
                 for (idx, relPath) in digest.linkedPaths.enumerated() {
-                    if idx > 0 {
-                        line.append(NSAttributedString(string: "    ", attributes: [.font: NSFont.systemFont(ofSize: 12.5), .paragraphStyle: outStyle]))
-                    }
+                    let isLastItem = idx == digest.linkedPaths.count - 1
+                    let itemStyle = rowStyle.mutableCopy() as! NSMutableParagraphStyle
+                    if isLastItem { itemStyle.paragraphSpacing = 14 }
                     let friendly = MemoryCardDigest.humanizeNotebookPath(relPath)
                     let encoded = relPath
                         .split(separator: "/")
                         .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
                         .joined(separator: "/")
+                    let line = NSMutableAttributedString()
+                    line.append(NSAttributedString(
+                        string: "↗  ",
+                        attributes: [
+                            .font: NSFont.systemFont(ofSize: 11.5, weight: .regular),
+                            .foregroundColor: muted,
+                            .paragraphStyle: itemStyle
+                        ]
+                    ))
                     var attrs: [NSAttributedString.Key: Any] = [
-                        .font: NSFont.systemFont(ofSize: 12.5, weight: .medium),
+                        .font: NSFont.systemFont(ofSize: 13, weight: .medium),
                         .foregroundColor: linkColor,
-                        .paragraphStyle: outStyle
+                        .underlineStyle: NSUnderlineStyle.single.rawValue,
+                        .underlineColor: linkUnderlineColor,
+                        .paragraphStyle: itemStyle
                     ]
                     if let url = URL(string: "momoagent://memory/\(encoded)") {
                         attrs[.link] = url
+                        attrs[.cursor] = NSCursor.pointingHand
                     }
                     line.append(NSAttributedString(string: friendly, attributes: attrs))
+                    line.append(NSAttributedString(string: "\n", attributes: [.font: NSFont.systemFont(ofSize: 13), .paragraphStyle: itemStyle]))
+                    result.append(line)
                 }
-                line.append(NSAttributedString(string: "\n", attributes: [.font: NSFont.systemFont(ofSize: 12.5), .paragraphStyle: outStyle]))
-                result.append(line)
             }
 
             // Backlinks (Linked Mentions)
             if !incoming.isEmpty {
                 result.append(NSAttributedString(
-                    string: "↩ 反向链接 · 被以下笔记提及  \(incoming.count)\n",
+                    string: "被以下笔记提及 · \(incoming.count)\n",
                     attributes: [
-                        .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold),
+                        .font: NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium),
+                        .kern: 0.2,
                         .foregroundColor: muted,
                         .paragraphStyle: secHeaderStyle
                     ]
@@ -1457,18 +1496,29 @@ private enum MacFullNoteComposer {
                     let encodedID = backlink.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? backlink.id
                     let titleRowStyle = NSMutableParagraphStyle()
                     titleRowStyle.paragraphSpacingBefore = 4
-                    titleRowStyle.paragraphSpacing = bDigest.highlights.isEmpty ? 6 : 2
+                    titleRowStyle.paragraphSpacing = bDigest.highlights.isEmpty ? 8 : 3
 
                     let itemStr = NSMutableAttributedString()
+                    itemStr.append(NSAttributedString(
+                        string: "↩  ",
+                        attributes: [
+                            .font: NSFont.systemFont(ofSize: 11.5, weight: .regular),
+                            .foregroundColor: muted,
+                            .paragraphStyle: titleRowStyle
+                        ]
+                    ))
                     var linkAttrs: [NSAttributedString.Key: Any] = [
                         .font: NSFont.systemFont(ofSize: 13, weight: .medium),
                         .foregroundColor: linkColor,
+                        .underlineStyle: NSUnderlineStyle.single.rawValue,
+                        .underlineColor: linkUnderlineColor,
                         .paragraphStyle: titleRowStyle
                     ]
                     if let url = URL(string: "momoagent://memory-id/\(encodedID)") {
                         linkAttrs[.link] = url
+                        linkAttrs[.cursor] = NSCursor.pointingHand
                     }
-                    itemStr.append(NSAttributedString(string: "[[\(bDigest.title)]]", attributes: linkAttrs))
+                    itemStr.append(NSAttributedString(string: bDigest.title, attributes: linkAttrs))
                     itemStr.append(NSAttributedString(
                         string: "   \(bDigest.badge.title)\n",
                         attributes: [
@@ -1481,10 +1531,10 @@ private enum MacFullNoteComposer {
 
                     if let snippet = bDigest.highlights.first, !snippet.isEmpty {
                         let snipStyle = NSMutableParagraphStyle()
-                        snipStyle.firstLineHeadIndent = 10
-                        snipStyle.headIndent = 10
-                        snipStyle.lineSpacing = 3
-                        snipStyle.paragraphSpacing = 8
+                        snipStyle.firstLineHeadIndent = 18
+                        snipStyle.headIndent = 18
+                        snipStyle.lineSpacing = 3.5
+                        snipStyle.paragraphSpacing = 10
                         let clipped = snippet.count > 120 ? String(snippet.prefix(120)) + "…" : snippet
                         result.append(NSAttributedString(
                             string: clipped + "\n",
@@ -1501,28 +1551,45 @@ private enum MacFullNoteComposer {
             // Evidence links
             if !memory.evidence.isEmpty {
                 result.append(NSAttributedString(
-                    string: "⏱ 原音证据  \(memory.evidence.count)\n",
+                    string: "原音证据 · \(memory.evidence.count)\n",
                     attributes: [
-                        .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold),
+                        .font: NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium),
+                        .kern: 0.2,
                         .foregroundColor: muted,
                         .paragraphStyle: secHeaderStyle
                     ]
                 ))
                 let evStyle = NSMutableParagraphStyle()
-                evStyle.lineSpacing = 4
-                evStyle.paragraphSpacing = 6
+                evStyle.firstLineHeadIndent = 0
+                evStyle.headIndent = 18
+                evStyle.lineSpacing = 4.5
+                evStyle.paragraphSpacing = 7
                 for (idx, ev) in memory.evidence.enumerated() {
                     let quoteSnippet = ev.quote.trimmingCharacters(in: .whitespacesAndNewlines)
                     let shortQuote = quoteSnippet.count > 80 ? String(quoteSnippet.prefix(80)) + "…" : quoteSnippet
+                    let line = NSMutableAttributedString()
+                    line.append(NSAttributedString(
+                        string: "⏱  「\(shortQuote)」  ",
+                        attributes: [
+                            .font: NSFont.systemFont(ofSize: 12.5, weight: .regular),
+                            .foregroundColor: muted,
+                            .paragraphStyle: evStyle
+                        ]
+                    ))
                     var attrs: [NSAttributedString.Key: Any] = [
-                        .font: NSFont.systemFont(ofSize: 12, weight: .regular),
+                        .font: NSFont.systemFont(ofSize: 12, weight: .medium),
                         .foregroundColor: linkColor,
+                        .underlineStyle: NSUnderlineStyle.single.rawValue,
+                        .underlineColor: linkUnderlineColor,
                         .paragraphStyle: evStyle
                     ]
                     if let url = URL(string: "momoagent://evidence/\(idx)") {
                         attrs[.link] = url
+                        attrs[.cursor] = NSCursor.pointingHand
                     }
-                    result.append(NSAttributedString(string: "• 「\(shortQuote)」  [查看原音]\n", attributes: attrs))
+                    line.append(NSAttributedString(string: "查看原音", attributes: attrs))
+                    line.append(NSAttributedString(string: "\n", attributes: [.font: NSFont.systemFont(ofSize: 12), .paragraphStyle: evStyle]))
+                    result.append(line)
                 }
             }
         }
@@ -1550,15 +1617,15 @@ private final class MacNoteDocumentTextView: NSTextView {
         guard let lm = layoutManager, let tc = textContainer, let ts = textStorage else { return }
         let origin = textContainerOrigin
         let totalLen = ts.length
-        let lineColor = MacVaultPalette.line
+        let ink = MacVaultPalette.ink
 
         if !ruleCharIndices.isEmpty {
-            lineColor.withAlphaComponent(0.75).setFill()
+            ink.withAlphaComponent(0.085).setFill()
             for charIdx in ruleCharIndices where charIdx >= 0 && charIdx < totalLen {
                 let gIdx = lm.glyphIndexForCharacter(at: charIdx)
                 let lineRect = lm.lineFragmentRect(forGlyphAt: gIdx, effectiveRange: nil)
-                let y = origin.y + lineRect.maxY + 10
-                let ruleRect = NSRect(x: origin.x, y: y, width: tc.containerSize.width, height: 0.7)
+                let y = origin.y + floor(lineRect.midY)
+                let ruleRect = NSRect(x: origin.x, y: y, width: tc.containerSize.width, height: 0.5)
                 if ruleRect.intersects(dirtyRect) {
                     ruleRect.fill()
                 }
@@ -1566,7 +1633,7 @@ private final class MacNoteDocumentTextView: NSTextView {
         }
 
         if !quoteCharRanges.isEmpty {
-            lineColor.setFill()
+            ink.withAlphaComponent(0.18).setFill()
             for charRange in quoteCharRanges where charRange.location >= 0 && NSMaxRange(charRange) <= totalLen {
                 let glyphRange = lm.glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
                 let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
@@ -1574,11 +1641,11 @@ private final class MacNoteDocumentTextView: NSTextView {
                 let barRect = NSRect(
                     x: origin.x + 0.5,
                     y: origin.y + rect.minY + 1,
-                    width: 2.5,
+                    width: 2,
                     height: max(4, rect.height - 2)
                 )
                 if barRect.intersects(dirtyRect) {
-                    NSBezierPath(roundedRect: barRect, xRadius: 1.25, yRadius: 1.25).fill()
+                    NSBezierPath(roundedRect: barRect, xRadius: 1, yRadius: 1).fill()
                 }
             }
         }

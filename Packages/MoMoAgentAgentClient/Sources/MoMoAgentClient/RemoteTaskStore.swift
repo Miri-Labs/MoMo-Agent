@@ -386,11 +386,35 @@ public final class RemoteTaskStore {
         }) { return true }
         return sharedRuns.contains { run in
             ["queued", "running"].contains(run.status) && run.pendingControls?.isEmpty != false &&
+            !isSupersededHistoricalRun(run) &&
             !tasks.contains { $0.run?.runID == run.runID } &&
             !messages.contains { $0.role == "assistant" && $0.runID == run.runID }
         }
     }
-    public var hasActiveTask: Bool { tasks.contains { $0.isPending && !$0.needsReview && $0.lastError == nil && $0.run?.pendingControls?.isEmpty != false } || sharedRuns.contains { ["queued", "running"].contains($0.status) && $0.pendingControls?.isEmpty != false } }
+    public var hasActiveTask: Bool {
+        tasks.contains { task in
+            guard task.isPending, !task.needsReview, task.lastError == nil, task.run?.pendingControls?.isEmpty != false else { return false }
+            if let run = task.run, isSupersededHistoricalRun(run) { return false }
+            return true
+        } || sharedRuns.contains { run in
+            ["queued", "running"].contains(run.status) && run.pendingControls?.isEmpty != false && !isSupersededHistoricalRun(run)
+        }
+    }
+
+    public func isSupersededHistoricalRun(_ run: AgentRun) -> Bool {
+        guard run.pendingControls?.isEmpty != false,
+              !["computer", "computer_human"].contains(run.waitReason ?? "") else { return false }
+        let hasLiveWork = backgroundWork.contains { work in
+            work.isPending && !(work.state == "cancelled" && work.reportState == "cancelled")
+                && ((run.workID != nil && work.workID == run.workID) || work.originRunID == run.runID)
+        }
+        if hasLiveWork { return false }
+        if let userMsg = messages.last(where: { $0.role == "user" && $0.runID == run.runID }) {
+            let lastAssistantSeq = messages.last(where: { $0.role == "assistant" })?.seq ?? 0
+            return lastAssistantSeq > userMsg.seq
+        }
+        return false
+    }
     public var interruptedTask: RemoteTask? {
         tasks.first { $0.run != nil && !$0.isFinished && $0.lastError != nil }
     }

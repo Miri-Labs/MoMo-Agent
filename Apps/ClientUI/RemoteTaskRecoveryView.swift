@@ -755,11 +755,11 @@ private struct ActiveTaskItemRow: View {
         if item.isHistorical {
             switch item.work.state {
             case "failed": return MoMoPalette.failure
-            case "dropped", "cancelled": return MoMoPalette.muted.opacity(0.65)
-            default: return MoMoPalette.success
+            case "dropped", "cancelled": return MoMoPalette.muted.opacity(0.55)
+            default: return MoMoPalette.ink.opacity(0.75)
             }
         }
-        return item.isUrgent ? Color.orange : Color.green
+        return item.isUrgent ? Color.orange : MoMoPalette.ink
     }
 
     var body: some View {
@@ -1026,10 +1026,10 @@ private struct AgentTaskDetailView: View {
 
             Text(effectiveStatusLabel)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isActive ? Color.green : MoMoPalette.muted)
+                .foregroundStyle(isActive ? MoMoPalette.ink : MoMoPalette.muted)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 4)
-                .background((isActive ? Color.green : MoMoPalette.ink).opacity(0.1), in: Capsule())
+                .background(MoMoPalette.ink.opacity(isActive ? 0.11 : 0.06), in: Capsule())
 
             if canStop, let store {
                 Button {
@@ -1133,12 +1133,7 @@ private struct AgentTaskDetailView: View {
             }
         }
         .padding(14)
-        .background(MoMoPalette.paper, in: RoundedRectangle(cornerRadius: 14))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(MoMoPalette.line, lineWidth: 1)
-                .allowsHitTesting(false)
-        }
+        .momoElevatedCard(cornerRadius: 12, shadowStrength: 0.6)
     }
 
     private func metaRow(label: String, value: String) -> some View {
@@ -1163,7 +1158,7 @@ private struct AgentTaskDetailView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("当前正在执行")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.green)
+                    .foregroundStyle(MoMoPalette.muted)
                 Text(currentRunningActivity?.title ?? String(localized: "正在分析上下文并规划下一步动作…"))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(MoMoPalette.ink)
@@ -1177,12 +1172,7 @@ private struct AgentTaskDetailView: View {
             Spacer(minLength: 0)
         }
         .padding(13)
-        .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(Color.green.opacity(0.28), lineWidth: 1)
-                .allowsHitTesting(false)
-        }
+        .momoElevatedCard(cornerRadius: 12, isFocused: true, shadowStrength: 0.7)
     }
 
     private var dispatchMandateCard: some View {
@@ -1405,11 +1395,6 @@ private struct AgentTaskDetailView: View {
             content()
         }
         .padding(14)
-        .background(MoMoPalette.paper, in: RoundedRectangle(cornerRadius: 14))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(MoMoPalette.line, lineWidth: 1)
-                .allowsHitTesting(false)
-        }
+        .momoElevatedCard(cornerRadius: 12, shadowStrength: 0.55)
     }
 }

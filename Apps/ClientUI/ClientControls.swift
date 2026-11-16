@@ -526,12 +526,12 @@ struct MemoryNotebookPalette {
 
     func tabAccent(_ kind: String) -> Color {
         switch kind {
-        case "briefing": dark ? Self.rgb(0x9C95DC) : Self.rgb(0x6B63B5)
-        case "project": dark ? Self.rgb(0x7BA4CF) : Self.rgb(0x4A78A8)
-        case "journal": dark ? Self.rgb(0x72B59D) : Self.rgb(0x3F8A71)
-        case "person": dark ? Self.rgb(0xCFA082) : Self.rgb(0xA66E4E)
-        case "topic": dark ? Self.rgb(0x76AAB8) : Self.rgb(0x467F91)
-        default: dark ? Self.rgb(0x9A9A96) : Self.rgb(0x6E6E6A)
+        case "briefing": dark ? Self.rgb(0xDCDCDC) : Self.rgb(0x2E2E2E)
+        case "project": dark ? Self.rgb(0xB8C2CC) : Self.rgb(0x4A5562)
+        case "journal": dark ? Self.rgb(0xBEBBB6) : Self.rgb(0x57534E)
+        case "person": dark ? Self.rgb(0xC9BBAE) : Self.rgb(0x695B50)
+        case "topic": dark ? Self.rgb(0xB0B7C0) : Self.rgb(0x525B66)
+        default: dark ? Self.rgb(0xA3A3A3) : Self.rgb(0x666666)
         }
     }
 
@@ -1504,21 +1504,56 @@ extension MemoryCardDigest {
         var filteredLines: [String] = []
         filteredLines.reserveCapacity(rawLines.count)
         var skippingBoilerplateSection = false
+        var pendingCardHeadingIndex: Int? = nil
         for (idx, rawLine) in rawLines.enumerated() {
             let trimmedLine = rawLine.trimmingCharacters(in: .whitespaces)
             if idx == 0 && trimmedLine.hasPrefix("# ") && rawLines.count > 1 {
                 continue
             }
             if trimmedLine.hasPrefix("## ") || trimmedLine.hasPrefix("### ") {
+                pendingCardHeadingIndex = nil
+                let hashes = String(trimmedLine.prefix(while: { $0 == "#" }))
                 let headingTitle = String(trimmedLine.drop(while: { $0 == "#" || $0 == " " }))
                 if headingTitle == "来源与边界" || headingTitle == "本批来源与边界" || headingTitle == "整理进度" {
                     skippingBoilerplateSection = true
                     continue
                 }
                 skippingBoilerplateSection = false
+                if headingTitle.hasPrefix("卡片：") || headingTitle.hasPrefix("卡片:") || headingTitle.hasPrefix("建议：") || headingTitle.hasPrefix("建议:") {
+                    let cleanCardTitle = headingTitle.replacingOccurrences(
+                        of: #"^(卡片|建议)[：:]\s*"#,
+                        with: "",
+                        options: .regularExpression
+                    ).trimmingCharacters(in: .whitespaces)
+                    pendingCardHeadingIndex = filteredLines.count
+                    filteredLines.append("\(hashes) \(cleanCardTitle)")
+                    continue
+                }
             }
             if skippingBoilerplateSection {
                 continue
+            }
+            if trimmedLine.hasPrefix("- 纹样：") || trimmedLine.hasPrefix("- 纹样:")
+                || trimmedLine.hasPrefix("* 纹样：") || trimmedLine.hasPrefix("* 纹样:") {
+                continue
+            }
+            if let cardIdx = pendingCardHeadingIndex,
+               (trimmedLine.hasPrefix("- 语境：") || trimmedLine.hasPrefix("- 语境:")
+                || trimmedLine.hasPrefix("- 来源：") || trimmedLine.hasPrefix("- 来源:")
+                || trimmedLine.hasPrefix("- 背景：") || trimmedLine.hasPrefix("- 背景:")) {
+                let ctx = trimmedLine.replacingOccurrences(
+                    of: #"^[-*]\s*(语境|来源|背景)[：:]\s*"#,
+                    with: "",
+                    options: .regularExpression
+                ).trimmingCharacters(in: .whitespaces)
+                if !ctx.isEmpty {
+                    filteredLines[cardIdx] += "  ·  \(ctx)"
+                }
+                pendingCardHeadingIndex = nil
+                continue
+            }
+            if !trimmedLine.isEmpty {
+                pendingCardHeadingIndex = nil
             }
             if trimmedLine.contains("remaining_parts=") || trimmedLine.contains("不代表读完该录音") || trimmedLine.contains("不代表复读了整场录音") {
                 continue
@@ -2729,55 +2764,49 @@ enum DreamDotMatrixKind: String, CaseIterable, Sendable {
     }
 
     enum PaletteTheme {
-        case lavender, sage, blue
+        case graphite, stone, slate
     }
 
     var theme: PaletteTheme {
         switch self {
-        case .memoryLoop, .lifeFlow: return .lavender
-        case .voiceWave, .slowDown: return .sage
-        case .relationWeave, .fragmentLink: return .blue
+        case .memoryLoop, .lifeFlow: return .graphite
+        case .voiceWave, .slowDown: return .stone
+        case .relationWeave, .fragmentLink: return .slate
         }
     }
 
     func surfaceColor(isDark: Bool) -> Color {
         switch (theme, isDark) {
-        case (.lavender, false): return Color(red: 0.945, green: 0.941, blue: 0.969) // #F1F0F7
-        case (.lavender, true):  return Color(red: 0.145, green: 0.141, blue: 0.192)
-        case (.sage, false):     return Color(red: 0.929, green: 0.957, blue: 0.941) // #EDF4F0
-        case (.sage, true):      return Color(red: 0.122, green: 0.165, blue: 0.145)
-        case (.blue, false):     return Color(red: 0.937, green: 0.953, blue: 0.969) // #EFF3F7
-        case (.blue, true):      return Color(red: 0.125, green: 0.153, blue: 0.188)
+        case (.graphite, false): return Color(red: 0.949, green: 0.949, blue: 0.945)
+        case (.graphite, true):  return Color(red: 0.145, green: 0.145, blue: 0.149)
+        case (.stone, false):    return Color(red: 0.953, green: 0.945, blue: 0.937)
+        case (.stone, true):     return Color(red: 0.153, green: 0.145, blue: 0.137)
+        case (.slate, false):    return Color(red: 0.941, green: 0.949, blue: 0.957)
+        case (.slate, true):     return Color(red: 0.137, green: 0.149, blue: 0.165)
         }
     }
 
     func dotColor(isDark: Bool) -> Color {
         switch (theme, isDark) {
-        case (.lavender, false): return Color(red: 0.525, green: 0.545, blue: 0.706) // #868BB4
-        case (.lavender, true):  return Color(red: 0.655, green: 0.678, blue: 0.847)
-        case (.sage, false):     return Color(red: 0.431, green: 0.612, blue: 0.561) // #6E9C8F
-        case (.sage, true):      return Color(red: 0.545, green: 0.745, blue: 0.686)
-        case (.blue, false):     return Color(red: 0.498, green: 0.600, blue: 0.690) // #7F99B0
-        case (.blue, true):      return Color(red: 0.604, green: 0.718, blue: 0.816)
+        case (.graphite, false): return Color(red: 0.32, green: 0.32, blue: 0.34)
+        case (.graphite, true):  return Color(red: 0.78, green: 0.78, blue: 0.80)
+        case (.stone, false):    return Color(red: 0.46, green: 0.42, blue: 0.39)
+        case (.stone, true):     return Color(red: 0.74, green: 0.70, blue: 0.66)
+        case (.slate, false):    return Color(red: 0.39, green: 0.45, blue: 0.52)
+        case (.slate, true):     return Color(red: 0.67, green: 0.73, blue: 0.80)
         }
     }
 
     func titleColor(isDark: Bool) -> Color {
-        switch (theme, isDark) {
-        case (.lavender, false): return Color(red: 0.196, green: 0.192, blue: 0.239) // #32313D
-        case (.sage, false):     return Color(red: 0.161, green: 0.220, blue: 0.192) // #293831
-        case (.blue, false):     return Color(red: 0.169, green: 0.204, blue: 0.239)
-        case (_, true):          return Color(red: 0.945, green: 0.945, blue: 0.965)
-        }
+        isDark
+            ? Color(red: 0.96, green: 0.96, blue: 0.96)
+            : Color(red: 0.11, green: 0.11, blue: 0.11)
     }
 
     func subtitleColor(isDark: Bool) -> Color {
-        switch (theme, isDark) {
-        case (.lavender, false): return Color(red: 0.427, green: 0.416, blue: 0.490) // #6D6A7D
-        case (.sage, false):     return Color(red: 0.361, green: 0.451, blue: 0.408) // #5C7368
-        case (.blue, false):     return Color(red: 0.373, green: 0.439, blue: 0.502)
-        case (_, true):          return Color(red: 0.675, green: 0.682, blue: 0.733)
-        }
+        isDark
+            ? Color(red: 0.62, green: 0.62, blue: 0.64)
+            : Color(red: 0.42, green: 0.42, blue: 0.44)
     }
 }
 
@@ -3126,10 +3155,7 @@ struct DreamHomeCardsSection: View {
     let onSelectCard: (DreamBriefingCard) -> Void
     let onOpenBriefing: () -> Void
     let onOpenNotebook: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-    @State private var hoveredCardID: String?
 
-    private var isDark: Bool { colorScheme == .dark }
     private var visibleCards: [DreamBriefingCard] {
         let allDismissed = dismissedIDs.union(DreamDismissedCardsStore.load())
         return document.cards.filter { !$0.isDismissed(in: allDismissed, headline: document.headline) }
@@ -3139,18 +3165,39 @@ struct DreamHomeCardsSection: View {
         if !visibleCards.isEmpty {
             LazyVGrid(columns: [GridItem(visibleCards.count == 1 ? .flexible() : .adaptive(minimum: 300), spacing: 10)], spacing: 10) {
                 ForEach(visibleCards.prefix(2)) { card in
-                    cardView(card)
+                    DreamHomeCardItem(
+                        card: card,
+                        headline: document.headline,
+                        compact: compact,
+                        dismissedIDs: $dismissedIDs,
+                        onSelectCard: onSelectCard,
+                        onOpenBriefing: onOpenBriefing,
+                        onOpenNotebook: onOpenNotebook
+                    )
                 }
             }
             .padding(.horizontal, 16)
         }
     }
+}
 
-    private func cardView(_ card: DreamBriefingCard) -> some View {
-        let isHovered = hoveredCardID == card.id
-        return HStack(alignment: .top, spacing: 0) {
+private struct DreamHomeCardItem: View {
+    let card: DreamBriefingCard
+    let headline: String
+    let compact: Bool
+    @Binding var dismissedIDs: Set<String>
+    let onSelectCard: (DreamBriefingCard) -> Void
+    let onOpenBriefing: () -> Void
+    let onOpenNotebook: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
+
+    private var isDark: Bool { colorScheme == .dark }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
             Button {
-                DreamDismissedCardsStore.markDismissed(card, headline: document.headline, into: &dismissedIDs)
+                DreamDismissedCardsStore.markDismissed(card, headline: headline, into: &dismissedIDs)
                 onSelectCard(card)
             } label: {
                 HStack(spacing: 11) {
@@ -3158,17 +3205,18 @@ struct DreamHomeCardsSection: View {
                         .frame(width: compact ? 54 : 60, height: compact ? 54 : 60)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(card.title)
-                            .font(.system(size: 13.5, weight: .semibold))
-                            .tracking(-0.08)
+                            .font(.system(size: 13, weight: .medium))
+                            .tracking(-0.06)
                             .foregroundStyle(MoMoPalette.ink)
                             .lineLimit(2)
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Text(card.subtitle)
-                                .font(.system(size: 12))
+                                .font(.system(size: 11.5, weight: .regular))
+                                .lineSpacing(2)
                                 .lineLimit(2)
                             Image(systemName: "arrow.up.right")
-                                .font(.system(size: 9, weight: .semibold))
-                                .opacity(isHovered ? 0.95 : 0.6)
+                                .font(.system(size: 8.5, weight: .medium))
+                                .opacity(isHovered ? 0.9 : 0.5)
                                 .accessibilityHidden(true)
                         }
                         .foregroundStyle(MoMoPalette.muted)
@@ -3189,12 +3237,12 @@ struct DreamHomeCardsSection: View {
                 Button("查看晨间简报", systemImage: "doc.richtext", action: onOpenBriefing)
                 Button("打开记忆笔记本", systemImage: "book.pages", action: onOpenNotebook)
                 Button("暂时收起", systemImage: "eye.slash") {
-                    DreamDismissedCardsStore.markDismissed(card, headline: document.headline, into: &dismissedIDs)
+                    DreamDismissedCardsStore.markDismissed(card, headline: headline, into: &dismissedIDs)
                 }
             }
 
             Button {
-                DreamDismissedCardsStore.markDismissed(card, headline: document.headline, into: &dismissedIDs)
+                DreamDismissedCardsStore.markDismissed(card, headline: headline, into: &dismissedIDs)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .semibold))
@@ -3216,18 +3264,10 @@ struct DreamHomeCardsSection: View {
         .momoElevatedCard(
             cornerRadius: 14,
             isFocused: isHovered,
-            shadowStrength: isHovered ? 1.15 : 0.75
+            shadowStrength: isHovered ? 1.1 : 0.7
         )
         #if os(macOS)
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.14)) {
-                if hovering {
-                    hoveredCardID = card.id
-                } else if hoveredCardID == card.id {
-                    hoveredCardID = nil
-                }
-            }
-        }
+        .onHover { isHovered = $0 }
         #endif
     }
 }

@@ -71,18 +71,12 @@ private struct MoMoElevatedCardModifier: ViewModifier {
                 )
                 .allowsHitTesting(false)
             }
-            // Sand elevation law: Light mode uses soft ambient + key shadow; Dark mode uses 0% black shadow.
+            // Sand elevation law: Light mode uses a single lightweight shadow; Dark mode uses 0% black shadow.
             .shadow(
-                color: isDark ? .clear : Color.black.opacity(0.042 * shadowStrength),
-                radius: 10,
+                color: isDark || shadowStrength <= 0 ? .clear : Color.black.opacity(0.038 * shadowStrength),
+                radius: 7,
                 x: 0,
-                y: 3
-            )
-            .shadow(
-                color: isDark ? .clear : Color.black.opacity(0.02 * shadowStrength),
-                radius: 2,
-                x: 0,
-                y: 1
+                y: 2
             )
     }
 }
@@ -100,23 +94,30 @@ extension View {
         ))
     }
 
-    /// Smooth fade mask at top and/or bottom of scroll surfaces instead of hard horizontal borders.
-    func momoScrollEdgeFade(top: CGFloat = 16, bottom: CGFloat = 0) -> some View {
-        mask {
-            GeometryReader { geo in
-                let h = max(1, geo.size.height)
-                let tStop = min(0.25, max(0, top / h))
-                let bStop = max(0.75, min(1, 1 - bottom / h))
+    /// Zero-mask top/bottom fade overlay that preserves 120fps native NSScrollView layer compositing.
+    func momoScrollEdgeFade(top: CGFloat = 14, bottom: CGFloat = 0, surface: Color = MoMoPalette.canvas) -> some View {
+        overlay(alignment: .top) {
+            if top > 0 {
                 LinearGradient(
-                    stops: [
-                        .init(color: top > 0 ? .clear : .black, location: 0),
-                        .init(color: .black, location: tStop),
-                        .init(color: .black, location: bStop),
-                        .init(color: bottom > 0 ? .clear : .black, location: 1)
-                    ],
+                    colors: [surface, surface.opacity(0)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
+                .frame(height: top)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if bottom > 0 {
+                LinearGradient(
+                    colors: [surface.opacity(0), surface],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: bottom)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
         }
     }

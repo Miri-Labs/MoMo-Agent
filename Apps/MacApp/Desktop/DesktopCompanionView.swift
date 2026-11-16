@@ -2,8 +2,27 @@ import SwiftUI
 
 extension DesktopModel {
     var companionState: DesktopCompanionState {
-        DesktopCompanionState(prepared: setupStep == .completed, online: status?.agentOnline == true && taskStore?.connectionState == .ready,
-                              runs: taskStore?.sharedRuns ?? [], work: taskStore?.backgroundWork ?? [], tasks: taskStore?.tasks ?? [])
+        let store = taskStore
+        let liveWork = (store?.backgroundWork ?? []).filter { work in
+            work.isPending && !(work.state == "cancelled" && work.reportState == "cancelled")
+        }
+        let liveRuns = (store?.sharedRuns ?? []).filter { run in
+            guard !run.isTerminal else { return false }
+            if let store, store.isSupersededHistoricalRun(run) { return false }
+            return true
+        }
+        let liveTasks = (store?.tasks ?? []).filter { task in
+            guard task.isPending else { return false }
+            if let run = task.run, let store, store.isSupersededHistoricalRun(run) { return false }
+            return true
+        }
+        return DesktopCompanionState(
+            prepared: setupStep == .completed,
+            online: status?.agentOnline == true && store?.connectionState == .ready,
+            runs: liveRuns,
+            work: liveWork,
+            tasks: liveTasks
+        )
     }
 }
 
@@ -18,9 +37,9 @@ struct DesktopCompanionCard: View {
     @State private var showAll = false
 
     private func statusColor(for state: DesktopCompanionState) -> Color {
-        if !state.prepared || !state.online { return .white.opacity(0.35) }
+        if !state.prepared || !state.online { return .white.opacity(0.32) }
         if state.needsAttention { return .orange }
-        return .green
+        return .white.opacity(0.86)
     }
 
     var body: some View {

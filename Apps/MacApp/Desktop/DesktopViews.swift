@@ -8,27 +8,37 @@ struct DesktopRoot: View {
     @Bindable var model: DesktopModel
     @State private var sidebarVisible = true
     @State private var visitedTabs: Set<String> = ["chat"]
+    @State private var sourcesResetToken: UInt64 = 0
     @State private var recordingCitation: RecordingCitation?
     @State private var previewingMemoryNote: ContextMemory?
-    @State private var hoveredSidebarItem: String?
-    @State private var toggleHovered = false
-    @State private var commandHeld = false
-    @State private var flagsMonitor: Any?
-    @Environment(\.accessibilityReduceMotion) private var reducedMotion
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar
-                .frame(width: sidebarVisible ? 216 : 76)
-                .background(MoMoPalette.sidebar)
-                .overlay(alignment: .trailing) {
-                    Rectangle()
-                        .fill(MoMoPalette.borderSubtle)
-                        .frame(width: 0.5)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+            DesktopSidebarRail(
+                selection: model.selection,
+                online: model.status?.agentOnline == true,
+                sidebarVisible: $sidebarVisible,
+                onSelect: { target in
+                    if target == "sources" && model.selection == "sources" {
+                        sourcesResetToken &+= 1
+                    } else {
+                        model.selection = target
+                    }
+                },
+                onOpenSettings: {
+                    openWindow(id: MoMoAgentMacApp.settingsID)
                 }
+            )
+            .frame(width: sidebarVisible ? 216 : 76)
+            .background(MoMoPalette.sidebar)
+            .overlay(alignment: .trailing) {
+                Rectangle()
+                    .fill(MoMoPalette.borderSubtle)
+                    .frame(width: 0.5)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
 
             VStack(spacing: 0) {
                 if let failure = model.failure {
@@ -74,7 +84,7 @@ struct DesktopRoot: View {
                     }
                     if visitedTabs.contains("sources") || model.selection == "sources" {
                         let active = model.selection == "sources"
-                        DesktopSources(model: model, isActive: active)
+                        DesktopSources(model: model, isActive: active, resetToken: sourcesResetToken)
                             .padding(.top, 28)
                             .opacity(active ? 1 : 0)
                             .allowsHitTesting(active)
@@ -93,25 +103,6 @@ struct DesktopRoot: View {
         .background(MoMoPalette.canvas)
         .background(DesktopWindowChrome())
         .ignoresSafeArea(.container)
-        .onAppear {
-            if flagsMonitor == nil {
-                flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
-                    let onlyCmd = event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command
-                    if commandHeld != onlyCmd {
-                        withAnimation(.easeOut(duration: 0.12)) {
-                            commandHeld = onlyCmd
-                        }
-                    }
-                    return event
-                }
-            }
-        }
-        .onDisappear {
-            if let monitor = flagsMonitor {
-                NSEvent.removeMonitor(monitor)
-                flagsMonitor = nil
-            }
-        }
         .environment(\.openURL, OpenURLAction { url in
             guard url.scheme?.lowercased() == "momoagent" else { return .systemAction }
             if DreamMemoryLinkResolver.isMemoryURL(url) {
@@ -163,10 +154,21 @@ struct DesktopRoot: View {
             Text(verbatim: notice.message)
         }
     }
+}
 
-    private var sidebar: some View {
-        let online = model.status?.agentOnline == true
-        return VStack(alignment: sidebarVisible ? .leading : .center, spacing: 0) {
+/// Isolated sidebar view so hover and modifier-key states never invalidate DesktopChat / DesktopMemory / DesktopSources.
+private struct DesktopSidebarRail: View {
+    let selection: String
+    let online: Bool
+    @Binding var sidebarVisible: Bool
+    let onSelect: (String) -> Void
+    let onOpenSettings: () -> Void
+    @State private var commandHeld = false
+    @State private var flagsMonitor: Any?
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
+
+    var body: some View {
+        VStack(alignment: sidebarVisible ? .leading : .center, spacing: 0) {
             if sidebarVisible {
                 HStack {
                     Spacer()
@@ -185,9 +187,15 @@ struct DesktopRoot: View {
                 .padding(.bottom, 16)
 
                 VStack(spacing: 3) {
-                    destination("首页", icon: "house", selection: "chat", shortcutKey: "1")
-                    destination("记忆", icon: "brain", selection: "memory", shortcutKey: "2")
-                    destination("转录", icon: "waveform", selection: "sources", shortcutKey: "3")
+                    DesktopSidebarNavButton(title: "首页", icon: "house", isSelected: selection == "chat", keycap: commandHeld ? "⌘1" : nil, accessibilityID: "desktop.destination.chat") {
+                        onSelect("chat")
+                    }
+                    DesktopSidebarNavButton(title: "记忆", icon: "brain", isSelected: selection == "memory", keycap: commandHeld ? "⌘2" : nil, accessibilityID: "desktop.destination.memory") {
+                        onSelect("memory")
+                    }
+                    DesktopSidebarNavButton(title: "转录", icon: "waveform", isSelected: selection == "sources", keycap: commandHeld ? "⌘3" : nil, accessibilityID: "desktop.destination.sources") {
+                        onSelect("sources")
+                    }
                 }
                 .padding(.horizontal, 10)
 
@@ -196,8 +204,8 @@ struct DesktopRoot: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(online ? MoMoPalette.success : MoMoPalette.muted.opacity(0.45))
-                            .frame(width: 6.5, height: 6.5)
+                            .fill(online ? MoMoPalette.ink.opacity(0.72) : MoMoPalette.muted.opacity(0.4))
+                            .frame(width: 6, height: 6)
                             .accessibilityHidden(true)
                         Text(online ? "MoMo 正在运行" : "MoMo 尚未运行")
                             .font(.system(size: 11.5, weight: .regular))
@@ -207,7 +215,7 @@ struct DesktopRoot: View {
                     .padding(.horizontal, 10)
                     .padding(.bottom, 4)
 
-                    settingsButton(expanded: true)
+                    DesktopSidebarNavButton(title: "设置", icon: "gearshape", isSelected: false, keycap: commandHeld ? "⌘," : nil, accessibilityID: nil, action: onOpenSettings)
                 }
                 .padding(.horizontal, 10)
                 .padding(.bottom, 16)
@@ -222,72 +230,96 @@ struct DesktopRoot: View {
                 .padding(.bottom, 12)
 
                 VStack(spacing: 5) {
-                    compactDestination("首页", icon: "house", selection: "chat", shortcutKey: "1")
-                    compactDestination("记忆", icon: "brain", selection: "memory", shortcutKey: "2")
-                    compactDestination("转录", icon: "waveform", selection: "sources", shortcutKey: "3")
+                    DesktopSidebarIconButton(title: "首页", helpText: "首页（⌘1）", icon: "house", isSelected: selection == "chat", accessibilityID: "desktop.destination.chat") {
+                        onSelect("chat")
+                    }
+                    DesktopSidebarIconButton(title: "记忆", helpText: "记忆（⌘2）", icon: "brain", isSelected: selection == "memory", accessibilityID: "desktop.destination.memory") {
+                        onSelect("memory")
+                    }
+                    DesktopSidebarIconButton(title: "转录", helpText: "转录（⌘3）", icon: "waveform", isSelected: selection == "sources", accessibilityID: "desktop.destination.sources") {
+                        onSelect("sources")
+                    }
                 }
 
                 Spacer(minLength: 24)
 
                 VStack(spacing: 10) {
                     Circle()
-                        .fill(online ? MoMoPalette.success : MoMoPalette.muted.opacity(0.45))
-                        .frame(width: 7, height: 7)
+                        .fill(online ? MoMoPalette.ink.opacity(0.72) : MoMoPalette.muted.opacity(0.4))
+                        .frame(width: 6.5, height: 6.5)
                         .help(online ? "MoMo 正在运行" : "MoMo 尚未运行")
                         .accessibilityLabel(online ? "MoMo 正在运行" : "MoMo 尚未运行")
 
-                    settingsButton(expanded: false)
+                    DesktopSidebarIconButton(title: "设置", helpText: "设置（⌘,）", icon: "gearshape", isSelected: false, accessibilityID: nil, action: onOpenSettings)
                 }
                 .padding(.bottom, 16)
+            }
+        }
+        .onAppear {
+            if flagsMonitor == nil {
+                flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+                    let onlyCmd = event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command
+                    if commandHeld != onlyCmd {
+                        commandHeld = onlyCmd
+                    }
+                    return event
+                }
+            }
+        }
+        .onDisappear {
+            if let monitor = flagsMonitor {
+                NSEvent.removeMonitor(monitor)
+                flagsMonitor = nil
             }
         }
     }
 
     private var sidebarToggle: some View {
-        Button {
-            withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+        DesktopSidebarToggleButton(sidebarVisible: sidebarVisible) {
+            withAnimation(reducedMotion ? nil : .spring(duration: 0.22, bounce: 0.0)) {
                 sidebarVisible.toggle()
             }
-        } label: {
+        }
+    }
+}
+
+private struct DesktopSidebarToggleButton: View {
+    let sidebarVisible: Bool
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
             Image(systemName: "sidebar.left")
                 .font(.system(size: 13.5, weight: .regular))
-                .foregroundStyle(toggleHovered ? MoMoPalette.ink : MoMoPalette.muted)
+                .foregroundStyle(hovered ? MoMoPalette.ink : MoMoPalette.muted)
                 .frame(width: 28, height: 28)
                 .background(
-                    toggleHovered ? MoMoPalette.hoverFill : Color.clear,
+                    hovered ? MoMoPalette.hoverFill : Color.clear,
                     in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
-        .onHover { toggleHovered = $0 }
+        .onHover { hovered = $0 }
         .help(sidebarVisible ? "收起侧栏（⌃⌘S）" : "展开侧栏（⌃⌘S）")
         .accessibilityLabel(sidebarVisible ? "收起侧栏" : "显示侧栏")
         .accessibilityIdentifier("desktop.sidebarToggle")
         .keyboardShortcut("s", modifiers: [.command, .control])
     }
+}
 
-    private func keycapBadge(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-            .foregroundStyle(MoMoPalette.muted)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1.5)
-            .background(MoMoPalette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 4.5, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 4.5, style: .continuous)
-                    .strokeBorder(MoMoPalette.borderSubtle, lineWidth: 0.5)
-            }
-            .transition(.opacity)
-            .accessibilityHidden(true)
-    }
+private struct DesktopSidebarNavButton: View {
+    let title: String
+    let icon: String
+    let isSelected: Bool
+    let keycap: String?
+    let accessibilityID: String?
+    let action: () -> Void
+    @State private var hovered = false
 
-    private func destination(_ title: String, icon: String, selection: String, shortcutKey: Character) -> some View {
-        let isSelected = model.selection == selection
-        let isHovered = hoveredSidebarItem == selection
-        return Button {
-            model.selection = selection
-        } label: {
+    var body: some View {
+        let btn = Button(action: action) {
             HStack(spacing: 9) {
                 Image(systemName: icon)
                     .font(.system(size: 13.5, weight: isSelected ? .medium : .regular))
@@ -298,109 +330,71 @@ struct DesktopRoot: View {
                     .font(.system(size: 13, weight: isSelected ? .medium : .regular))
                     .foregroundStyle(isSelected ? MoMoPalette.ink : MoMoPalette.ink.opacity(0.84))
                 Spacer(minLength: 4)
-                if commandHeld {
-                    keycapBadge("⌘\(shortcutKey)")
+                if let keycap {
+                    Text(keycap)
+                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(MoMoPalette.muted)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(MoMoPalette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 4.5, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                                .strokeBorder(MoMoPalette.borderSubtle, lineWidth: 0.5)
+                        }
+                        .accessibilityHidden(true)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 33, alignment: .leading)
             .padding(.horizontal, 10)
             .background(
-                isSelected ? MoMoPalette.activeFill : (isHovered ? MoMoPalette.hoverFill : Color.clear),
+                isSelected ? MoMoPalette.activeFill : (hovered ? MoMoPalette.hoverFill : Color.clear),
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(MoMoPressableButtonStyle(scale: 0.985))
-        .onHover { hovering in
-            if hovering { hoveredSidebarItem = selection }
-            else if hoveredSidebarItem == selection { hoveredSidebarItem = nil }
-        }
-        .accessibilityIdentifier("desktop.destination." + selection)
+        .onHover { hovered = $0 }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
 
-    private func compactDestination(_ title: String, icon: String, selection: String, shortcutKey: Character) -> some View {
-        let isSelected = model.selection == selection
-        let isHovered = hoveredSidebarItem == selection
-        return Button {
-            model.selection = selection
-        } label: {
+        if let accessibilityID {
+            btn.accessibilityIdentifier(accessibilityID)
+        } else {
+            btn
+        }
+    }
+}
+
+private struct DesktopSidebarIconButton: View {
+    let title: String
+    let helpText: String
+    let icon: String
+    let isSelected: Bool
+    let accessibilityID: String?
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        let btn = Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 14.5, weight: isSelected ? .medium : .regular))
-                .foregroundStyle(isSelected ? MoMoPalette.ink : MoMoPalette.muted)
+                .foregroundStyle(isSelected || hovered ? MoMoPalette.ink : MoMoPalette.muted)
                 .frame(width: 36, height: 34)
                 .background(
-                    isSelected ? MoMoPalette.activeFill : (isHovered ? MoMoPalette.hoverFill : Color.clear),
+                    isSelected ? MoMoPalette.activeFill : (hovered ? MoMoPalette.hoverFill : Color.clear),
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
-        .onHover { hovering in
-            if hovering { hoveredSidebarItem = selection }
-            else if hoveredSidebarItem == selection { hoveredSidebarItem = nil }
-        }
-        .help("\(title)（⌘\(shortcutKey)）")
+        .onHover { hovered = $0 }
+        .help(helpText)
         .accessibilityLabel(LocalizedStringKey(title))
-        .accessibilityIdentifier("desktop.destination." + selection)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
 
-    @ViewBuilder
-    private func settingsButton(expanded: Bool) -> some View {
-        let isHovered = hoveredSidebarItem == "settings"
-        if expanded {
-            Button {
-                openWindow(id: MoMoAgentMacApp.settingsID)
-            } label: {
-                HStack(spacing: 9) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 13.5, weight: .regular))
-                        .foregroundStyle(MoMoPalette.muted)
-                        .frame(width: 18)
-                        .accessibilityHidden(true)
-                    Text("设置")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(MoMoPalette.ink.opacity(0.84))
-                    Spacer(minLength: 4)
-                    if commandHeld {
-                        keycapBadge("⌘,")
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: 33, alignment: .leading)
-                .padding(.horizontal, 10)
-                .background(
-                    isHovered ? MoMoPalette.hoverFill : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-            .buttonStyle(MoMoPressableButtonStyle(scale: 0.985))
-            .onHover { hovering in
-                if hovering { hoveredSidebarItem = "settings" }
-                else if hoveredSidebarItem == "settings" { hoveredSidebarItem = nil }
-            }
+        if let accessibilityID {
+            btn.accessibilityIdentifier(accessibilityID)
         } else {
-            Button {
-                openWindow(id: MoMoAgentMacApp.settingsID)
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 14.5, weight: .regular))
-                    .foregroundStyle(isHovered ? MoMoPalette.ink : MoMoPalette.muted)
-                    .frame(width: 36, height: 34)
-                    .background(
-                        isHovered ? MoMoPalette.hoverFill : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-            .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
-            .onHover { hovering in
-                if hovering { hoveredSidebarItem = "settings" }
-                else if hoveredSidebarItem == "settings" { hoveredSidebarItem = nil }
-            }
-            .help("设置（⌘,）")
-            .accessibilityLabel("设置")
+            btn
         }
     }
 }

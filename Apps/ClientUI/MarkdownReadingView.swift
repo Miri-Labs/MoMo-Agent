@@ -87,8 +87,22 @@ enum MacMarkdownRenderer {
     private static let dynamicLinkColor = NSColor(name: nil) { appearance in
         let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         return isDark
-            ? NSColor(srgbRed: 0.54, green: 0.73, blue: 0.93, alpha: 1.0)
-            : NSColor(srgbRed: 0.18, green: 0.39, blue: 0.62, alpha: 1.0)
+            ? NSColor(srgbRed: 0.96, green: 0.96, blue: 0.96, alpha: 1.0)
+            : NSColor(srgbRed: 0.11, green: 0.11, blue: 0.11, alpha: 1.0)
+    }
+
+    private static let dynamicLinkUnderlineColor = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return isDark
+            ? NSColor(white: 1.0, alpha: 0.28)
+            : NSColor(white: 0.0, alpha: 0.24)
+    }
+
+    private static let dynamicLinkPillBackground = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return isDark
+            ? NSColor(white: 1.0, alpha: 0.075)
+            : NSColor(white: 0.0, alpha: 0.045)
     }
 
     private static let dynamicCodeBackground = NSColor(name: nil) { appearance in
@@ -104,7 +118,7 @@ enum MacMarkdownRenderer {
         hasher.combine(plainTextOnly)
         hasher.combine(markdown.utf8.count)
         hasher.combine(markdown)
-        return "\(markdown.utf8.count):\(handwriting ? 1 : 0):\(plainTextOnly ? 1 : 0):\(hasher.finalize())"
+        return "v3:\(markdown.utf8.count):\(handwriting ? 1 : 0):\(plainTextOnly ? 1 : 0):\(hasher.finalize())"
     }
 
     nonisolated static func prewarm(_ markdown: String, handwriting: Bool = true, plainTextOnly: Bool = false) {
@@ -163,28 +177,28 @@ enum MacMarkdownRenderer {
                 let isFirst = index == 0
                 let isLast = index == total - 1
 
-                let (fontSize, baseWeight): (CGFloat, NSFont.Weight) = {
+                let (fontSize, baseWeight, trackingPts): (CGFloat, NSFont.Weight, CGFloat) = {
                     if block.isCode {
-                        return (12.5, .regular)
+                        return (12.2, .regular, 0.0)
                     }
                     if handwriting {
                         switch block.headingLevel {
-                        case 1: return (16.5, .semibold)
-                        case 2: return (15.0, .semibold)
-                        case .some: return (14.0, .medium)
-                        case .none: return (13.8, .regular)
+                        case 1: return (16.5, .semibold, -0.24)
+                        case 2: return (14.6, .medium, -0.14)
+                        case .some: return (13.8, .medium, -0.06)
+                        case .none: return (13.8, .regular, 0.0)
                         }
                     } else {
                         switch block.headingLevel {
-                        case 1: return (PhoneTextStyle.heading.size, .medium)
-                        case 2: return (PhoneTextStyle.subheading.size, .medium)
-                        case .some: return (PhoneTextStyle.section.size, .medium)
-                        case .none: return (PhoneTextStyle.body.size, .regular)
+                        case 1: return (PhoneTextStyle.heading.size, .semibold, -0.28)
+                        case 2: return (PhoneTextStyle.subheading.size, .medium, -0.14)
+                        case .some: return (PhoneTextStyle.section.size, .medium, -0.06)
+                        case .none: return (PhoneTextStyle.body.size, .regular, 0.0)
                         }
                     }
                 }()
 
-                let quoteIndent: CGFloat = block.isQuote ? 13.0 : 0.0
+                let quoteIndent: CGFloat = block.isQuote ? 14.0 : 0.0
                 let nestedListIndent = CGFloat(max(0, block.listDepth - 1)) * indentStep
                 let firstLineIndent = quoteIndent + nestedListIndent
                 let bodyIndent = block.listDepth > 0 ? (firstLineIndent + indentStep) : firstLineIndent
@@ -197,23 +211,31 @@ enum MacMarkdownRenderer {
                     paragraphStyle.defaultTabInterval = indentStep
                 }
                 paragraphStyle.lineSpacing = handwriting
-                    ? (block.headingLevel != nil ? 2.5 : 5.0)
-                    : (block.headingLevel != nil ? 2.0 : 4.5)
-                paragraphStyle.paragraphSpacingBefore = (block.headingLevel != nil && !isFirst) ? 10.0 : 0.0
+                    ? (block.headingLevel != nil ? 3.2 : 6.4)
+                    : (block.headingLevel != nil ? 2.8 : 5.8)
+                paragraphStyle.paragraphSpacingBefore = {
+                    guard !isFirst else { return 0.0 }
+                    switch block.headingLevel {
+                    case 1: return 24.0
+                    case 2: return 21.0
+                    case .some: return 16.0
+                    case .none: return 0.0
+                    }
+                }()
                 paragraphStyle.paragraphSpacing = isLast
                     ? 0.0
-                    : (block.headingLevel != nil ? 5.0 : (block.listDepth > 0 ? 4.5 : 7.0))
+                    : (block.headingLevel != nil ? 6.5 : (block.listDepth > 0 ? 6.0 : 10.5))
 
                 let blockStart = out.length
 
                 if block.listDepth > 0 {
                     let markerText = (block.listMarker ?? "•") + "\t"
-                    let markerFont = NSFont.monospacedDigitSystemFont(ofSize: max(12, fontSize - 0.5), weight: .regular)
+                    let markerFont = NSFont.monospacedDigitSystemFont(ofSize: 11.0, weight: .regular)
                     out.append(NSAttributedString(
                         string: markerText,
                         attributes: [
                             .font: markerFont,
-                            .foregroundColor: mutedColor,
+                            .foregroundColor: mutedColor.withAlphaComponent(0.55),
                             .paragraphStyle: paragraphStyle,
                         ]
                     ))
@@ -226,17 +248,22 @@ enum MacMarkdownRenderer {
                     let isCode = block.isCode || inlineIntent.contains(.code)
                     let isBold = inlineIntent.contains(.stronglyEmphasized)
                     let isItalic = inlineIntent.contains(.emphasized)
+                    let hasLink = run.link != nil
 
                     let runFont: NSFont = {
                         if isCode {
                             return NSFont.monospacedSystemFont(
-                                ofSize: max(12, fontSize - 1.0),
-                                weight: isBold ? .semibold : .regular
+                                ofSize: 12.2,
+                                weight: isBold ? .medium : .regular
                             )
                         }
+                        // Use .medium instead of heavy .semibold for inline PingFang emphasis; headings keep crisp .semibold when bolded.
+                        let weight: NSFont.Weight = isBold
+                            ? (block.headingLevel != nil ? .semibold : .medium)
+                            : (hasLink ? .regular : baseWeight)
                         let base = NSFont.systemFont(
                             ofSize: fontSize,
-                            weight: isBold ? .semibold : baseWeight
+                            weight: weight
                         )
                         if isItalic {
                             return NSFontManager.shared.convert(base, toHaveTrait: .italicFontMask)
@@ -246,9 +273,12 @@ enum MacMarkdownRenderer {
 
                     var attrs: [NSAttributedString.Key: Any] = [
                         .font: runFont,
-                        .foregroundColor: run.link != nil ? dynamicLinkColor : (block.isQuote ? mutedColor : inkColor),
+                        .foregroundColor: hasLink ? dynamicLinkColor : (block.isQuote ? mutedColor : inkColor),
                         .paragraphStyle: paragraphStyle,
                     ]
+                    if trackingPts != 0 {
+                        attrs[.kern] = trackingPts
+                    }
                     if isCode && !block.isCode {
                         attrs[.backgroundColor] = dynamicCodeBackground
                     }
@@ -258,6 +288,11 @@ enum MacMarkdownRenderer {
                     if let url = run.link {
                         attrs[.link] = url
                         attrs[.cursor] = NSCursor.pointingHand
+                        attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                        attrs[.underlineColor] = dynamicLinkUnderlineColor
+                        if url.scheme?.lowercased() == "momoagent" {
+                            attrs[.backgroundColor] = dynamicLinkPillBackground
+                        }
                     }
                     out.append(NSAttributedString(string: slice, attributes: attrs))
                 }
