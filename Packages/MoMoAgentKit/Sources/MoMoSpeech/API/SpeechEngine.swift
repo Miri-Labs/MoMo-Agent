@@ -374,7 +374,8 @@ public final class SpeechEngine: @unchecked Sendable {
             detector.flush()
             detected += try detector.drain()
             return DictationWindows.make(detected, sampleCount: samples.count,
-                maximumFrames: Int(configuration.maximumCoreFrames), padding: Int(configuration.paddingFrames))
+                maximumFrames: Int(configuration.maximumCoreFrames), padding: Int(configuration.paddingFrames),
+                model: recognitionModel)
         }
         var text: [String] = []
         for range in ranges {
