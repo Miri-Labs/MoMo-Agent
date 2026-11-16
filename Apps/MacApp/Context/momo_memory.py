@@ -66,16 +66,19 @@ _MATCH_FOLD = str.maketrans({
 MEMORY_SCHEMA = {
     "name": "memory",
     "description": (
-        "Save durable facts to persistent shared Markdown memory (`MEMORY.md` and `USER.md`) "
-        "that survive across sessions and are injected into every future turn.\n\n"
+        "Save durable understanding to persistent shared Markdown memory (`MEMORY.md` and `USER.md`) "
+        "that survives across sessions and is injected into every future turn. Write for the next conversation: "
+        "memory is not a transcript, transaction log, or work ledger, and ephemeral states (current battery %, "
+        "one-off tool retries, or transient telemetry) do not belong here.\n\n"
         "HOW: make ALL your changes to one target in ONE call via an 'operations' array "
         "(each item: {action, content?, old_text?}). The batch applies atomically and the char "
         "limit is checked only on the FINAL result — so a single call can remove/patch stale "
-        "entries to free room AND add new ones. Use bare action/content/old_text fields only "
-        "for a single change.\n\n"
-        "TARGETS: 'user' = who the user is (name, role, preferences, communication style). "
-        "'memory' = shared core index (active goals, key conventions, cross-session anchors). "
-        "Put detailed daily logs, project hierarchies, person profiles, and domain notes into the `notebook` tool "
+        "entries to free room AND add new ones. Reconcile or remove superseded facts when outcomes change. "
+        "Use bare action/content/old_text fields only for a single change.\n\n"
+        "TARGETS: 'user' = who the user is (name, role, enduring preferences, communication style). "
+        "'memory' = shared core index (active goals, standing commitments, key conventions, cross-session anchors). "
+        "Put detailed daily logs, project hierarchies, person profiles, proactive preferences (`PROACTIVE_PREFERENCES.md`), "
+        "and domain notes into the `notebook` tool "
         "(supporting multi-level folders like `projects/<project>/<doc>.md`, `journal/YYYY-MM/YYYY-MM-DD.md`, `people/...`, or custom directories) rather than overflowing `MEMORY.md`."
     ),
     "parameters": {
@@ -893,6 +896,8 @@ class MoMoMemory:
                 raise ValueError("Use the 'memory' / 'update_core_memory' tool to edit MEMORY.md or USER.md.")
             if upper_single in {"BRIEFING.MD", "BRIEFING"}:
                 return "briefing", "BRIEFING", "BRIEFING.md", self.memories_dir / "BRIEFING.md"
+            if upper_single in {"PROACTIVE_PREFERENCES.MD", "PROACTIVE_PREFERENCES", "PROACTIVE-PREFERENCES.MD", "PROACTIVE-PREFERENCES"}:
+                return "note", "PROACTIVE_PREFERENCES", "PROACTIVE_PREFERENCES.md", self.memories_dir / "PROACTIVE_PREFERENCES.md"
             raw_parts = [p for p in raw_path.split("/") if p.strip()]
             if not raw_parts or len(raw_parts) > _MAX_NOTEBOOK_DEPTH:
                 raise ValueError(f"Notebook path must have 1..{_MAX_NOTEBOOK_DEPTH} segments")
@@ -904,6 +909,8 @@ class MoMoMemory:
                 raise ValueError("Use the 'memory' / 'update_core_memory' tool to edit MEMORY.md or USER.md.")
             if len(clean_parts) == 1 and clean_parts[0].upper() == "BRIEFING":
                 return "briefing", "BRIEFING", "BRIEFING.md", self.memories_dir / "BRIEFING.md"
+            if len(clean_parts) == 1 and clean_parts[0].upper() in {"PROACTIVE_PREFERENCES", "PROACTIVE-PREFERENCES"}:
+                return "note", "PROACTIVE_PREFERENCES", "PROACTIVE_PREFERENCES.md", self.memories_dir / "PROACTIVE_PREFERENCES.md"
             if len(clean_parts) >= 2 and clean_parts[0].lower() in _STANDARD_ROOT_FOLDERS:
                 kind = _STANDARD_ROOT_FOLDERS[clean_parts[0].lower()]
                 clean_parts[0] = _CANONICAL_FOLDER_FOR_KIND[kind]
@@ -921,6 +928,8 @@ class MoMoMemory:
         norm_cat = self._normalize_notebook_category(raw_cat)
         if norm_cat == "briefing" and not raw_slug:
             return "briefing", "BRIEFING", "BRIEFING.md", self.memories_dir / "BRIEFING.md"
+        if norm_cat in ("proactive_preferences", "proactive-preferences") and not raw_slug:
+            return "note", "PROACTIVE_PREFERENCES", "PROACTIVE_PREFERENCES.md", self.memories_dir / "PROACTIVE_PREFERENCES.md"
         if norm_cat in ("memory", "user"):
             raise ValueError("Use the 'memory' / 'update_core_memory' tool to edit MEMORY.md or USER.md.")
 
@@ -951,6 +960,8 @@ class MoMoMemory:
             raise ValueError("Use the 'memory' / 'update_core_memory' tool to edit MEMORY.md or USER.md.")
         if len(combined) == 1 and combined[0].upper() == "BRIEFING":
             return "briefing", "BRIEFING", "BRIEFING.md", self.memories_dir / "BRIEFING.md"
+        if len(combined) == 1 and combined[0].upper() in {"PROACTIVE_PREFERENCES", "PROACTIVE-PREFERENCES"}:
+            return "note", "PROACTIVE_PREFERENCES", "PROACTIVE_PREFERENCES.md", self.memories_dir / "PROACTIVE_PREFERENCES.md"
 
         if len(combined) >= 2 and combined[0].lower() in _STANDARD_ROOT_FOLDERS:
             kind = _STANDARD_ROOT_FOLDERS[combined[0].lower()]
