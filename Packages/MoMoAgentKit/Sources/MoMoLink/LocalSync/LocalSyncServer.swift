@@ -10,17 +10,20 @@ public struct LocalSyncHandlers: Sendable {
     public let libraryInstanceID: UUID
     public let receiveChunk: @Sendable (ManifestEnvelope, Data) async throws -> Receipt
     public let applyReceipts: @Sendable ([ReceiptApplied]) async throws -> Int
+    public let reconcile: (@Sendable (ReconcileRequest) async throws -> ReconcileResponse)?
 
     public init(
         receiverDeviceID: UUID,
         libraryInstanceID: UUID,
         receiveChunk: @escaping @Sendable (ManifestEnvelope, Data) async throws -> Receipt,
-        applyReceipts: @escaping @Sendable ([ReceiptApplied]) async throws -> Int
+        applyReceipts: @escaping @Sendable ([ReceiptApplied]) async throws -> Int,
+        reconcile: (@Sendable (ReconcileRequest) async throws -> ReconcileResponse)? = nil
     ) {
         self.receiverDeviceID = receiverDeviceID
         self.libraryInstanceID = libraryInstanceID
         self.receiveChunk = receiveChunk
         self.applyReceipts = applyReceipts
+        self.reconcile = reconcile
     }
 }
 
@@ -273,6 +276,13 @@ public final class LocalSyncServer: @unchecked Sendable {
                 }
                 let applied = try await handlers.applyReceipts(items)
                 return ("200 OK", try WireJSON.encode(LocalSyncReceiptsAckResponse(applied: applied)), !wantsClose)
+            case ("POST", "/v1/reconcile"):
+                guard let reconcile = handlers.reconcile else {
+                    return ("404 Not Found", Data("{\"error\":\"not_found\"}".utf8), false)
+                }
+                let reconcileRequest = try WireJSON.decode(ReconcileRequest.self, from: request.body)
+                let response = try await reconcile(reconcileRequest)
+                return ("200 OK", try WireJSON.encode(response), !wantsClose)
             default:
                 return ("404 Not Found", Data("{\"error\":\"not_found\"}".utf8), false)
             }

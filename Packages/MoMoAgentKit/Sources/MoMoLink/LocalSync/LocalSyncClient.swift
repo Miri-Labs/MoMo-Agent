@@ -192,6 +192,41 @@ public final class LocalSyncClient: @unchecked Sendable {
         return try WireJSON.decode(LocalSyncReceiptsAckPayload.self, from: responseData).applied
     }
 
+    public func reconcile(
+        route: LocalSyncRoute,
+        request: ReconcileRequest
+    ) async throws -> ReconcileResponse {
+        let body = try WireJSON.encode(request)
+        let responseData: Data
+        switch route.transport {
+        case .directWiFi:
+            #if canImport(Network)
+            responseData = try await pool.request(
+                route: route,
+                method: "POST",
+                path: "/v1/reconcile",
+                extraHeaders: [],
+                body: body,
+                timeoutSeconds: 10)
+            #else
+            throw LocalSyncError.unreachable
+            #endif
+        case .urlSession:
+            responseData = try await requestURLSession(
+                route: route,
+                method: "POST",
+                path: "/v1/reconcile",
+                extraHeaders: [],
+                body: body,
+                timeoutSeconds: 10)
+        }
+        let response = try WireJSON.decode(ReconcileResponse.self, from: responseData)
+        guard try response.matches(request) else {
+            throw LocalSyncError.invalidResponse
+        }
+        return response
+    }
+
     private func probeURLSession(
         route: LocalSyncRoute,
         expectedReceiver: UUID,

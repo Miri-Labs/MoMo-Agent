@@ -86,6 +86,16 @@ enum PhoneComposition {
                             }
                         }
                         return applied
+                    },
+                    reconcile: { [weak receiver] request in
+                        let grant = PhoneConnectivityTask.beginSync()
+                        defer { grant.finish() }
+                        Task { @MainActor in
+                            receiver?.holdBackgroundSyncWindow(seconds: 15)
+                        }
+                        let response = try await archive.receiveReconcileRequest(request)
+                        try await archive.markReconcileResponseSubmitted(messageID: response.messageID)
+                        return response
                     }
                 )
             )

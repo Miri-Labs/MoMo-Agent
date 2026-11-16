@@ -324,18 +324,33 @@ public actor RecordingStore {
     public func markControlPreserved(_ message: ControlMessage, receiverDeviceID: UUID, libraryInstanceID: UUID) throws {
         guard let receiver = try boundReceiver(), receiver.deviceID == receiverDeviceID,
               receiver.libraryInstanceID == libraryInstanceID else { throw RecordingError.receiverMismatch }
+        if case .receiptAppliedBatch(let batch) = message {
+            try database.transaction {
+                try persistControlDelivery(message)
+                for item in batch.items {
+                    try persistControlDelivery(.receiptApplied(item))
+                    try database.execute("UPDATE receipts SET delivered=1 WHERE application_id=? AND delivered!=1",
+                                         [.text(item.messageID.uuidString)])
+                }
+            }
+            return
+        }
         switch message {
         case .epochEnded, .epochInterrupted, .captureMark, .receiptApplied, .deleteApplied: break
         default: return
         }
+        try persistControlDelivery(message)
+        if case .receiptApplied = message {
+            try database.execute("UPDATE receipts SET delivered=1 WHERE application_id=? AND delivered!=1", [.text(message.messageID.uuidString)])
+        }
+    }
+
+    private func persistControlDelivery(_ message: ControlMessage) throws {
         let hash = ContentHash.sha256(try WireJSON.encode(message))
         if let saved = try database.rows("SELECT payload_hash FROM control_deliveries WHERE id=?", [.text(message.messageID.uuidString)], read: { RecordingDatabase.text($0, 0) }).first {
             guard saved == hash else { throw RecordingError.contentConflict(message.messageID) }
         } else {
             try database.execute("INSERT INTO control_deliveries(id,payload_hash) VALUES(?,?)", [.text(message.messageID.uuidString), .text(hash)])
-        }
-        if case .receiptApplied = message {
-            try database.execute("UPDATE receipts SET delivered=1 WHERE application_id=? AND delivered!=1", [.text(message.messageID.uuidString)])
         }
     }
 
