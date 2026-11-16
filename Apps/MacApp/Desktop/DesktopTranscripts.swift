@@ -108,18 +108,26 @@ struct DesktopTranscriptSnapshot: Equatable, Sendable {
             if let ts = timestamp {
                 let startDate = Date(timeIntervalSince1970: ts)
                 let endDate = Date(timeIntervalSince1970: endTimestamp ?? ts)
-                let logicalStart = DayStartBoundary.logicalDayStart(for: startDate, calendar: calendar, startHour: dayStartHour)
+                var sourceCalendar = Calendar(identifier: .gregorian)
+                sourceCalendar.timeZone = TimeZone(secondsFromGMT: pair.window.timezoneOffset ?? 0) ?? .gmt
+                let naturalKey = pair.window.naturalDay ?? Self.dayKey(for: startDate, calendar: sourceCalendar)
+                let components = naturalKey.split(separator: "-").compactMap { Int($0) }
+                let logicalStart = components.count == 3
+                    ? calendar.date(from: DateComponents(year: components[0], month: components[1], day: components[2])) ?? calendar.startOfDay(for: startDate)
+                    : calendar.startOfDay(for: startDate)
                 if let currentEarliest = earliestDay {
                     if logicalStart < currentEarliest { earliestDay = logicalStart }
                 } else {
                     earliestDay = logicalStart
                 }
-                dayKeyValue = Self.dayKey(for: logicalStart, calendar: calendar)
-                let sText = startDate.formatted(Self.clockFormat)
-                let eText = endDate.formatted(Self.clockFormat)
+                dayKeyValue = naturalKey
+                var clock = Self.clockFormat
+                clock.timeZone = sourceCalendar.timeZone
+                let sText = startDate.formatted(clock)
+                let eText = endDate.formatted(clock)
                 let rText = sText == eText ? sText : "\(sText)–\(eText)"
-                rangeLabel = rText
-                let dayPrefix = startDate.formatted(.dateTime.locale(locale).month().day())
+                rangeLabel = rText + (pair.window.timezoneOffset == nil || pair.window.dateEvidence == "timezone_unknown" ? " · UTC（时区待确认）" : "")
+                let dayPrefix = logicalStart.formatted(.dateTime.locale(locale).month().day())
                 datedLabel = "\(dayPrefix) \(rText)"
             } else {
                 dayKeyValue = ""
@@ -163,8 +171,8 @@ struct DesktopTranscriptSnapshot: Equatable, Sendable {
 struct DesktopSources: View {
     @Bindable var model: DesktopModel
     var isActive: Bool = true
-    @State private var day = DayStartBoundary.logicalDayStart(for: Date())
-    @State private var observedToday = DayStartBoundary.logicalDayStart(for: Date())
+    @State private var day = Calendar.current.startOfDay(for: Date())
+    @State private var observedToday = Calendar.current.startOfDay(for: Date())
     @State private var selectedID: String?
     @State private var query = ""
     @State private var searching = false
@@ -172,10 +180,24 @@ struct DesktopSources: View {
     @State private var selectedIllustrationID: String?
     @State private var illustrationError: String?
     @State private var timelineAnchor: String?
+    @State private var savedAnchors: [String: String] = [:]
+    @State private var expandedDays: [String: Bool] = [:]
+    @State private var selectedSpanID: String?
+    private var selectedDayKey: String { DesktopTranscriptSnapshot.dayKey(for: day, calendar: calendar) }
+    private func isEarly(_ item: DesktopTranscriptWindow) -> Bool {
+        guard let timestamp = item.recordedAt else { return false }
+        return TranscriptReadingBoundary.isEarly(Date(timeIntervalSince1970: timestamp),
+            offset: item.window.timezoneOffset ?? 0, hour: model.dayStartHour)
+    }
+    private var earlyExpanded: Bool {
+        expandedDays[selectedDayKey] ?? TranscriptReadingBoundary.initiallyExpanded(
+            hasDaytime: visible.contains { !isEarly($0) }, isToday: calendar.isDate(day, inSameDayAs: logicalToday),
+            hour: model.dayStartHour)
+    }
     private let calendar = Calendar.current
 
     private func logicalDay(for date: Date) -> Date {
-        DayStartBoundary.logicalDayStart(for: date, calendar: calendar, startHour: model.dayStartHour)
+        calendar.startOfDay(for: date)
     }
 
     private var logicalToday: Date {
@@ -212,7 +234,7 @@ struct DesktopSources: View {
 
     private var dayIllustrations: [LifeIllustration] {
         let dayKey = DesktopTranscriptSnapshot.dayKey(for: day, calendar: calendar)
-        return illustrations.filter { $0.logicalDay == dayKey }
+        return illustrations.filter { $0.belongs(to: dayKey) }
     }
 
     private func overlaps(_ window: DesktopTranscriptWindow, illustration: LifeIllustration) -> Bool {
@@ -229,7 +251,10 @@ struct DesktopSources: View {
     }
 
     private var latestSelectableDay: Date {
-        max(earliest, max(logicalToday, calendar.startOfDay(for: day)))
+        let key = snapshot.windowsByDayKey.keys.max() ?? ""
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        let latest = parts.count == 3 ? calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) : nil
+        return max(logicalToday, latest ?? logicalToday)
     }
 
     var body: some View {
@@ -244,18 +269,19 @@ struct DesktopSources: View {
                 }
                 if wide { Divider() }
                 if let illustration = selectedIllustration {
-                    LifeIllustrationJourneyMapView(store: model.lifeIllustrations, initialID: illustration.id,
+                    LifeIllustrationJourneyMapView(store: model.lifeIllustrations, initialID: illustration.id, referenceDay: selectedDayKey,
                         close: closeIllustration, showSource: { showSource(for: $0) })
-                        .id(illustration.logicalDay)
+                        .id(selectedDayKey)
                         .frame(maxWidth: .infinity)
                 } else if let selected {
                     DesktopSourceReader(
                         model: model,
                         source: selected.source,
                         window: selected.window,
+                        initialSpanID: selectedSpanID,
                         close: wide ? nil : { selectedID = nil }
                     )
-                    .id(selected.id + selected.source.revision + (selected.summary ?? ""))
+                    .id(selected.id)
                     .frame(maxWidth: .infinity)
                 } else if wide {
                     ContentUnavailableView("选择一段转录", systemImage: "text.alignleft")
@@ -267,27 +293,28 @@ struct DesktopSources: View {
         .task(id: isActive) {
             guard isActive else { return }
             let initialToday = logicalToday
-            if day != initialToday && calendar.isDate(day, inSameDayAs: observedToday) {
-                day = initialToday
-            }
             observedToday = initialToday
             await model.loadContextIfStale(maxAge: 8)
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(12)) } catch { break }
                 let today = logicalToday
                 if today != observedToday {
-                    if calendar.isDate(day, inSameDayAs: observedToday) { day = today }
                     observedToday = today
                 }
                 await model.loadContext(silent: true)
             }
         }
         .onChange(of: model.dayStartHour) {
-            let today = logicalToday
-            if calendar.isDate(day, inSameDayAs: observedToday) || day > today {
-                day = today
-            }
-            observedToday = today
+            expandedDays.removeAll()
+            expandedDays[selectedDayKey] = TranscriptReadingBoundary.initiallyExpanded(
+                hasDaytime: visible.contains { !isEarly($0) }, isToday: calendar.isDate(day, inSameDayAs: logicalToday),
+                hour: model.dayStartHour)
+        }
+        .onChange(of: selectedDayKey) { _, new in
+            timelineAnchor = savedAnchors[new] ?? "masthead"
+        }
+        .onChange(of: timelineAnchor) { _, value in
+            if let value { savedAnchors[selectedDayKey] = value }
         }
         .onChange(of: snapshot.version) {
             if selectedID != nil && selected == nil { selectedID = nil }
@@ -310,6 +337,9 @@ struct DesktopSources: View {
             HStack(spacing: 12) {
                 Text("转录").font(.system(size: 22, weight: .semibold)).accessibilityAddTraits(.isHeader)
                 Spacer()
+                if !dayIllustrations.isEmpty {
+                    Button("当天贴纸") { timelineAnchor = "masthead" }.buttonStyle(.plain)
+                }
                 Button("刷新", systemImage: "arrow.clockwise") { Task { await model.loadContext() } }
                     .labelStyle(.iconOnly).buttonStyle(.plain).disabled(model.contextLoading)
                     .help("刷新转录").accessibilityIdentifier("desktop.transcripts.refresh")
@@ -326,18 +356,40 @@ struct DesktopSources: View {
                 }.padding(.horizontal, 24)
             }
             ScrollView {
-                let windows = visible
+                let early = visible.filter(isEarly)
+                let expanded = earlyExpanded
+                let windows = !query.isEmpty || expanded ? visible : visible.filter { !isEarly($0) }
+                LazyVStack(spacing: 0) {
+                Color.clear.frame(height: 1).id("masthead")
                 if !searching, query.isEmpty, !dayIllustrations.isEmpty {
                     LifeIllustrationStripView(items: dayIllustrations, store: model.lifeIllustrations, horizontalMargin: 16,
                         open: { selectedIllustrationID = $0.id }, showSource: { showSource(for: $0) },
                         failure: { illustrationError = $0 })
                         .padding(.bottom, 8)
                 }
-                LazyVStack(spacing: 0) {
+                    if query.isEmpty, !early.isEmpty {
+                        Button {
+                            expandedDays[selectedDayKey] = !expanded
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                                Text("凌晨记录 · \(early.count) 段")
+                                Spacer()
+                                Text("00:00–" + TranscriptReadingBoundary.label(for: model.dayStartHour))
+                            }.phoneText(.caption).foregroundStyle(MoMoPalette.muted).frame(minHeight: 44)
+                        }.buttonStyle(.plain).padding(.horizontal, 12)
+                            .accessibilityIdentifier("desktop.transcripts.early.toggle")
+                            .accessibilityValue(expanded ? "已展开" : "已折叠")
+                    }
                     ForEach(windows) { item in
                         VStack(alignment: .leading, spacing: 0) {
                             Button {
                                 closeIllustration()
+                                selectedSpanID = nil
+                                if !query.isEmpty {
+                                    selectSourceDay(item.logicalDayKey)
+                                    expandedDays[item.logicalDayKey] = true
+                                }
                                 selectedID = item.id
                             } label: {
                                 ClientTranscriptRow(
@@ -359,15 +411,19 @@ struct DesktopSources: View {
                         }
                         .id(item.id)
                     }
+                    if query.isEmpty, !early.isEmpty, !visible.contains(where: { !isEarly($0) }) {
+                        Text("当天暂无 \(TranscriptReadingBoundary.label(for: model.dayStartHour)) 后记录")
+                            .phoneText(.caption).foregroundStyle(MoMoPalette.muted)
+                    }
                     if windows.isEmpty && !model.contextLoading && model.memoryError == nil {
                         ContentUnavailableView(
                             query.isEmpty ? "这一天还没有转录" : "没有匹配的转录",
                             systemImage: "waveform",
                             description: Text(query.isEmpty ? "手机同步的录音稿会按日期出现在这里。" : "搜索范围为已同步的摘要与原文片段。")
                         )
-                        if query.isEmpty, let latest = snapshot.latestRecordedAt,
-                           !calendar.isDate(logicalDay(for: Date(timeIntervalSince1970: latest)), inSameDayAs: day) {
-                            Button("查看最近的转录") { day = logicalDay(for: Date(timeIntervalSince1970: latest)) }
+                        if query.isEmpty, snapshot.latestRecordedAt != nil,
+                           snapshot.ordered.last?.logicalDayKey != selectedDayKey {
+                            Button("查看最近的转录") { if let key = snapshot.ordered.last?.logicalDayKey { selectSourceDay(key) } }
                         }
                     }
                     if model.contextLoading && windows.isEmpty { ProgressView("正在读取记录").padding(24) }
@@ -377,6 +433,9 @@ struct DesktopSources: View {
                 Spacer().frame(height: 24)
             }
             .scrollPosition(id: $timelineAnchor, anchor: .top)
+            .onChange(of: visible.isEmpty, initial: true) { _, empty in
+                if !empty, expandedDays[selectedDayKey] == nil { expandedDays[selectedDayKey] = earlyExpanded }
+            }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -384,19 +443,30 @@ struct DesktopSources: View {
         selectedIllustrationID = nil
     }
 
+    private func selectSourceDay(_ key: String) {
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        if parts.count == 3, let date = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) { day = date }
+    }
+
     private func showSource(for illustration: LifeIllustration) {
+        let referenceKey = illustration.belongs(to: selectedDayKey) ? selectedDayKey : illustration.primaryDay
+        let anchor = illustration.transcriptAnchor(on: referenceKey)
+        let key = anchor?.day ?? referenceKey
         guard let source = snapshot.ordered.first(where: {
-            illustration.sourceIds.contains($0.source.id) && overlaps($0, illustration: illustration)
+            $0.logicalDayKey == key && illustration.sourceIds.contains($0.source.id)
+                && overlaps($0, illustration: illustration)
+                && (anchor == nil || (($0.recordedAt ?? 0) <= anchor!.recordedAt && ($0.endAt ?? 0) >= anchor!.recordedAt))
         }) else {
             illustrationError = String(localized: "原始转录尚未同步。")
             return
         }
         closeIllustration()
-        query = ""
-        if let recordedAt = source.recordedAt {
-            day = logicalDay(for: Date(timeIntervalSince1970: recordedAt))
-        }
+        query = ""; searching = false
+        selectSourceDay(key)
+        expandedDays[key] = true
+        selectedSpanID = anchor?.spanId
         selectedID = source.id
+        savedAnchors[key] = source.id
         timelineAnchor = source.id
     }
 
@@ -420,7 +490,7 @@ struct DesktopSources: View {
                 }.padding(20).frame(width: 300)
             }
             Button { moveDay(1) } label: { Image(systemName: "chevron.right").frame(width: 36, height: 44) }
-                .disabled(calendar.isDate(day, inSameDayAs: logicalToday) || day >= logicalToday || !query.isEmpty).accessibilityLabel("后一天")
+                .disabled(day >= latestSelectableDay || !query.isEmpty).accessibilityLabel("后一天")
             Button { searching.toggle(); if !searching { query = "" } } label: {
                 Image(systemName: searching ? "xmark" : "magnifyingglass").frame(width: 36, height: 44)
             }.accessibilityLabel(searching ? "关闭搜索" : "搜索转录")
@@ -448,6 +518,9 @@ struct DesktopSourceReader: View {
     let model: DesktopModel
     let source: ContextSource
     var window: ContextSourceWindow? = nil
+    var initialSpanID: String? = nil
+    @State private var readerAnchor: String?
+    @State private var readRequest: UUID?
     var close: (() -> Void)?
     var onDiscuss: (() -> Void)? = nil
     @State private var page: SourceTextPage?
@@ -470,12 +543,26 @@ struct DesktopSourceReader: View {
         return next < endOffset
     }
 
+    private var sourceCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: window?.timezoneOffset ?? 0) ?? .gmt
+        return calendar
+    }
+
+    private func spanClock(_ timestamp: Double, offset: Int?) -> String {
+        var format = Self.secondFormat
+        format.timeZone = TimeZone(secondsFromGMT: offset ?? window?.timezoneOffset ?? 0) ?? .gmt
+        return Date(timeIntervalSince1970: timestamp).formatted(format)
+    }
+
     private var headerTimeLabel: String {
         guard let timestamp = recordedAt else { return "" }
         let start = Date(timeIntervalSince1970: timestamp)
         let end = Date(timeIntervalSince1970: endAt ?? timestamp)
-        let startLabel = start.formatted(Self.clockFormat)
-        let endLabel = end.formatted(Self.clockFormat)
+        var clock = Self.clockFormat
+        clock.timeZone = TimeZone(secondsFromGMT: window?.timezoneOffset ?? 0) ?? .gmt
+        let startLabel = start.formatted(clock)
+        let endLabel = end.formatted(clock)
         return startLabel == endLabel ? startLabel : "\(startLabel)–\(endLabel)"
     }
 
@@ -497,7 +584,7 @@ struct DesktopSourceReader: View {
                         if let timestamp = recordedAt {
                             let date = Date(timeIntervalSince1970: timestamp)
                             TranscriptDetailDateHeader(
-                                date: date.formatted(.dateTime.locale(AppLanguage.current.locale).year().month().day()),
+                                date: window?.naturalDay ?? DesktopTranscriptSnapshot.dayKey(for: date, calendar: sourceCalendar),
                                 time: headerTimeLabel
                             )
                         }
@@ -511,7 +598,7 @@ struct DesktopSourceReader: View {
                         ForEach(visibleSpans) { span in
                             VStack(alignment: .leading, spacing: 6) {
                                 if let spanTime = span.recordedAt {
-                                    Text(Date(timeIntervalSince1970: spanTime).formatted(Self.secondFormat))
+                                    Text(spanClock(spanTime, offset: span.timezoneOffset))
                                         .phoneText(.caption)
                                         .foregroundStyle(MoMoPalette.muted)
                                         .monospacedDigit()
@@ -521,7 +608,7 @@ struct DesktopSourceReader: View {
                                     accessibilityID: "transcript.text.\(span.id)"
                                 )
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                            }
+                            }.id(span.id)
                         }
                     } else if !text.isEmpty {
                         TranscriptParagraphText(text: text, accessibilityID: "desktop.source.text")
@@ -529,15 +616,16 @@ struct DesktopSourceReader: View {
                     }
 
                     if hasMore || error != nil {
-                        Button(error == nil ? "继续读取原文" : "重试读取") { Task { await more() } }
+                        Button(error == nil ? "继续读取原文" : "重试读取") { Task { await more(replacing: error != nil) } }
                             .buttonStyle(.plain).disabled(loading)
                     }
                     if loading { ProgressView("正在读取原文") }
                     if let error { Text(error).phoneText(.metadata).foregroundStyle(MoMoPalette.failure) }
                 }
+                .scrollTargetLayout()
                 .padding(.horizontal, 24).padding(.bottom, 24)
                 .frame(maxWidth: 680, alignment: .leading).frame(maxWidth: .infinity)
-            }
+            }.scrollPosition(id: $readerAnchor, anchor: .top)
         }
         .safeAreaInset(edge: .bottom) {
             if !text.isEmpty {
@@ -551,34 +639,43 @@ struct DesktopSourceReader: View {
                 }.frame(maxWidth: 680).frame(maxWidth: .infinity)
             }
         }
-        .task { await more() }
+        .task(id: source.revision) { await more(replacing: true) }
+        .task(id: initialSpanID) {
+            if let initialSpanID, spans.contains(where: { $0.id == initialSpanID }) { readerAnchor = initialSpanID }
+        }
     }
 
-    private func more() async {
-        guard !loading, hasMore else { return }
-        loading = true; defer { loading = false }
+    private func more(replacing: Bool = false) async {
+        guard replacing || (!loading && hasMore) else { return }
+        let request = UUID()
+        readRequest = request
+        loading = true
+        defer { if readRequest == request { loading = false } }
+        var nextPage = replacing ? nil : page
+        var nextText = replacing ? "" : text
+        var nextSpans = replacing ? [] : spans
         do {
-            while hasMore {
-                let currentOffset = page?.nextOffset ?? startOffset
-                let remaining = max(1, endOffset - currentOffset)
-                let limit = min(4000, remaining)
-                let next = try await model.readSource(source, offset: currentOffset, limit: limit)
+            while nextPage == nil || (nextPage?.nextOffset.map { $0 < endOffset } ?? false) {
+                let currentOffset = nextPage?.nextOffset ?? startOffset
+                let next = try await model.readSource(source, offset: currentOffset, limit: min(4000, max(1, endOffset - currentOffset)))
                 try Task.checkCancellation()
-                if !text.isEmpty && !next.text.isEmpty {
-                    text += "\n" + next.text
-                } else {
-                    text += next.text
-                }
-                if let nextSpans = next.spans {
-                    let existingIDs = Set(spans.map(\.id))
-                    for span in nextSpans where !existingIDs.contains(span.id) {
-                        spans.append(span)
-                    }
-                }
-                page = next
-                error = nil
+                guard next.end > currentOffset || next.nextOffset == nil else { throw URLError(.cannotParseResponse) }
+                nextText += next.text
+                let existing = Set(nextSpans.map(\.id))
+                nextSpans += (next.spans ?? []).filter { !existing.contains($0.id) }
+                nextPage = next
             }
-        } catch is CancellationError {} catch { self.error = error.localizedDescription }
+            guard readRequest == request else { return }
+            let savedAnchor = readerAnchor
+            text = nextText; spans = nextSpans; page = nextPage; error = nil
+            if let savedAnchor, nextSpans.contains(where: { $0.id == savedAnchor }) {
+                readerAnchor = savedAnchor
+            } else if let initialSpanID, nextSpans.contains(where: { $0.id == initialSpanID }) {
+                readerAnchor = initialSpanID
+            }
+        } catch is CancellationError {} catch {
+            if readRequest == request { self.error = error.localizedDescription }
+        }
     }
 }
 

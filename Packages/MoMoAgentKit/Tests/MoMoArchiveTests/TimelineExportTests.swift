@@ -4,8 +4,8 @@ import MoMoContracts
 @testable import MoMoArchive
 
 struct TimelineExportTests {
-    // 2026-10-20 08:00:00 +08:00 (default 08:00 recording-day boundary between 2026-10-19 and 2026-10-20).
-    private let boundary = ISO8601DateFormatter().date(from: "2026-10-20T00:00:00Z")!
+    // Natural midnight in the recording timezone.
+    private let boundary = ISO8601DateFormatter().date(from: "2026-10-19T16:00:00Z")!
 
     @Test func dayMatchesRecordingLocalDateAndIncludesMarksWithoutNeedingCaptureEndOrAudio() async throws {
         let f = try Fixture(); defer { f.remove() }
@@ -25,7 +25,7 @@ struct TimelineExportTests {
         #expect(markdown.contains("昨天的文字"))
         #expect(!markdown.contains("今天的文字"))
         #expect(markdown.contains("⚑"))
-        #expect(markdown.contains("2026-10-20 07:59:00 +08:00"))
+        #expect(markdown.contains("2026-10-19 23:59:00 +08:00"))
         try await store.validateExportSource(artifact)
         try await store.removeExport(artifact)
         #expect(!FileManager.default.fileExists(atPath: artifact.fileURLs[0].path))

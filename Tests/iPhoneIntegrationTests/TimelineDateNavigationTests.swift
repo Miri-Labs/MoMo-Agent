@@ -136,11 +136,11 @@ final class TimelineDateNavigationTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(30))
     }
 
-    func testTimelineAsyncLoadDefaultsToNewestAtBottom() async throws {
+    func testTimelineAsyncLoadStartsAtTheDayMasthead() async throws {
         try await assertInitialPosition(preloaded: false)
     }
 
-    func testTimelineCachedDayDefaultsToNewestAtBottom() async throws {
+    func testTimelineCachedDayStartsAtTheDayMasthead() async throws {
         try await assertInitialPosition(preloaded: true)
     }
 
@@ -236,8 +236,7 @@ final class TimelineDateNavigationTests: XCTestCase {
             window.layoutIfNeeded()
             scroll = verticalScrollView(in: window)
             if let scroll, model.timeline.listWindows[day]?.count == hours.count,
-               abs(scroll.contentOffset.y - max(-scroll.adjustedContentInset.top,
-                   scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)) < 3 { break }
+               abs(scroll.contentOffset.y + scroll.adjustedContentInset.top) < 3 { break }
         } while ContinuousClock.now < deadline
         // Let UIKit finish presenting the hosting window before measuring rendered text.
         try await Task.sleep(for: .milliseconds(500))
@@ -245,10 +244,11 @@ final class TimelineDateNavigationTests: XCTestCase {
         let content = try XCTUnwrap(scroll)
         XCTAssertEqual(content.contentOffset.x, -content.adjustedContentInset.left, accuracy: 1,
             "Vertical reading must not shift the page horizontally.")
-        XCTAssertEqual(content.contentOffset.y, max(-content.adjustedContentInset.top,
-            content.contentSize.height - content.bounds.height + content.adjustedContentInset.bottom), accuracy: 3,
-            "The first asynchronous archive load must land at the bottom.")
-        XCTAssertTrue(try visibleText().contains("19:00"), "The newest time belongs at the bottom.")
+        XCTAssertEqual(content.contentOffset.y, -content.adjustedContentInset.top, accuracy: 3,
+            "A new date starts at its masthead, leaving room for all of that day's stickers.")
+        let first = try XCTUnwrap(model.timeline.listWindows[day]?.first)
+        XCTAssertTrue(try visibleText().contains(TimelineDate.time(first.id.start, offset: first.id.timezoneOffset)),
+            "Read the date in chronological order, without jumping to the newest record.")
         if inTabs {
             for cycle in 0..<2 {
                 // Discover older archive pages while the user is reading a different day.
@@ -282,6 +282,7 @@ final class TimelineDateNavigationTests: XCTestCase {
                 add(attachment)
                 XCTAssertEqual(refreshed.contentOffset.x, -refreshed.adjustedContentInset.left, accuracy: 1,
                     "Replacing archive groups must not scroll the reading pane horizontally.")
+                let readingOffset = refreshed.contentOffset.y
                 selection.value = 0
                 try await Task.sleep(for: .milliseconds(200))
                 selection.value = 1
@@ -290,7 +291,8 @@ final class TimelineDateNavigationTests: XCTestCase {
                 let restored = try XCTUnwrap(verticalScrollView(in: window))
                 XCTAssertEqual(restored.contentOffset.x, -restored.adjustedContentInset.left, accuracy: 1,
                     "Returning to the transcript tab after refresh must preserve horizontal insets (cycle \(cycle)).")
-                XCTAssertTrue(try visibleText().contains("19:00"))
+                XCTAssertEqual(restored.contentOffset.y, readingOffset, accuracy: 3,
+                    "Returning to the date must preserve the previous reading position.")
             }
         }
     }
@@ -524,44 +526,25 @@ final class TimelineDateNavigationTests: XCTestCase {
         XCTAssertEqual(model.timeline.selectedDay, today)
     }
 
-    func testConfigurableDayStartBoundaryRegroupsEarlyMorningRecordingsImmediately() async throws {
+    func testReadingPreferenceRefreshKeepsSelectedNaturalDay() async throws {
         let root = temporaryRoot()
-        addTeardownBlock {
-            DayStartBoundary.setCurrentHour(DayStartBoundary.defaultHour)
-            try FileManager.default.removeItem(at: root)
-        }
-        DayStartBoundary.setCurrentHour(8)
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
         let archive = try ArchiveStore(rootURL: root, receiverDeviceID: UUID())
-        let calendar = Calendar.current
-        let baseDate = calendar.startOfDay(for: Date().addingTimeInterval(-3 * 86_400))
-        let precedingDay = TimelineDay(calendarDate: baseDate, calendar: calendar)
-        let calendarDay = precedingDay.adding(days: 1)
-        let earlyMorningAt = calendarDay.date(calendar: calendar).addingTimeInterval(2 * 3_600 + 1_800) // 02:30
-        let offset = TimeZone.current.secondsFromGMT(for: earlyMorningAt)
-        try await receive(archive, root: root, at: earlyMorningAt, offset: offset, frames: 960_000)
-
+        let day = TimelineDay(Date()).adding(days: -2)
+        let at = day.date().addingTimeInterval(2 * 3_600)
+        try await receive(archive, root: root, at: at, offset: TimeZone.current.secondsFromGMT(for: at))
         let model = LibraryModel(archive: archive, configurationFingerprint: nil)
-        await model.refresh()
-        await model.timeline.load(precedingDay)
-        await model.timeline.load(calendarDay)
-        XCTAssertFalse(model.timeline.snapshots[precedingDay, default: []].isEmpty, "At 08:00 boundary, 02:30 belongs to the preceding day.")
-        XCTAssertTrue(model.timeline.snapshots[calendarDay, default: []].isEmpty, "At 08:00 boundary, 02:30 does not appear on the new calendar day.")
-
-        DayStartBoundary.setCurrentHour(0)
+        model.timeline.select(day)
+        await model.timeline.load(day)
+        let before = model.timeline.listWindows[day]
         model.timeline.handleDayBoundaryChanged()
-        await model.refresh()
-        await model.timeline.load(precedingDay)
-        await model.timeline.load(calendarDay)
-        XCTAssertTrue(model.timeline.snapshots[precedingDay, default: []].isEmpty, "At 00:00 boundary, 02:30 no longer belongs to the preceding day.")
-        XCTAssertFalse(model.timeline.snapshots[calendarDay, default: []].isEmpty, "At 00:00 boundary, 02:30 moves to its literal calendar day.")
-
-        DayStartBoundary.setCurrentHour(8)
-        model.timeline.handleDayBoundaryChanged()
-        await model.refresh()
-        await model.timeline.load(precedingDay)
-        await model.timeline.load(calendarDay)
-        XCTAssertFalse(model.timeline.snapshots[precedingDay, default: []].isEmpty)
-        XCTAssertTrue(model.timeline.snapshots[calendarDay, default: []].isEmpty)
+        XCTAssertEqual(model.timeline.selectedDay, day)
+        XCTAssertEqual(model.timeline.listWindows[day], before, "Keep mounted content while refreshing.")
+        await model.timeline.refresh()
+        XCTAssertEqual(model.timeline.selectedDay, day)
+        XCTAssertFalse(model.timeline.listWindows[day, default: []].isEmpty)
+        let preceding = try await archive.timelineDay(day.adding(days: -1))
+        XCTAssertTrue(preceding.isEmpty)
     }
 
     func testShortPendingTailKeepsStatusAndActionOnOneRow() async throws {

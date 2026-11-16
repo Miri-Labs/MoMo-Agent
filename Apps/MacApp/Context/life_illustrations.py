@@ -15,7 +15,7 @@ import unicodedata
 import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from context_store import canonical, digest, read_day_start_hour
+from context_store import canonical, digest, read_day_start_hour, read_early_transcript_hour, source_clock
 
 INTERVALS = (2, 3, 4, 6)
 SETTLE_SECONDS = 600
@@ -99,6 +99,59 @@ def local_timezone(timestamp):
     # Foundation accepts explicit GMT offsets; ambiguous abbreviations such as CST are never sent.
     name = f'GMT{"+" if offset >= 0 else "-"}{abs(offset) // 60:02d}:{abs(offset) % 60:02d}'
     return name, local.tzinfo
+
+
+def saved_zone(name):
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        match = re.fullmatch(r'GMT([+-])(\d{2}):(\d{2})', name or '')
+        if not match:
+            return None
+        minutes = (int(match[2]) * 60 + int(match[3])) * (1 if match[1] == '+' else -1)
+        return dt.timezone(dt.timedelta(minutes=minutes)) if abs(minutes) <= 1080 else None
+
+
+def natural_projection(item, evidence):
+    """Read-only index: immutable asset/ID, source dates, no generation or database writes."""
+    zone = saved_zone(item['timezone'])
+    anchors = []
+    for passage in evidence.get('passages', []):
+        for span in passage.get('spans', []):
+            at = span.get('recorded_at')
+            if not finite_number(at):
+                continue
+            recorded_zone, quality = source_clock(span)
+            if quality == 'timezone_unknown':
+                if zone is None:
+                    continue
+                recorded_zone, quality = zone, 'saved_timezone'
+            stop = max(at, span.get('end_at') or at)
+            cursor = at
+            while True:
+                local = dt.datetime.fromtimestamp(cursor, recorded_zone)
+                day = local.date()
+                anchors.append(dict(day=day.isoformat(), recorded_at=cursor,
+                    timezone_offset=int(local.utcoffset().total_seconds()),
+                    source_id=passage.get('source_id'), span_id=span.get('id'), date_evidence=quality))
+                midnight = dt.datetime.combine(day + dt.timedelta(days=1), dt.time(), recorded_zone).timestamp()
+                if stop <= midnight:
+                    break
+                cursor = midnight
+    if not anchors and zone is not None:
+        cursor = item['window_start']
+        while cursor < item['window_end']:
+            local = dt.datetime.fromtimestamp(cursor, zone)
+            day = local.date()
+            anchors.append(dict(day=day.isoformat(), recorded_at=cursor,
+                timezone_offset=int(local.utcoffset().total_seconds()), date_evidence='saved_window'))
+            cursor = dt.datetime.combine(day + dt.timedelta(days=1), dt.time(), zone).timestamp()
+    anchors.sort(key=lambda value: (value['recorded_at'], value['day'], value.get('span_id') or ''))
+    days = list(dict.fromkeys(anchor['day'] for anchor in anchors))
+    # Keep unresolvable legacy metadata instead of assigning a guessed date.
+    return dict(item, legacy_logical_day=item['logical_day'],
+        logical_day=days[0] if days else item['logical_day'], source_days=days or [item['logical_day']],
+        source_anchors=anchors, date_projection_version=1)
 
 
 def window_at(timestamp, hours, day_start):
@@ -366,7 +419,7 @@ class LifeIllustrations:
         row = dict(self.db.execute('SELECT * FROM settings WHERE id=1').fetchone())
         row.pop('id'); row.pop('active_from')
         row['enabled'] = bool(row['enabled'])
-        row.update(availability, day_start_hour=read_day_start_hour(self.data))
+        row.update(availability, day_start_hour=0, early_transcript_hour=read_early_transcript_hour(self.data))
         row['pending_count'] = self.db.execute("SELECT COUNT(*) FROM slots WHERE state IN ('pending','preparing','submitting')").fetchone()[0]
         row['needs_review_count'] = self.db.execute("SELECT COUNT(*) FROM slots WHERE state='needs_review'").fetchone()[0]
         return row
@@ -415,10 +468,12 @@ class LifeIllustrations:
         for change in visible:
             item = json.loads(change['payload'])
             if not item['deleted']:
-                current = self.db.execute('SELECT state,updated_at FROM slots WHERE id=?', (item['id'],)).fetchone()
+                current = self.db.execute('SELECT state,updated_at,evidence FROM slots WHERE id=?', (item['id'],)).fetchone()
                 if not current or current['state'] != 'ready':
                     # New/lagging clients must not fetch an asset that a later event already deleted.
                     item = dict(id=item['id'], deleted=True, updated_at=current['updated_at'] if current else item['updated_at'])
+                else:
+                    item = natural_projection(item, json.loads(current['evidence']))
             items.append(item)
         return dict(items=items,
                     next_cursor=str(visible[-1]['cursor']) if visible else cursor, has_more=len(rows) > limit)
@@ -474,8 +529,42 @@ class LifeIllustrations:
                  max(time.time(), row['updated_at'] + 0.000001), row['id']))
             self.publish(self.db.execute('SELECT * FROM slots WHERE id=?', (row['id'],)).fetchone())
 
+    def _enrich_saved_clock(self, context, identity):
+        # A saved image freezes its story, not missing recording-clock metadata.
+        # Match both stable source/span identity and original start time; never
+        # infer clock evidence from a nearby span or from a new generation date.
+        with self.write():
+            row = self.db.execute('SELECT * FROM slots WHERE id=?', (identity,)).fetchone()
+            if not row or row['state'] != 'ready':
+                return row
+            evidence = json.loads(row['evidence'])
+            for passage in evidence.get('passages', []):
+                source = context.db.execute('SELECT payload FROM sources WHERE id=? AND deleted=0',
+                                            (passage.get('source_id'),)).fetchone()
+                if not source:
+                    continue
+                current = {span['id']: span for span in json.loads(source['payload']).get('spans', [])}
+                for saved in passage.get('spans', []):
+                    span = current.get(saved.get('id'))
+                    if not span or span.get('recorded_at') != saved.get('recorded_at'):
+                        continue
+                    if source_clock(span)[1] == 'recorded_offset':
+                        saved['timezone_offset'] = span['timezone_offset']
+                    end = span.get('end_at')
+                    if finite_number(end) and span['recorded_at'] <= end <= span['recorded_at'] + 86400:
+                        saved['end_at'] = end
+            encoded = canonical(evidence)
+            if encoded != canonical(json.loads(row['evidence'])):
+                self.db.execute('UPDATE slots SET evidence=?,updated_at=? WHERE id=?',
+                                (encoded, max(time.time(), row['updated_at'] + 0.000001), identity))
+                row = self.db.execute('SELECT * FROM slots WHERE id=?', (identity,)).fetchone()
+                # Existing cursor holders must discover the changed dates/anchors.
+                # This is metadata only: no queue admission, image or state change.
+                self.publish(row)
+            return row
+
     def reconcile(self, context):
-        signature = canonical(['saved-geography-v1', context.revision, [tuple(row) for row in context.db.execute(
+        signature = canonical(['saved-clock-and-geography-v2', context.revision, [tuple(row) for row in context.db.execute(
             "SELECT device_id,revision FROM phone_source_snapshots WHERE kind='visits' ORDER BY device_id")]])
         previous = self.db.execute("SELECT value FROM metadata WHERE key='reconciled_sources'").fetchone()
         if previous and previous['value'] == signature:
@@ -489,7 +578,9 @@ class LifeIllustrations:
                 continue
             # Saved pixels remain immutable; reliable locations arriving later may enrich their map metadata.
             if row['state'] == 'ready':
-                self._enrich_saved_geography(context, row)
+                current = self._enrich_saved_clock(context, row['id'])
+                if current and current['state'] == 'ready':
+                    self._enrich_saved_geography(context, current)
                 continue
             if row['state'] not in ('pending', 'preparing'):
                 continue
@@ -523,17 +614,20 @@ class LifeIllustrations:
             for part in payload.get('pending_transcription_ranges', []):
                 pending_ranges.append((float(part['start']), float(part['end'])))
             for span in payload.get('spans', []):
-                spans.append((float(span['recorded_at']), row['id'], span['id'], span['text']))
+                spans.append((float(span['recorded_at']), row['id'], span['id'], span))
         spans.sort(key=lambda item: (item[0], item[1], item[2]))
         episodes = []
-        for recorded_at, _, _, text in spans:
+        for recorded_at, _, _, span in spans:
+            text = span['text']
             if conversation_density(text)[1] < 2:
                 continue
-            name, zone = local_timezone(recorded_at)
+            zone, quality = source_clock(span)
+            offset = int(zone.utcoffset(None).total_seconds() // 60)
+            name = f'GMT{"+" if offset >= 0 else "-"}{abs(offset) // 60:02d}:{abs(offset) % 60:02d}'
             local = dt.datetime.fromtimestamp(recorded_at, zone)
-            logical_day = (local.date() - dt.timedelta(days=int(local.hour < day_start_hour))).isoformat()
-            est_end = recorded_at + max(2.0, min(60.0, len(text) * 0.22))
-            if (episodes and episodes[-1]['logical_day'] == logical_day
+            logical_day = local.date().isoformat()
+            est_end = max(span.get("end_at") or recorded_at, recorded_at + max(2.0, min(60.0, len(text) * 0.22)))
+            if (episodes and episodes[-1]['timezone'] == name
                     and recorded_at - episodes[-1]['speech_end'] <= EPISODE_GAP_SECONDS):
                 episodes[-1]['speech_end'] = max(episodes[-1]['speech_end'], est_end)
                 episodes[-1]['last_recorded_at'] = max(episodes[-1]['last_recorded_at'], recorded_at)
@@ -581,9 +675,9 @@ class LifeIllustrations:
             identity = str(uuid.uuid5(uuid.NAMESPACE_URL, f'momo-life-v1:{start}:{end}'))
             primary = recording_location(context, start, end, evidence['visits'])
             place_start, place_end = completed_place_interval(primary)
-            _, zone = local_timezone(start)
+            zone = saved_zone(episode['timezone'])
             day_start = dt.datetime.combine(dt.date.fromisoformat(episode['logical_day']),
-                dt.time(day_start_hour), tzinfo=zone).timestamp()
+                dt.time(0), tzinfo=zone).timestamp()
             route = trajectory_evidence(context, day_start, end)
             evidence['trajectory'] = route
             self.db.execute('''INSERT OR IGNORE INTO slots

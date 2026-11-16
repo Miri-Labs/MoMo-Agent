@@ -12,6 +12,7 @@ struct TimelineDetailView: View {
     let canDiscuss: Bool
     let discuss: ([SourceReference], TimelineWindow) -> Void
     var initialMarkID: UUID? = nil
+    var initialSpanID: UUID? = nil
     var onSpeakersChanged: (() async -> Void)? = nil
     var resolveFiles: ((RecordingFileIssue, RecordingFileRecoveryAction) async throws -> Void)? = nil
     var openRecording: ((UUID) -> Void)? = nil
@@ -439,6 +440,10 @@ struct TimelineDetailView: View {
             if !initialMarkConsumed, let mark = loaded.window.marks.first(where: { $0.id == initialMarkID }) {
                 initialMarkConsumed = true
                 selectMark(mark)
+            } else if !initialMarkConsumed, let initialSpanID,
+                      let turn = readingTurnID(for: initialSpanID) {
+                initialMarkConsumed = true
+                pendingReadingRestore = turn
             } else {
                 selectedMarkID = nil
                 pendingReadingRestore = readingTurnID(for: library.timeline.readingAnchor(in: loaded.window, layout: loaded.layout))

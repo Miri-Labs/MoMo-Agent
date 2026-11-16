@@ -193,13 +193,19 @@ final class LibraryModel {
             let page = try await archive.searchTranscriptsPage(query: query, limit: 20, cursor: cursor)
             var results: [LibrarySearchResult] = []
             var summaries: [UUID: RecordingSummary] = [:]
+            var sourceLocations: [UUID: [UUID: TranscriptSpanLocation]] = [:]
             for hit in page.items {
                 try Task.checkCancellation()
                 let summary = try await archive.recordingSummary(sessionID: hit.source.sessionID)
                 // Revisions and deletions between search and navigation must not expose old text.
                 try await archive.validateSources([hit.source])
                 summaries[summary.id] = summary
-                results.append(LibrarySearchResult(hit: hit, recording: summary))
+                if sourceLocations[summary.id] == nil {
+                    sourceLocations[summary.id] = try await archive.transcriptSnapshot(sessionID: summary.id).locations
+                }
+                let location = sourceLocations[summary.id]?[hit.source.spanID]
+                results.append(LibrarySearchResult(hit: hit, recording: summary,
+                    recordedAt: location?.recordedAt, timezoneOffset: location?.timezoneOffset))
             }
             try Task.checkCancellation()
             guard selection == searchGeneration else { return }
@@ -663,6 +669,8 @@ struct LibrarySearchResult: Identifiable {
     var id: UUID { hit.source.spanID }
     let hit: TranscriptSearchHit
     let recording: RecordingSummary
+    var recordedAt: Date? = nil
+    var timezoneOffset: Int? = nil
 }
 
 private struct RecordingSearchIdentity: Equatable {

@@ -119,6 +119,7 @@ public struct SourceReference: Codable, Sendable, Hashable {
 public typealias TranscriptCitationSource = SourceReference
 
 public struct TranscriptSpanLocation: Sendable {
+    public var timezoneOffset: Int? = nil
     public let recordedAt: Date
     public let audioAvailable: Bool
     public var audioSource: TimelineAudioSource? = nil

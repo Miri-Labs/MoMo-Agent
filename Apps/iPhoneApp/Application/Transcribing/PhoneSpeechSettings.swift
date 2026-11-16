@@ -9,11 +9,11 @@ final class PhoneSpeechSettings {
     static let languageKey = "speech.recognitionLanguage"
     static let vadThresholdKey = "speech.vadThreshold"
     static let speakerSegmentationModelKey = "speech.speakerSegmentationModel"
-    static let dayStartHourKey = DayStartBoundary.defaultsKey
+    static let dayStartHourKey = TranscriptReadingBoundary.defaultsKey
     static let defaultVADThreshold = 0.25
     static let vadThresholdRange = 0.05...0.95
-    static let defaultDayStartHour = DayStartBoundary.defaultHour
-    static let dayStartHourRange = DayStartBoundary.hourRange
+    static let defaultDayStartHour = TranscriptReadingBoundary.defaultHour
+    static let dayStartHourRange = TranscriptReadingBoundary.hourRange
     private(set) var language: SpeechLanguage
     private(set) var vadThreshold: Double
     private(set) var speakerSegmentationModel: SpeakerSegmentationModel
@@ -26,7 +26,7 @@ final class PhoneSpeechSettings {
     @ObservationIgnored private let speech: SpeechEngine?
 
     var dayStartHourLabel: String {
-        DayStartBoundary.label(for: dayStartHour)
+        TranscriptReadingBoundary.label(for: dayStartHour)
     }
 
     init(speech: SpeechEngine?, defaults: UserDefaults = .standard, modelDirectory: URL? = nil,
@@ -43,11 +43,8 @@ final class PhoneSpeechSettings {
         let saved = defaults.object(forKey: Self.vadThresholdKey) as? NSNumber
         let value = saved?.doubleValue ?? Self.defaultVADThreshold
         vadThreshold = value.isFinite && Self.vadThresholdRange.contains(value) ? value : Self.defaultVADThreshold
-        let resolvedDayStart = DayStartBoundary.resolvedHour(from: defaults)
+        let resolvedDayStart = TranscriptReadingBoundary.resolvedHour(from: defaults)
         dayStartHour = resolvedDayStart
-        if defaults === UserDefaults.standard {
-            DayStartBoundary.setCurrentHour(resolvedDayStart, defaults: nil)
-        }
         speech?.setSpeakerSegmentationModel(speakerSegmentationModel)
         do { try speech?.setRecognitionLanguage(language) }
         catch { failure = String(localized: "识别语言未生效，请重新选择。") }
@@ -99,15 +96,12 @@ final class PhoneSpeechSettings {
 
     func selectDayStartHour(_ value: Int) {
         guard Self.dayStartHourRange.contains(value) else {
-            failure = String(localized: "每天起点须在 00:00 至 23:00 之间。")
+            failure = String(localized: "凌晨记录默认折叠至须在 00:00 至 23:00 之间。")
             return
         }
         let changed = dayStartHour != value
         dayStartHour = value
         defaults.set(value, forKey: Self.dayStartHourKey)
-        if defaults === UserDefaults.standard {
-            DayStartBoundary.setCurrentHour(value, defaults: nil)
-        }
         failure = nil
         if changed { onDayStartHourChanged?() }
     }

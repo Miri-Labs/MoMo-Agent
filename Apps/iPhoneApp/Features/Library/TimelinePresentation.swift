@@ -6,18 +6,17 @@ enum TimelineDateRange: Equatable {
     case unknown, empty
     case known(ClosedRange<TimelineDay>)
 
-    init(earliestDay: TimelineDay?, hasLoaded: Bool, today: TimelineDay = TimelineDay(Date())) {
+    init(earliestDay: TimelineDay?, hasLoaded: Bool, latestDay: TimelineDay? = nil, today: TimelineDay = TimelineDay(Date())) {
         if !hasLoaded { self = .unknown }
-        else if let earliestDay { self = .known(min(earliestDay, today)...today) }
+        else if let earliestDay { self = .known(min(earliestDay, today)...max(today, latestDay ?? today)) }
         else { self = .empty }
     }
 
     var isUnknown: Bool { if case .unknown = self { true } else { false } }
 
     func canRequest(_ day: TimelineDay, today: TimelineDay = TimelineDay(Date())) -> Bool {
-        guard day <= today else { return false }
         switch self {
-        case .unknown: return true // Wait for the real lower bound before admitting navigation.
+        case .unknown: return day <= today // Wait for the real lower bound before admitting navigation.
         case .empty: return day == today
         case .known(let bounds): return bounds.contains(day)
         }
@@ -250,6 +249,7 @@ private struct TimelineActivityStrip: View {
     }
 }
 
+@MainActor
 enum RecordingDatePresentation {
     static func day(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
         let target = TimelineDay(date, calendar: calendar)
@@ -257,6 +257,13 @@ enum RecordingDatePresentation {
         if target == today { return String(localized: "今天") }
         if target == today.adding(days: -1) { return String(localized: "昨天") }
         return target.date(calendar: calendar).formatted(.dateTime.locale(AppLanguage.current.locale).year().month().day())
+    }
+
+    static func title(_ date: Date, offset: Int) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: offset) ?? .gmt
+        let target = TimelineDay(date, calendar: calendar)
+        return "\(TimelineDate.day(target)) \(TimelineDate.time(date, offset: offset))"
     }
 
     static func title(_ date: Date) -> String {

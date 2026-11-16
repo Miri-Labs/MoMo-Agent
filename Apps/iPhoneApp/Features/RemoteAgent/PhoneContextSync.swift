@@ -415,11 +415,13 @@ final class PhoneContextSync {
             audioState: recording.audioState.rawValue, fingerprint: configurationFingerprint)
         if let saved = state.sources[id], !saved.envelope.deleted, saved.coverage == coverage,
            saved.envelope.generation == recording.generation, saved.envelope.version == recording.transcriptVersion,
+           saved.envelope.spans.allSatisfy({ $0.timezoneOffset != nil && $0.endAt != nil }),
            saved.envelope.pendingTranscriptionRanges?.isEmpty == true { return saved }
         let pending = try await archive.pendingTranscriptionIntervals(sessionID: recording.sessionID, configurationFingerprint: configurationFingerprint)
             .map { SourceEnvelope.PendingTranscriptionRange(start: $0.start.timeIntervalSince1970, end: $0.end.timeIntervalSince1970) }
         if var saved = state.sources[id], !saved.envelope.deleted,
-           saved.envelope.generation == recording.generation, saved.envelope.version == recording.transcriptVersion {
+           saved.envelope.generation == recording.generation, saved.envelope.version == recording.transcriptVersion,
+           saved.envelope.spans.allSatisfy({ $0.timezoneOffset != nil && $0.endAt != nil }) {
             if saved.envelope.pendingTranscriptionRanges != pending || saved.coverage != coverage {
                 if saved.envelope.pendingTranscriptionRanges != pending { saved.receipt = nil }
                 saved.deliveryFailure = nil
@@ -444,7 +446,10 @@ final class PhoneContextSync {
         let spans = try document.spans.map { span -> SourceEnvelope.Span in
             guard let location = snapshot.locations[span.id] else { throw SyncError.missingSourceTime }
             let text = span.speaker.map { "[\($0)] \(span.text)" } ?? span.text
-            return .init(id: span.id, text: text, recordedAt: location.recordedAt, isOwner: span.attribution?.isUser)
+            return .init(id: span.id, text: text, recordedAt: location.recordedAt, isOwner: span.attribution?.isUser,
+                timezoneOffset: location.timezoneOffset, endAt: location.audioSource.map {
+                    $0.wallClockAnchor.addingTimeInterval(Double($0.frames.end) / $0.timebaseHz)
+                })
         }
         let source = Source(envelope: SourceEnvelope(library: archive.libraryInstanceID, session: recording.sessionID, device: deviceID,
             generation: document.generation, version: document.version, recordedAt: recording.recordedAt, spans: spans,

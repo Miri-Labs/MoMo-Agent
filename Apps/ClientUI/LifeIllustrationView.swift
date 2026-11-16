@@ -63,7 +63,7 @@ extension LifeIllustration {
         return place.flatMap { $0.isEmpty ? nil : range + " · " + $0 } ?? range
     }
 
-    var dateCaption: String { logicalDay + " · " + caption }
+    var dateCaption: String { primaryDay + " · " + caption + (crossesMidnight ? " · " + String(localized: "跨午夜") : "") }
 }
 
 struct LifeIllustrationImageView: View {
@@ -127,7 +127,7 @@ struct LifeIllustrationMetadata: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 9) {
-                Text(illustration.logicalDay)
+                Text(illustration.primaryDay)
                     .font(.system(.caption2, design: .monospaced))
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(MoMoPalette.surface, in: Capsule())
@@ -225,6 +225,7 @@ struct LifeIllustrationSettingsView: View {
 struct LifeIllustrationViewer: View {
     let store: LifeIllustrationStore
     let initialID: String
+    var referenceDay: String? = nil
     let showSource: (LifeIllustration) -> Void
     @State private var selection: String
     @State private var zoomed = false
@@ -232,16 +233,17 @@ struct LifeIllustrationViewer: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
 
-    init(store: LifeIllustrationStore, initialID: String, showSource: @escaping (LifeIllustration) -> Void) {
+    init(store: LifeIllustrationStore, initialID: String, referenceDay: String? = nil, showSource: @escaping (LifeIllustration) -> Void) {
         self.store = store
         self.initialID = initialID
+        self.referenceDay = referenceDay
         self.showSource = showSource
         _selection = State(initialValue: initialID)
     }
 
     private var items: [LifeIllustration] {
-        let day = store.items.first { $0.id == initialID }?.logicalDay
-        return store.items.filter { $0.logicalDay == day && store.imageURL(for: $0, thumbnail: false) != nil }
+        let day = referenceDay ?? store.items.first { $0.id == initialID }?.primaryDay
+        return store.items.filter { $0.belongs(to: day ?? "") && store.imageURL(for: $0, thumbnail: false) != nil }
             .sorted { $0.windowStart < $1.windowStart }
     }
     private var selected: LifeIllustration? { items.first { $0.id == selection } }

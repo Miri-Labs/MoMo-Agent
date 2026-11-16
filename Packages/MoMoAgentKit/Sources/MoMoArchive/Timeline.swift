@@ -16,14 +16,14 @@ extension ArchiveStore {
     }
 
     /// Query the entire selected date before grouping. Session-list pagination never truncates a window.
-    public func timelineDay(_ day: TimelineDay, configurationFingerprint: String? = nil) throws -> [TimelineWindow] {
-        try timelineDaySnapshot(day, configurationFingerprint: configurationFingerprint).windows
+    public func timelineDay(_ day: TimelineDay, configurationFingerprint: String? = nil, earlyHour: Int = TranscriptReadingBoundary.resolvedHour()) throws -> [TimelineWindow] {
+        try timelineDaySnapshot(day, configurationFingerprint: configurationFingerprint, earlyHour: earlyHour).windows
     }
 
-    public func timelineDaySnapshot(_ day: TimelineDay, configurationFingerprint: String? = nil) throws -> TimelineDaySnapshot {
+    public func timelineDaySnapshot(_ day: TimelineDay, configurationFingerprint: String? = nil, earlyHour: Int = TranscriptReadingBoundary.resolvedHour()) throws -> TimelineDaySnapshot {
         let startedMs = APIPerformanceMonitor.uptimeMilliseconds()
         do {
-            let snapshot = try timelineDaySnapshotImpl(day, configurationFingerprint: configurationFingerprint)
+            let snapshot = try timelineDaySnapshotImpl(day, configurationFingerprint: configurationFingerprint, earlyHour: earlyHour)
             performanceMonitor.record(.timelineDaySnapshot, durationMs: APIPerformanceMonitor.uptimeMilliseconds() - startedMs, itemCount: snapshot.windows.count)
             return snapshot
         } catch {
@@ -97,8 +97,9 @@ extension ArchiveStore {
         return names.contains(fileName)
     }
 
-    private func timelineDaySnapshotImpl(_ day: TimelineDay, configurationFingerprint: String? = nil) throws -> TimelineDaySnapshot {
+    private func timelineDaySnapshotImpl(_ day: TimelineDay, configurationFingerprint: String? = nil, earlyHour: Int) throws -> TimelineDaySnapshot {
         if let configurationFingerprint, !ContentHash.isValid(configurationFingerprint) { throw ArchiveError.invalidQuery }
+        guard TranscriptReadingBoundary.hourRange.contains(earlyHour) else { throw ArchiveError.invalidQuery }
         try Task.checkCancellation()
         #if DEBUG
         timelineDayBuildCount += 1
@@ -370,6 +371,22 @@ extension ArchiveStore {
                 } else { connected.append(range) }
             }
 
+            // Split the read projection, never the audio file or stored transcript.
+            let foldFrame = Int64(((localStart + Double(earlyHour) * 3_600 - offset - base) * rate).rounded(.up))
+            var readingCuts: [Int64] = []
+            if earlyHour > 0 {
+                connected = try connected.flatMap { range -> [FrameRange] in
+                    guard range.start < foldFrame, foldFrame < range.end else { return [range] }
+                    let nextParagraph = documentSpans.first { $0.frames.start >= foldFrame && $0.frames.start < range.end }
+                    let hasText = documentSpans.contains { $0.frames.end > range.start && $0.frames.start < range.end }
+                    // A sentence crossing 08:00 remains whole; do not invent an empty daytime row.
+                    guard let cut = nextParagraph?.frames.start ?? (hasText ? nil : foldFrame) else { return [range] }
+                    readingCuts.append(cut)
+                    return [try FrameRange(start: range.start, count: cut - range.start),
+                            try FrameRange(start: cut, count: range.end - cut)]
+                }
+            }
+
             func overlapsSortedDisjoint(_ ranges: [FrameRange], cursor: inout Int, target: FrameRange) -> Bool {
                 while cursor < ranges.count && ranges[cursor].end <= target.start { cursor += 1 }
                 return cursor < ranges.count && ranges[cursor].start < target.end
@@ -398,8 +415,8 @@ extension ArchiveStore {
                 try Task.checkCancellation()
                 let start = base + Double(frames.start) / rate
                 let end = base + Double(frames.end) / rate
-                let audioStart = max(dayFrames.start, frames.start - Int64(rate))
-                let audioEnd = min(dayFrames.end, frames.end + Int64(rate))
+                let audioStart = max(dayFrames.start, frames.start - Int64(rate), readingCuts.last(where: { $0 <= frames.start }) ?? dayFrames.start)
+                let audioEnd = min(dayFrames.end, frames.end + Int64(rate), readingCuts.first(where: { $0 >= frames.end }) ?? dayFrames.end)
                 let audioFrames = try FrameRange(start: audioStart, count: audioEnd - audioStart)
                 var builder = TimelineBuilder(start: Date(timeIntervalSince1970: start), end: Date(timeIntervalSince1970: end),
                     offset: anchor.timezoneOffset, configurationFingerprint: configurationFingerprint)
@@ -481,7 +498,7 @@ extension ArchiveStore {
                 }
 
                 if let document {
-                    while spanCursor < documentSpans.count && (base + Double(documentSpans[spanCursor].frames.start) / rate) < start {
+                    while spanCursor < documentSpans.count && documentSpans[spanCursor].frames.end <= frames.start {
                         spanCursor += 1
                     }
                     var paragraphIDs = Set<UUID>()
@@ -490,6 +507,9 @@ extension ArchiveStore {
                         let span = documentSpans[spIdx]
                         let at = base + Double(span.frames.start) / rate
                         if at >= end { break }
+                        // Keep an indivisible sentence on its start date, exactly once.
+                        // Audio still has disjoint midnight slices and the full source link.
+                        guard at >= start else { spIdx += 1; continue }
                         let available = span.sourceRanges.allSatisfy { source in
                             chunkAudioByID[source.chunkID] == true
                         }
@@ -511,7 +531,9 @@ extension ArchiveStore {
         }
         var groups: [TimelineBuilder] = []
         for slice in slices.sorted(by: { $0.start == $1.start ? $0.offset < $1.offset : $0.start < $1.start }) {
-            if let index = groups.lastIndex(where: { $0.offset == slice.offset && slice.start.timeIntervalSince($0.end) <= TimelineWindow.inactivityGap }) {
+            if let index = groups.lastIndex(where: { $0.offset == slice.offset && slice.start.timeIntervalSince($0.end) <= TimelineWindow.inactivityGap
+                && TranscriptReadingBoundary.isEarly($0.start, offset: $0.offset, hour: earlyHour)
+                    == TranscriptReadingBoundary.isEarly(slice.start, offset: slice.offset, hour: earlyHour) }) {
                 groups[index].merge(slice)
             } else { groups.append(slice) }
         }
@@ -605,6 +627,16 @@ extension ArchiveStore {
         return true
     }
 
+    public func latestTimelineDay() throws -> TimelineDay? {
+        let row = try database.rows("""
+            SELECT MAX(e.wall_clock_anchor + COALESCE(e.timezone_offset, 0)
+                + MAX(0, e.max_received_end_frame / e.timebase - 0.000001))
+            FROM epochs e JOIN sessions s ON s.id=e.session_id
+            WHERE s.deleted=0 AND e.wall_clock_anchor IS NOT NULL
+            """).first
+        return row?.double(0).map { TimelineDay(Date(timeIntervalSince1970: $0), calendar: TimelineDay.calendar) }
+    }
+
     public func earliestTimelineDay() throws -> TimelineDay? {
         try performanceMonitor.measure(.earliestTimelineDay) {
             try Task.checkCancellation()
@@ -622,7 +654,7 @@ extension ArchiveStore {
                 FROM epochs e JOIN sessions s ON s.id=e.session_id
                 WHERE s.deleted=0 AND e.wall_clock_anchor IS NOT NULL
                 """).first, let seconds = row.double(0) {
-                computed = TimelineDay(Date(timeIntervalSince1970: seconds.rounded()), calendar: TimelineDay.calendar)
+                computed = TimelineDay(Date(timeIntervalSince1970: seconds), calendar: TimelineDay.calendar)
             } else {
                 computed = nil
             }

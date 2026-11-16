@@ -7,6 +7,8 @@ import MoMoAgentClient
 private struct TimelineDestination: Hashable {
     let windowID: TimelineWindowID
     var markID: UUID? = nil
+    var spanID: UUID? = nil
+    var revealInTimeline = false
 }
 
 struct LibraryView: View {
@@ -51,7 +53,7 @@ struct LibraryView: View {
 
     private var timeline: TimelineModel { model.timeline }
     private var dateRange: TimelineDateRange {
-        TimelineDateRange(earliestDay: timeline.earliestDay, hasLoaded: timeline.hasLoadedDateRange)
+        TimelineDateRange(earliestDay: timeline.earliestDay, hasLoaded: timeline.hasLoadedDateRange, latestDay: timeline.latestDay)
     }
 
     var body: some View {
@@ -85,7 +87,7 @@ struct LibraryView: View {
                 retryTimeline: retryTimeline, canDiscuss: canDiscuss, discuss: { sources, window in
                     if let discussSources { discussSources(sources, window) }
                     else if let first = sources.first { discuss(first) }
-                }, initialMarkID: destination.markID, onSpeakersChanged: onSpeakersChanged,
+                }, initialMarkID: destination.markID, initialSpanID: destination.spanID, onSpeakersChanged: onSpeakersChanged,
                 resolveFiles: resolveFiles, openRecording: { openRecording($0) },
                 requestWatchStatus: requestWatchStatus)
         }
@@ -103,6 +105,14 @@ struct LibraryView: View {
                 }
                 .accessibilityIdentifier("timeline.share")
             }
+            if !illustrations(for: timeline.selectedDay).isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("当天贴纸", systemImage: "sparkles.rectangle.stack") {
+                        let state = readingStates.state(for: timeline.selectedDay)
+                        state.position.scrollTo(id: TimelineScrollItemID.masthead, anchor: .top)
+                    }.accessibilityIdentifier("timeline.stickers.top")
+                }
+            }
             if let openSettings {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu { Button("设置", systemImage: "gearshape", action: openSettings) }
@@ -116,28 +126,23 @@ struct LibraryView: View {
             TimelineShareView(day: day, archive: model.archive, configurationFingerprint: timeline.configurationFingerprint)
         }
         .fullScreenCover(item: $selectedIllustration) { item in
-            if let illustrations {
-                let dayItems = illustrations.items.filter {
-                    $0.logicalDay == item.logicalDay && illustrations.imageURL(for: $0) != nil
-                }
-                if dayItems.contains(where: { $0.coordinate != nil }) {
-                    LifeIllustrationJourneyMapView(store: illustrations, initialID: item.id) { source in
-                        selectedIllustration = nil
-                        showIllustrationSource(source)
-                    }
-                } else {
-                    LifeIllustrationViewer(store: illustrations, initialID: item.id) { source in
-                        selectedIllustration = nil
-                        showIllustrationSource(source)
-                    }
-                }
-            }
+            illustrationViewer(item)
         }
         .alert("资料暂不可用", isPresented: Binding(get: { navigationFailure != nil }, set: { if !$0 { navigationFailure = nil } })) {
             Button("好", role: .cancel) { navigationFailure = nil }
         } message: { Text(navigationFailure ?? "") }
         .task { page.scrollTo(id: timeline.selectedDay, anchor: .leading); await (onAppearRefresh ?? refresh)() }
         .task(id: timeline.selectedDay) { await timeline.load(timeline.selectedDay) }
+        .onChange(of: selectedWindow) { _, destination in
+            guard let destination, destination.revealInTimeline else { return }
+            let state = readingStates.state(for: destination.windowID.day)
+            if TranscriptReadingBoundary.isEarly(destination.windowID.start,
+                offset: destination.windowID.timezoneOffset, hour: TranscriptReadingBoundary.resolvedHour()) {
+                state.earlyExpanded = true
+            }
+            state.positioned = true
+            state.position.scrollTo(id: TimelineScrollItemID.window(destination.windowID), anchor: .top)
+        }
         .onChange(of: page.viewID(type: TimelineDay.self)) { _, day in
             guard readingStates.isPagerSettled, page.isPositionedByUser,
                   let day, readingStates.alignedDay(in: timeline.days) == day else { return }
@@ -153,29 +158,66 @@ struct LibraryView: View {
         }
     }
 
+    @ViewBuilder
+    private func illustrationViewer(_ item: LifeIllustration) -> some View {
+        if let store = illustrations {
+            let key = dayKey(timeline.selectedDay)
+            if illustrations(for: timeline.selectedDay).contains(where: { $0.coordinate != nil }) {
+                LifeIllustrationJourneyMapView(store: store, initialID: item.id, referenceDay: key) { source in
+                    selectedIllustration = nil
+                    showIllustrationSource(source)
+                }
+            } else {
+                LifeIllustrationViewer(store: store, initialID: item.id, referenceDay: key) { source in
+                    selectedIllustration = nil
+                    showIllustrationSource(source)
+                }
+            }
+        }
+    }
+
+    private func dayKey(_ day: TimelineDay) -> String {
+        String(format: "%04d-%02d-%02d", day.year, day.month, day.day)
+    }
+
     private func illustrations(for day: TimelineDay) -> [LifeIllustration] {
         guard !searching else { return [] }
         let key = String(format: "%04d-%02d-%02d", day.year, day.month, day.day)
         return (illustrations?.items ?? []).filter {
-            $0.logicalDay == key && illustrations?.imageURL(for: $0) != nil
+            $0.belongs(to: key) && illustrations?.imageURL(for: $0) != nil
         }.sorted { $0.windowStart < $1.windowStart }
     }
 
     private func showIllustrationSource(_ source: LifeIllustration) {
         Task {
-            let parts = source.logicalDay.split(separator: "-").compactMap { Int($0) }
-            guard parts.count == 3 else { return }
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = TimeZone(identifier: source.timezone) ?? .current
-            guard let date = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else { return }
-            let sourceDay = TimelineDay(calendarDate: date, calendar: calendar)
+            let referenceKey = source.belongs(to: dayKey(timeline.selectedDay)) ? dayKey(timeline.selectedDay) : source.primaryDay
+            let anchor = source.transcriptAnchor(on: referenceKey)
+            let key = anchor?.day ?? referenceKey
+            let parts = key.split(separator: "-").compactMap { Int($0) }
+            guard parts.count == 3,
+                  let date = TimelineDay.calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else {
+                navigationFailure = String(localized: "来源日期待确认，原图已保留。")
+                return
+            }
+            let sourceDay = TimelineDay(calendarDate: date, calendar: TimelineDay.calendar)
             await timeline.load(sourceDay)
-            select(sourceDay)
             let windows = timeline.listWindows[sourceDay] ?? []
-            if let window = windows.first(where: {
-                $0.id.start.timeIntervalSince1970 < source.windowEnd && $0.end.timeIntervalSince1970 > source.windowStart
-            }) { selectedWindow = TimelineDestination(windowID: window.id) }
-            else { navigationFailure = String(localized: "这段转录已不可用，请刷新后重试。") }
+            let sourceSessions = Set(source.sourceIds.compactMap { UUID(uuidString: String($0.split(separator: "/").last ?? "")) })
+            let spanID = anchor?.spanId.flatMap(UUID.init(uuidString:))
+            let window = windows.first { window in
+                if let spanID { return window.paragraphs.contains { $0.id == spanID } }
+                return window.sources.contains { sourceSessions.contains($0.sessionID) }
+                    && window.id.start.timeIntervalSince1970 < source.windowEnd
+                    && window.end.timeIntervalSince1970 > source.windowStart
+            }
+            if let window {
+                select(sourceDay)
+                let paragraph = window.paragraphs.first { paragraph in
+                    sourceSessions.contains(paragraph.source.sessionID)
+                        && paragraph.recordedAt.timeIntervalSince1970 >= (anchor?.recordedAt ?? source.windowStart)
+                }
+                selectedWindow = TimelineDestination(windowID: window.id, spanID: spanID ?? paragraph?.id, revealInTimeline: true)
+            } else { navigationFailure = String(localized: "这段转录已不可用，请刷新后重试。") }
         }
     }
 
@@ -508,13 +550,13 @@ struct LibraryView: View {
                                 if let window = try await model.archive.timelineWindow(containing: result.hit.source,
                                     configurationFingerprint: model.configurationFingerprint) {
                                     await timeline.load(window.id.day)
-                                    select(window.id.day); selectedWindow = TimelineDestination(windowID: window.id)
+                                    select(window.id.day); selectedWindow = TimelineDestination(windowID: window.id, spanID: result.hit.source.spanID, revealInTimeline: true)
                                 } else { openRecording(result.recording.id) }
                             } catch { navigationFailure = String(localized: "这条转录已更新或删除，请重新搜索。") }
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(RecordingDatePresentation.title(result.recording.recordedAt)).phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
+                            Text(RecordingDatePresentation.title(result.recordedAt ?? result.recording.recordedAt, offset: result.timezoneOffset ?? 0)).phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
                             Text(result.hit.text).phoneText(.body).foregroundStyle(MoMoPalette.ink).lineLimit(3)
                         }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     }.accessibilityIdentifier("library.search.result.\(result.id)")
@@ -678,6 +720,7 @@ private struct TimelinePagerSnapshot: Equatable {
 
 private enum TimelineScrollItemID: Hashable {
     case masthead
+    case early
     case window(TimelineWindowID)
 
     var windowID: TimelineWindowID? {
@@ -690,6 +733,7 @@ private enum TimelineScrollItemID: Hashable {
     var position = ScrollPosition(idType: TimelineScrollItemID.self)
     var positioned = false
     var userScrolled = false
+    var earlyExpanded: Bool?
 }
 
 private struct TimelineDayPage: View {
@@ -707,9 +751,13 @@ private struct TimelineDayPage: View {
     let showIllustrationSource: (LifeIllustration) -> Void
     let illustrationFailure: (String) -> Void
 
+    @AppStorage(TranscriptReadingBoundary.defaultsKey) private var earlyHour = TranscriptReadingBoundary.defaultHour
+
     private var isToday: Bool { day == TimelineDay(Date()) }
     private var hasIllustrations: Bool { illustrations != nil && !dayIllustrations.isEmpty }
-    private var startsAtTop: Bool { !isToday || hasIllustrations }
+    private func isEarly(_ window: TimelineWindow) -> Bool {
+        TranscriptReadingBoundary.isEarly(window.id.start, offset: window.id.timezoneOffset, hour: earlyHour)
+    }
 
     private func scrollToMasthead() {
         reading.positioned = true
@@ -764,16 +812,41 @@ private struct TimelineDayPage: View {
     var body: some View {
         let windows = timeline.listWindows[day] ?? []
         let repeatedClockRanges = timeline.repeatedClockRanges[day] ?? []
+        let early = windows.filter(isEarly)
+        let daytime = windows.filter { !isEarly($0) }
+        let expanded = reading.earlyExpanded ?? TranscriptReadingBoundary.initiallyExpanded(
+            hasDaytime: !daytime.isEmpty, isToday: isToday, hour: earlyHour)
+        let visible = expanded ? windows : daytime
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
+                Color.clear.frame(height: 1).id(TimelineScrollItemID.masthead)
                 if let illustrations, !dayIllustrations.isEmpty {
                     LifeIllustrationStripView(items: dayIllustrations, store: illustrations, horizontalMargin: 0,
                         open: openIllustration, showSource: showIllustrationSource, failure: illustrationFailure)
                         .padding(.bottom, 8)
-                        .id(TimelineScrollItemID.masthead)
                 }
-                ForEach(windows) { window in
-                    windowItem(window, windows: windows, repeatedClockRanges: repeatedClockRanges)
+                if !early.isEmpty {
+                    Button {
+                        reading.earlyExpanded = !expanded
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            Text("凌晨记录 · \(early.count) 段")
+                            Spacer()
+                            Text("00:00–" + TranscriptReadingBoundary.label(for: earlyHour)).monospacedDigit()
+                        }.phoneText(.caption).foregroundStyle(MoMoPalette.muted).frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain).accessibilityIdentifier("timeline.early.toggle")
+                    .accessibilityValue(expanded ? "已展开" : "已折叠")
+                    .id(TimelineScrollItemID.early)
+                }
+                ForEach(visible) { window in
+                    windowItem(window, windows: visible, repeatedClockRanges: repeatedClockRanges)
+                }
+                if !early.isEmpty, daytime.isEmpty {
+                    Text("当天暂无 \(TranscriptReadingBoundary.label(for: earlyHour)) 后记录")
+                        .phoneText(.caption).foregroundStyle(MoMoPalette.muted)
+                        .accessibilityIdentifier("timeline.early.only")
                 }
                 if let failure = timeline.failures[day] {
                     Text(failure).phoneText(.metadata).foregroundStyle(MoMoPalette.failure)
@@ -799,7 +872,7 @@ private struct TimelineDayPage: View {
                     .allowsHitTesting(false)
             }
         }
-        .defaultScrollAnchor(startsAtTop ? .top : .bottom, for: .initialOffset)
+        .defaultScrollAnchor(.top, for: .initialOffset)
         .defaultScrollAnchor(.top, for: .alignment)
         .scrollPosition(Binding(get: {
             reading.position
@@ -819,21 +892,15 @@ private struct TimelineDayPage: View {
                   let replacement, replacement != previous else { return }
             reading.position.scrollTo(id: TimelineScrollItemID.window(replacement))
         }
-        .onChange(of: day == timeline.selectedDay ? windows.last?.id : nil, initial: true) {
-            guard day == timeline.selectedDay, !windows.isEmpty, !reading.userScrolled else { return }
-            if hasIllustrations {
-                scrollToMasthead()
-                return
-            }
-            guard !reading.positioned else { return }
-            reading.positioned = true
-            var position = ScrollPosition(idType: TimelineScrollItemID.self)
-            position.scrollTo(edge: startsAtTop ? .top : .bottom)
-            reading.position = position
-        }
-        .onChange(of: day == timeline.selectedDay ? hasIllustrations : false, initial: true) { _, activeHasIllustrations in
-            guard day == timeline.selectedDay, activeHasIllustrations, !reading.userScrolled else { return }
+        .onChange(of: windows.isEmpty, initial: true) { _, empty in
+            guard !empty else { return }
+            if reading.earlyExpanded == nil { reading.earlyExpanded = expanded }
+            guard day == timeline.selectedDay, !reading.positioned else { return }
             scrollToMasthead()
+        }
+        .onChange(of: earlyHour) {
+            reading.earlyExpanded = TranscriptReadingBoundary.initiallyExpanded(
+                hasDaytime: windows.contains { !isEarly($0) }, isToday: isToday, hour: earlyHour)
         }
         .refreshable { await refresh() }
         .modifier(TimelineReadingEdge())

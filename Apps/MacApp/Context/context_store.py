@@ -15,7 +15,7 @@ from transcript_speakers import classify_transcript_span
 DEFAULT_DAY_START_HOUR = 8
 _CACHE_LOCK = threading.Lock()
 _INITIALIZED_DBS: set[tuple[str, int, int]] = set()
-_SOURCE_SKELETON_CACHE: dict[tuple[str, int, int, str, str, int], dict] = {}
+_SOURCE_SKELETON_CACHE: dict[tuple[str, int, int, str, str, float, int], dict] = {}
 _DONE_SUMMARY_CACHE: dict[tuple[str, int, int, str], tuple[str, str | None, int | None, str]] = {}
 
 
@@ -42,11 +42,58 @@ def read_day_start_hour(directory) -> int:
 
 
 def logical_local_date(timestamp: float, day_start_hour: int = DEFAULT_DAY_START_HOUR) -> _dt.date:
-    dt = _dt.datetime.fromtimestamp(float(timestamp))
-    day = dt.date()
-    if dt.hour < day_start_hour:
-        day -= _dt.timedelta(days=1)
-    return day
+    # The legacy hour remains a scheduling input, never a date-ownership rule.
+    return _dt.datetime.fromtimestamp(float(timestamp)).date()
+
+
+def read_early_transcript_hour(directory):
+    root = Path(directory)
+    if root.name == "context":
+        root = root.parent
+    file = root / "runtime" / "transcript-reading.json"
+    try:
+        value = json.loads(file.read_text(encoding="utf-8")).get("early_transcript_hour")
+        return value if type(value) is int and 0 <= value <= 23 else 8
+    except (OSError, ValueError, TypeError):
+        return 8
+
+
+def source_clock(span):
+    offset = span.get("timezone_offset")
+    if type(offset) is int and -64800 <= offset <= 64800:
+        return _dt.timezone(_dt.timedelta(seconds=offset)), "recorded_offset"
+    # Old replicas lack recording timezone evidence. UTC is explicit and stable across travel.
+    return _dt.timezone.utc, "timezone_unknown"
+
+
+def natural_groups(spans, early_hour):
+    groups, position = [], 0
+    for idx, span in enumerate(spans):
+        text, start = span["text"], float(span["recorded_at"])
+        end = max(start, float(span.get("end_at") or start))
+        zone, evidence = source_clock(span)
+        # A sentence has no per-character clock: display it once on its start
+        # date, retaining its full audio interval. Never guess a textual cut.
+        local = _dt.datetime.fromtimestamp(start, zone)
+        day = local.date()
+        offset = int(zone.utcoffset(None).total_seconds())
+        key = (day, offset, early_hour > 0 and local.hour < early_hour)
+        est_end = max(end, start + min(60.0, len(text) * 0.22))
+        if groups and groups[-1]["key"] == key and start - groups[-1]["est_end"] <= 300:
+            g = groups[-1]
+            g["end_at"] = max(g["end_at"], end)
+            g["est_end"] = max(g["est_end"], est_end)
+            g["end"] = position + len(text)
+            g["span_end_idx"] = idx + 1
+            g["texts"].append(text)
+            g["spans"].append(span)
+        else:
+            groups.append(dict(key=key, day=day, natural_day=day.isoformat(), timezone_offset=offset,
+                date_evidence=evidence, recorded_at=start, end_at=end, est_end=est_end,
+                offset=position, end=position + len(text), first_span_id=span["id"], suffix="",
+                span_start_idx=idx, span_end_idx=idx + 1, texts=[text], spans=[span]))
+        position += len(text) + 1
+    return groups
 
 
 class Conflict(ValueError):
@@ -212,6 +259,13 @@ class ContextStore:
             seen.add(span["id"])
             if type(span["recorded_at"]) not in (int, float) or not math.isfinite(span["recorded_at"]):
                 raise ValueError("Missing source time")
+            offset = span.get("timezone_offset")
+            if offset is not None and (type(offset) is not int or not -64800 <= offset <= 64800):
+                raise ValueError("Invalid recorded timezone offset")
+            end = span.get("end_at")
+            if end is not None and (type(end) not in (int, float) or not math.isfinite(end)
+                                    or end < span["recorded_at"] or end - span["recorded_at"] > 86400):
+                raise ValueError("Invalid source end time")
             if "is_owner" in span and span["is_owner"] is not None and type(span["is_owner"]) is not bool:
                 raise ValueError("Invalid span is_owner flag")
         text = "\n".join(span["text"] for span in spans)
@@ -225,10 +279,11 @@ class ContextStore:
             out.pop('pending_transcription_ranges', None)
             if isinstance(out.get("spans"), list):
                 out["spans"] = [
-                    {k: v for k, v in s.items() if k != "is_owner"} if isinstance(s, dict) else s
+                    {k: v for k, v in s.items() if k not in ("is_owner", "timezone_offset", "end_at")} if isinstance(s, dict) else s
                     for s in out["spans"]
                 ]
             return out
+        payload = dict(payload, spans=[dict(span) for span in spans])
         with self.write():
             previous = self.db.execute("SELECT * FROM sources WHERE id=?", (source_id,)).fetchone()
             if previous:
@@ -237,6 +292,15 @@ class ContextStore:
                 if previous["revision"] == revision:
                     prev_payload = json.loads(previous["payload"])
                     if prev_payload != payload:
+                        old_spans = {sp["id"]: sp for sp in prev_payload.get("spans", [])}
+                        for sp in payload.get("spans", []):
+                            old = old_spans.get(sp["id"], {})
+                            for key in ("timezone_offset", "end_at"):
+                                if old.get(key) is not None:
+                                    if sp.get(key) is None:
+                                        sp[key] = old[key]
+                                    elif old[key] != sp[key]:
+                                        raise Conflict("Source clock evidence differs at the same revision")
                         if _core_payload(prev_payload) != _core_payload(payload):
                             raise Conflict("Source metadata differs at the same revision")
                         # Same-text owner enrichment must invalidate derived source caches,
@@ -300,23 +364,7 @@ class ContextStore:
         if not spans:
             return []
         library_id = str(uuid.UUID(payload["library_id"]))
-        day_start_hour = read_day_start_hour(self.directory)
-        groups, position = [], 0
-        for span in spans:
-            text = span["text"]
-            start = float(span["recorded_at"])
-            end_pos = position + len(text)
-            day = logical_local_date(start, day_start_hour)
-            est_end = start + min(60.0, len(text) * 0.22)
-            if groups and day == groups[-1]["day"] and start - groups[-1]["est_end"] <= 300:
-                groups[-1]["end_at"] = max(groups[-1]["end_at"], start)
-                groups[-1]["est_end"] = max(groups[-1]["est_end"], est_end)
-                groups[-1]["end"] = end_pos
-                groups[-1]["spans"].append(span)
-            else:
-                groups.append({"day": day, "recorded_at": start, "end_at": start, "est_end": est_end,
-                               "offset": position, "end": end_pos, "spans": [span]})
-            position = end_pos + 1
+        groups = natural_groups(spans, read_early_transcript_hour(self.directory))
         windows = []
         for g in groups:
             w_spans = g["spans"]
@@ -325,11 +373,6 @@ class ContextStore:
             w_summary = None
             if not excluded:
                 w_summary = done_by_fp.get(fp)
-                if w_summary is None:
-                    for w_start, res in done_by_window.get(library_id, ()):
-                        if g["recorded_at"] - 300 <= w_start <= g["end_at"] + 60:
-                            w_summary = res
-                            break
                 if w_summary is None and summarize and g["recorded_at"] >= cutoff and fp not in active_fps and sum(1 for c in w_text if c.isalnum()) >= 20 and len(w_text.encode()) <= 2_000_000:
                     import datetime as _dt, recording_summary
                     tz_offset = int(_dt.datetime.fromtimestamp(g["recorded_at"]).astimezone().utcoffset().total_seconds())
@@ -341,9 +384,11 @@ class ContextStore:
                         pass
             preview = "  ".join(s["text"] for s in w_spans)[:256].replace("\n", " ")
             windows.append({
-                "id": f"{source_id}#{w_spans[0]['id']}",
+                "id": f"{source_id}#{w_spans[0]['id']}{g['suffix']}",
                 "source_id": source_id,
                 "source_revision": source_revision,
+                "natural_day": g["natural_day"], "timezone_offset": g["timezone_offset"],
+                "date_evidence": g["date_evidence"],
                 "recorded_at": g["recorded_at"],
                 "end_at": g["end_at"],
                 "offset": g["offset"],
@@ -368,36 +413,8 @@ class ContextStore:
                 "windows": (),
             }
         library_id = str(uuid.UUID(payload["library_id"]))
-        groups, position = [], 0
-        latest_span_at = 0.0
-        for idx, span in enumerate(spans):
-            text = span["text"]
-            start = float(span["recorded_at"])
-            if start > latest_span_at:
-                latest_span_at = start
-            end_pos = position + len(text)
-            day = logical_local_date(start, day_start_hour)
-            est_end = start + min(60.0, len(text) * 0.22)
-            if groups and day == groups[-1]["day"] and start - groups[-1]["est_end"] <= 300:
-                groups[-1]["end_at"] = max(groups[-1]["end_at"], start)
-                groups[-1]["est_end"] = max(groups[-1]["est_end"], est_end)
-                groups[-1]["end"] = end_pos
-                groups[-1]["span_end_idx"] = idx + 1
-                groups[-1]["texts"].append(text)
-            else:
-                groups.append({
-                    "day": day,
-                    "recorded_at": start,
-                    "end_at": start,
-                    "est_end": est_end,
-                    "offset": position,
-                    "end": end_pos,
-                    "first_span_id": span["id"],
-                    "span_start_idx": idx,
-                    "span_end_idx": idx + 1,
-                    "texts": [text],
-                })
-            position = end_pos + 1
+        groups = natural_groups(spans, day_start_hour)
+        latest_span_at = max((float(span["recorded_at"]) for span in spans), default=0.0)
         win_skeletons = []
         for g in groups:
             texts = g["texts"]
@@ -406,7 +423,9 @@ class ContextStore:
             can_enqueue = sum(1 for c in w_text if c.isalnum()) >= 20 and len(w_text.encode()) <= 2_000_000
             w_preview = "  ".join(texts)[:256].replace("\n", " ")
             win_skeletons.append({
-                "id": f"{source_id}#{g['first_span_id']}",
+                "id": f"{source_id}#{g['first_span_id']}{g['suffix']}",
+                "natural_day": g["natural_day"], "timezone_offset": g["timezone_offset"],
+                "date_evidence": g["date_evidence"],
                 "recorded_at": g["recorded_at"],
                 "end_at": g["end_at"],
                 "offset": g["offset"],
@@ -490,14 +509,14 @@ class ContextStore:
         if not 1 <= limit <= 200:
             raise ValueError("limit must be 1...200")
         header_rows = self.db.execute(
-            "SELECT id, revision, hash FROM sources WHERE deleted=0 AND id>? ORDER BY id LIMIT ?",
+            "SELECT id, revision, hash, updated FROM sources WHERE deleted=0 AND id>? ORDER BY id LIMIT ?",
             (after, limit + 1),
         ).fetchall()
         page_rows = header_rows[:limit]
         if not page_rows:
             return {"revision": self.revision, "items": [], "next_cursor": None}
 
-        day_start_hour = read_day_start_hour(self.directory)
+        day_start_hour = read_early_transcript_hour(self.directory)
         db_id = self._db_id
         skeletons = {}
         missing_source_ids = []
@@ -505,7 +524,9 @@ class ContextStore:
             with _CACHE_LOCK:
                 for hrow in page_rows:
                     sid, rev = hrow["id"], hrow["revision"]
-                    cached = _SOURCE_SKELETON_CACHE.get((*db_id, sid, rev, day_start_hour))
+                    # Text revision deliberately survives clock/owner enrichment. The
+                    # monotonic payload stamp also survives reopened store connections.
+                    cached = _SOURCE_SKELETON_CACHE.get((*db_id, sid, rev, hrow["updated"], day_start_hour))
                     if cached is not None:
                         skeletons[(sid, rev)] = cached
                     else:
@@ -519,7 +540,7 @@ class ContextStore:
             full_rows = {
                 r["id"]: r
                 for r in self.db.execute(
-                    f"SELECT id, revision, LENGTH(text) AS total_characters, SUBSTR(text,1,256) AS preview, payload FROM sources WHERE id IN ({placeholders})",
+                    f"SELECT id, revision, updated, LENGTH(text) AS total_characters, SUBSTR(text,1,256) AS preview, payload FROM sources WHERE id IN ({placeholders})",
                     missing_source_ids,
                 ).fetchall()
             }
@@ -531,7 +552,7 @@ class ContextStore:
                 frow = full_rows.get(sid)
                 if frow is None or frow["revision"] != rev:
                     frow = self.db.execute(
-                        "SELECT id, revision, LENGTH(text) AS total_characters, SUBSTR(text,1,256) AS preview, payload FROM sources WHERE id=?",
+                        "SELECT id, revision, updated, LENGTH(text) AS total_characters, SUBSTR(text,1,256) AS preview, payload FROM sources WHERE id=?",
                         (sid,),
                     ).fetchone()
                 if frow is None:
@@ -540,13 +561,15 @@ class ContextStore:
                 loaded_payloads[sid] = payload
                 skel = self._build_source_skeleton(sid, frow["total_characters"], frow["preview"], payload, day_start_hour)
                 skeletons[(sid, frow["revision"])] = skel
-                built[(sid, frow["revision"])] = skel
+                # Key the loaded payload, not the earlier header: a concurrent sync
+                # must never poison the cache with a different payload's stamp.
+                built[(sid, frow["revision"], frow["updated"])] = skel
             if db_id is not None and built:
                 with _CACHE_LOCK:
                     if len(_SOURCE_SKELETON_CACHE) >= 1_024:
                         _SOURCE_SKELETON_CACHE.clear()
-                    for (sid, rev), skel in built.items():
-                        _SOURCE_SKELETON_CACHE[(*db_id, sid, rev, day_start_hour)] = skel
+                    for (sid, rev, updated), skel in built.items():
+                        _SOURCE_SKELETON_CACHE[(*db_id, sid, rev, updated, day_start_hour)] = skel
 
         done_by_fp, done_by_window, active_fps = self._load_summary_index()
         page_ids = [hrow["id"] for hrow in page_rows]
@@ -582,11 +605,6 @@ class ContextStore:
                 w_summary = None
                 if not excluded:
                     w_summary = done_by_fp.get(fp)
-                    if w_summary is None and library_id is not None:
-                        for w_start, res in done_by_window.get(library_id, ()):
-                            if w["recorded_at"] - 300 <= w_start <= w["end_at"] + 60:
-                                w_summary = res
-                                break
                     if (
                         w_summary is None
                         and summarize
@@ -617,6 +635,8 @@ class ContextStore:
                     "id": w["id"],
                     "source_id": sid,
                     "source_revision": rev,
+                    "natural_day": w["natural_day"], "timezone_offset": w["timezone_offset"],
+                    "date_evidence": w["date_evidence"],
                     "recorded_at": w["recorded_at"],
                     "end_at": w["end_at"],
                     "offset": w["offset"],
@@ -717,7 +737,7 @@ class ContextStore:
                     "text": span_text,
                     "citation_url": f'momoagent://source/{payload["session_id"]}/{span["id"]}?version={row["version"]}&generation={row["generation"]}',
                 }
-                for key in ("is_owner", "speaker", "speaker_inferred_by_dream", "speaker_attribution_excluded"):
+                for key in ("is_owner", "speaker", "speaker_inferred_by_dream", "speaker_attribution_excluded", "timezone_offset", "end_at"):
                     if key in span:
                         item[key] = span[key]
                 spans.append(item)

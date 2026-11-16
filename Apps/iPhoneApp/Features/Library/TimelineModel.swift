@@ -8,6 +8,7 @@ final class TimelineModel {
     private(set) var selectedDay = TimelineDay(Date())
     @ObservationIgnored private var observedToday = TimelineDay(Date())
     private(set) var earliestDay: TimelineDay?
+    private(set) var latestDay: TimelineDay?
     private(set) var hasLoadedDateRange = false
     private(set) var days: [TimelineDay] = [TimelineDay(Date())]
     private(set) var snapshots: [TimelineDay: [TimelineWindow]] = [:]
@@ -44,6 +45,7 @@ final class TimelineModel {
         let snapshot: TimelineDaySnapshot
         let summaries: [TimelineWindowID: String]
         let first: TimelineDay?
+        let last: TimelineDay?
         let listWindows: [TimelineWindow]
         let repeatedClockRanges: Set<TimelineWindowID>
         let revision: TimelineReadRevision
@@ -161,13 +163,14 @@ final class TimelineModel {
                 let snapshot = try await archive.timelineDaySnapshot(day, configurationFingerprint: fingerprint)
                 try Task.checkCancellation()
                 let first = try await archive.earliestTimelineDay()
+                let last = try await archive.latestTimelineDay()
                 var summaries: [TimelineWindowID: String] = [:]
                 for window in snapshot.windows where window.canSummarize {
                     try Task.checkCancellation()
                     summaries[window.id] = window.summaryRevision
                 }
                 let windows = snapshot.windows.reversed().filter { !$0.omitsPunctuationOnlyResult }
-                return LoadedDay(snapshot: snapshot, summaries: summaries, first: first,
+                return LoadedDay(snapshot: snapshot, summaries: summaries, first: first, last: last,
                     listWindows: windows, repeatedClockRanges: TimelineDate.repeatedClockRanges(in: windows), revision: revision)
             }, consumers: [])
         }
@@ -232,7 +235,7 @@ final class TimelineModel {
     }
 
     func select(_ day: TimelineDay) {
-        guard day <= TimelineDay(Date()) else { return }
+        guard day <= max(TimelineDay(Date()), latestDay ?? TimelineDay(Date())) else { return }
         let changed = selectedDay != day
         selectedDay = day
         if changed {
@@ -249,18 +252,7 @@ final class TimelineModel {
         invalidationRevision &+= 1
         discardPendingReads()
         loadedRevisions.removeAll()
-        snapshots.removeAll()
-        listWindows.removeAll()
-        repeatedClockRanges.removeAll()
-        processingProgress.removeAll()
-        failures.removeAll()
-        earliestDay = nil
-        hasLoadedDateRange = false
-        let currentToday = TimelineDay(Date())
-        observedToday = currentToday
-        selectedDay = currentToday
-        days = [currentToday]
-        onSelectedDayChanged?(currentToday)
+        // Keep the mounted projection and reading anchors until the replacement is ready.
     }
 
     func currentID(_ id: TimelineWindowID?) -> TimelineWindowID? {
@@ -312,16 +304,10 @@ final class TimelineModel {
 
     func refresh() async {
         let currentToday = TimelineDay(Date())
-        if currentToday != observedToday {
-            if selectedDay == observedToday {
-                selectedDay = currentToday
-                onSelectedDayChanged?(currentToday)
-            }
-            observedToday = currentToday
-        }
+        if currentToday != observedToday { observedToday = currentToday }
         let day = selectedDay
         if let loaded = loadedRevisions[day], loaded.reads == readRevision,
-           snapshots[day] != nil, failures[day] == nil, days.last == TimelineDay(Date()),
+           snapshots[day] != nil, failures[day] == nil, days.last == max(TimelineDay(Date()), latestDay ?? TimelineDay(Date())),
            let revision = try? await archive.timelineReadRevision(), loaded.archive == revision {
             guard !Task.isCancelled, selectedDay == day else { return }
             let currentWindows = snapshots[day, default: []]
@@ -367,11 +353,13 @@ final class TimelineModel {
                 }
                 failures.removeValue(forKey: day)
                 let today = TimelineDay(Date())
-                earliestDay = first.map { min($0, today) }
+                earliestDay = first
+                latestDay = loaded.last
+                let last = max(today, loaded.last ?? today)
                 hasLoadedDateRange = true
                 var dates: [TimelineDay] = []
                 var cursor = min(earliestDay ?? today, day)
-                while cursor <= today { dates.append(cursor); cursor = cursor.adding(days: 1) }
+                while cursor <= last { dates.append(cursor); cursor = cursor.adding(days: 1) }
                 if days != dates { days = dates }
                 if snapshots.count > 7 {
                     let oldest = snapshots.keys.filter { $0 != selectedDay && $0 != day }

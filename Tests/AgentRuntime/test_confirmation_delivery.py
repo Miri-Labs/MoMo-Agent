@@ -36,7 +36,10 @@ class ConfirmationDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.gateway = SuperAgentGateway(self.data, self.connection, python_executable=Path(sys.executable),
                                         base_env=momo_agent.child_environment(self.data), manage_dsh=False)
         self.client = TestClient(TestServer(self.gateway.create_app()))
-        await self.client.start_server()
+        # Startup can run its first briefing before tasks are cancelled below.
+        # This suite drives confirmation ticks, not the wall-clock briefing timer.
+        with patch.object(SuperAgentGateway, "_morning_briefings", new=AsyncMock()):
+            await self.client.start_server()
         # Keep tests deterministic; every tick below is explicit and every provider is a fake.
         for task in self.gateway._tasks:
             task.cancel()

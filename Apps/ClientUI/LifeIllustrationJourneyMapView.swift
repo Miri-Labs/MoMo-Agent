@@ -6,6 +6,7 @@ import SwiftUI
 struct LifeIllustrationJourneyMapView: View {
     let store: LifeIllustrationStore
     let initialID: String
+    var referenceDay: String? = nil
     var close: (() -> Void)? = nil
     let showSource: (LifeIllustration) -> Void
     @State private var detail: LifeIllustration?
@@ -17,8 +18,8 @@ struct LifeIllustrationJourneyMapView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var items: [LifeIllustration] {
-        let day = store.items.first { $0.id == initialID }?.logicalDay
-        return store.items.filter { $0.logicalDay == day }.sorted { $0.windowStart < $1.windowStart }
+        let day = referenceDay ?? store.items.first { $0.id == initialID }?.primaryDay
+        return store.items.filter { $0.belongs(to: day ?? "") }.sorted { $0.windowStart < $1.windowStart }
     }
 
     private var stops: [IllustrationJourneyStop] {
@@ -36,7 +37,7 @@ struct LifeIllustrationJourneyMapView: View {
                 mapContent(size: geometry.size)
             }
             .background(JourneyPalette.canvas(for: colorScheme))
-            .navigationTitle(items.first?.logicalDay ?? "")
+            .navigationTitle(referenceDay ?? items.first?.primaryDay ?? "")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -47,7 +48,7 @@ struct LifeIllustrationJourneyMapView: View {
                 }
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 1) {
-                        Text(items.first?.logicalDay ?? "")
+                        Text(referenceDay ?? items.first?.primaryDay ?? "")
                             .font(.system(size: 14, weight: .semibold, design: .monospaced))
                             .foregroundStyle(MoMoPalette.ink)
                         if let span = dayTimeSpan {

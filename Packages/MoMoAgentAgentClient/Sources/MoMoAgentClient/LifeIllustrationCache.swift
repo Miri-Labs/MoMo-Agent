@@ -11,6 +11,7 @@ actor LifeIllustrationCache {
     }
 
     struct Snapshot: Codable, Sendable {
+        var dateProjectionVersion = 1
         var cursor = "0"
         var items: [String: LifeIllustration] = [:]
         var lastVerifiedSettings: LifeIllustrationSettings?
@@ -29,12 +30,13 @@ actor LifeIllustrationCache {
         }
 
         private enum CodingKeys: String, CodingKey {
-            case cursor, items, lastVerifiedSettings, verifiedStamps
+            case dateProjectionVersion, cursor, items, lastVerifiedSettings, verifiedStamps
         }
 
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            cursor = try container.decodeIfPresent(String.self, forKey: .cursor) ?? "0"
+            let version = try container.decodeIfPresent(Int.self, forKey: .dateProjectionVersion) ?? 0
+            cursor = version < 1 ? "0" : (try container.decodeIfPresent(String.self, forKey: .cursor) ?? "0")
             items = try container.decodeIfPresent([String: LifeIllustration].self, forKey: .items) ?? [:]
             lastVerifiedSettings = try container.decodeIfPresent(LifeIllustrationSettings.self, forKey: .lastVerifiedSettings)
             verifiedStamps = try container.decodeIfPresent([String: FileStamp].self, forKey: .verifiedStamps) ?? [:]

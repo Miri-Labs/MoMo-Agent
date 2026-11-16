@@ -80,6 +80,134 @@ class IllustrationTests(unittest.TestCase):
     def generate(self):
         self.scan(); self.queue.advance(self.generator, self.context, self.start + 3 * 3600 + 600)
 
+    def test_saved_manifest_projects_source_dates_without_mutation_or_generation(self):
+        self.generate()
+        row = self.row()
+        before = [tuple(r) for r in self.queue.db.execute('SELECT * FROM slots')]
+        changes = self.queue.db.total_changes
+        generated = list(self.generator.generated)
+        item = self.queue.manifest()['items'][0]
+        self.assertEqual(row['id'], item['id'])
+        self.assertEqual(row['asset_sha256'], item['asset_sha256'])
+        self.assertEqual(1, item['date_projection_version'])
+        self.assertEqual([tuple(r) for r in self.queue.db.execute('SELECT * FROM slots')], before)
+        self.assertEqual(changes, self.queue.db.total_changes)
+        self.assertEqual(generated, self.generator.generated)
+
+    def test_cross_midnight_primary_is_earliest_source_with_same_id_references(self):
+        from life_illustrations import natural_projection
+        start = dt.datetime(2026, 11, 15, 15, 59, tzinfo=dt.timezone.utc).timestamp()
+        item = dict(id='one-image', logical_day='2026-11-15', timezone='Asia/Shanghai',
+                    window_start=start, window_end=start + 180, created_at=start + 864000)
+        spans = [dict(id='first', recorded_at=start, timezone_offset=28800),
+                 dict(id='second', recorded_at=start + 120, timezone_offset=28800)]
+        result = natural_projection(item, dict(passages=[dict(source_id='library/session', spans=spans)]))
+        self.assertEqual(['2026-11-15', '2026-11-16'], result['source_days'])
+        self.assertEqual('2026-11-15', result['logical_day'])
+        self.assertEqual('one-image', result['id'])
+        self.assertEqual('second', result['source_anchors'][1]['span_id'])
+        self.assertEqual('2026-11-16', result['source_anchors'][1]['day'])
+        self.assertEqual(item['created_at'], result['created_at'])
+
+    def legacy_ready_at(self, at, saved_timezone):
+        self.start = at - 60
+        self.payload.update(version=2, recorded_at=at)
+        self.payload['spans'][0]['recorded_at'] = at
+        receipt = self.context.sync_source(self.payload)
+        self.generate()
+        self.queue.db.execute('UPDATE slots SET timezone=?', (saved_timezone,))
+        # Model an already-published legacy image with the saved server timezone.
+        self.queue.db.execute('DELETE FROM changes')
+        self.queue.publish(self.row())
+        return receipt
+
+    def test_ready_clock_enrichment_publishes_to_existing_cursor_without_regeneration(self):
+        at = dt.datetime(2026, 11, 16, 23, 59, 59, tzinfo=dt.timezone.utc).timestamp()
+        receipt = self.legacy_ready_at(at, 'UTC')
+        old = self.queue.manifest()
+        self.assertEqual(['2026-11-16'], old['items'][0]['source_days'])
+        before = dict(self.row())
+        pixels = self.queue.asset(before['asset_sha256'])
+        calls = (list(self.generator.prepared), list(self.generator.generated))
+        enriched = copy.deepcopy(self.payload)
+        enriched['spans'][0].update(timezone_offset=0, end_at=at + 2)
+        new_receipt = self.context.sync_source(enriched)
+        self.assertEqual(receipt['source_revision'], new_receipt['source_revision'])
+        self.queue.reconcile(self.context)
+        delta = self.queue.manifest(old['next_cursor'])
+        self.assertEqual(1, len(delta['items']))
+        item = delta['items'][0]
+        self.assertEqual(['2026-11-16', '2026-11-17'], item['source_days'])
+        self.assertEqual(before['id'], item['id'])
+        self.assertEqual([self.payload['spans'][0]['id']] * 2, [a['span_id'] for a in item['source_anchors']])
+        after = dict(self.row())
+        for key in before.keys() - {'evidence', 'updated_at'}:
+            self.assertEqual(before[key], after[key], key)
+        self.assertEqual(pixels, self.queue.asset(after['asset_sha256']))
+        self.assertEqual(calls, (self.generator.prepared, self.generator.generated))
+        self.queue.reconcile(self.context)
+        self.assertEqual([], self.queue.manifest(delta['next_cursor'])['items'])
+        # Full replay and incremental delivery resolve the exact same projection.
+        self.assertEqual(item, self.queue.manifest()['items'][-1])
+
+    def test_manifest_http_reconciles_late_recording_zone_before_incremental_read(self):
+        at = dt.datetime(2026, 11, 15, 17, tzinfo=dt.timezone.utc).timestamp()
+        receipt = self.legacy_ready_at(at, 'America/Los_Angeles')
+        old = self.queue.manifest()
+        self.assertEqual(['2026-11-15'], old['items'][0]['source_days'])
+        enriched = copy.deepcopy(self.payload)
+        enriched['spans'][0].update(timezone_offset=28800, end_at=at + 2)
+        self.assertEqual(receipt['source_revision'], self.context.sync_source(enriched)['source_revision'])
+        (self.data / 'api-key').write_text('fixture-key')
+        service = ContextService(self.data, dict(data_url='http://127.0.0.1:0', workspace_id='test'))
+        thread = threading.Thread(target=service.server.serve_forever, daemon=True); thread.start()
+        try:
+            url = f'http://127.0.0.1:{service.server.server_port}/v1/life-illustrations/manifest?cursor={old["next_cursor"]}'
+            request = urllib.request.Request(url, headers={'Authorization': 'Bearer fixture-key'})
+            with urllib.request.urlopen(request) as response:
+                delta = json.load(response)
+            self.assertEqual(1, len(delta['items']))
+            self.assertEqual(['2026-11-16'], delta['items'][0]['source_days'])
+            self.assertEqual('recorded_offset', delta['items'][0]['source_anchors'][0]['date_evidence'])
+            self.assertEqual(self.context.list_sources()['items'][0]['windows'][0]['natural_day'],
+                             delta['items'][0]['logical_day'])
+            self.assertEqual(1, len(self.generator.generated))
+        finally:
+            service.server.shutdown(); service.server.server_close(); thread.join()
+
+    def test_saved_clock_does_not_borrow_from_a_different_span_or_changed_start(self):
+        self.generate()
+        before = dict(self.row())
+        cursor = self.queue.manifest()['next_cursor']
+        changed = copy.deepcopy(self.payload)
+        changed['version'] += 1
+        changed['spans'][0].update(recorded_at=self.start + 120, timezone_offset=28800, end_at=self.start + 122)
+        self.context.sync_source(changed)
+        self.queue.reconcile(self.context)
+        self.assertEqual(before, dict(self.row()))
+        self.assertEqual([], self.queue.manifest(cursor)['items'])
+        changed['version'] += 1
+        changed['spans'][0].update(id=str(uuid.uuid4()), recorded_at=self.start + 60)
+        self.context.sync_source(changed)
+        self.queue.reconcile(self.context)
+        self.assertEqual(before, dict(self.row()))
+        self.assertEqual([], self.queue.manifest(cursor)['items'])
+
+    def test_recording_zone_wins_over_saved_zone_and_missing_evidence_keeps_legacy(self):
+        from life_illustrations import natural_projection
+        start = dt.datetime(2026, 11, 16, 1, tzinfo=dt.timezone.utc).timestamp()
+        item = dict(id='old', logical_day='2026-11-15', timezone='Asia/Shanghai',
+                    window_start=start, window_end=start + 60)
+        evidence = dict(passages=[dict(source_id='source', spans=[dict(id='span', recorded_at=start, timezone_offset=-18000)])])
+        with patch.dict(os.environ, {'TZ': 'Pacific/Auckland'}):
+            result = natural_projection(item, evidence)
+        self.assertEqual(['2026-11-15'], result['source_days'])
+        self.assertEqual('recorded_offset', result['source_anchors'][0]['date_evidence'])
+        item['timezone'] = 'unresolvable'
+        fallback = natural_projection(item, {})
+        self.assertEqual(['2026-11-15'], fallback['source_days'])
+        self.assertEqual([], fallback['source_anchors'])
+
     def test_logical_day_alignment_and_midnight(self):
         window = window_at(dt.datetime(2026, 11, 5, 1).timestamp(), 3, 8)
         self.assertEqual('2026-11-04', window['logical_day'])

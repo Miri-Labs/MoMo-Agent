@@ -32,6 +32,7 @@ extension LifeIllustration {
         var clock = Date.FormatStyle().hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
         clock.timeZone = zone
         return Date(timeIntervalSince1970: windowStart).formatted(clock)
+            + (crossesMidnight ? "\n" + String(localized: "跨午夜") : "")
     }
 
     var stickerAngle: Double {
@@ -143,7 +144,7 @@ struct LifeIllustrationStampCard: View {
                     .font(.system(size: 8.5, weight: .regular))
                     .monospacedDigit()
                     .foregroundStyle(MoMoPalette.muted)
-                    .lineLimit(1)
+                    .lineLimit(illustration.crossesMidnight ? 2 : 1)
             }
             .frame(width: 64)
         } else {
@@ -151,7 +152,7 @@ struct LifeIllustrationStampCard: View {
                 .font(.system(size: 9.5, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(MoMoPalette.muted)
-                .lineLimit(1)
+                .lineLimit(illustration.crossesMidnight ? 2 : 1)
                 .frame(width: 64)
                 .frame(maxHeight: .infinity)
         }
