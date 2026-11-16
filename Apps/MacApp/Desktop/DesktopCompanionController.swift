@@ -32,7 +32,7 @@ final class DesktopCompanionController: NSObject {
 
     private func updateSurface() {
         guard let model, let openChat, let openSettings else { return }
-        let layout = NSScreen.screens.compactMap {
+        let layout: DesktopNotchLayout? = model.isLivePreviewClient ? nil : NSScreen.screens.compactMap {
             DesktopNotchLayout(screen: $0.frame, safeTop: $0.safeAreaInsets.top,
                                left: $0.auxiliaryTopLeftArea, right: $0.auxiliaryTopRightArea)
         }.first

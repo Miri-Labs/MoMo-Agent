@@ -15,6 +15,7 @@ import UIKit
 struct ClientPrimaryButton: ButtonStyle {
     var isLoading = false
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(macOS)
     @Environment(\.colorScheme) private var colorScheme
     #endif
@@ -32,8 +33,10 @@ struct ClientPrimaryButton: ButtonStyle {
             configuration.label
         }.phoneText(.body).frame(maxWidth: .infinity, minHeight: 52)
             .foregroundStyle(MoMoPalette.canvas)
-            .background(MoMoPalette.ink.opacity(isLoading ? 1 : enabled ? (configuration.isPressed ? 0.8 : 1) : 0.3), in: Capsule())
+            .background(MoMoPalette.ink.opacity(isLoading ? 1 : enabled ? (configuration.isPressed ? 0.86 : 1) : 0.3), in: Capsule())
             .contentShape(Capsule())
+            .scaleEffect(configuration.isPressed && enabled && !reduceMotion ? 0.985 : 1.0)
+            .animation(reduceMotion ? nil : .spring(duration: 0.18, bounce: 0.0), value: configuration.isPressed)
     }
 }
 
@@ -55,7 +58,11 @@ struct ClientComposer: View {
     @FocusState private var focused: Bool
     @State private var showingFiles = false
     @State private var importingAttachments = false
-    #if !os(macOS)
+    #if os(macOS)
+    @State private var attachHovered = false
+    @State private var sendHovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #else
     @Environment(\.scenePhase) private var scenePhase
     @State private var voice = ChatVoiceInput()
     @Environment(EarphoneCaptureRuntime.self) private var earphone: EarphoneCaptureRuntime?
@@ -66,6 +73,11 @@ struct ClientComposer: View {
     @State private var selectedPhotos: [PhotosPickerItem] = []
     #endif
     private var attachments: [AgentAttachment] { store?.draftAttachments ?? [] }
+    #if os(macOS)
+    private var isExpandedMacComposer: Bool {
+        !attachments.isEmpty || importingAttachments || text.contains("\n") || text.count > 56
+    }
+    #endif
     private var voiceIsActive: Bool {
         #if os(macOS)
         false
@@ -142,27 +154,58 @@ struct ClientComposer: View {
 
     @ViewBuilder private var composerBody: some View {
         #if os(macOS)
-        VStack(alignment: .leading, spacing: 10) {
-            if !attachments.isEmpty {
-                ClientAttachmentStrip(attachments: attachments, remove: { store?.removeAttachment($0) },
-                                      preview: { onPreviewAttachment?($0) })
+        let expanded = isExpandedMacComposer
+        let radius: CGFloat = expanded ? 18 : 23
+        Group {
+            if expanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    if !attachments.isEmpty {
+                        ClientAttachmentStrip(attachments: attachments, remove: { store?.removeAttachment($0) },
+                                              preview: { onPreviewAttachment?($0) })
+                            .padding(.top, 4)
+                    }
+                    if importingAttachments {
+                        Text("正在读取附件…").phoneText(.caption).foregroundStyle(MoMoPalette.muted)
+                            .padding(.horizontal, 16).padding(.top, 8)
+                    }
+                    ComposerReturnKeyHandler(send: { if canSend { send() } }) {
+                        inputField
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, attachments.isEmpty && !importingAttachments ? 14 : 4)
+                    HStack(spacing: 8) {
+                        if store != nil { attachmentButton }
+                        Spacer(minLength: 8)
+                        Text("⇧⏎ 换行")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(MoMoPalette.muted.opacity(0.65))
+                            .accessibilityHidden(true)
+                        sendControl
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.bottom, 8)
+                }
+            } else {
+                HStack(alignment: .center, spacing: 6) {
+                    if store != nil { attachmentButton }
+                    ComposerReturnKeyHandler(send: { if canSend { send() } }) {
+                        inputField
+                    }
+                    .padding(.leading, store == nil ? 10 : 2)
+                    .padding(.vertical, 9)
+                    sendControl
+                }
+                .padding(.horizontal, 8)
+                .frame(minHeight: 46)
             }
-            if importingAttachments {
-                Text("正在读取附件…").phoneText(.caption).foregroundStyle(MoMoPalette.muted)
-                    .padding(.horizontal, 18).padding(.top, 8)
-            }
-            ComposerReturnKeyHandler(send: { if canSend { send() } }) {
-                inputField
-            }
-            .padding(.horizontal, 18).padding(.top, attachments.isEmpty && !importingAttachments ? 18 : 6)
-            HStack {
-                if store != nil { attachmentButton }
-                Spacer()
-                sendControl
-            }.padding(.horizontal, 8).padding(.bottom, 8)
         }
-        .background(MoMoPalette.paper, in: RoundedRectangle(cornerRadius: 22))
-        .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(MoMoPalette.line, lineWidth: 1) }
+        .momoElevatedCard(
+            cornerRadius: radius,
+            isFocused: focused,
+            shadowStrength: focused ? 1.35 : 1.0
+        )
+        .animation(reduceMotion ? nil : .spring(duration: 0.24, bounce: 0.0), value: expanded)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: focused)
         .tint(MoMoPalette.ink)
         #else
         VStack(alignment: .leading, spacing: 4) {
@@ -207,19 +250,28 @@ struct ClientComposer: View {
 
     @ViewBuilder private var attachmentButton: some View {
         #if os(macOS)
+        let atLimit = attachments.count >= 4
         Button {
-            showingFiles = true
+            if atLimit {
+                onError?(String(localized: "一次最多添加 4 个附件。"))
+            } else {
+                showingFiles = true
+            }
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(MoMoPalette.ink)
-                .frame(width: 32, height: 32)
-                .background(MoMoPalette.ink.opacity(0.06), in: Circle())
-                .frame(width: 44, height: 44).contentShape(Circle())
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(atLimit ? MoMoPalette.muted.opacity(0.6) : MoMoPalette.ink.opacity(attachHovered ? 1.0 : 0.78))
+                .frame(width: 30, height: 30)
+                .background(
+                    MoMoPalette.ink.opacity(attachHovered && !atLimit ? 0.09 : 0.045),
+                    in: Circle()
+                )
+                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
-        .disabled(importingAttachments || attachments.count >= 4)
-        .help("添加照片或文件")
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
+        .disabled(importingAttachments)
+        .onHover { attachHovered = $0 }
+        .help(atLimit ? "一次最多添加 4 个附件" : "添加照片或文件")
         .accessibilityLabel("添加照片或文件")
         .accessibilityIdentifier("assistant.attachments")
         #else
@@ -303,17 +355,35 @@ struct ClientComposer: View {
             .onChange(of: focused) { if focused { onCompose() } }
             .onChange(of: text) { if focused { onCompose() } }
     }
-    private var sendControl: some View {
-            Button(action: send) {
-                Image(systemName: "arrow.up").font(.system(size: 16, weight: .semibold))
-                    .frame(width: 32, height: 32).background(MoMoPalette.ink.opacity(canSend ? 1 : 0.12), in: Circle())
-                    .foregroundStyle(canSend ? MoMoPalette.canvas : MoMoPalette.muted)
-                    .frame(width: 44, height: 44).contentShape(Circle())
-            }.buttonStyle(.plain)
-                .disabled(!canSend).accessibilityLabel("发送给 MoMo").accessibilityIdentifier(sendID)
-                #if os(macOS)
-                .keyboardShortcut(.return, modifiers: .command)
-                #endif
+    @ViewBuilder private var sendControl: some View {
+        #if os(macOS)
+        Button(action: send) {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 30, height: 30)
+                .background(
+                    MoMoPalette.ink.opacity(canSend ? (sendHovered ? 0.88 : 1.0) : 0.07),
+                    in: Circle()
+                )
+                .foregroundStyle(canSend ? MoMoPalette.canvas : MoMoPalette.muted.opacity(0.55))
+                .contentShape(Circle())
+        }
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
+        .disabled(!canSend)
+        .onHover { sendHovered = $0 }
+        .help(canSend ? "发送给 MoMo（⏎）" : "输入消息或添加附件后发送")
+        .accessibilityLabel("发送给 MoMo")
+        .accessibilityIdentifier(sendID)
+        .keyboardShortcut(.return, modifiers: .command)
+        #else
+        Button(action: send) {
+            Image(systemName: "arrow.up").font(.system(size: 16, weight: .semibold))
+                .frame(width: 32, height: 32).background(MoMoPalette.ink.opacity(canSend ? 1 : 0.12), in: Circle())
+                .foregroundStyle(canSend ? MoMoPalette.canvas : MoMoPalette.muted)
+                .frame(width: 44, height: 44).contentShape(Circle())
+        }.buttonStyle(.plain)
+            .disabled(!canSend).accessibilityLabel("发送给 MoMo").accessibilityIdentifier(sendID)
+        #endif
     }
 }
 
@@ -472,16 +542,9 @@ struct MemoryNotebookPalette {
 }
 
 private struct MemoryNotebookPaper: View {
-    @Environment(\.colorScheme) private var scheme
-
     var body: some View {
-        let colors = MemoryNotebookPalette(scheme: scheme)
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(colors.paper)
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(colors.line, lineWidth: 0.7)
-            }
+        Color.clear
+            .momoElevatedCard(cornerRadius: 14, shadowStrength: 0.65)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
@@ -3064,6 +3127,7 @@ struct DreamHomeCardsSection: View {
     let onOpenBriefing: () -> Void
     let onOpenNotebook: () -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @State private var hoveredCardID: String?
 
     private var isDark: Bool { colorScheme == .dark }
     private var visibleCards: [DreamBriefingCard] {
@@ -3073,7 +3137,7 @@ struct DreamHomeCardsSection: View {
 
     var body: some View {
         if !visibleCards.isEmpty {
-            LazyVGrid(columns: [GridItem(visibleCards.count == 1 ? .flexible() : .adaptive(minimum: 300), spacing: 10)], spacing: 8) {
+            LazyVGrid(columns: [GridItem(visibleCards.count == 1 ? .flexible() : .adaptive(minimum: 300), spacing: 10)], spacing: 10) {
                 ForEach(visibleCards.prefix(2)) { card in
                     cardView(card)
                 }
@@ -3083,25 +3147,28 @@ struct DreamHomeCardsSection: View {
     }
 
     private func cardView(_ card: DreamBriefingCard) -> some View {
-        HStack(alignment: .top, spacing: 0) {
+        let isHovered = hoveredCardID == card.id
+        return HStack(alignment: .top, spacing: 0) {
             Button {
                 DreamDismissedCardsStore.markDismissed(card, headline: document.headline, into: &dismissedIDs)
                 onSelectCard(card)
             } label: {
-                HStack(spacing: 10) {
+                HStack(spacing: 11) {
                     DreamDotMatrixArtwork(kind: card.motif, isDark: isDark)
-                        .frame(width: compact ? 56 : 64, height: compact ? 56 : 64)
-                    VStack(alignment: .leading, spacing: 5) {
+                        .frame(width: compact ? 54 : 60, height: compact ? 54 : 60)
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(card.title)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .tracking(-0.08)
                             .foregroundStyle(MoMoPalette.ink)
                             .lineLimit(2)
-                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Text(card.subtitle)
                                 .font(.system(size: 12))
                                 .lineLimit(2)
                             Image(systemName: "arrow.up.right")
-                                .font(.system(size: 9, weight: .medium))
+                                .font(.system(size: 9, weight: .semibold))
+                                .opacity(isHovered ? 0.95 : 0.6)
                                 .accessibilityHidden(true)
                         }
                         .foregroundStyle(MoMoPalette.muted)
@@ -3109,8 +3176,8 @@ struct DreamHomeCardsSection: View {
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.leading, 8)
-                .padding(.vertical, compact ? 8 : 10)
+                .padding(.leading, 10)
+                .padding(.vertical, compact ? 9 : 11)
                 .frame(maxHeight: .infinity)
                 .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -3130,9 +3197,10 @@ struct DreamHomeCardsSection: View {
                 DreamDismissedCardsStore.markDismissed(card, headline: document.headline, into: &dismissedIDs)
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(MoMoPalette.muted)
                     #if os(macOS)
+                    .opacity(isHovered ? 0.9 : 0.25)
                     .frame(width: 28, height: 28)
                     #else
                     .frame(width: 44, height: 44)
@@ -3145,20 +3213,34 @@ struct DreamHomeCardsSection: View {
             .help("收起这张卡片")
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(MoMoPalette.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(MoMoPalette.line, lineWidth: 0.5)
-                .allowsHitTesting(false)
+        .momoElevatedCard(
+            cornerRadius: 14,
+            isFocused: isHovered,
+            shadowStrength: isHovered ? 1.15 : 0.75
+        )
+        #if os(macOS)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.14)) {
+                if hovering {
+                    hoveredCardID = card.id
+                } else if hoveredCardID == card.id {
+                    hoveredCardID = nil
+                }
+            }
         }
+        #endif
     }
 }
 
 private struct DreamCardButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(MoMoPalette.ink.opacity(configuration.isPressed ? 0.05 : 0),
+            .background(MoMoPalette.ink.opacity(configuration.isPressed ? 0.04 : 0),
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.988 : 1.0)
+            .animation(reduceMotion ? nil : .spring(duration: 0.18, bounce: 0.0), value: configuration.isPressed)
     }
 }
 

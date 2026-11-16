@@ -6,7 +6,7 @@ enum PhoneTextStyle: Equatable {
     var size: CGFloat {
         #if os(macOS)
         switch self {
-        case .body, .transcript: 15
+        case .body, .transcript: 14.5
         case .navigation, .menu, .history, .code: 13
         case .brand, .subheading: 16
         case .title, .heading: 22
@@ -27,9 +27,32 @@ enum PhoneTextStyle: Equatable {
         #endif
     }
 
+    /// Paired optical icon size following Sand's F6 typography-glyph scale.
+    var iconSize: CGFloat {
+        switch self {
+        case .title, .heading: 20
+        case .subheading, .brand: 18
+        case .body, .transcript, .section: 16
+        case .navigation, .menu, .history, .code: 14
+        case .metadata: 12
+        case .caption: 10
+        }
+    }
+
+    /// Optical tracking: tighter on display/headings, slightly airier on micro-captions.
+    var trackingPoints: CGFloat {
+        switch self {
+        case .title, .heading: -0.32
+        case .subheading, .brand: -0.15
+        case .section: -0.06
+        case .caption: 0.06
+        default: 0
+        }
+    }
+
     var extraLeading: CGFloat {
         switch self {
-        case .body, .transcript, .code: size * 0.3
+        case .body, .transcript, .code: size * 0.32
         default: 0
         }
     }
@@ -70,6 +93,7 @@ private struct PhoneTextModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .font(.system(size: size, weight: style.weight, design: style == .code ? .monospaced : .default))
+            .tracking(style.trackingPoints)
             .lineSpacing(leading)
     }
 }
@@ -77,5 +101,17 @@ private struct PhoneTextModifier: ViewModifier {
 extension View {
     func phoneText(_ style: PhoneTextStyle) -> some View {
         modifier(PhoneTextModifier(style: style))
+    }
+}
+
+/// Tactile micro-press feedback matching Sand's `--ui-press-scale` (0.98 for cards/pills, 0.94 for icon buttons).
+struct MoMoPressableButtonStyle: ButtonStyle {
+    var scale: CGFloat = 0.98
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1.0)
+            .animation(reduceMotion ? nil : .spring(duration: 0.2, bounce: 0.0), value: configuration.isPressed)
     }
 }

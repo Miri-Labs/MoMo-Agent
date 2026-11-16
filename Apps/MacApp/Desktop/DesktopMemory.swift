@@ -184,7 +184,7 @@ struct DesktopMemory: View {
             let wide = totalWidth >= 680
             let active = resolvedSelectedMemory(wide: wide, tree: tree)
             let sidebarWidth: CGFloat = wide ? 268 : totalWidth
-            let paneWidth: CGFloat = wide ? max(1, totalWidth - sidebarWidth - 1) : totalWidth
+            let paneWidth: CGFloat = wide ? max(1, totalWidth - sidebarWidth - 0.5) : totalWidth
 
             HStack(spacing: 0) {
                 if wide || active == nil {
@@ -195,8 +195,8 @@ struct DesktopMemory: View {
 
                 if wide {
                     Rectangle()
-                        .fill(MoMoPalette.line.opacity(0.85))
-                        .frame(width: 1, height: totalHeight)
+                        .fill(MoMoPalette.borderSubtle)
+                        .frame(width: 0.5, height: totalHeight)
                         .accessibilityHidden(true)
                 }
 
@@ -211,7 +211,7 @@ struct DesktopMemory: View {
                 }
             }
         }
-        .background(MoMoPalette.paper)
+        .background(MoMoPalette.canvas)
         .task(id: isActive) {
             guard isActive else { return }
             await model.loadContextIfStale(maxAge: 6)
@@ -312,9 +312,9 @@ struct DesktopMemory: View {
                 .padding(.bottom, 2)
 
             if searching {
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11.5))
+                        .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(MoMoPalette.muted)
                     TextField("搜索笔记、项目、人物…", text: $searchQuery)
                         .textFieldStyle(.plain)
@@ -330,13 +330,9 @@ struct DesktopMemory: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 6)
-                .background(MoMoPalette.paper, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(MoMoPalette.line, lineWidth: 0.7)
-                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6.5)
+                .momoElevatedCard(cornerRadius: 9, shadowStrength: 0.45)
                 .padding(.horizontal, 12)
             }
 
@@ -453,8 +449,8 @@ struct DesktopMemory: View {
                 )
 
                 Rectangle()
-                    .fill(MoMoPalette.line.opacity(0.65))
-                    .frame(height: 0.6)
+                    .fill(MoMoPalette.borderSubtle)
+                    .frame(height: 0.5)
                     .accessibilityHidden(true)
 
                 MacNoteDocumentReader(
@@ -486,13 +482,14 @@ struct DesktopMemory: View {
                         NSWorkspace.shared.open(url)
                     }
                 )
+                .momoScrollEdgeFade(top: 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .background(MoMoPalette.paper)
+            .background(MoMoPalette.canvas)
         } else {
             ContentUnavailableView("选择一篇笔记", systemImage: "doc.text", description: Text("从左侧目录点击任一笔记或日志即可阅读。"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(MoMoPalette.paper)
+                .background(MoMoPalette.canvas)
         }
     }
 }
@@ -695,11 +692,7 @@ private struct DesktopNoteTopBar: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
-                    .background(colors.surface.opacity(0.65), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(colors.line, lineWidth: 0.7)
-                    }
+                    .momoElevatedCard(cornerRadius: 9, shadowStrength: 0.5)
 
                     if let instructionError {
                         Text(instructionError)
@@ -856,16 +849,16 @@ private final class MacVaultRowCellView: NSTableCellView {
         switch entry {
         case let .folder(sectionID, title, accentKind, depth, itemCount, isExpanded):
             if depth > 0 {
-                MacVaultPalette.line.withAlphaComponent(0.75).setFill()
+                MacVaultPalette.ink.withAlphaComponent(0.08).setFill()
                 for level in 0..<depth {
-                    NSRect(x: outerInset + 9 + CGFloat(level) * stepIndent, y: 0, width: 1, height: b.height).fill()
+                    NSRect(x: outerInset + 9 + CGFloat(level) * stepIndent, y: 0, width: 0.5, height: b.height).fill()
                 }
             }
             let indent = CGFloat(depth) * stepIndent
             let pillRect = NSRect(x: outerInset + indent, y: 1.5, width: max(10, b.width - outerInset * 2 - indent), height: max(10, b.height - 2.5))
             if isHovered {
-                MacVaultPalette.surface.withAlphaComponent(0.55).setFill()
-                NSBezierPath(roundedRect: pillRect, xRadius: 6, yRadius: 6).fill()
+                MacVaultPalette.ink.withAlphaComponent(0.048).setFill()
+                NSBezierPath(roundedRect: pillRect, xRadius: 7, yRadius: 7).fill()
             }
 
             let chevronName = isExpanded ? "chevron.down" : "chevron.right"
@@ -890,22 +883,22 @@ private final class MacVaultRowCellView: NSTableCellView {
 
         case let .note(memory, title, symbol, shortJournalDate, isSelected, depth):
             if depth > 0 {
-                MacVaultPalette.line.withAlphaComponent(0.75).setFill()
+                MacVaultPalette.ink.withAlphaComponent(0.08).setFill()
                 for level in 0..<depth {
-                    NSRect(x: outerInset + 9 + CGFloat(level) * stepIndent, y: 0, width: 1, height: b.height).fill()
+                    NSRect(x: outerInset + 9 + CGFloat(level) * stepIndent, y: 0, width: 0.5, height: b.height).fill()
                 }
             }
             let indent = CGFloat(depth) * stepIndent
             let pillRect = NSRect(x: outerInset + indent, y: 0.5, width: max(10, b.width - outerInset * 2 - indent), height: max(10, b.height - 1))
             if isSelected {
-                MacVaultPalette.surface.setFill()
-                NSBezierPath(roundedRect: pillRect, xRadius: 6, yRadius: 6).fill()
+                MacVaultPalette.ink.withAlphaComponent(0.08).setFill()
+                NSBezierPath(roundedRect: pillRect, xRadius: 7, yRadius: 7).fill()
                 MacVaultPalette.nsAccent(for: memory.kind).setFill()
-                let barRect = NSRect(x: pillRect.minX, y: pillRect.minY + 5, width: 2.5, height: max(4, pillRect.height - 10))
-                NSBezierPath(roundedRect: barRect, xRadius: 1.25, yRadius: 1.25).fill()
+                let barRect = NSRect(x: pillRect.minX, y: pillRect.minY + 5.5, width: 2, height: max(4, pillRect.height - 11))
+                NSBezierPath(roundedRect: barRect, xRadius: 1, yRadius: 1).fill()
             } else if isHovered {
-                MacVaultPalette.surface.withAlphaComponent(0.55).setFill()
-                NSBezierPath(roundedRect: pillRect, xRadius: 6, yRadius: 6).fill()
+                MacVaultPalette.ink.withAlphaComponent(0.048).setFill()
+                NSBezierPath(roundedRect: pillRect, xRadius: 7, yRadius: 7).fill()
             }
 
             let symColor = isSelected ? MacVaultPalette.nsAccent(for: memory.kind) : MacVaultPalette.muted.withAlphaComponent(0.85)
@@ -1722,17 +1715,22 @@ private struct VaultIconButton: View {
     var accessibilityID: String? = nil
     var disabled: Bool = false
     let action: () -> Void
+    @State private var hovered = false
 
     var body: some View {
         let button = Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: isActive ? .semibold : .regular))
-                .foregroundStyle(isActive ? MoMoPalette.ink : MoMoPalette.muted)
+                .foregroundStyle(isActive || hovered ? MoMoPalette.ink : MoMoPalette.muted)
                 .frame(width: 26, height: 26)
-                .background(isActive ? MoMoPalette.surface : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .contentShape(Rectangle())
+                .background(
+                    isActive ? MoMoPalette.activeFill : (hovered ? MoMoPalette.hoverFill : .clear),
+                    in: RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 6.5, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
+        .onHover { hovered = $0 }
         .disabled(disabled)
         .help(help)
         .accessibilityLabel(accessibilityLabel)

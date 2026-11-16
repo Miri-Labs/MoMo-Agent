@@ -10,23 +10,54 @@ struct DesktopRoot: View {
     @State private var visitedTabs: Set<String> = ["chat"]
     @State private var recordingCitation: RecordingCitation?
     @State private var previewingMemoryNote: ContextMemory?
+    @State private var hoveredSidebarItem: String?
+    @State private var toggleHovered = false
+    @State private var commandHeld = false
+    @State private var flagsMonitor: Any?
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         HStack(spacing: 0) {
-            if sidebarVisible { sidebar.frame(width: 232).transition(.move(edge: .leading).combined(with: .opacity)) }
+            sidebar
+                .frame(width: sidebarVisible ? 216 : 76)
+                .background(MoMoPalette.sidebar)
+                .overlay(alignment: .trailing) {
+                    Rectangle()
+                        .fill(MoMoPalette.borderSubtle)
+                        .frame(width: 0.5)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+
             VStack(spacing: 0) {
                 if let failure = model.failure {
-                    HStack { Image(systemName: "exclamationmark.triangle"); Text(failure); Spacer(); Button("关闭") { model.failure = nil } }
-                        .font(.callout).padding(16).padding(.top, 32)
-                        .background(MoMoPalette.failureBackground).accessibilityIdentifier("desktop.failure")
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(MoMoPalette.failure)
+                        Text(failure)
+                            .font(.system(size: 13))
+                        Spacer()
+                        Button("关闭") { model.failure = nil }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(MoMoPalette.muted)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .padding(.top, 28)
+                    .background(MoMoPalette.failureBackground)
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
+                    }
+                    .accessibilityIdentifier("desktop.failure")
                 }
                 ZStack {
                     if visitedTabs.contains("chat") || model.selection == "chat" {
                         let active = model.selection == "chat"
                         DesktopChat(model: model, isActive: active)
-                            .padding(.top, 28)
+                            .padding(.top, 24)
                             .opacity(active ? 1 : 0)
                             .allowsHitTesting(active)
                             .accessibilityHidden(!active)
@@ -35,7 +66,7 @@ struct DesktopRoot: View {
                     if visitedTabs.contains("memory") || model.selection == "memory" {
                         let active = model.selection == "memory"
                         DesktopMemory(model: model, isActive: active)
-                            .padding(.top, 36)
+                            .padding(.top, 28)
                             .opacity(active ? 1 : 0)
                             .allowsHitTesting(active)
                             .accessibilityHidden(!active)
@@ -44,7 +75,7 @@ struct DesktopRoot: View {
                     if visitedTabs.contains("sources") || model.selection == "sources" {
                         let active = model.selection == "sources"
                         DesktopSources(model: model, isActive: active)
-                            .padding(.top, 36)
+                            .padding(.top, 28)
                             .opacity(active ? 1 : 0)
                             .allowsHitTesting(active)
                             .accessibilityHidden(!active)
@@ -59,12 +90,28 @@ struct DesktopRoot: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(MoMoPalette.canvas)
         }
-        .overlay(alignment: .topLeading) {
-            if !sidebarVisible { sidebarToggle.padding(.leading, 92).padding(.top, 2) }
-        }
-        .background(MoMoPalette.paper)
+        .background(MoMoPalette.canvas)
         .background(DesktopWindowChrome())
         .ignoresSafeArea(.container)
+        .onAppear {
+            if flagsMonitor == nil {
+                flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+                    let onlyCmd = event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command
+                    if commandHeld != onlyCmd {
+                        withAnimation(.easeOut(duration: 0.12)) {
+                            commandHeld = onlyCmd
+                        }
+                    }
+                    return event
+                }
+            }
+        }
+        .onDisappear {
+            if let monitor = flagsMonitor {
+                NSEvent.removeMonitor(monitor)
+                flagsMonitor = nil
+            }
+        }
         .environment(\.openURL, OpenURLAction { url in
             guard url.scheme?.lowercased() == "momoagent" else { return .systemAction }
             if DreamMemoryLinkResolver.isMemoryURL(url) {
@@ -118,47 +165,243 @@ struct DesktopRoot: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack { Spacer(); sidebarToggle }.padding(.trailing, 16).frame(height: 32)
-            HStack(spacing: 10) { PhoneBrandIcon(size: 22); PhoneBrandWordmark(size: 15); Spacer(minLength: 0) }
-                .padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 20)
-            VStack(spacing: 4) {
-                destination("首页", icon: "house", selection: "chat")
-                destination("记忆", icon: "brain", selection: "memory")
-                destination("转录", icon: "waveform", selection: "sources")
-            }.padding(.horizontal, 12)
-            Spacer(minLength: 24)
-            VStack(alignment: .leading, spacing: 14) {
-                sidebarLabel(model.status?.agentOnline == true ? "MoMo 正在运行" : "MoMo 尚未运行", icon: model.status?.agentOnline == true ? "checkmark.circle" : "pause.circle")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                Button { openWindow(id: MoMoAgentMacApp.settingsID) } label: { sidebarLabel("设置", icon: "gearshape").font(.system(size: 15)) }.buttonStyle(.plain)
-            }.padding(24)
+        let online = model.status?.agentOnline == true
+        return VStack(alignment: sidebarVisible ? .leading : .center, spacing: 0) {
+            if sidebarVisible {
+                HStack {
+                    Spacer()
+                    sidebarToggle
+                }
+                .padding(.trailing, 10)
+                .frame(height: 38)
+
+                HStack(spacing: 9) {
+                    PhoneBrandIcon(size: 20)
+                    PhoneBrandWordmark(size: 14)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+
+                VStack(spacing: 3) {
+                    destination("首页", icon: "house", selection: "chat", shortcutKey: "1")
+                    destination("记忆", icon: "brain", selection: "memory", shortcutKey: "2")
+                    destination("转录", icon: "waveform", selection: "sources", shortcutKey: "3")
+                }
+                .padding(.horizontal, 10)
+
+                Spacer(minLength: 24)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(online ? MoMoPalette.success : MoMoPalette.muted.opacity(0.45))
+                            .frame(width: 6.5, height: 6.5)
+                            .accessibilityHidden(true)
+                        Text(online ? "MoMo 正在运行" : "MoMo 尚未运行")
+                            .font(.system(size: 11.5, weight: .regular))
+                            .foregroundStyle(MoMoPalette.muted)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 4)
+
+                    settingsButton(expanded: true)
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 16)
+            } else {
+                Spacer().frame(height: 38)
+
+                VStack(spacing: 8) {
+                    sidebarToggle
+                    PhoneBrandIcon(size: 20)
+                        .padding(.vertical, 4)
+                }
+                .padding(.bottom, 12)
+
+                VStack(spacing: 5) {
+                    compactDestination("首页", icon: "house", selection: "chat", shortcutKey: "1")
+                    compactDestination("记忆", icon: "brain", selection: "memory", shortcutKey: "2")
+                    compactDestination("转录", icon: "waveform", selection: "sources", shortcutKey: "3")
+                }
+
+                Spacer(minLength: 24)
+
+                VStack(spacing: 10) {
+                    Circle()
+                        .fill(online ? MoMoPalette.success : MoMoPalette.muted.opacity(0.45))
+                        .frame(width: 7, height: 7)
+                        .help(online ? "MoMo 正在运行" : "MoMo 尚未运行")
+                        .accessibilityLabel(online ? "MoMo 正在运行" : "MoMo 尚未运行")
+
+                    settingsButton(expanded: false)
+                }
+                .padding(.bottom, 16)
+            }
         }
     }
 
     private var sidebarToggle: some View {
-        Button { withAnimation(reducedMotion ? nil : .easeInOut(duration: 0.2)) { sidebarVisible.toggle() } } label: {
-            Image(systemName: "sidebar.left").font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 28, height: 28).contentShape(Rectangle())
-        }.buttonStyle(.plain).help(sidebarVisible ? "收起侧栏" : "显示侧栏")
-            .accessibilityLabel(sidebarVisible ? "收起侧栏" : "显示侧栏").accessibilityIdentifier("desktop.sidebarToggle")
-            .keyboardShortcut("s", modifiers: [.command, .control])
-    }
-
-    private func sidebarLabel(_ title: String, icon: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon).frame(width: 22).accessibilityHidden(true)
-            Text(LocalizedStringKey(title))
+        Button {
+            withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                sidebarVisible.toggle()
+            }
+        } label: {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 13.5, weight: .regular))
+                .foregroundStyle(toggleHovered ? MoMoPalette.ink : MoMoPalette.muted)
+                .frame(width: 28, height: 28)
+                .background(
+                    toggleHovered ? MoMoPalette.hoverFill : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
+        .onHover { toggleHovered = $0 }
+        .help(sidebarVisible ? "收起侧栏（⌃⌘S）" : "展开侧栏（⌃⌘S）")
+        .accessibilityLabel(sidebarVisible ? "收起侧栏" : "显示侧栏")
+        .accessibilityIdentifier("desktop.sidebarToggle")
+        .keyboardShortcut("s", modifiers: [.command, .control])
     }
 
-    private func destination(_ title: String, icon: String, selection: String) -> some View {
-        Button { model.selection = selection } label: {
-            sidebarLabel(title, icon: icon).font(.system(size: 15))
-                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading).padding(.horizontal, 12)
-                .background(model.selection == selection ? MoMoPalette.ink.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 8))
-                .contentShape(RoundedRectangle(cornerRadius: 8))
-        }.buttonStyle(.plain).accessibilityIdentifier("desktop.destination." + selection)
-            .accessibilityAddTraits(model.selection == selection ? .isSelected : [])
+    private func keycapBadge(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+            .foregroundStyle(MoMoPalette.muted)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(MoMoPalette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 4.5, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                    .strokeBorder(MoMoPalette.borderSubtle, lineWidth: 0.5)
+            }
+            .transition(.opacity)
+            .accessibilityHidden(true)
+    }
+
+    private func destination(_ title: String, icon: String, selection: String, shortcutKey: Character) -> some View {
+        let isSelected = model.selection == selection
+        let isHovered = hoveredSidebarItem == selection
+        return Button {
+            model.selection = selection
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: icon)
+                    .font(.system(size: 13.5, weight: isSelected ? .medium : .regular))
+                    .foregroundStyle(isSelected ? MoMoPalette.ink : MoMoPalette.muted)
+                    .frame(width: 18)
+                    .accessibilityHidden(true)
+                Text(LocalizedStringKey(title))
+                    .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                    .foregroundStyle(isSelected ? MoMoPalette.ink : MoMoPalette.ink.opacity(0.84))
+                Spacer(minLength: 4)
+                if commandHeld {
+                    keycapBadge("⌘\(shortcutKey)")
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 33, alignment: .leading)
+            .padding(.horizontal, 10)
+            .background(
+                isSelected ? MoMoPalette.activeFill : (isHovered ? MoMoPalette.hoverFill : Color.clear),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.985))
+        .onHover { hovering in
+            if hovering { hoveredSidebarItem = selection }
+            else if hoveredSidebarItem == selection { hoveredSidebarItem = nil }
+        }
+        .accessibilityIdentifier("desktop.destination." + selection)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func compactDestination(_ title: String, icon: String, selection: String, shortcutKey: Character) -> some View {
+        let isSelected = model.selection == selection
+        let isHovered = hoveredSidebarItem == selection
+        return Button {
+            model.selection = selection
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 14.5, weight: isSelected ? .medium : .regular))
+                .foregroundStyle(isSelected ? MoMoPalette.ink : MoMoPalette.muted)
+                .frame(width: 36, height: 34)
+                .background(
+                    isSelected ? MoMoPalette.activeFill : (isHovered ? MoMoPalette.hoverFill : Color.clear),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
+        .onHover { hovering in
+            if hovering { hoveredSidebarItem = selection }
+            else if hoveredSidebarItem == selection { hoveredSidebarItem = nil }
+        }
+        .help("\(title)（⌘\(shortcutKey)）")
+        .accessibilityLabel(LocalizedStringKey(title))
+        .accessibilityIdentifier("desktop.destination." + selection)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private func settingsButton(expanded: Bool) -> some View {
+        let isHovered = hoveredSidebarItem == "settings"
+        if expanded {
+            Button {
+                openWindow(id: MoMoAgentMacApp.settingsID)
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 13.5, weight: .regular))
+                        .foregroundStyle(MoMoPalette.muted)
+                        .frame(width: 18)
+                        .accessibilityHidden(true)
+                    Text("设置")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(MoMoPalette.ink.opacity(0.84))
+                    Spacer(minLength: 4)
+                    if commandHeld {
+                        keycapBadge("⌘,")
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 33, alignment: .leading)
+                .padding(.horizontal, 10)
+                .background(
+                    isHovered ? MoMoPalette.hoverFill : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(MoMoPressableButtonStyle(scale: 0.985))
+            .onHover { hovering in
+                if hovering { hoveredSidebarItem = "settings" }
+                else if hoveredSidebarItem == "settings" { hoveredSidebarItem = nil }
+            }
+        } else {
+            Button {
+                openWindow(id: MoMoAgentMacApp.settingsID)
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 14.5, weight: .regular))
+                    .foregroundStyle(isHovered ? MoMoPalette.ink : MoMoPalette.muted)
+                    .frame(width: 36, height: 34)
+                    .background(
+                        isHovered ? MoMoPalette.hoverFill : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
+            .onHover { hovering in
+                if hovering { hoveredSidebarItem = "settings" }
+                else if hoveredSidebarItem == "settings" { hoveredSidebarItem = nil }
+            }
+            .help("设置（⌘,）")
+            .accessibilityLabel("设置")
+        }
     }
 }
 
@@ -420,7 +663,7 @@ struct DesktopChat: View {
                     onPreviewAttachment: { previewAttachment = $0 },
                     onError: { model.failure = $0 }
                 )
-                .frame(maxWidth: 760).padding(.horizontal, 32).padding(.bottom, 24).padding(.top, 12)
+                .frame(maxWidth: 740).padding(.horizontal, 28).padding(.bottom, 20).padding(.top, 8)
             } else {
                 Spacer(); PersonalAgentSlot(size: 144, active: false, expression: .concerned)
                 PhoneBrandWordmark(.momo, size: 24).padding()
@@ -447,8 +690,10 @@ struct DesktopChat: View {
                             Spacer()
                             Button("完成") { showingBriefingDetail = false }
                                 .buttonStyle(.plain)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(MoMoPalette.muted)
                         }
-                        Divider()
+                        Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
                         ScrollView {
                             MarkdownReadingView(markdown: MemoryCardDigest.cleanNotebookMarkdownForDetail(doc.rawMarkdown), accessibilityID: "desktop.dreamBriefingMarkdown", handwriting: true)
                                 .equatable()
@@ -494,6 +739,7 @@ private struct DesktopComposerHost: View {
 private struct DesktopActiveTasksBadgeButton: View {
     let store: RemoteTaskStore?
     @Binding var showingActiveTasks: Bool
+    @State private var hovered = false
 
     var body: some View {
         let tasksSnap = AgentActiveTasksSnapshot(store: store)
@@ -502,13 +748,14 @@ private struct DesktopActiveTasksBadgeButton: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "checklist")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(hovered || showingActiveTasks ? MoMoPalette.ink : MoMoPalette.muted)
                     .accessibilityHidden(true)
                 Text("任务")
                     .font(.system(size: 12, weight: .medium))
                 if let badge = tasksSnap.badgeText {
                     Text(badge)
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 10, weight: .bold).monospacedDigit())
                         .foregroundStyle(MoMoPalette.canvas)
                         .padding(.horizontal, 5)
                         .frame(minWidth: 16, minHeight: 16)
@@ -518,12 +765,16 @@ private struct DesktopActiveTasksBadgeButton: View {
             }
             .foregroundStyle(MoMoPalette.ink)
             .padding(.horizontal, 11)
-            .frame(height: 32)
-            .background(MoMoPalette.paper, in: Capsule())
-            .overlay { Capsule().strokeBorder(MoMoPalette.line, lineWidth: 1) }
+            .frame(height: 30)
+            .momoElevatedCard(
+                cornerRadius: 15,
+                isFocused: hovered || showingActiveTasks,
+                shadowStrength: hovered ? 1.15 : 0.7
+            )
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.96))
+        .onHover { hovered = $0 }
         .help("正在进行的任务")
         .accessibilityLabel(tasksSnap.count > 0 ? LocalizedStringKey("正在进行的任务，\(tasksSnap.count) 项") : LocalizedStringKey("正在进行的任务"))
         .accessibilityIdentifier("desktop.activeTasks")
@@ -904,13 +1155,13 @@ struct DesktopSettingsControlSurface: ViewModifier {
         content
             .font(.system(size: 13, weight: .regular))
             .padding(.horizontal, 10).frame(minHeight: 28)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.primary.opacity(active ? 0.45 : contrast == .increased ? 0.35 : 0.14), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(active ? 0.36 : contrast == .increased ? 0.30 : 0.11), lineWidth: active ? 0.85 : 0.5)
                     .allowsHitTesting(false).accessibilityHidden(true)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             .opacity(enabled ? 1 : 0.4)
     }
 }

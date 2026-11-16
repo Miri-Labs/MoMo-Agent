@@ -14,6 +14,7 @@ struct DesktopCompanionCard: View {
     let quit: () -> Void
     let pin: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduced
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var showAll = false
 
     private func statusColor(for state: DesktopCompanionState) -> Color {
@@ -28,11 +29,11 @@ struct DesktopCompanionCard: View {
             HStack(spacing: 12) {
                 PersonalAgentSlot(size: 44, active: state.working,
                                   expression: !state.online || state.needsAttention ? .concerned : state.working ? .working : .present)
-                VStack(alignment: .leading, spacing: 4) {
-                    PhoneBrandWordmark(.momo, size: 20)
+                VStack(alignment: .leading, spacing: 3) {
+                    PhoneBrandWordmark(.momo, size: 19)
                     HStack(spacing: 6) {
                         Circle().fill(statusColor(for: state)).frame(width: 6, height: 6).accessibilityHidden(true)
-                        Text(state.subtitle).font(.system(size: 12)).foregroundStyle(.white.opacity(0.62))
+                        Text(state.subtitle).font(.system(size: 12)).foregroundStyle(.white.opacity(0.64))
                     }
                 }
                 Spacer(minLength: 0)
@@ -51,7 +52,7 @@ struct DesktopCompanionCard: View {
             if !state.items.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("当前任务").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.45))
+                        Text("当前任务").font(.system(size: 11, weight: .medium)).tracking(0.06).foregroundStyle(.white.opacity(0.48))
                         Spacer()
                         if state.items.count > 3 {
                             CompanionSmallButton(title: showAll ? "收起" : "全部 \(state.items.count) 项",
@@ -73,8 +74,8 @@ struct DesktopCompanionCard: View {
             CompanionPrimaryButton(title: state.prepared ? "和 MoMo 聊聊" : "开始设置", action: openChat)
                 .accessibilityIdentifier("companion.openChat")
 
-            VStack(spacing: 10) {
-                Rectangle().fill(.white.opacity(0.08)).frame(height: 1).accessibilityHidden(true)
+            VStack(spacing: 9) {
+                Rectangle().fill(.white.opacity(0.09)).frame(height: 0.5).accessibilityHidden(true)
                 HStack {
                     CompanionFooterButton(title: "设置…", icon: "gearshape", action: openSettings)
                         .accessibilityIdentifier("companion.settings")
@@ -84,8 +85,31 @@ struct DesktopCompanionCard: View {
                 }
             }
         }
-        .padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 14)
-        .frame(maxWidth: .infinity).foregroundStyle(.white).background(.black)
+        .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 14)
+        .frame(maxWidth: .infinity)
+        .foregroundStyle(.white)
+        .background {
+            if reduceTransparency {
+                Color(red: 0.08, green: 0.08, blue: 0.085)
+            } else {
+                ZStack {
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.025, green: 0.025, blue: 0.03),
+                            Color(red: 0.075, green: 0.075, blue: 0.088)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    RadialGradient(
+                        colors: [.white.opacity(0.045), .clear],
+                        center: .topLeading,
+                        startRadius: 4,
+                        endRadius: 220
+                    )
+                }
+            }
+        }
         .environment(\.colorScheme, .dark)
         .animation(reduced ? nil : .easeOut(duration: 0.16), value: showAll)
     }
@@ -130,12 +154,12 @@ private struct CompanionTaskRow: View {
                     .accessibilityHidden(true)
             }
             .padding(.horizontal, 12).frame(height: 38)
-            .background(.white.opacity(hovered ? 0.13 : 0.06), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(
-                urgent ? Color.orange.opacity(0.35) : .white.opacity(hovered ? 0.18 : 0.07), lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .background(.white.opacity(hovered ? 0.11 : 0.055), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(
+                urgent ? Color.orange.opacity(0.38) : .white.opacity(hovered ? 0.16 : 0.08), lineWidth: 0.5))
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.985))
         .onHover { hovered = $0 }
         .help(item.title)
     }
@@ -155,11 +179,11 @@ private struct CompanionPrimaryButton: View {
                 Image(systemName: "arrow.up.right").font(.system(size: 11, weight: .bold)).accessibilityHidden(true)
             }
             .foregroundStyle(.black)
-            .padding(.horizontal, 14).frame(height: 40)
-            .background(.white.opacity(hovered ? 1.0 : 0.92), in: RoundedRectangle(cornerRadius: 11))
-            .contentShape(RoundedRectangle(cornerRadius: 11))
+            .padding(.horizontal, 16).frame(height: 38)
+            .background(.white.opacity(hovered ? 1.0 : 0.93), in: Capsule())
+            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MoMoPressableButtonStyle(scale: 0.98))
         .onHover { hovered = $0 }
     }
 }
@@ -230,7 +254,7 @@ private struct CompanionControlBanner: View {
             .onHover { hovered = $0 }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.orange.opacity(0.3), lineWidth: 1))
+        .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Color.orange.opacity(0.32), lineWidth: 0.5))
     }
 }

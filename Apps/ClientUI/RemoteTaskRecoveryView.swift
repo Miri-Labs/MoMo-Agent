@@ -641,13 +641,8 @@ struct AgentActiveTasksSheet: View {
                         .accessibilityHidden(true)
                 }
                 .padding(14)
-                .background(MoMoPalette.paper, in: RoundedRectangle(cornerRadius: 14))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14)
-                        .strokeBorder(MoMoPalette.line, lineWidth: 1)
-                        .allowsHitTesting(false)
-                }
-                .contentShape(RoundedRectangle(cornerRadius: 14))
+                .momoElevatedCard(cornerRadius: 12, shadowStrength: 0.6)
+                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("核查跳过，共 \(skippedItems.count) 项，\(isSkippedExpanded ? "已展开" : "点击展开")")
@@ -754,6 +749,7 @@ private struct ActiveTaskItemRow: View {
     let store: RemoteTaskStore?
     let item: AgentActiveTasksSnapshot.Item
     let onSelect: () -> Void
+    @State private var hovered = false
 
     private var dotColor: Color {
         if item.isHistorical {
@@ -858,12 +854,10 @@ private struct ActiveTaskItemRow: View {
             .accessibilityHidden(true)
         }
         .padding(14)
-        .background(MoMoPalette.paper, in: RoundedRectangle(cornerRadius: 14))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(MoMoPalette.line, lineWidth: 1)
-                .allowsHitTesting(false)
-        }
+        .momoElevatedCard(cornerRadius: 12, isFocused: hovered, shadowStrength: hovered ? 0.95 : 0.55)
+        #if os(macOS)
+        .onHover { hovered = $0 }
+        #endif
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("activeTasks.item.\(item.id)")
     }

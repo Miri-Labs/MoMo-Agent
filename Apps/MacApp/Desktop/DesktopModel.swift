@@ -116,6 +116,8 @@ final class DesktopModel {
     @ObservationIgnored private var transcriptSnapshotDayHour: Int?
     let repository: URL
     let dataDirectory: URL
+    let isLivePreviewClient: Bool
+    private let liveSourceDirectory: URL?
     let tailnet: EmbeddedTailnet
     private(set) var tailnetAccessError: String?
     @ObservationIgnored private var lastEmbeddedEndpoint: String?
@@ -150,10 +152,29 @@ final class DesktopModel {
             ?? bundled.flatMap { FileManager.default.fileExists(atPath: $0.appendingPathComponent("runtime-manifest.json").path) ? $0 : nil }
             ?? URL(fileURLWithPath: Bundle.main.object(forInfoDictionaryKey: "MoMoRepositoryRoot") as? String ?? "")
         let dataFolder = Bundle.main.object(forInfoDictionaryKey: "MoMoDataFolder") as? String ?? "MoMoAgent"
-        dataDirectory = URL(fileURLWithPath: argument("--data-dir") ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/\(dataFolder)/Agent").path)
+        let resolvedDataDir = URL(fileURLWithPath: argument("--data-dir") ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/\(dataFolder)/Agent").path)
+        let prodDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/MoMoAgent/Agent")
+        let explicitPreview = args.contains("--attach-live-preview") || ProcessInfo.processInfo.environment["MOMO_UI_PREVIEW"] == "1"
+        let autoBetaAttach = dataFolder != "MoMoAgent"
+            && argument("--data-dir") == nil
+            && !FileManager.default.fileExists(atPath: resolvedDataDir.appendingPathComponent("connection.json").path)
+            && FileManager.default.fileExists(atPath: prodDataDir.appendingPathComponent("connection.json").path)
+        if (explicitPreview || autoBetaAttach),
+           FileManager.default.fileExists(atPath: prodDataDir.appendingPathComponent("connection.json").path) {
+            isLivePreviewClient = true
+            liveSourceDirectory = prodDataDir
+        } else {
+            isLivePreviewClient = false
+            liveSourceDirectory = nil
+        }
+        dataDirectory = resolvedDataDir
         lifeIllustrations = LifeIllustrationStore(directory: dataDirectory.appendingPathComponent("life-illustrations-cache"))
         tailnet = EmbeddedTailnet(directory: dataDirectory.appendingPathComponent("tailscale"), device: "mac")
-        setupStep = SetupStep(rawValue: UserDefaults.standard.string(forKey: "setup." + dataDirectory.path) ?? "welcome") ?? .welcome
+        if isLivePreviewClient {
+            setupStep = .completed
+        } else {
+            setupStep = SetupStep(rawValue: UserDefaults.standard.string(forKey: "setup." + dataDirectory.path) ?? "welcome") ?? .welcome
+        }
         if let initialSelection = argument("--selection") {
             selection = initialSelection
         }
@@ -209,7 +230,14 @@ final class DesktopModel {
     func load() async {
         guard timer == nil, !loading else { return }
         loading = true; defer { loading = false }
-        if FileManager.default.fileExists(atPath: dataDirectory.appendingPathComponent("connection.json").path) {
+        if isLivePreviewClient {
+            do {
+                try loadConnection()
+                await refresh()
+            } catch {
+                failure = error.localizedDescription
+            }
+        } else if FileManager.default.fileExists(atPath: dataDirectory.appendingPathComponent("connection.json").path) {
             do {
                 try await reclaimStaleRuntimeProcesses()
                 try loadConnection()
@@ -369,8 +397,9 @@ final class DesktopModel {
     }
 
     private var profileDirectory: URL {
-        let current = dataDirectory.appendingPathComponent("profile")
-        let legacy = dataDirectory.appendingPathComponent("hermes")
+        let base = liveSourceDirectory ?? dataDirectory
+        let current = base.appendingPathComponent("profile")
+        let legacy = base.appendingPathComponent("hermes")
         return !FileManager.default.fileExists(atPath: current.path) && FileManager.default.fileExists(atPath: legacy.path) ? legacy : current
     }
 
@@ -424,12 +453,15 @@ final class DesktopModel {
     }
 
     private func loadConnection() throws {
-        connection = try JSONDecoder().decode(AgentConnection.self, from: Data(contentsOf: dataDirectory.appendingPathComponent("connection.json")))
-        key = try String(contentsOf: dataDirectory.appendingPathComponent("api-key"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let credentialDirectory = liveSourceDirectory ?? dataDirectory
+        connection = try JSONDecoder().decode(AgentConnection.self, from: Data(contentsOf: credentialDirectory.appendingPathComponent("connection.json")))
+        key = try String(contentsOf: credentialDirectory.appendingPathComponent("api-key"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         if let connection, let url = connection.dataURL {
             lifeIllustrations.configure(client: try dataClient(for: connection, url: url), scope: connection.workspaceID.uuidString)
         }
-        prepareDesktop()
+        if !isLivePreviewClient {
+            prepareDesktop()
+        }
         loadDayBoundaryConfiguration()
         if let model = Self.readModelConfiguration(from: profileDirectory.appendingPathComponent("config.yaml")),
            let name = model["default"], !name.isEmpty {
@@ -443,8 +475,16 @@ final class DesktopModel {
         }
         // Restore the local journal before checking network availability.
         if taskStore == nil, let connection {
+            try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
+            let localTaskFile = dataDirectory.appendingPathComponent("desktop-tasks.json")
+            if isLivePreviewClient,
+               !FileManager.default.fileExists(atPath: localTaskFile.path),
+               let prodTasks = liveSourceDirectory?.appendingPathComponent("desktop-tasks.json"),
+               FileManager.default.fileExists(atPath: prodTasks.path) {
+                try? FileManager.default.copyItem(at: prodTasks, to: localTaskFile)
+            }
             let client = try baseClient(for: connection)
-            taskStore = try Self.openTaskStore(file: dataDirectory.appendingPathComponent("desktop-tasks.json"), connection: connection, client: client)
+            taskStore = try Self.openTaskStore(file: localTaskFile, connection: connection, client: client)
             taskStore?.foreground()
         }
     }
@@ -739,20 +779,22 @@ final class DesktopModel {
         lastStatusRefreshAt = Date()
         do {
             updateStatus(try await controlRequest("status"))
-            restorePairedInstallationIfNeeded()
-            if !shuttingDown, busy == nil, UserDefaults.standard.bool(forKey: resumeKey),
-               status?.agentOnline != true, agentProcess?.isRunning != true,
-               Date().timeIntervalSince(lastAgentLaunchAttempt) >= 6 {
-                try? launchAgent()
-            }
-            if status?.agentOnline == true,
-               failure == String(localized: "MoMo 已停止，任务记录仍保留。请重新启动；运行详情见 desktop-momo_agent.log。") {
-                failure = nil
-            }
-            await refreshEmbeddedAccess()
-            if setupStep == .pair || isPairingDevice {
-                if status?.tunnel.state == "connected", status?.invitation == nil, !pairingAccepted {
-                    updateStatus(try await controlRequest("pair/invite", body: [:]))
+            if !isLivePreviewClient {
+                restorePairedInstallationIfNeeded()
+                if !shuttingDown, busy == nil, UserDefaults.standard.bool(forKey: resumeKey),
+                   status?.agentOnline != true, agentProcess?.isRunning != true,
+                   Date().timeIntervalSince(lastAgentLaunchAttempt) >= 6 {
+                    try? launchAgent()
+                }
+                if status?.agentOnline == true,
+                   failure == String(localized: "MoMo 已停止，任务记录仍保留。请重新启动；运行详情见 desktop-momo_agent.log。") {
+                    failure = nil
+                }
+                await refreshEmbeddedAccess()
+                if setupStep == .pair || isPairingDevice {
+                    if status?.tunnel.state == "connected", status?.invitation == nil, !pairingAccepted {
+                        updateStatus(try await controlRequest("pair/invite", body: [:]))
+                    }
                 }
             }
             if status?.agentOnline == true, taskStore == nil, let connection {
@@ -771,7 +813,7 @@ final class DesktopModel {
             }
         } catch {
             updateStatus(nil)
-            if !shuttingDown, isPrepared, accessProcess?.isRunning != true {
+            if !isLivePreviewClient, !shuttingDown, isPrepared, accessProcess?.isRunning != true {
                 try? startAccess()
             }
         }
@@ -1171,7 +1213,8 @@ final class DesktopModel {
     func showFiles() { NSWorkspace.shared.open(dataDirectory.appendingPathComponent("workspace")) }
 
     func loadDayBoundaryConfiguration() {
-        let file = dataDirectory.appendingPathComponent("runtime/transcript-reading.json")
+        let base = liveSourceDirectory ?? dataDirectory
+        let file = base.appendingPathComponent("runtime/transcript-reading.json")
         let resolved: Int
         if let raw = try? Data(contentsOf: file),
            let parsed = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any],

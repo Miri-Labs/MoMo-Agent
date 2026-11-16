@@ -191,6 +191,9 @@ struct DesktopSources: View {
     @State private var savedAnchors: [String: String] = [:]
     @State private var expandedDays: [String: Bool] = [:]
     @State private var selectedSpanID: String?
+    @State private var hoveredWindowID: String?
+    @State private var refreshHovered = false
+    @State private var hoveredDateControl: String?
     private var selectedDayKey: String { DesktopTranscriptSnapshot.dayKey(for: day, calendar: calendar) }
     private func isEarly(_ item: DesktopTranscriptWindow) -> Bool {
         guard let timestamp = item.recordedAt else { return false }
@@ -274,7 +277,12 @@ struct DesktopSources: View {
                         .frame(maxWidth: wide ? nil : .infinity)
                         .clipped()
                 }
-                if wide { Divider() }
+                if wide {
+                    Rectangle()
+                        .fill(MoMoPalette.borderSubtle)
+                        .frame(width: 0.5)
+                        .accessibilityHidden(true)
+                }
                 if let illustration = selectedIllustration {
                     Group {
                         if dayIllustrations.contains(where: { $0.coordinate != nil }) {
@@ -358,18 +366,62 @@ struct DesktopSources: View {
         )
         let windows = !query.isEmpty || expanded ? currentVisible : daytime
         let currentDayIllustrations = (!searching && query.isEmpty) ? dayIllustrations : []
-        return VStack(spacing: 14) {
-            HStack(spacing: 12) {
-                Text("转录").font(.system(size: 22, weight: .semibold)).accessibilityAddTraits(.isHeader)
+        return VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Text("转录")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(MoMoPalette.ink)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
-                Button("刷新", systemImage: "arrow.clockwise") { Task { await model.loadContext() } }
-                    .labelStyle(.iconOnly).buttonStyle(.plain).disabled(model.contextLoading)
-                    .help("刷新转录").accessibilityIdentifier("desktop.transcripts.refresh")
-            }.padding(.horizontal, 24).padding(.top, 12)
+                Button {
+                    Task { await model.loadContext() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(refreshHovered ? MoMoPalette.ink : MoMoPalette.muted)
+                        .frame(width: 26, height: 26)
+                        .background(
+                            refreshHovered ? MoMoPalette.hoverFill : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 6.5, style: .continuous))
+                }
+                .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
+                .onHover { refreshHovered = $0 }
+                .disabled(model.contextLoading)
+                .help("刷新转录")
+                .accessibilityLabel("刷新")
+                .accessibilityIdentifier("desktop.transcripts.refresh")
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+
             dateBar
+
             if searching {
-                TextField("搜索已同步的摘要与片段", text: $query).textFieldStyle(.roundedBorder)
-                    .padding(.horizontal, 24).accessibilityIdentifier("desktop.transcripts.search")
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(MoMoPalette.muted)
+                    TextField("搜索已同步的摘要与片段…", text: $query)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12.5))
+                        .accessibilityIdentifier("desktop.transcripts.search")
+                    if !query.isEmpty {
+                        Button {
+                            query = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(MoMoPalette.muted)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6.5)
+                .momoElevatedCard(cornerRadius: 9, shadowStrength: 0.45)
+                .padding(.horizontal, 16)
             }
             if let error = model.memoryError {
                 VStack(alignment: .leading, spacing: 8) {
@@ -401,6 +453,8 @@ struct DesktopSources: View {
                             .accessibilityValue(expanded ? "已展开" : "已折叠")
                     }
                     ForEach(windows) { item in
+                        let isSelected = selectedID == item.id && selectedIllustrationID == nil
+                        let isHovered = hoveredWindowID == item.id
                         VStack(alignment: .leading, spacing: 0) {
                             Button {
                                 closeIllustration()
@@ -422,11 +476,18 @@ struct DesktopSources: View {
                                     EmptyView()
                                 }
                                 .padding(.horizontal, 12)
-                                .background(selectedID == item.id && selectedIllustrationID == nil ? MoMoPalette.surface : Color.clear, in: RoundedRectangle(cornerRadius: 12))
+                                .background(
+                                    isSelected ? MoMoPalette.activeFill : (isHovered ? MoMoPalette.hoverFill : Color.clear),
+                                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                )
                             }
                             .buttonStyle(.plain)
+                            .onHover { hovering in
+                                if hovering { hoveredWindowID = item.id }
+                                else if hoveredWindowID == item.id { hoveredWindowID = nil }
+                            }
                             .accessibilityIdentifier("desktop.source.\(item.id)")
-                            .accessibilityAddTraits(selectedID == item.id && selectedIllustrationID == nil ? [.isSelected] : [])
+                            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                         }
                         .id(item.id)
                     }
@@ -451,6 +512,7 @@ struct DesktopSources: View {
                 .padding(.horizontal, 12)
                 Spacer().frame(height: 24)
             }
+            .momoScrollEdgeFade(top: 12)
             .scrollPosition(id: $timelineAnchor, anchor: .top)
             .onChange(of: currentVisible.isEmpty, initial: true) { _, empty in
                 if !empty, expandedDays[selectedDayKey] == nil { expandedDays[selectedDayKey] = expanded }
@@ -490,30 +552,98 @@ struct DesktopSources: View {
     }
 
     private var dateBar: some View {
-        HStack(spacing: 0) {
-            Button { moveDay(-1) } label: { Image(systemName: "chevron.left").frame(width: 36, height: 44) }
-                .disabled(day <= earliest || !query.isEmpty).accessibilityLabel("前一天")
-            Button { choosingDate = true } label: {
-                HStack(spacing: 5) {
-                    Text(query.isEmpty ? dayTitle(day) : String(localized: "全部日期")).phoneText(.metadata)
-                    Image(systemName: "chevron.down").font(.caption2)
-                }.frame(maxWidth: .infinity, minHeight: 44)
-            }.popover(isPresented: $choosingDate) {
-                VStack(spacing: 14) {
-                    DatePicker("选择日期", selection: $day, in: earliest...latestSelectableDay, displayedComponents: .date).datePickerStyle(.graphical)
-                    HStack {
-                        Button("今天") { day = logicalToday; query = ""; choosingDate = false }
-                        Spacer()
-                        Button("完成") { query = ""; choosingDate = false }
+        let canPrev = day > earliest && query.isEmpty
+        let canNext = day < latestSelectableDay && query.isEmpty
+        return HStack(spacing: 8) {
+            HStack(spacing: 2) {
+                Button {
+                    moveDay(-1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(canPrev ? MoMoPalette.ink : MoMoPalette.muted.opacity(0.35))
+                        .frame(width: 28, height: 28)
+                        .background(
+                            hoveredDateControl == "prev" && canPrev ? MoMoPalette.hoverFill : Color.clear,
+                            in: Circle()
+                        )
+                        .contentShape(Circle())
+                }
+                .disabled(!canPrev)
+                .onHover { hoveredDateControl = $0 ? "prev" : (hoveredDateControl == "prev" ? nil : hoveredDateControl) }
+                .accessibilityLabel("前一天")
+
+                Button {
+                    choosingDate = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(query.isEmpty ? dayTitle(day) : String(localized: "全部日期"))
+                            .font(.system(size: 12.5, weight: .medium).monospacedDigit())
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(MoMoPalette.muted)
                     }
-                }.padding(20).frame(width: 300)
+                    .frame(maxWidth: .infinity, minHeight: 28)
+                    .background(
+                        hoveredDateControl == "date" ? MoMoPalette.hoverFill : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .onHover { hoveredDateControl = $0 ? "date" : (hoveredDateControl == "date" ? nil : hoveredDateControl) }
+                .popover(isPresented: $choosingDate) {
+                    VStack(spacing: 14) {
+                        DatePicker("选择日期", selection: $day, in: earliest...latestSelectableDay, displayedComponents: .date)
+                            .datePickerStyle(.graphical)
+                        HStack {
+                            Button("今天") { day = logicalToday; query = ""; choosingDate = false }
+                            Spacer()
+                            Button("完成") { query = ""; choosingDate = false }
+                        }
+                    }
+                    .padding(20)
+                    .frame(width: 300)
+                }
+
+                Button {
+                    moveDay(1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(canNext ? MoMoPalette.ink : MoMoPalette.muted.opacity(0.35))
+                        .frame(width: 28, height: 28)
+                        .background(
+                            hoveredDateControl == "next" && canNext ? MoMoPalette.hoverFill : Color.clear,
+                            in: Circle()
+                        )
+                        .contentShape(Circle())
+                }
+                .disabled(!canNext)
+                .onHover { hoveredDateControl = $0 ? "next" : (hoveredDateControl == "next" ? nil : hoveredDateControl) }
+                .accessibilityLabel("后一天")
             }
-            Button { moveDay(1) } label: { Image(systemName: "chevron.right").frame(width: 36, height: 44) }
-                .disabled(day >= latestSelectableDay || !query.isEmpty).accessibilityLabel("后一天")
-            Button { searching.toggle(); if !searching { query = "" } } label: {
-                Image(systemName: searching ? "xmark" : "magnifyingglass").frame(width: 36, height: 44)
-            }.accessibilityLabel(searching ? "关闭搜索" : "搜索转录")
-        }.buttonStyle(.plain).foregroundStyle(MoMoPalette.ink).padding(.horizontal, 16)
+            .padding(3)
+            .momoElevatedCard(cornerRadius: 17, shadowStrength: 0.45)
+
+            Button {
+                searching.toggle()
+                if !searching { query = "" }
+            } label: {
+                Image(systemName: searching ? "xmark" : "magnifyingglass")
+                    .font(.system(size: 12, weight: searching ? .semibold : .medium))
+                    .foregroundStyle(searching || hoveredDateControl == "search" ? MoMoPalette.ink : MoMoPalette.muted)
+                    .frame(width: 34, height: 34)
+                    .momoElevatedCard(cornerRadius: 17, isFocused: searching, shadowStrength: 0.45)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(MoMoPressableButtonStyle(scale: 0.94))
+            .onHover { hoveredDateControl = $0 ? "search" : (hoveredDateControl == "search" ? nil : hoveredDateControl) }
+            .help(searching ? "关闭搜索" : "搜索转录")
+            .accessibilityLabel(searching ? "关闭搜索" : "搜索转录")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(MoMoPalette.ink)
+        .padding(.horizontal, 16)
     }
 
     private func moveDay(_ value: Int) {
@@ -594,13 +724,22 @@ struct DesktopSourceReader: View {
             HStack {
                 if let close { Button("返回", action: close).buttonStyle(.plain).foregroundStyle(.secondary) }
                 Spacer()
-                Text("转录详情").font(.system(size: 14, weight: .medium))
+                Text("转录详情").font(.system(size: 13, weight: .medium)).foregroundStyle(MoMoPalette.muted)
                 Spacer()
                 if !hasMore && !text.isEmpty {
-                    ShareLink(item: text) { Image(systemName: "square.and.arrow.up") }
-                        .buttonStyle(.plain).help("分享完整原文")
+                    ShareLink(item: text) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 13))
+                            .foregroundStyle(MoMoPalette.muted)
+                    }
+                    .buttonStyle(.plain).help("分享完整原文")
                 }
-            }.padding(.horizontal, 24).frame(height: 44)
+            }.padding(.horizontal, 24).frame(height: 40)
+
+            Rectangle()
+                .fill(MoMoPalette.borderSubtle)
+                .frame(height: 0.5)
+                .accessibilityHidden(true)
 
             MacSourceTranscriptReader(
                 documentID: documentID,
@@ -614,6 +753,7 @@ struct DesktopSourceReader: View {
                 scrollSpanID: pendingScrollSpanID,
                 onConsumedScrollSpan: { pendingScrollSpanID = nil }
             )
+            .momoScrollEdgeFade(top: 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if loading || hasMore || error != nil {

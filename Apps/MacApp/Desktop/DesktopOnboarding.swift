@@ -152,9 +152,7 @@ struct ModelConnectionFields: View {
                             .accessibilityHidden(true)
                         modelOptions
                             .frame(width: field.width, height: height)
-                            .background(MoMoPalette.paper, in: RoundedRectangle(cornerRadius: 14))
-                            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(MoMoPalette.line, lineWidth: 1))
-                            .shadow(color: .black.opacity(0.09), radius: 14, y: 6)
+                            .momoElevatedCard(cornerRadius: 14, shadowStrength: 1.4)
                             .offset(x: field.minX, y: above ? field.minY - height - 6 : field.maxY + 6)
                     }
                 }
@@ -224,8 +222,8 @@ struct ModelConnectionFields: View {
                 subscriptionIdentity
                 modelSelection
             }
-            .padding(20).background(MoMoPalette.paper, in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(MoMoPalette.line, lineWidth: 1))
+            .padding(20)
+            .momoElevatedCard(cornerRadius: 18)
         } else {
             VStack(spacing: 0) {
                 subscriptionIdentity.padding(.vertical, 9)
@@ -264,8 +262,8 @@ struct ModelConnectionFields: View {
                 Image(systemName: "chevron.down").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
             }
             .font(.system(size: continueSetup ? 15 : 14)).padding(.horizontal, 14).frame(height: continueSetup ? 46 : 28)
-            .background(continueSetup ? MoMoPalette.surface : Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: continueSetup ? 12 : 6))
-            .overlay { if !continueSetup { RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(choosingModel ? 0.45 : 0.14), lineWidth: 1).allowsHitTesting(false) } }
+            .background(continueSetup ? MoMoPalette.surface : Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: continueSetup ? 12 : 7, style: .continuous))
+            .overlay { if !continueSetup { RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Color.primary.opacity(choosingModel ? 0.36 : 0.11), lineWidth: choosingModel ? 0.85 : 0.5).allowsHitTesting(false) } }
         }
         .buttonStyle(.plain)
         .accessibilityLabel("模型").accessibilityValue(model.modelName).accessibilityIdentifier("model.selection")
@@ -340,8 +338,8 @@ struct ModelConnectionFields: View {
     @ViewBuilder private func apiField<Content: View>(_ title: String, @ViewBuilder input: () -> Content) -> some View {
         let field = input().textFieldStyle(.plain).font(.system(size: 14)).padding(.horizontal, 14)
             .frame(height: continueSetup ? 44 : 28)
-            .background(continueSetup ? MoMoPalette.surface : Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: continueSetup ? 10 : 6))
-            .overlay { if !continueSetup { RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.14), lineWidth: 1).allowsHitTesting(false) } }
+            .background(continueSetup ? MoMoPalette.surface : Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: continueSetup ? 10 : 7, style: .continuous))
+            .overlay { if !continueSetup { RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Color.primary.opacity(0.11), lineWidth: 0.5).allowsHitTesting(false) } }
         if continueSetup {
             VStack(alignment: .leading, spacing: 8) {
                 Text(LocalizedStringKey(title)).font(.system(size: 12)).foregroundStyle(.secondary)
@@ -398,6 +396,7 @@ struct DesktopSetupButton: ButtonStyle {
     var isLoading = false
     @Environment(\.isEnabled) private var enabled
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewBuilder func makeBody(configuration: Configuration) -> some View {
         if inSettings {
             HStack(spacing: 6) {
@@ -407,20 +406,22 @@ struct DesktopSetupButton: ButtonStyle {
             .foregroundStyle(Color.primary)
             .modifier(DesktopSettingsControlSurface(active: configuration.isPressed))
         } else {
-        HStack(spacing: 10) {
-            if isLoading {
-                ProgressView().controlSize(.small)
-                    .environment(\.colorScheme, filled ? (colorScheme == .dark ? .light : .dark) : colorScheme)
-                    .accessibilityHidden(true)
-            }
-            configuration.label
-        }.font(.system(size: fontSize, weight: .medium))
-            .frame(maxWidth: .infinity, minHeight: minimumHeight)
-            .foregroundStyle(filled ? MoMoPalette.canvas : MoMoPalette.ink)
-            .background(filled ? MoMoPalette.ink : MoMoPalette.paper, in: Capsule())
-            .overlay(Capsule().strokeBorder(MoMoPalette.ink.opacity(filled ? 0 : 0.16), lineWidth: 1))
-            .contentShape(Capsule())
-            .opacity(isLoading ? 1 : enabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
+            HStack(spacing: 10) {
+                if isLoading {
+                    ProgressView().controlSize(.small)
+                        .environment(\.colorScheme, filled ? (colorScheme == .dark ? .light : .dark) : colorScheme)
+                        .accessibilityHidden(true)
+                }
+                configuration.label
+            }.font(.system(size: fontSize, weight: .medium))
+                .frame(maxWidth: .infinity, minHeight: minimumHeight)
+                .foregroundStyle(filled ? MoMoPalette.canvas : MoMoPalette.ink)
+                .background(filled ? MoMoPalette.ink : MoMoPalette.paper, in: Capsule())
+                .overlay(Capsule().strokeBorder(MoMoPalette.ink.opacity(filled ? 0 : 0.14), lineWidth: 0.5))
+                .contentShape(Capsule())
+                .opacity(isLoading ? 1 : enabled ? (configuration.isPressed ? 0.86 : 1) : 0.4)
+                .scaleEffect(configuration.isPressed && enabled && !reduceMotion ? 0.985 : 1.0)
+                .animation(reduceMotion ? nil : .spring(duration: 0.18, bounce: 0.0), value: configuration.isPressed)
         }
     }
 }
@@ -551,12 +552,11 @@ struct DesktopOnboardingPermissions: View {
             }
             VStack(spacing: 0) {
                 permissionRow(.accessibility)
-                Divider()
+                Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
                 permissionRow(.screenRecording)
             }
             .padding(.horizontal, 18).padding(.vertical, 6)
-            .background(MoMoPalette.paper, in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(MoMoPalette.line, lineWidth: 1))
+            .momoElevatedCard(cornerRadius: 18)
 
             if !state.allGranted {
                 Text("若系统设置中已有旧的同名 MoMo Agent，请先选中点底部「-」移除再重新开启；开启屏幕录制后需重启生效。")
