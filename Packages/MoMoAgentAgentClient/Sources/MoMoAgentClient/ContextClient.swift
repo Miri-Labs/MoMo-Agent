@@ -78,6 +78,9 @@ public struct DreamTriggerReceipt: Codable, Sendable {
 }
 public struct ContextStatus: Codable, Sendable {
     public let workspaceId: UUID
+    public let revision: Int64?
+    public let memoriesWatermark: String?
+    public let sourcesWatermark: String?
     public let sourceSync: Bool
     public let memoryWriter: String
     public let memoryPending: Int?

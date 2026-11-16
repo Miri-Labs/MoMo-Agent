@@ -362,7 +362,7 @@ struct DesktopChat: View {
             if let store = model.taskStore {
                 let snapshot = ChatRenderSnapshot(store: store, readingPosition: model.readingPosition)
                 let isEmpty = store.isEmpty || snapshot.messages.isEmpty
-                let draftEmpty = store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && store.draftAttachments.isEmpty
+                let draftEmpty = !store.hasDraftContent
                 VStack(spacing: isEmpty ? 18 : 6) {
                     PersonalAgentSlot(size: isEmpty ? 144 : 56, active: isActive && store.hasActiveTask, expression: store.hasActiveTask ? .thinking : .present)
                     PhoneBrandWordmark(.momo, size: isEmpty ? 22 : 12)
@@ -414,15 +414,13 @@ struct DesktopChat: View {
                 }).frame(maxWidth: 780)
                 RemoteTaskRecoveryView(store: store).frame(maxWidth: 780)
                 if let failure = store.interactionFailure { Text(failure).font(.footnote).foregroundStyle(MoMoPalette.failure) }
-                ClientComposer(text: Binding(get: { store.draft }, set: store.setDraft),
-                               store: store,
-                               inputID: "desktop.message", sendID: "desktop.send",
-                               prompt: "发消息给 MoMo",
-                               onCompose: { composeRevision += 1 },
-                               onPreviewAttachment: { previewAttachment = $0 },
-                               onError: { model.failure = $0 }) {
-                    do { try store.enqueue(); Task { await store.refresh(userInitiated: true) } } catch { model.failure = error.localizedDescription }
-                }.frame(maxWidth: 760).padding(.horizontal, 32).padding(.bottom, 24).padding(.top, 12)
+                DesktopComposerHost(
+                    store: store,
+                    onSent: { composeRevision += 1 },
+                    onPreviewAttachment: { previewAttachment = $0 },
+                    onError: { model.failure = $0 }
+                )
+                .frame(maxWidth: 760).padding(.horizontal, 32).padding(.bottom, 24).padding(.top, 12)
             } else {
                 Spacer(); PersonalAgentSlot(size: 144, active: false, expression: .concerned)
                 PhoneBrandWordmark(.momo, size: 24).padding()
@@ -435,7 +433,7 @@ struct DesktopChat: View {
             }
         }.frame(maxWidth: .infinity).background(MoMoPalette.canvas)
             .overlay(alignment: .topTrailing) {
-                desktopActiveTasksButton(store: model.taskStore)
+                DesktopActiveTasksBadgeButton(store: model.taskStore, showingActiveTasks: $showingActiveTasks)
                     .padding(.top, 14)
                     .padding(.trailing, 18)
             }
@@ -464,10 +462,42 @@ struct DesktopChat: View {
             }
             .animation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.86), value: model.taskStore?.tasks.isEmpty)
     }
+}
 
-    private func desktopActiveTasksButton(store: RemoteTaskStore?) -> some View {
+private struct DesktopComposerHost: View {
+    let store: RemoteTaskStore
+    let onSent: () -> Void
+    let onPreviewAttachment: (AgentAttachment) -> Void
+    let onError: (String) -> Void
+
+    var body: some View {
+        ClientComposer(
+            text: Binding(get: { store.draft }, set: store.setDraft),
+            store: store,
+            inputID: "desktop.message",
+            sendID: "desktop.send",
+            prompt: "发消息给 MoMo",
+            onPreviewAttachment: onPreviewAttachment,
+            onError: onError
+        ) {
+            do {
+                try store.enqueue()
+                onSent()
+                Task { await store.refresh(userInitiated: true) }
+            } catch {
+                onError(error.localizedDescription)
+            }
+        }
+    }
+}
+
+private struct DesktopActiveTasksBadgeButton: View {
+    let store: RemoteTaskStore?
+    @Binding var showingActiveTasks: Bool
+
+    var body: some View {
         let tasksSnap = AgentActiveTasksSnapshot(store: store)
-        return Button {
+        Button {
             showingActiveTasks.toggle()
         } label: {
             HStack(spacing: 6) {
@@ -690,6 +720,15 @@ struct DesktopSettings: View {
             }
         }
         .formStyle(.grouped)
+        .task(id: page == .runtime) {
+            guard page == .runtime else { return }
+            while !Task.isCancelled {
+                if model.status?.agentOnline == true {
+                    await model.refreshProactiveSnapshot()
+                }
+                do { try await Task.sleep(for: .seconds(8)) } catch { break }
+            }
+        }
     }
 
     @ViewBuilder private var dailyPreferences: some View {

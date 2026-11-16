@@ -45,6 +45,7 @@ actor LifeIllustrationCache {
 
     let directory: URL
     private var verified: [String: FileStamp] = [:]
+    private var cachedSnapshot: Snapshot?
 
     init(directory: URL) { self.directory = directory }
 
@@ -53,12 +54,26 @@ actor LifeIllustrationCache {
     }
 
     func load() throws -> Snapshot {
+        if let cachedSnapshot { return cachedSnapshot }
         let file = directory.appendingPathComponent("manifest.json")
-        guard FileManager.default.fileExists(atPath: file.path) else { return Snapshot() }
+        guard FileManager.default.fileExists(atPath: file.path) else {
+            let empty = Snapshot()
+            cachedSnapshot = empty
+            return empty
+        }
         let snapshot = try JSONDecoder().decode(Snapshot.self, from: Data(contentsOf: file))
         for item in snapshot.items.values { try item.validate() }
         verified.merge(snapshot.verifiedStamps) { current, _ in current }
+        cachedSnapshot = snapshot
         return snapshot
+    }
+
+    func allVerified(hashes: Set<String>) -> Bool {
+        for sha256 in hashes {
+            let url = directory.appendingPathComponent(sha256 + ".png")
+            guard let stamp = fileStamp(url), verified[sha256] == stamp else { return false }
+        }
+        return true
     }
 
     func verifiedURL(sha256: String) throws -> URL? {
@@ -139,6 +154,7 @@ actor LifeIllustrationCache {
     private func writeManifest(_ snapshot: Snapshot) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try write(JSONEncoder().encode(snapshot), to: directory.appendingPathComponent("manifest.json"))
+        cachedSnapshot = snapshot
     }
 
     private func write(_ data: Data, to url: URL) throws {

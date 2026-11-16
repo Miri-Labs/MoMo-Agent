@@ -34,7 +34,7 @@ final class PhoneRemoteAgent {
     private(set) var desktopClientID = UUID()
     private(set) var connection: AgentConnection?
     var failure: String?
-    private(set) var readingPosition: ChatReadingPosition?
+    @ObservationIgnored private(set) var readingPosition: ChatReadingPosition?
     var connecting: Bool { pairingInProgress || recovering }
     private(set) var pairingInProgress = false
     private var recovering = false

@@ -440,73 +440,7 @@
           view.parts.replaceChildren(element('div','run-status',turn.text));
         }
       } else {
-        const ids = new Set();
-        turn.parts.forEach((part,position) => {
-          ids.add(part.id); let piece = view.pieces.get(part.id);
-          if (!piece) {
-            piece = part.type === 'text' ? makeProse(part,hydrated) : processView(part);
-            piece.node.dataset.part = part.id; piece.type = part.type; view.pieces.set(part.id,piece);
-          }
-          if (part.type === 'text') {
-            piece.target = part.text; piece.streaming = part.streaming;
-            piece.shown = piece.target;
-            patchMarkdown(piece,piece.shown,piece.streaming,!hydrated);
-          } else {
-            const toolStillRunning = part.steps.some(step => step.tool && ['running','pending'].includes(step.tool.state));
-            collapsed = updateProcess(piece,part,busy && (position === turn.parts.length - 1 || toolStillRunning),completed) || collapsed;
-          }
-          if (view.parts.children[position] !== piece.node) view.parts.insertBefore(piece.node,view.parts.children[position] || null);
-          piece.node.dataset.sourceMessage = part.messageID || '';
-        });
-        for (const [id,piece] of view.pieces) if (!ids.has(id)) { piece.node.remove(); view.pieces.delete(id); }
-        if (turn.attachments.length) {
-          const attachmentSignature = JSON.stringify(turn.attachments.map(item => [item.attachmentID,item.name,item.preview,item.format,item.size]));
-          if (view.attachmentSignature !== attachmentSignature) {
-            view.attachmentSignature = attachmentSignature;
-            if (!view.assistantAttachments) {
-              view.assistantAttachments = element('div','assistant-attachments');
-              view.assistantAttachments.setAttribute('data-markdown-copy','exclude');
-              view.node.insertBefore(view.assistantAttachments, view.actions || null);
-            }
-            const cards = [];
-            for (const item of turn.attachments) {
-              const card = element('button','assistant-attachment');
-              card.type = 'button';
-              const nameText = item.name || t("附件");
-              const fmtRaw = String(item.format || '').trim();
-              const fmtLower = fmtRaw.toLowerCase();
-              if (fmtLower) card.dataset.format = fmtLower;
-              card.setAttribute('aria-label',t("预览{0}", nameText));
-              card.addEventListener('click',() => post('attachment',{attachmentID:item.attachmentID,sessionID:latest.sessionID}));
-              const badge = element('span','assistant-attachment-badge',fmtRaw || t("文件"));
-              const info = element('span','assistant-attachment-info');
-              info.append(
-                element('span','assistant-attachment-name',nameText),
-                element('span','assistant-attachment-meta',item.size ? `${item.size} · ${t("点击查看")}` : t("点击查看"))
-              );
-              const chevron = element('span','assistant-attachment-chevron','›');
-              chevron.setAttribute('aria-hidden','true');
-              card.append(badge, info, chevron);
-              cards.push(card);
-            }
-            view.assistantAttachments.replaceChildren(...cards);
-          }
-        } else if (view.assistantAttachments) {
-          view.assistantAttachments.remove();
-          view.assistantAttachments = null;
-          view.attachmentSignature = null;
-        }
-        if (!view.actions) {
-          view.actions = element('div','actions');
-          view.actions.append(replyButton(t("重新生成回复"),'regenerate','<svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M16 7a6.3 6.3 0 1 0 .2 5M16 3.5V7h-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'),element('span','end-status'));
-          view.node.append(view.actions);
-        }
-        view.actions.hidden = turn.state === 'streaming' || !turn.text || (latest.canRegenerate === false && !['failed','truncated'].includes(turn.state));
-        view.actions.querySelector('[data-action=regenerate]').disabled = latest.busy;
-        view.actions.querySelector('[data-action=regenerate]').hidden = latest.canRegenerate === false;
-        view.actions.dataset.message = turn.messageID;
-        view.actions.dataset.text = turn.text;
-        view.actions.querySelector('.end-status').textContent = { failed:t("回复中断"), truncated:t("已达到回复长度上限") }[turn.state] || '';
+        collapsed = patchAssistantTurn(view, turn, busy, completed, hydrated) || collapsed;
       }
       if (root.children[index] !== view.node) root.insertBefore(view.node,root.children[index] || null);
     });
@@ -516,7 +450,80 @@
       window.scrollTo({top:Math.max(0,Math.min(maximumScrollTop(),top)),behavior:'auto'});
       pin.top = scrollY;
     }
-    const last = items.at(-1), activity = core.responseActivity(items,latest.busy && !latest.stopped,latest.stopped ? 'idle' : latest.contextState);
+    syncResponseFooter(items.at(-1), core.responseActivity(items,latest.busy && !latest.stopped,latest.stopped ? 'idle' : latest.contextState));
+  }
+  function patchAssistantTurn(view, turn, busy, completed, hydrated) {
+    let collapsed = false;
+    const ids = new Set();
+    turn.parts.forEach((part,position) => {
+      ids.add(part.id); let piece = view.pieces.get(part.id);
+      if (!piece) {
+        piece = part.type === 'text' ? makeProse(part,hydrated) : processView(part);
+        piece.node.dataset.part = part.id; piece.type = part.type; view.pieces.set(part.id,piece);
+      }
+      if (part.type === 'text') {
+        piece.target = part.text; piece.streaming = part.streaming;
+        piece.shown = piece.target;
+        patchMarkdown(piece,piece.shown,piece.streaming,!hydrated);
+      } else {
+        const toolStillRunning = part.steps.some(step => step.tool && ['running','pending'].includes(step.tool.state));
+        collapsed = updateProcess(piece,part,busy && (position === turn.parts.length - 1 || toolStillRunning),completed) || collapsed;
+      }
+      if (view.parts.children[position] !== piece.node) view.parts.insertBefore(piece.node,view.parts.children[position] || null);
+      piece.node.dataset.sourceMessage = part.messageID || '';
+    });
+    for (const [id,piece] of view.pieces) if (!ids.has(id)) { piece.node.remove(); view.pieces.delete(id); }
+    if (turn.attachments.length) {
+      const attachmentSignature = JSON.stringify(turn.attachments.map(item => [item.attachmentID,item.name,item.preview,item.format,item.size]));
+      if (view.attachmentSignature !== attachmentSignature) {
+        view.attachmentSignature = attachmentSignature;
+        if (!view.assistantAttachments) {
+          view.assistantAttachments = element('div','assistant-attachments');
+          view.assistantAttachments.setAttribute('data-markdown-copy','exclude');
+          view.node.insertBefore(view.assistantAttachments, view.actions || null);
+        }
+        const cards = [];
+        for (const item of turn.attachments) {
+          const card = element('button','assistant-attachment');
+          card.type = 'button';
+          const nameText = item.name || t("附件");
+          const fmtRaw = String(item.format || '').trim();
+          const fmtLower = fmtRaw.toLowerCase();
+          if (fmtLower) card.dataset.format = fmtLower;
+          card.setAttribute('aria-label',t("预览{0}", nameText));
+          card.addEventListener('click',() => post('attachment',{attachmentID:item.attachmentID,sessionID:latest.sessionID}));
+          const badge = element('span','assistant-attachment-badge',fmtRaw || t("文件"));
+          const info = element('span','assistant-attachment-info');
+          info.append(
+            element('span','assistant-attachment-name',nameText),
+            element('span','assistant-attachment-meta',item.size ? `${item.size} · ${t("点击查看")}` : t("点击查看"))
+          );
+          const chevron = element('span','assistant-attachment-chevron','›');
+          chevron.setAttribute('aria-hidden','true');
+          card.append(badge, info, chevron);
+          cards.push(card);
+        }
+        view.assistantAttachments.replaceChildren(...cards);
+      }
+    } else if (view.assistantAttachments) {
+      view.assistantAttachments.remove();
+      view.assistantAttachments = null;
+      view.attachmentSignature = null;
+    }
+    if (!view.actions) {
+      view.actions = element('div','actions');
+      view.actions.append(replyButton(t("重新生成回复"),'regenerate','<svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M16 7a6.3 6.3 0 1 0 .2 5M16 3.5V7h-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'),element('span','end-status'));
+      view.node.append(view.actions);
+    }
+    view.actions.hidden = turn.state === 'streaming' || !turn.text || (latest.canRegenerate === false && !['failed','truncated'].includes(turn.state));
+    view.actions.querySelector('[data-action=regenerate]').disabled = latest.busy;
+    view.actions.querySelector('[data-action=regenerate]').hidden = latest.canRegenerate === false;
+    view.actions.dataset.message = turn.messageID;
+    view.actions.dataset.text = turn.text;
+    view.actions.querySelector('.end-status').textContent = { failed:t("回复中断"), truncated:t("已达到回复长度上限") }[turn.state] || '';
+    return collapsed;
+  }
+  function syncResponseFooter(last, activity) {
     const replyBusy = latest.busy && !latest.stopped && activity !== 'idle';
     const contextLabel = core.contextActivityLabel(activity);
     const waiting = latest.waitingForReply ?? (activity === 'waiting');
@@ -540,6 +547,31 @@
     previousBusy = replyBusy; previousStopped = !!latest.stopped;
     previousActivity = activity;
     follow();
+  }
+  function patchTailMessage(tailMessage) {
+    if (!latest || !Array.isArray(latest.messages) || !latest.messages.length || !tailMessage || tailMessage.role !== 'assistant') {
+      if (latest && tailMessage) renderTurns(false);
+      return false;
+    }
+    const lastIdx = latest.messages.length - 1;
+    latest.messages[lastIdx] = tailMessage;
+    let tailStart = lastIdx;
+    while (tailStart > 0 && latest.messages[tailStart - 1].role === 'assistant' && latest.messages[tailStart - 1].turnID === tailMessage.turnID) {
+      tailStart--;
+    }
+    const tailTurns = core.turns(latest.messages.slice(tailStart));
+    const turn = tailTurns.length === 1 ? tailTurns[0] : null;
+    const view = turn ? views.get(turn.id) : null;
+    if (!turn || !view || root.lastElementChild !== view.node) {
+      renderTurns(false);
+      return false;
+    }
+    view.node.dataset.sourceIds = JSON.stringify(turn.messageIDs);
+    const currentBusy = latest.busy;
+    const completed = core.replyFinished(turn, currentBusy);
+    patchAssistantTurn(view, turn, currentBusy && !completed, completed, false);
+    syncResponseFooter(turn, core.responseActivity([turn], latest.busy && !latest.stopped, latest.stopped ? 'idle' : latest.contextState));
+    return true;
   }
   function updateWaiting(key, afterTool) {
     if (waitingTimer !== null) { clearTimeout(waitingTimer); waitingTimer = null; }
@@ -789,11 +821,22 @@
     document.documentElement.dataset.activityAnimating = 'false';
     if (waitingTimer !== null) { clearTimeout(waitingTimer); waitingTimer = null; }
   }
+  function setSuspended(value) {
+    const next = !!value;
+    if (pageSuspended === next) return;
+    if (next) {
+      suspend();
+    } else {
+      pageSuspended = false;
+      brandMotion.resume();
+      syncActivityMotion();
+    }
+  }
   window.addEventListener('pagehide',suspend);
   window.addEventListener('pageshow',() => {
     pageSuspended = false; brandMotion.resume();
     if (latest) renderTurns(false); else syncActivityMotion();
   });
-  window.MoMoChat = { render, openChat, scrollToBottom, saveReadingPosition, suspend };
+  window.MoMoChat = { render, patchTailMessage, openChat, scrollToBottom, saveReadingPosition, suspend, setSuspended };
   post('ready',true);
 })();

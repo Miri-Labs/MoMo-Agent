@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import re
+import threading
 from typing import Any
 
 from context_store import Conflict
@@ -54,6 +55,8 @@ _CANONICAL_FOLDER_FOR_KIND = {
     "topic": "topics",
 }
 _MAX_NOTEBOOK_DEPTH = 6
+_MEMORY_CACHE_LOCK = threading.Lock()
+_MEMORY_LIST_CACHE: dict[tuple[str, str], tuple[list[dict[str, Any]], int]] = {}
 _SLUG_RE = re.compile(r"[^\w\u4e00-\u9fff.-]+", re.UNICODE)
 _MATCH_FOLD = str.maketrans({
     **dict.fromkeys("\"`\u2018\u2019\u201a\u201b\u201c\u201d\u201e\u201f", "'"),
@@ -777,19 +780,52 @@ class MoMoMemory:
                 })
         return sorted(items, key=lambda item: item["id"])
 
+    def stat_watermark(self) -> str:
+        root = self.memories_dir
+        if not root.is_dir():
+            return "empty"
+        hasher = hashlib.sha256()
+        deleted_file = self._deleted_notebooks_path()
+        try:
+            st = deleted_file.stat()
+            hasher.update(f".deleted:{st.st_mtime_ns}:{st.st_size}:{st.st_ino}\n".encode("utf-8"))
+        except OSError:
+            hasher.update(b".deleted:none\n")
+        for md_file in sorted(root.rglob("*.md")):
+            try:
+                rel_parts = md_file.relative_to(root).parts
+                if not rel_parts or any(part.startswith(".") for part in rel_parts):
+                    continue
+                st = md_file.stat()
+            except OSError:
+                continue
+            hasher.update(f"{'/'.join(rel_parts)}:{st.st_mtime_ns}:{st.st_size}:{st.st_ino}\n".encode("utf-8"))
+        return hasher.hexdigest()[:24]
+
     def list(self, after: str = "", limit: int = 100, expected_revision: int | None = None):
         if not 1 <= limit <= 200:
             raise ValueError("limit must be 1...200")
-        with self.store() as store:
-            items = self.items(store, self.home)
-        manifest = "\n".join(f"{item['id']} {item['revision']}" for item in items)
-        revision = int(hashlib.sha256(manifest.encode()).hexdigest()[:15], 16)
+        watermark = self.stat_watermark()
+        cache_key = (str(self.memories_dir.resolve()) if self.memories_dir.exists() else str(self.memories_dir), watermark)
+        with _MEMORY_CACHE_LOCK:
+            cached = _MEMORY_LIST_CACHE.get(cache_key)
+        if cached is not None:
+            items, revision = cached
+        else:
+            with self.store() as store:
+                items = self.items(store, self.home)
+            manifest = "\n".join(f"{item['id']} {item['revision']}" for item in items)
+            revision = int(hashlib.sha256(manifest.encode()).hexdigest()[:15], 16)
+            with _MEMORY_CACHE_LOCK:
+                if len(_MEMORY_LIST_CACHE) >= 32:
+                    _MEMORY_LIST_CACHE.clear()
+                _MEMORY_LIST_CACHE[cache_key] = (items, revision)
         if expected_revision is not None and revision != expected_revision:
             raise Conflict("Memory changed; refresh the current entries")
         page = [item for item in items if item["id"] > after]
         return {
             "revision": revision,
-            "items": page[:limit],
+            "items": [dict(item) for item in page[:limit]],
             "next_cursor": page[limit - 1]["id"] if len(page) > limit else None,
         }
 

@@ -1252,14 +1252,12 @@ struct MemoryVaultSnapshot: Equatable, Sendable {
             )
             let pathText = item.path ?? ""
             searchTextByID[item.id] = "\(digest.title)\n\(pathText)\n\(digest.badge.title)\n\(item.text)".lowercased()
-            if digest.isNotebookMarkdown {
+            // Only prewarm BRIEFING.md eagerly; warming hundreds of notebook files on cold start burns CPU
+            // while individual notes compose in ~1 ms on demand via MacFullNoteComposer's NSCache.
+            if item.kind == "briefing", digest.isNotebookMarkdown {
                 _ = MarkdownDocument.cached(digest.cleanedNotebookMarkdown)
                 #if os(macOS)
                 MacMarkdownRenderer.prewarm(digest.cleanedNotebookMarkdown, handwriting: true, plainTextOnly: false)
-                #endif
-            } else {
-                #if os(macOS)
-                MacMarkdownRenderer.prewarm(item.text, handwriting: true, plainTextOnly: true)
                 #endif
             }
         }

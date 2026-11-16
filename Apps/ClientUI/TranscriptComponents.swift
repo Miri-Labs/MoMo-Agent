@@ -22,9 +22,13 @@ struct ClientTranscriptRow<Detail: View>: View {
                 if connected { Rectangle().fill(MoMoPalette.line).frame(width: 1) }
             }.frame(width: 12).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 9) {
-                ViewThatFits(in: .horizontal) {
+                if status == nil {
                     HStack { Text(time).phoneText(.menu).monospacedDigit(); Spacer(minLength: 8); state }
-                    VStack(alignment: .leading, spacing: 4) { Text(time).phoneText(.menu).monospacedDigit(); state }
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        HStack { Text(time).phoneText(.menu).monospacedDigit(); Spacer(minLength: 8); state }
+                        VStack(alignment: .leading, spacing: 4) { Text(time).phoneText(.menu).monospacedDigit(); state }
+                    }
                 }
                 detail()
                 if !preview.isEmpty {

@@ -242,7 +242,8 @@ input[type=checkbox] { accent-color: var(--ink); }
 .tool-query, .tool-more { margin: 0 0 8px; color: var(--muted); }
 .tool-outcome { margin: 0 0 8px; }
 .tool-excerpt { white-space: pre-wrap; }
-.loading-dot { width: 6px; height: 6px; margin-inline: 5px; border-radius: 50%; background: currentColor; animation: breathe 1.4s ease-in-out infinite; }
+.loading-dot { width: 6px; height: 6px; margin-inline: 5px; border-radius: 50%; background: currentColor; }
+:root[data-activity-animating=true] .process-group[data-state=running] .loading-dot { animation: breathe 1.4s ease-in-out infinite; }
 .actions { display: flex; gap: 0; margin: 8px 0 0 -8px; min-height: 44px; color: var(--muted); align-items: center; }
 .actions button { border: 0; background: none; min-width: 44px; min-height: 44px; border-radius: 8px; font-size: 18px; }
 .actions button svg { width: 16px; height: 16px; display: block; margin: auto; }

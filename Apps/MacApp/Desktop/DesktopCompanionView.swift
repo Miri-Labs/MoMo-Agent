@@ -15,23 +15,23 @@ struct DesktopCompanionCard: View {
     let pin: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduced
     @State private var showAll = false
-    private var state: DesktopCompanionState { model.companionState }
 
-    private var statusColor: Color {
+    private func statusColor(for state: DesktopCompanionState) -> Color {
         if !state.prepared || !state.online { return .white.opacity(0.35) }
         if state.needsAttention { return .orange }
         return .green
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let state = model.companionState
+        return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 PersonalAgentSlot(size: 44, active: state.working,
                                   expression: !state.online || state.needsAttention ? .concerned : state.working ? .working : .present)
                 VStack(alignment: .leading, spacing: 4) {
                     PhoneBrandWordmark(.momo, size: 20)
                     HStack(spacing: 6) {
-                        Circle().fill(statusColor).frame(width: 6, height: 6).accessibilityHidden(true)
+                        Circle().fill(statusColor(for: state)).frame(width: 6, height: 6).accessibilityHidden(true)
                         Text(state.subtitle).font(.system(size: 12)).foregroundStyle(.white.opacity(0.62))
                     }
                 }
@@ -62,10 +62,10 @@ struct DesktopCompanionCard: View {
                     }
                     if showAll && state.items.count > 3 {
                         ScrollView {
-                            taskRows
+                            taskRows(for: state)
                         }.scrollBounceBehavior(.basedOnSize).frame(maxHeight: 228)
                     } else {
-                        taskRows
+                        taskRows(for: state)
                     }
                 }
             }
@@ -90,7 +90,7 @@ struct DesktopCompanionCard: View {
         .animation(reduced ? nil : .easeOut(duration: 0.16), value: showAll)
     }
 
-    private var taskRows: some View {
+    private func taskRows(for state: DesktopCompanionState) -> some View {
         VStack(spacing: 6) {
             ForEach(showAll ? state.items : Array(state.items.prefix(3))) { item in
                 CompanionTaskRow(item: item, online: state.online, action: openChat)

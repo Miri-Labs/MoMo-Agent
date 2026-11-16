@@ -50,8 +50,9 @@ public struct RemoteTask: Codable, Sendable, Identifiable, Equatable {
 @MainActor @Observable
 public final class RemoteTaskStore {
     public private(set) var tasks: [RemoteTask]
-    public private(set) var draft: String
-    public private(set) var draftAttachments: [AgentAttachment] = []
+    public private(set) var draft: String { didSet { syncHasDraftContent() } }
+    public private(set) var draftAttachments: [AgentAttachment] = [] { didSet { syncHasDraftContent() } }
+    public private(set) var hasDraftContent = false
     private enum FailureSource { case storage, control, delivery, adoption, discovery, synchronization }
     private var failures: [FailureSource: String] = [:]
     public var failure: String? {
@@ -92,8 +93,10 @@ public final class RemoteTaskStore {
 
     public private(set) var isRefreshing = false
     public private(set) var conversation: SharedConversation?
-    public private(set) var messages: [ConversationMessage] = []
-    public private(set) var sharedRuns: [AgentRun] = []
+    public private(set) var messages: [ConversationMessage] = [] { didSet { displayMessagesRevision &+= 1 } }
+    public private(set) var sharedRuns: [AgentRun] = [] { didSet { displayMessagesRevision &+= 1 } }
+    @ObservationIgnored public private(set) var displayMessagesRevision: UInt64 = 0
+    @ObservationIgnored private var cachedDisplayMessages: (revision: UInt64, items: [ConversationMessage])?
     public private(set) var sharedRunReplies: [String: RemoteReply] = [:]
     public private(set) var backgroundWork: [ConversationWork] = []
     public private(set) var workOverview: ConversationWorkOverview?
@@ -119,7 +122,7 @@ public final class RemoteTaskStore {
     public private(set) var messageCursor = 0
     public private(set) var steeringTarget: AgentRun?
     private var controlsInFlight: Set<String> = []
-    private struct Cancellation: Codable { let operationID: UUID; let generation: Int; var targetRunID: String? = nil }
+    private struct Cancellation: Codable, Sendable { let operationID: UUID; let generation: Int; var targetRunID: String? = nil }
     private var pendingCancellations: [String: Cancellation] = [:]
     private var pendingReports: [String: UUID] = [:]
     private var recoveredSupplements: Set<String> = []
@@ -186,6 +189,11 @@ public final class RemoteTaskStore {
 
     /// Server facts rendered as system notices, never persisted as model messages or cursors.
     public var displayMessages: [ConversationMessage] {
+        _ = messages.count
+        _ = sharedRuns.count
+        if let cached = cachedDisplayMessages, cached.revision == displayMessagesRevision {
+            return cached.items
+        }
         let ordered = messages.sorted {
             if ($0.sourceSession == nil) != ($1.sourceSession == nil) { return $0.sourceSession != nil }
             return $0.seq < $1.seq
@@ -200,6 +208,7 @@ public final class RemoteTaskStore {
                 createdAt: row?.createdAt ?? 0, operationID: nil, runID: run.runID, sourceSession: row?.sourceSession)
         }
         var result: [ConversationMessage] = []
+        result.reserveCapacity(ordered.count + failures.count)
         for row in ordered {
             result.append(row)
             if row.deliveryState == "not_applied" {
@@ -207,6 +216,7 @@ public final class RemoteTaskStore {
             }
             if let id = row.runID, lastMessage[id] == row.id, let run = byRun[id] { result.append(notice(run, after: row)) }
         }
+        cachedDisplayMessages = (displayMessagesRevision, result)
         return result
     }
     private var sharedSessionID: String { "momo-main-" + connection.assistantID.uuidString.lowercased() }
@@ -230,10 +240,53 @@ public final class RemoteTaskStore {
     @ObservationIgnored private var draftDirty = false
     @ObservationIgnored private var checkpointSaveTask: Task<Void, Never>?
     @ObservationIgnored private var journalDirty = false
+    @ObservationIgnored private var persistGeneration: UInt64 = 0
+    @ObservationIgnored private let journalWriter: JournalWriter
     @ObservationIgnored public var prepareSubmission: ((RemoteTask) async throws -> Void)?
     @ObservationIgnored private let now: () -> Date
 
-    private struct Document: Codable {
+    private final class JournalWriter: @unchecked Sendable {
+        private let file: URL
+        private let lock = NSLock()
+        private var latestGeneration: UInt64 = 0
+        private var staged: (doc: Document, generation: UInt64)?
+
+        init(file: URL) { self.file = file }
+
+        func stage(_ doc: Document, generation: UInt64) {
+            lock.withLock {
+                if generation > latestGeneration, (staged?.generation ?? 0) < generation {
+                    staged = (doc, generation)
+                }
+            }
+        }
+
+        func flushStagedIfNeeded() throws {
+            let pending: (doc: Document, generation: UInt64)? = lock.withLock {
+                guard let s = staged, s.generation > latestGeneration else {
+                    staged = nil
+                    return nil
+                }
+                return s
+            }
+            guard let pending else { return }
+            let data = try JSONEncoder().encode(pending.doc)
+            try writeData(data, generation: pending.generation)
+        }
+
+        func writeData(_ data: Data, generation: UInt64) throws {
+            try lock.withLock {
+                guard generation >= latestGeneration else { return }
+                try data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                latestGeneration = generation
+                if let s = staged, s.generation <= generation {
+                    staged = nil
+                }
+            }
+        }
+    }
+
+    private struct Document: Codable, Sendable {
         var schemaVersion = 2
         let connection: AgentConnection
         let sessionID: String
@@ -256,7 +309,7 @@ public final class RemoteTaskStore {
     }
 
     public init(file: URL, connection: AgentConnection, client: AgentClient, now: @escaping () -> Date = Date.init) throws {
-        self.file = file; self.connection = connection; self.client = client; self.now = now
+        self.file = file; self.journalWriter = JournalWriter(file: file); self.connection = connection; self.client = client; self.now = now
         if FileManager.default.fileExists(atPath: file.path) {
             var raw = try Data(contentsOf: file)
             let migratedLegacyPrefix: Bool
@@ -302,6 +355,12 @@ public final class RemoteTaskStore {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try persist(tasks: [], draft: "")
         }
+        syncHasDraftContent()
+    }
+
+    private func syncHasDraftContent() {
+        let next = !draftAttachments.isEmpty || draft.contains(where: { !$0.isWhitespace && !$0.isNewline })
+        if hasDraftContent != next { hasDraftContent = next }
     }
 
     public var hasPendingTask: Bool { tasks.contains(where: \.isPending) }
@@ -348,14 +407,21 @@ public final class RemoteTaskStore {
         draftSaveTask?.cancel()
         draftSaveTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
-            self?.flushDraft()
+            guard let self else { return }
+            self.draftSaveTask = nil
+            guard self.draftDirty else { return }
+            self.persistInBackground()
         }
     }
 
     public func flushDraft() {
         draftSaveTask?.cancel()
         draftSaveTask = nil
-        guard draftDirty else { return }
+        if !draftDirty {
+            do { try journalWriter.flushStagedIfNeeded() }
+            catch { failures[.storage] = error.localizedDescription }
+            return
+        }
         do { try persist(tasks: tasks, draft: draft) }
         catch { failures[.storage] = error.localizedDescription }
     }
@@ -368,8 +434,7 @@ public final class RemoteTaskStore {
             guard let self else { return }
             self.checkpointSaveTask = nil
             guard self.journalDirty || self.draftDirty else { return }
-            do { try self.persist(tasks: self.tasks, draft: self.draft) }
-            catch { self.failures[.storage] = error.localizedDescription }
+            self.persistInBackground()
         }
     }
 
@@ -378,7 +443,11 @@ public final class RemoteTaskStore {
         draftSaveTask = nil
         checkpointSaveTask?.cancel()
         checkpointSaveTask = nil
-        guard draftDirty || journalDirty else { return }
+        if !draftDirty && !journalDirty {
+            do { try journalWriter.flushStagedIfNeeded() }
+            catch { failures[.storage] = error.localizedDescription }
+            return
+        }
         do { try persist(tasks: tasks, draft: draft) }
         catch { failures[.storage] = error.localizedDescription }
     }
@@ -1298,6 +1367,7 @@ public final class RemoteTaskStore {
             case "work.updated":
                 guard let work = value.backgroundWork, let states = value.messageStates else { throw StoreError.invalidResponse }
                 applyLiveWork(work, states: states, notice: value.providerNotice)
+                shouldPersist = false
             case "run.event":
                 guard let event = value.runEvent, event.seq == cursor else { throw StoreError.invalidResponse }
                 if let task = tasks.first(where: { $0.run?.runID == event.runID }) {
@@ -1371,17 +1441,63 @@ public final class RemoteTaskStore {
         tasks = updated
     }
 
+    private func makeSnapshotDocument(tasks: [RemoteTask], draft: String, draftAttachments: [AgentAttachment]? = nil) -> (Document, [RemoteTask], UInt64) {
+        let currentAttachments = draftAttachments ?? self.draftAttachments
+        let sanitizedTasks = stripConfirmedAttachmentPayloads(tasks)
+        persistGeneration &+= 1
+        let gen = persistGeneration
+        let doc = Document(
+            connection: connection,
+            sessionID: sessionID,
+            draft: draft,
+            draftAttachments: currentAttachments.isEmpty ? nil : currentAttachments,
+            tasks: sanitizedTasks,
+            conversation: conversation,
+            messages: messages,
+            lastSeenMessageSequence: lastSeenMessageSequence,
+            messageCursor: messageCursor,
+            eventCursor: eventCursor,
+            olderMessagesBefore: olderMessagesBefore,
+            sharedRuns: sharedRuns,
+            backgroundWork: backgroundWork,
+            workOverview: workOverview,
+            steeringTarget: (draft.isEmpty && currentAttachments.isEmpty) ? nil : steeringTarget,
+            pendingCancellations: pendingCancellations,
+            pendingReports: pendingReports,
+            recoveredSupplements: recoveredSupplements
+        )
+        return (doc, sanitizedTasks, gen)
+    }
+
+    private func persistInBackground() {
+        let (doc, sanitizedTasks, gen) = makeSnapshotDocument(tasks: tasks, draft: draft)
+        if sanitizedTasks != self.tasks {
+            self.tasks = sanitizedTasks
+        }
+        journalWriter.stage(doc, generation: gen)
+        draftSaveTask?.cancel(); draftSaveTask = nil; draftDirty = false
+        checkpointSaveTask?.cancel(); checkpointSaveTask = nil; journalDirty = false
+        let writer = journalWriter
+        Task.detached(priority: .utility) { [weak self] in
+            do {
+                let data = try JSONEncoder().encode(doc)
+                try writer.writeData(data, generation: gen)
+                await MainActor.run { [weak self] in
+                    self?.failures[.storage] = nil
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.failures[.storage] = error.localizedDescription
+                }
+            }
+        }
+    }
+
     private func persist(tasks: [RemoteTask], draft: String, draftAttachments: [AgentAttachment]? = nil) throws {
         do {
-            let currentAttachments = draftAttachments ?? self.draftAttachments
-            let sanitizedTasks = stripConfirmedAttachmentPayloads(tasks)
-            let data = try JSONEncoder().encode(Document(connection: connection, sessionID: sessionID, draft: draft,
-                draftAttachments: currentAttachments.isEmpty ? nil : currentAttachments, tasks: sanitizedTasks,
-                conversation: conversation, messages: messages, lastSeenMessageSequence: lastSeenMessageSequence, messageCursor: messageCursor,
-                eventCursor: eventCursor, olderMessagesBefore: olderMessagesBefore, sharedRuns: sharedRuns, backgroundWork: backgroundWork,
-                workOverview: workOverview, steeringTarget: (draft.isEmpty && currentAttachments.isEmpty) ? nil : steeringTarget, pendingCancellations: pendingCancellations,
-                pendingReports: pendingReports, recoveredSupplements: recoveredSupplements))
-            try data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            let (doc, sanitizedTasks, gen) = makeSnapshotDocument(tasks: tasks, draft: draft, draftAttachments: draftAttachments)
+            let data = try JSONEncoder().encode(doc)
+            try journalWriter.writeData(data, generation: gen)
             if sanitizedTasks != self.tasks, tasks == self.tasks {
                 self.tasks = sanitizedTasks
             }

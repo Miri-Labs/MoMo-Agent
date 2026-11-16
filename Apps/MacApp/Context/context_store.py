@@ -229,6 +229,19 @@ class ContextStore:
         self.db.execute("UPDATE metadata SET revision=revision+1 WHERE id=1")
         return self.revision
 
+    def sources_watermark(self) -> str:
+        done_count, done_latest = self.db.execute(
+            "SELECT COUNT(*), COALESCE(MAX(finished), 0) FROM recording_summaries WHERE state='done'"
+        ).fetchone()
+        analyses_count, analyses_latest = self.db.execute(
+            "SELECT COUNT(*), COALESCE(MAX(updated), 0) FROM analyses"
+        ).fetchone()
+        excl_count = self.db.execute("SELECT COUNT(*) FROM memory_exclusions").fetchone()[0]
+        early_hour = read_early_transcript_hour(self.directory)
+        local_zone = (time.tzname, time.timezone, time.daylight)
+        raw = f"{self.revision}|{early_hour}|{local_zone!r}|{done_count}:{done_latest}|{analyses_count}:{analyses_latest}|{excl_count}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
     def sync_source(self, payload):
         for key in ("library_id", "session_id", "device_id"):
             uuid.UUID(payload[key])

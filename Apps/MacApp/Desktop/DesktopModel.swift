@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import CryptoKit
 import Foundation
 import Observation
 import MoMoAgentClient
@@ -58,7 +59,7 @@ final class DesktopModel {
     }
     var localAccessURL: String { connection?.baseURL.port.map { "http://127.0.0.1:\($0 + 2)" } ?? String(localized: "准备 Mac 后显示") }
     var ownsAgent: Bool { agentProcess?.isRunning == true }
-    var readingPosition: ChatReadingPosition?
+    @ObservationIgnored var readingPosition: ChatReadingPosition?
     var status: AccessStatus?
     var busy: String?
     var preparationPhase: DesktopPreparationPhase?
@@ -109,6 +110,10 @@ final class DesktopModel {
     @ObservationIgnored private var contextRefreshRequested = false
     @ObservationIgnored private var contextRefreshNonSilent = false
     @ObservationIgnored private var lastContextRefreshAt = Date.distantPast
+    @ObservationIgnored private var lastMemoriesWatermark: String?
+    @ObservationIgnored private var lastSourcesWatermark: String?
+    @ObservationIgnored private var lastSourcesDayStartHour: Int?
+    @ObservationIgnored private var transcriptSnapshotDayHour: Int?
     let repository: URL
     let dataDirectory: URL
     let tailnet: EmbeddedTailnet
@@ -117,8 +122,9 @@ final class DesktopModel {
     @ObservationIgnored private var embeddedProbeFailures = 0
     @ObservationIgnored private var servedEmbeddedNode: (generation: UUID, port: Int32)?
     @ObservationIgnored private var embeddedHealth = EmbeddedAccessHealth()
-    @ObservationIgnored private var lastProactiveRefreshAt = Date.distantPast
+    @ObservationIgnored private var lastStatusRefreshAt = Date.distantPast
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
+    @ObservationIgnored private var activeObserver: NSObjectProtocol?
     @ObservationIgnored private var accessProcess: Process?
     @ObservationIgnored private var agentProcess: Process?
     @ObservationIgnored private var connection: AgentConnection?
@@ -154,6 +160,52 @@ final class DesktopModel {
         loadDayBoundaryConfiguration()
     }
 
+    private static func sha256Hex(of file: URL) -> String? {
+        guard let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { return nil }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func isSuperAgentPreparedAndCurrent() -> Bool {
+        let fm = FileManager.default
+        let runner = dataDirectory.appendingPathComponent("runtime/superagent")
+        let marker = runner.appendingPathComponent("prepared.json")
+        let binary = runner.appendingPathComponent("node_modules/.bin/dsh")
+        let installedBundle = runner.appendingPathComponent("node_modules/dsh-superagent/lib/index.js")
+        guard fm.fileExists(atPath: marker.path),
+              fm.fileExists(atPath: binary.path),
+              fm.fileExists(atPath: installedBundle.path),
+              let markerData = try? Data(contentsOf: marker),
+              let record = (try? JSONSerialization.jsonObject(with: markerData)) as? [String: String],
+              let recordedSource = record["source"],
+              let recordedCommit = record["upstream_commit"],
+              let recordedDshVersion = record["dsh_version"], !recordedDshVersion.isEmpty,
+              let recordedManifestHash = record["manifest_sha256"],
+              let recordedBundleHash = record["bundle_sha256"] else {
+            return false
+        }
+        let resolvedRepo = repository.resolvingSymlinksInPath()
+        let expectedSource = resolvedRepo.appendingPathComponent("Vendor/SuperAgent").path
+        guard recordedSource == expectedSource else { return false }
+        let upstreamFile = resolvedRepo.appendingPathComponent("Vendor/SuperAgent.UPSTREAM.json")
+        let runtimePyFile = resolvedRepo.appendingPathComponent("Apps/MacApp/Runtime/superagent_runtime.py")
+        guard let upstreamData = try? Data(contentsOf: upstreamFile),
+              let upstream = (try? JSONSerialization.jsonObject(with: upstreamData)) as? [String: Any],
+              let expectedCommit = upstream["commit"] as? String,
+              recordedCommit == expectedCommit,
+              let runtimePy = try? String(contentsOf: runtimePyFile, encoding: .utf8),
+              runtimePy.contains("DSH_VERSION = \"\(recordedDshVersion)\"") else {
+            return false
+        }
+        let manifestFile = resolvedRepo.appendingPathComponent("Vendor/SuperAgent/package.json")
+        let bundleFile = resolvedRepo.appendingPathComponent("Vendor/SuperAgent/lib/index.js")
+        guard Self.sha256Hex(of: manifestFile) == recordedManifestHash,
+              Self.sha256Hex(of: bundleFile) == recordedBundleHash,
+              Self.sha256Hex(of: installedBundle) == recordedBundleHash else {
+            return false
+        }
+        return true
+    }
+
     func load() async {
         guard timer == nil, !loading else { return }
         loading = true; defer { loading = false }
@@ -162,8 +214,9 @@ final class DesktopModel {
                 try await reclaimStaleRuntimeProcesses()
                 try loadConnection()
                 let pythonPath = runtimePython.path
-                let needsSuperAgentPrep = !FileManager.default.fileExists(atPath: dataDirectory.appendingPathComponent("runtime/superagent/prepared.json").path)
-                if hasBundledRuntime || !FileManager.default.isExecutableFile(atPath: pythonPath) || needsSuperAgentPrep {
+                let needsPythonPrep = !FileManager.default.isExecutableFile(atPath: pythonPath)
+                let needsSuperAgentPrep = !isSuperAgentPreparedAndCurrent()
+                if needsPythonPrep || needsSuperAgentPrep {
                     try await prepareRuntime()
                 }
                 do { try startAccess() } catch { try await prepareRuntime(); try startAccess() }
@@ -192,10 +245,32 @@ final class DesktopModel {
                 }
             }
         }
+        if activeObserver == nil {
+            activeObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, !self.shuttingDown else { return }
+                    if Date().timeIntervalSince(self.lastStatusRefreshAt) >= 1.5 {
+                        await self.refresh()
+                    }
+                }
+            }
+        }
         timer = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
-                do { try await Task.sleep(for: .seconds(3)) } catch { break }
+                let interval: Duration
+                if let self {
+                    let healthy = self.setupStep == .completed
+                        && !self.isPairingDevice
+                        && self.status?.agentOnline == true
+                        && (self.status?.tunnel.state == "connected" || self.status?.tunnel.state == "stopped")
+                    interval = (!NSApplication.shared.isActive && healthy) ? .seconds(8) : .seconds(3)
+                } else {
+                    interval = .seconds(3)
+                }
+                do { try await Task.sleep(for: interval) } catch { break }
             }
         }
         if connection != nil {
@@ -661,6 +736,7 @@ final class DesktopModel {
     func refresh() async {
         guard connection != nil, !refreshing else { return }
         refreshing = true; defer { refreshing = false }
+        lastStatusRefreshAt = Date()
         do {
             updateStatus(try await controlRequest("status"))
             restorePairedInstallationIfNeeded()
@@ -684,17 +760,12 @@ final class DesktopModel {
                 taskStore = try Self.openTaskStore(file: dataDirectory.appendingPathComponent("desktop-tasks.json"), connection: connection, client: client)
                 taskStore?.foreground()
             }
-            if status?.agentOnline == true, !fetchingContext, Date().timeIntervalSince(lastContextRefreshAt) >= 15 {
+            let bgInterval: TimeInterval = NSApplication.shared.isActive ? 15 : 45
+            if status?.agentOnline == true, !fetchingContext, Date().timeIntervalSince(lastContextRefreshAt) >= bgInterval {
                 Task { [weak self] in await self?.loadContext(silent: true) }
             }
             if status?.agentOnline == true {
-                Task { [weak self] in await self?.lifeIllustrations.refresh(minimumInterval: 15) }
-            }
-            if status?.agentOnline == true {
-                if Date().timeIntervalSince(lastProactiveRefreshAt) >= 12 || proactiveSnapshot == nil {
-                    lastProactiveRefreshAt = Date()
-                    await refreshProactiveSnapshot()
-                }
+                Task { [weak self] in await self?.lifeIllustrations.refresh(minimumInterval: bgInterval) }
             } else if proactiveSnapshot != nil {
                 proactiveSnapshot = nil
             }
@@ -925,10 +996,7 @@ final class DesktopModel {
             lastContextRefreshAt = Date()
             do {
                 let client = try dataClient(for: connection, url: url)
-                async let statusTask = client.contextStatus()
-                async let memoriesTask = Self.fetchAllMemories(client: client)
-                async let sourcesTask = Self.fetchAllSources(client: client)
-                let (contextStatus, collected, recordings) = try await (statusTask, memoriesTask, sourcesTask)
+                let contextStatus = try await client.contextStatus()
                 if memoryReviewStatus != contextStatus.memoryReview {
                     memoryReviewStatus = contextStatus.memoryReview
                 }
@@ -936,22 +1004,54 @@ final class DesktopModel {
                 if transcriptMemoryNeedsReview != nextNeedsReview {
                     transcriptMemoryNeedsReview = nextNeedsReview
                 }
-                if memories != collected {
-                    let builtVault = await Task.detached(priority: .userInitiated) {
-                        MemoryVaultSnapshot.build(from: collected)
-                    }.value
-                    memories = collected
-                    vaultSnapshot = builtVault
+                let memWatermark = contextStatus.memoriesWatermark
+                let srcWatermark = contextStatus.sourcesWatermark
+                let currentStartHour = dayStartHour
+                let needMemories = !runSilent || memories.isEmpty || memWatermark == nil || memWatermark != lastMemoriesWatermark
+                let needSources = !runSilent || sources.isEmpty || srcWatermark == nil || srcWatermark != lastSourcesWatermark || lastSourcesDayStartHour != currentStartHour
+
+                let fetchedMemories: [ContextMemory]?
+                let fetchedSources: [ContextSource]?
+                if needMemories && needSources {
+                    async let memoriesTask = Self.fetchAllMemories(client: client)
+                    async let sourcesTask = Self.fetchAllSources(client: client)
+                    let (m, s) = try await (memoriesTask, sourcesTask)
+                    fetchedMemories = m
+                    fetchedSources = s
+                } else if needMemories {
+                    fetchedMemories = try await Self.fetchAllMemories(client: client)
+                    fetchedSources = nil
+                } else if needSources {
+                    fetchedMemories = nil
+                    fetchedSources = try await Self.fetchAllSources(client: client)
+                } else {
+                    fetchedMemories = nil
+                    fetchedSources = nil
                 }
-                if sources != recordings {
-                    transcriptVersionCounter &+= 1
-                    let nextVer = transcriptVersionCounter
-                    let currentStartHour = dayStartHour
-                    let builtTranscripts = await Task.detached(priority: .userInitiated) {
-                        DesktopTranscriptSnapshot.build(sources: recordings, dayStartHour: currentStartHour, version: nextVer)
-                    }.value
-                    sources = recordings
-                    transcriptSnapshot = builtTranscripts
+
+                if let collected = fetchedMemories {
+                    lastMemoriesWatermark = memWatermark
+                    if memories != collected {
+                        let builtVault = await Task.detached(priority: .userInitiated) {
+                            MemoryVaultSnapshot.build(from: collected)
+                        }.value
+                        memories = collected
+                        vaultSnapshot = builtVault
+                    }
+                }
+                if let recordings = fetchedSources {
+                    lastSourcesWatermark = srcWatermark
+                    lastSourcesDayStartHour = currentStartHour
+                    if sources != recordings || transcriptSnapshotDayHour != currentStartHour {
+                        transcriptVersionCounter &+= 1
+                        let nextVer = transcriptVersionCounter
+                        let builtTranscripts = await Task.detached(priority: .userInitiated) {
+                            DesktopTranscriptSnapshot.build(sources: recordings, dayStartHour: currentStartHour, version: nextVer)
+                        }.value
+                        sources = recordings
+                        transcriptSnapshot = builtTranscripts
+                        transcriptSnapshotDayHour = currentStartHour
+                    }
                 }
                 if memoryError != nil {
                     memoryError = nil
@@ -1044,6 +1144,7 @@ final class DesktopModel {
 
     func shutdown() {
         if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver); self.wakeObserver = nil }
+        if let activeObserver { NotificationCenter.default.removeObserver(activeObserver); self.activeObserver = nil }
         Task { await tailnet.close() }
         desktopHost?.stop(); desktopHost = nil
         cancelModelConnection()
@@ -1079,6 +1180,19 @@ final class DesktopModel {
             try writeDayBoundaryConfiguration(hour: hour)
             UserDefaults.standard.set(hour, forKey: TranscriptReadingBoundary.defaultsKey)
             dayStartHour = hour
+            if !sources.isEmpty {
+                transcriptVersionCounter &+= 1
+                let nextVer = transcriptVersionCounter
+                let existingSources = sources
+                Task { [weak self] in
+                    let rebuilt = await Task.detached(priority: .userInitiated) {
+                        DesktopTranscriptSnapshot.build(sources: existingSources, dayStartHour: hour, version: nextVer)
+                    }.value
+                    guard let self, self.dayStartHour == hour, self.sources == existingSources else { return }
+                    self.transcriptSnapshot = rebuilt
+                    self.transcriptSnapshotDayHour = hour
+                }
+            }
             if connection != nil { Task { await loadContext(silent: true) } }
         } catch { memoryError = String(localized: "阅读设置未保存，请重试。") }
     }
