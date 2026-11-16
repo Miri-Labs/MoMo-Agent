@@ -98,25 +98,55 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "按你的选择只读心率、静息心率、睡眠、步数、活动能量和训练记录。开启后，健康摘要会发送到你选用的 AI 服务，帮助 MoMo 理解近期状态。"
+            "value": "按你的选择读取最近 7 天睡眠、运动、活动三环、步数、心率、心率变异性、血氧、呼吸频率与环境音量，同步到配对的 Mac，帮助 MoMo 理解你的作息与身体状态。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reads only heart rate, resting heart rate, sleep, step count, activity energy and training records according to your choice. When turned on, health summaries will be sent to the AI ​​service you choose to help MoMo understand recent status."
+            "value": "Reads your recent 7-day sleep, workouts, Activity rings, steps, heart rate, heart rate variability, blood oxygen, respiratory rate, and environmental audio exposure as selected, syncing them to your paired Mac to help MoMo understand your rest and physical state."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "選択に従って、心拍数、安静時心拍数、睡眠、歩数、活動エネルギー、トレーニング記録のみを読み取ります。オンにすると、健康状態の概要が選択した AI サービスに送信され、MoMo が最近の状態を把握できるようになります。"
+            "value": "選択に応じて過去 7 日間の睡眠、ワークアウト、アクティビティリング、歩数、心拍数、心拍変動、血中酸素、呼吸数、環境音量を読み取り、ペアリングされた Mac と同期して MoMo が生活リズムや体調を把握できるようにします。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "선택에 따라 심박수, 안정시 심박수, 수면, 걸음 수, 활동 에너지 및 훈련 기록만 읽습니다. 켜면 MoMo가 최근 상태를 이해할 수 있도록 건강 ​​요약이 선택한 AI 서비스로 전송됩니다."
+            "value": "선택에 따라 최근 7일간의 수면, 운동, 활동 링, 걸음 수, 심박수, 심박 변이도, 혈중 산소, 호흡수 및 주변 소음 노출을 읽어 페어링된 Mac과 동기화하여 MoMo가 생활 리듬과 신체 상태를 이해하도록 돕습니다."
+          }
+        }
+      }
+    },
+    "NSMotionUsageDescription": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启后，读取近 24 小时步行、跑步、骑行或乘车等出行状态并同步到配对的 Mac，帮助 MoMo 结合你的出行处境安排提醒与事项。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When enabled, reads your past 24 hours of walking, running, cycling, or automotive transit activity and syncs it to your paired Mac to help MoMo time reminders and tasks around your commute."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オンにすると、過去 24 時間の徒歩、ランニング、自転車、車移動などの移動状態を読み取り、ペアリングされた Mac と同期して MoMo が移動状況に合わせてリマインダーや予定を調整できるようにします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "켜면 최근 24시간 동안의 걷기, 달리기, 자전거 타기 또는 차량 이동 상태를 읽어 페어링된 Mac과 동기화하여 MoMo가 이동 상황에 맞춰 알림과 할 일을 정리하도록 돕습니다."
           }
         }
       }

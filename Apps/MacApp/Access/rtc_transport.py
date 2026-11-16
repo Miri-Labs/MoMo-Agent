@@ -80,8 +80,8 @@ def permitted_route(method, path):
     stream = method == 'GET' and re.fullmatch(r'/v1/runs/[A-Za-z0-9_-]+/events', target) is not None and not context
     allowed = (method == 'GET' and re.fullmatch(r'/v1/(capabilities|runs/[A-Za-z0-9_-]+)', target) is not None or
                method == 'POST' and re.fullmatch(r'/v1/runs(?:/[A-Za-z0-9_-]+/(?:stop|approval|clarify|resolve-unknown))?', target) is not None) if not context else (
-               method == 'GET' and target in ('/v1/status', '/v1/sources', '/v1/source', '/v1/memories', '/v1/health', '/v1/phone-sources', '/v1/summaries') or
-               method == 'POST' and target in ('/v1/sources', '/v1/memories/forget', '/v1/memories/dream', '/v1/speakers/ack', '/v1/health', '/v1/phone-sources', '/v1/summaries'))
+               method == 'GET' and target in ('/v1/status', '/v1/sources', '/v1/source', '/v1/memories', '/v1/health', '/v1/phone-sources', '/v1/summaries', '/v1/device-telemetry', '/v1/situation') or
+               method == 'POST' and target in ('/v1/sources', '/v1/memories/forget', '/v1/memories/dream', '/v1/speakers/ack', '/v1/health', '/v1/phone-sources', '/v1/summaries', '/v1/device-telemetry'))
     if not (allowed or stream): return None
     return target + ('?' + parts.query if parts.query else ''), context, stream
 

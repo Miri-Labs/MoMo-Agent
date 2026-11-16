@@ -1,6 +1,6 @@
 import Foundation
 
-public enum PhoneSourceKind: String, Codable, CaseIterable, Sendable { case visits, calendar, reminders }
+public enum PhoneSourceKind: String, Codable, CaseIterable, Sendable { case visits, calendar, reminders, motion }
 
 /// A bounded, replaceable evidence snapshot. It is not a memory or a command.
 public struct PhoneSourceSnapshot: Codable, Equatable, Sendable {

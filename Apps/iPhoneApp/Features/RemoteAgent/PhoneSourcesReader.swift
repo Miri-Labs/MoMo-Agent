@@ -1,4 +1,5 @@
 import CoreLocation
+import CoreMotion
 import CryptoKit
 import EventKit
 import Foundation
@@ -10,12 +11,20 @@ import MoMoAgentClient
     private let events = EKEventStore()
     private let location = CLLocationManager()
     private let geocoder = CLGeocoder()
+    private let motion = CMMotionActivityManager()
     private let file: URL
     private var visits: [PhoneSourceSnapshot.Record] = []
     private var enabled = false
     private var locationFailed = false
     private var visitAccessWaiter: CheckedContinuation<Void, Error>?
     enum ReadError: Error { case denied, unavailable, tooManyRecords }
+
+    private struct RawMotionSample: Sendable {
+        let start: Double
+        let kind: String
+        let confidence: String
+        let confidenceRank: Int
+    }
 
     init(directory: URL) throws {
         file = directory.appendingPathComponent("phone-visits.json")
@@ -36,19 +45,32 @@ import MoMoAgentClient
             return EKEventStore.authorizationStatus(for: .event) == .notDetermined
         case .reminders:
             return EKEventStore.authorizationStatus(for: .reminder) == .notDetermined
+        case .motion:
+            return CMMotionActivityManager.isActivityAvailable() && CMMotionActivityManager.authorizationStatus() == .notDetermined
         }
     }
 
     func authorization(_ kind: PhoneSourceKind) -> String {
-        if kind == .visits {
+        switch kind {
+        case .visits:
             if locationFailed { return "temporarily_unavailable" }
             switch location.authorizationStatus {
             case .authorizedAlways: return "enabled"
             case .authorizedWhenInUse: return "foreground_only"
             default: return "needs_permission"
             }
+        case .calendar:
+            return EKEventStore.authorizationStatus(for: .event) == .fullAccess ? "enabled" : "needs_permission"
+        case .reminders:
+            return EKEventStore.authorizationStatus(for: .reminder) == .fullAccess ? "enabled" : "needs_permission"
+        case .motion:
+            guard CMMotionActivityManager.isActivityAvailable() else { return "unavailable" }
+            switch CMMotionActivityManager.authorizationStatus() {
+            case .authorized: return "enabled"
+            case .notDetermined, .denied, .restricted: return "needs_permission"
+            @unknown default: return "needs_permission"
+            }
         }
-        return EKEventStore.authorizationStatus(for: kind == .calendar ? .event : .reminder) == .fullAccess ? "enabled" : "needs_permission"
     }
     func authorize(_ kind: PhoneSourceKind) async throws {
         switch kind {
@@ -67,6 +89,13 @@ import MoMoAgentClient
             case .authorizedWhenInUse, .authorizedAlways: break
             default: throw ReadError.denied
             }
+        case .motion:
+            guard CMMotionActivityManager.isActivityAvailable() else { throw ReadError.unavailable }
+            let status = CMMotionActivityManager.authorizationStatus()
+            if status == .denied || status == .restricted { throw ReadError.denied }
+            let now = Date()
+            _ = try await queryMotionSamples(from: now.addingTimeInterval(-86400), to: now)
+            guard CMMotionActivityManager.authorizationStatus() == .authorized else { throw ReadError.denied }
         }
     }
     func requestBackgroundVisits() {
@@ -125,12 +154,142 @@ import MoMoAgentClient
             guard authorization(kind) == "enabled" else { throw ReadError.denied }
             guard let result else { throw ReadError.unavailable }
             values = result
+        case .motion:
+            guard CMMotionActivityManager.isActivityAvailable() else { throw ReadError.unavailable }
+            guard CMMotionActivityManager.authorizationStatus() == .authorized else { throw ReadError.denied }
+            let windowEnd = to
+            let windowStart = max(from, windowEnd.addingTimeInterval(-86400))
+            let rawSamples = try await queryMotionSamples(from: windowStart, to: windowEnd)
+            try Task.checkCancellation()
+            guard authorization(.motion) == "enabled" else { throw ReadError.denied }
+            values = Self.mergeMotionSamples(rawSamples, windowStart: windowStart.timeIntervalSince1970, windowEnd: windowEnd.timeIntervalSince1970)
         }
         // Refuse an oversized snapshot rather than silently dropping user data.
         guard values.count <= 2000, values.allSatisfy({ ($0.title?.utf8.count ?? 0) <= 8192 && $0.sourceName.utf8.count <= 1024 }) else {
             throw ReadError.tooManyRecords
         }
         return values.sorted { ($0.start ?? 0, $0.id) < ($1.start ?? 0, $1.id) }
+    }
+
+    private func queryMotionSamples(from start: Date, to end: Date) async throws -> [RawMotionSample] {
+        try await withCheckedThrowingContinuation { continuation in
+            motion.queryActivityStarting(from: start, to: end, to: .main) { activities, error in
+                if let error {
+                    let nsError = error as NSError
+                    if nsError.domain == CMErrorDomain,
+                       nsError.code == Int(CMErrorMotionActivityNotAuthorized.rawValue) {
+                        continuation.resume(throwing: ReadError.denied)
+                    } else {
+                        continuation.resume(throwing: error)
+                    }
+                    return
+                }
+                let mapped = (activities ?? []).map(Self.rawMotionSample)
+                continuation.resume(returning: mapped)
+            }
+        }
+    }
+
+    private nonisolated static func rawMotionSample(_ activity: CMMotionActivity) -> RawMotionSample {
+        let kind: String
+        if activity.automotive { kind = "automotive" }
+        else if activity.cycling { kind = "cycling" }
+        else if activity.running { kind = "running" }
+        else if activity.walking { kind = "walking" }
+        else if activity.stationary { kind = "stationary" }
+        else { kind = "unknown" }
+
+        let confidence: String
+        let rank: Int
+        switch activity.confidence {
+        case .high: confidence = "high"; rank = 2
+        case .medium: confidence = "medium"; rank = 1
+        case .low: confidence = "low"; rank = 0
+        @unknown default: confidence = "low"; rank = 0
+        }
+        return RawMotionSample(
+            start: activity.startDate.timeIntervalSince1970,
+            kind: kind,
+            confidence: confidence,
+            confidenceRank: rank
+        )
+    }
+
+    private nonisolated static func mergeMotionSamples(
+        _ samples: [RawMotionSample],
+        windowStart: Double,
+        windowEnd: Double
+    ) -> [PhoneSourceSnapshot.Record] {
+        guard !samples.isEmpty, windowEnd > windowStart else { return [] }
+        let sorted = samples.filter { $0.start.isFinite }.sorted { $0.start < $1.start }
+        guard !sorted.isEmpty else { return [] }
+
+        struct Segment {
+            var kind: String
+            var start: Double
+            var end: Double
+            var confidenceDurations: [String: Double]
+        }
+
+        var segments: [Segment] = []
+        for index in sorted.indices {
+            let current = sorted[index]
+            let rawEnd = index + 1 < sorted.count ? sorted[index + 1].start : windowEnd
+            let segStart = max(windowStart, current.start)
+            let segEnd = min(windowEnd, rawEnd)
+            guard segEnd > segStart else { continue }
+            let duration = segEnd - segStart
+
+            // Ignore ultra-brief (< 45s) low-confidence or unknown blips.
+            if (current.confidenceRank == 0 || current.kind == "unknown") && duration < 45 {
+                if !segments.isEmpty {
+                    segments[segments.count - 1].end = max(segments[segments.count - 1].end, segEnd)
+                }
+                continue
+            }
+
+            if var last = segments.last, last.kind == current.kind, segStart - last.end <= 60 {
+                last.end = max(last.end, segEnd)
+                last.confidenceDurations[current.confidence, default: 0] += duration
+                segments[segments.count - 1] = last
+            } else {
+                segments.append(Segment(
+                    kind: current.kind,
+                    start: segStart,
+                    end: segEnd,
+                    confidenceDurations: [current.confidence: duration]
+                ))
+            }
+        }
+
+        if segments.count > 180 {
+            segments = Array(segments.suffix(180))
+        }
+
+        var usedIDs = Set<String>()
+        return segments.map { seg in
+            let highDur = seg.confidenceDurations["high", default: 0]
+            let medDur = seg.confidenceDurations["medium", default: 0]
+            let lowDur = seg.confidenceDurations["low", default: 0]
+            let conf: String
+            if highDur >= medDur && highDur >= lowDur && highDur > 0 { conf = "high" }
+            else if medDur >= lowDur && medDur > 0 { conf = "medium" }
+            else { conf = "low" }
+
+            var baseSec = Int(seg.start)
+            var candidateID = "motion-\(baseSec)-\(seg.kind)"
+            while !usedIDs.insert(candidateID).inserted {
+                baseSec += 1
+                candidateID = "motion-\(baseSec)-\(seg.kind)"
+            }
+            return PhoneSourceSnapshot.Record(
+                id: candidateID,
+                title: seg.kind,
+                sourceName: "CoreMotion confidence:\(conf)",
+                start: seg.start,
+                end: seg.end
+            )
+        }
     }
     private nonisolated static func reminderRecord(_ reminder: EKReminder) -> PhoneSourceSnapshot.Record {
         let due = reminder.dueDateComponents.flatMap { ($0.calendar ?? Calendar.current).date(from: $0)?.timeIntervalSince1970 }

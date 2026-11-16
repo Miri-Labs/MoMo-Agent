@@ -244,6 +244,7 @@ final class PhoneRuntime {
         receiver.onCurrentWatchStatusChanged = { [weak self] observation in
             guard let self else { return }
             self.library.updateCurrentWatchStatus(observation)
+            self.remoteAgent.updateWatchStatus(observation)
             if self.isForeground, self.pendingForegroundBatchFlush,
                let observation, !observation.restored, observation.observedAt != nil,
                case .watch(let status) = observation.snapshot.payload, status.audioBatchVersion == 1 {
@@ -441,6 +442,7 @@ final class PhoneRuntime {
             if !libraryPresentationDeferred { await refreshBatches() }
             activateTransportIfNeeded()
             await receiver.reconcile()
+            remoteAgent.updateWatchStatus(receiver.currentWatchStatus)
             remoteAgent.sourcesChanged()
             if isForeground {
                 await resumeAutomaticTranscription()
@@ -569,6 +571,7 @@ final class PhoneRuntime {
         transport?.allowControlReplay()
         requestWatchStatus()
         await receiver.reconcile()
+        remoteAgent.updateWatchStatus(receiver.currentWatchStatus)
         await resumeAutomaticTranscription()
         if libraryPresentationDeferred {
             do { try await prepareLibraryPresentation() }

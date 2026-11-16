@@ -1,8 +1,10 @@
 """Freeze chat and transcript evidence for one paginated daily Dream."""
 from contextlib import closing
+import datetime as _dt
 import json
 import uuid
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from momo_memory import memory_home
 from context_store import Conflict, canonical, digest
@@ -13,6 +15,58 @@ import transcript_ingestion as ingestion
 # Each evidence page is at most ~32 KB. A fresh model session bounds replay
 # and context growth while all batches share the original frozen snapshot.
 PAGES_PER_RUN = 4
+
+
+def _health_and_activity_summary(store, now):
+    rows = store.db.execute("SELECT payload FROM health_snapshots ORDER BY device_id LIMIT 4").fetchall()
+    sleep_items = []
+    workout_items = []
+    for row in rows:
+        try:
+            doc = json.loads(row["payload"])
+        except Exception:
+            continue
+        if doc.get("state") != "enabled":
+            continue
+        tz = _dt.timezone.utc
+        try:
+            tz = ZoneInfo(doc.get("timezone") or "UTC")
+        except ZoneInfoNotFoundError:
+            pass
+        for s in sorted(doc.get("sleep_sessions") or [], key=lambda x: float(x["end"]), reverse=True):
+            end_ts = float(s["end"])
+            if end_ts <= now + 60 and (now - end_ts) <= 48 * 3600 and len(sleep_items) < 4:
+                sleep_items.append({
+                    "start_local": _dt.datetime.fromtimestamp(float(s["start"]), tz).isoformat(timespec="minutes"),
+                    "end_local": _dt.datetime.fromtimestamp(end_ts, tz).isoformat(timespec="minutes"),
+                    "asleep_hours": round(float(s["asleep_seconds"]) / 3600.0, 2),
+                    "deep_hours": round(float(s["deep_seconds"]) / 3600.0, 2),
+                    "core_hours": round(float(s["core_seconds"]) / 3600.0, 2),
+                    "rem_hours": round(float(s["rem_seconds"]) / 3600.0, 2),
+                    "source_name": s["source_name"],
+                })
+        for w in sorted(doc.get("workouts") or [], key=lambda x: float(x["end"]), reverse=True):
+            end_ts = float(w["end"])
+            if end_ts <= now + 60 and (now - end_ts) <= 48 * 3600 and len(workout_items) < 10:
+                workout_items.append({
+                    "activity_type": w["activity_type"],
+                    "start_local": _dt.datetime.fromtimestamp(float(w["start"]), tz).isoformat(timespec="minutes"),
+                    "end_local": _dt.datetime.fromtimestamp(end_ts, tz).isoformat(timespec="minutes"),
+                    "duration_minutes": round(float(w["duration_seconds"]) / 60.0, 1),
+                    "active_energy_kcal": w.get("active_energy_kcal"),
+                    "distance_meters": w.get("distance_meters"),
+                    "source_name": w["source_name"],
+                })
+    if not sleep_items and not workout_items:
+        return None
+    return {
+        "sleep_sessions": sleep_items,
+        "workouts": workout_items,
+        "guidance": (
+            "Completed sleep sessions and workouts in the review window for journal/rhythm understanding only. "
+            "Do NOT infer medical diagnoses, and NEVER store ephemeral device battery percentages or transient telemetry in MEMORY.md or USER.md."
+        ),
+    }
 
 
 def enqueue(store, data, now, manual=False):
@@ -64,10 +118,14 @@ def enqueue(store, data, now, manual=False):
             return None, False
 
         page = 0
+        health_summary = _health_and_activity_summary(store, now)
 
         def append(job_id, batch):
-            nonlocal page
+            nonlocal page, health_summary
             page += 1
+            if health_summary is not None:
+                batch = {**batch, "health_and_activity_summary": health_summary}
+                health_summary = None
             store.db.execute("INSERT INTO daily_review_pages(review_id,page,job_id,evidence) VALUES(?,?,?,?)",
                              (job["id"], page, job_id, canonical(batch)))
 
@@ -85,6 +143,8 @@ def enqueue(store, data, now, manual=False):
                     store.db.execute("UPDATE jobs SET input=? WHERE id=?", (canonical(batch), job_id))
                     ingestion.finish_in_transaction(store, source_job, None)
                 job_id = ingestion.next_page_job_id(job_id)
+        if page == 0 and health_summary is not None:
+            append(None, {})
         return job, True
 
 
@@ -214,7 +274,8 @@ def finish_in_transaction(store, job, receipt):
     for row in store.db.execute("SELECT * FROM daily_review_pages WHERE review_id=? AND seen=1 ORDER BY page", (snapshot,)):
         batch = json.loads(row["evidence"])
         if not row["job_id"]:
-            cursor = batch["cursor"]
+            if "cursor" in batch:
+                cursor = batch["cursor"]
             continue
         source_job = store.db.execute("SELECT * FROM jobs WHERE id=? AND state='pending'", (row["job_id"],)).fetchone()
         source = store.db.execute("SELECT revision,deleted FROM sources WHERE id=?", (batch["source_id"],)).fetchone()

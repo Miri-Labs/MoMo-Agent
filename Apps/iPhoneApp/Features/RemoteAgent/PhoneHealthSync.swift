@@ -61,6 +61,27 @@ final class PhoneHealthSync {
         if enabled { await refresh() }
     }
 
+    func reauthorize() async {
+        guard !isSyncing, available else { return }
+        isSyncing = true
+        do {
+            try await reader.authorize()
+            if !state.enabled {
+                var next = state; next.enabled = true; try commit(next)
+            }
+            failure = nil
+        } catch { failure = String(localized: "健康授权未完成，请重试。") }
+        isSyncing = false
+        if enabled { await refresh() }
+    }
+
+    func shouldRefreshOpportunistically(minimumInterval: TimeInterval = 15 * 60) -> Bool {
+        if state.pending != nil { return true }
+        guard state.enabled else { return false }
+        guard let lastSynced = state.lastSynced else { return true }
+        return Date().timeIntervalSince(lastSynced) >= minimumInterval
+    }
+
     func disable() async {
         guard !isSyncing else { return }
         isSyncing = true
@@ -84,15 +105,25 @@ final class PhoneHealthSync {
             if state.enabled {
                 let now = Date(), calendar = Calendar.current
                 let start = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now))!
-                let observations: [HealthSnapshot.Observation]
+                let result: PhoneHealthReadResult
                 var status = "enabled"
-                do { observations = try await reader.read(now: now, start: start, calendar: calendar) }
+                do { result = try await reader.readSnapshot(now: now, start: start, calendar: calendar) }
                 catch is CancellationError { throw CancellationError() }
-                catch { observations = []; status = "temporarily_unavailable" }
+                catch { result = PhoneHealthReadResult(); status = "temporarily_unavailable" }
                 try Task.checkCancellation()
                 var next = state; next.revision += 1
-                next.pending = .init(device: deviceID, revision: next.revision, state: status, observedAt: now,
-                                     windowStart: start, timezone: calendar.timeZone.identifier, observations: observations)
+                next.pending = .init(
+                    device: deviceID,
+                    revision: next.revision,
+                    state: status,
+                    observedAt: now,
+                    windowStart: start,
+                    timezone: calendar.timeZone.identifier,
+                    observations: result.observations,
+                    sleepSessions: result.sleepSessions,
+                    workouts: result.workouts,
+                    activitySummaries: result.activitySummaries
+                )
                 try commit(next)
                 try await deliverPending()
                 failure = status == "temporarily_unavailable" ? String(localized: "暂时无法读取健康数据，请解锁手机后重试。") : nil
@@ -114,6 +145,9 @@ final class PhoneHealthSync {
         try await client.syncHealth(pending)
         var next = state; next.pending = nil; next.lastSynced = Date()
         next.hasReadableData = !pending.observations.isEmpty
+            || !pending.sleepSessions.isEmpty
+            || !pending.workouts.isEmpty
+            || !pending.activitySummaries.isEmpty
         try commit(next)
     }
     private func commit(_ next: State) throws {

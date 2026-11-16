@@ -167,12 +167,7 @@ def _cmd_phone_context(data: Path, args: argparse.Namespace) -> dict:
     from phone_sources import read_phone_sources
     store = _open_context(data)
     try:
-        if args.kind == "all":
-            return {
-                kind: read_phone_sources(store, kind, "", args.limit)
-                for kind in ("calendar", "reminders", "visits")
-            }
-        return read_phone_sources(store, args.kind, args.after, args.limit)
+        return read_phone_sources(store, args.kind, "" if args.kind == "all" else args.after, args.limit)
     finally:
         store.close()
 
@@ -181,7 +176,16 @@ def _cmd_health(data: Path, args: argparse.Namespace) -> dict:
     from health_store import read_health
     store = _open_context(data)
     try:
-        return read_health(store, args.after, args.limit)
+        return read_health(store, args.after, args.limit, category=args.category)
+    finally:
+        store.close()
+
+
+def _cmd_situation(data: Path, args: argparse.Namespace) -> dict:
+    from situational_context import read_situational_context
+    store = _open_context(data)
+    try:
+        return read_situational_context(store, data_dir=data)
     finally:
         store.close()
 
@@ -560,14 +564,17 @@ def main() -> int:
     rec_save.add_argument("--title", required=True)
     rec_save.add_argument("--text", required=True)
 
-    phone = sub.add_parser("phone-context", help="Read calendar, reminders, or visits snapshots")
-    phone.add_argument("--kind", choices=("calendar", "reminders", "visits", "all"), default="all")
+    phone = sub.add_parser("phone-context", help="Read calendar, reminders, visits, or motion snapshots")
+    phone.add_argument("--kind", choices=("calendar", "reminders", "visits", "motion", "all"), default="all")
     phone.add_argument("--after", default="")
     phone.add_argument("--limit", type=int, default=30)
 
-    health = sub.add_parser("health", help="Read HealthKit step and heart-rate snapshots")
+    health = sub.add_parser("health", help="Read HealthKit v2 snapshots across sleep, workouts, activity, vitals, and audio")
+    health.add_argument("--category", choices=("all", "overview", "sleep", "workouts", "activity", "vitals", "audio"), default="all")
     health.add_argument("--after", default="")
     health.add_argument("--limit", type=int, default=20)
+
+    sub.add_parser("situation", help="Read unified situational context across devices, mobility, sleep/vitals, and schedule")
 
     mem_list = sub.add_parser("memories", help="List shared MoMo memories and user profile facts")
     mem_list.add_argument("--after", default="")
@@ -646,6 +653,7 @@ def main() -> int:
         "save-result": _cmd_save_recording_result,
         "phone-context": _cmd_phone_context,
         "health": _cmd_health,
+        "situation": _cmd_situation,
         "memories": _cmd_memories,
         "search-memory": _cmd_search_memory,
         "read-memory-evidence": _cmd_read_memory_evidence,
