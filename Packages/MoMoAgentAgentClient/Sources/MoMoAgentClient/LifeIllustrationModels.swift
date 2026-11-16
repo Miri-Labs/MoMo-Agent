@@ -11,11 +11,31 @@ public struct LifeIllustrationSettings: Codable, Equatable, Sendable {
     public var updatedAt: Double = 0
     public var pendingCount = 0
     public var needsReviewCount = 0
+    public var retryableCount = 0
 
     public init() {}
 
+    private enum CodingKeys: String, CodingKey {
+        case enabled, intervalHours, dayStartHour, provider, supported
+        case serviceStatus, updatedAt, pendingCount, needsReviewCount, retryableCount
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        intervalHours = try values.decodeIfPresent(Int.self, forKey: .intervalHours) ?? 3
+        dayStartHour = try values.decodeIfPresent(Int.self, forKey: .dayStartHour) ?? 8
+        provider = try values.decodeIfPresent(String.self, forKey: .provider)
+        supported = try values.decodeIfPresent(Bool.self, forKey: .supported) ?? false
+        serviceStatus = try values.decodeIfPresent(String.self, forKey: .serviceStatus) ?? "unknown"
+        updatedAt = try values.decodeIfPresent(Double.self, forKey: .updatedAt) ?? 0
+        pendingCount = try values.decodeIfPresent(Int.self, forKey: .pendingCount) ?? 0
+        needsReviewCount = try values.decodeIfPresent(Int.self, forKey: .needsReviewCount) ?? 0
+        retryableCount = try values.decodeIfPresent(Int.self, forKey: .retryableCount) ?? needsReviewCount
+    }
+
     public var canDisplayIllustrations: Bool {
-        supported && provider == "openai-codex" && serviceStatus == "ready"
+        supported && serviceStatus == "ready"
     }
 }
 
