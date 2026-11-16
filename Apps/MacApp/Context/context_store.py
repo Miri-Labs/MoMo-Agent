@@ -15,7 +15,7 @@ from transcript_speakers import classify_transcript_span
 DEFAULT_DAY_START_HOUR = 8
 _CACHE_LOCK = threading.Lock()
 _INITIALIZED_DBS: set[tuple[str, int, int]] = set()
-_SOURCE_SKELETON_CACHE: dict[tuple[str, int, int, str, str, float, int], dict] = {}
+_SOURCE_SKELETON_CACHE: dict[tuple, dict] = {}
 _DONE_SUMMARY_CACHE: dict[tuple[str, int, int, str], tuple[str, str | None, int | None, str]] = {}
 
 
@@ -62,8 +62,9 @@ def source_clock(span):
     offset = span.get("timezone_offset")
     if type(offset) is int and -64800 <= offset <= 64800:
         return _dt.timezone(_dt.timedelta(seconds=offset)), "recorded_offset"
-    # Old replicas lack recording timezone evidence. UTC is explicit and stable across travel.
-    return _dt.timezone.utc, "timezone_unknown"
+    # Legacy replicas use the host zone at the event date, without inventing recording evidence.
+    local = _dt.datetime.fromtimestamp(float(span["recorded_at"])).astimezone()
+    return local.tzinfo, "local_timezone"
 
 
 def natural_groups(spans, early_hour):
@@ -77,7 +78,7 @@ def natural_groups(spans, early_hour):
         local = _dt.datetime.fromtimestamp(start, zone)
         day = local.date()
         offset = int(zone.utcoffset(None).total_seconds())
-        key = (day, offset, early_hour > 0 and local.hour < early_hour)
+        key = (day, offset, early_hour > 0 and local.hour < early_hour, evidence)
         est_end = max(end, start + min(60.0, len(text) * 0.22))
         if groups and groups[-1]["key"] == key and start - groups[-1]["est_end"] <= 300:
             g = groups[-1]
@@ -517,6 +518,7 @@ class ContextStore:
             return {"revision": self.revision, "items": [], "next_cursor": None}
 
         day_start_hour = read_early_transcript_hour(self.directory)
+        local_zone = (time.tzname, time.timezone, time.daylight)
         db_id = self._db_id
         skeletons = {}
         missing_source_ids = []
@@ -526,7 +528,7 @@ class ContextStore:
                     sid, rev = hrow["id"], hrow["revision"]
                     # Text revision deliberately survives clock/owner enrichment. The
                     # monotonic payload stamp also survives reopened store connections.
-                    cached = _SOURCE_SKELETON_CACHE.get((*db_id, sid, rev, hrow["updated"], day_start_hour))
+                    cached = _SOURCE_SKELETON_CACHE.get((*db_id, sid, rev, hrow["updated"], day_start_hour, local_zone))
                     if cached is not None:
                         skeletons[(sid, rev)] = cached
                     else:
@@ -569,7 +571,7 @@ class ContextStore:
                     if len(_SOURCE_SKELETON_CACHE) >= 1_024:
                         _SOURCE_SKELETON_CACHE.clear()
                     for (sid, rev, updated), skel in built.items():
-                        _SOURCE_SKELETON_CACHE[(*db_id, sid, rev, updated, day_start_hour)] = skel
+                        _SOURCE_SKELETON_CACHE[(*db_id, sid, rev, updated, day_start_hour, local_zone)] = skel
 
         done_by_fp, done_by_window, active_fps = self._load_summary_index()
         page_ids = [hrow["id"] for hrow in page_rows]

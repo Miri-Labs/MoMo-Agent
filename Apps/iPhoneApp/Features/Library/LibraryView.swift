@@ -105,14 +105,6 @@ struct LibraryView: View {
                 }
                 .accessibilityIdentifier("timeline.share")
             }
-            if !illustrations(for: timeline.selectedDay).isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("当天贴纸", systemImage: "sparkles.rectangle.stack") {
-                        let state = readingStates.state(for: timeline.selectedDay)
-                        state.position.scrollTo(id: TimelineScrollItemID.masthead, anchor: .top)
-                    }.accessibilityIdentifier("timeline.stickers.top")
-                }
-            }
             if let openSettings {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu { Button("设置", systemImage: "gearshape", action: openSettings) }

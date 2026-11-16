@@ -2,6 +2,14 @@ import SwiftUI
 import MoMoAgentClient
 import MoMoContracts
 
+extension ContextSourceWindow {
+    func displayTimeZone(fallback: TimeZone = .current) -> TimeZone {
+        guard dateEvidence != "timezone_unknown", let timezoneOffset,
+              let zone = TimeZone(secondsFromGMT: timezoneOffset) else { return fallback }
+        return zone
+    }
+}
+
 struct DesktopTranscriptWindow: Identifiable, Equatable, Sendable {
     let source: ContextSource
     let window: ContextSourceWindow
@@ -43,7 +51,7 @@ struct DesktopTranscriptSnapshot: Equatable, Sendable {
 
     private nonisolated static let clockFormat = Date.FormatStyle().hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
 
-    nonisolated static func build(sources: [ContextSource], dayStartHour: Int, version: UInt64) -> DesktopTranscriptSnapshot {
+    nonisolated static func build(sources: [ContextSource], dayStartHour: Int, version: UInt64, calendar: Calendar = .current) -> DesktopTranscriptSnapshot {
         guard !sources.isEmpty else {
             return DesktopTranscriptSnapshot(
                 version: version,
@@ -55,7 +63,6 @@ struct DesktopTranscriptSnapshot: Equatable, Sendable {
                 latestRecordedAt: nil
             )
         }
-        let calendar = Calendar.current
         let locale = AppLanguage.current.locale
 
         var sourceByIDRevision: [String: ContextSource] = [:]
@@ -109,8 +116,8 @@ struct DesktopTranscriptSnapshot: Equatable, Sendable {
                 let startDate = Date(timeIntervalSince1970: ts)
                 let endDate = Date(timeIntervalSince1970: endTimestamp ?? ts)
                 var sourceCalendar = Calendar(identifier: .gregorian)
-                sourceCalendar.timeZone = TimeZone(secondsFromGMT: pair.window.timezoneOffset ?? 0) ?? .gmt
-                let naturalKey = pair.window.naturalDay ?? Self.dayKey(for: startDate, calendar: sourceCalendar)
+                sourceCalendar.timeZone = pair.window.displayTimeZone(fallback: calendar.timeZone)
+                let naturalKey = Self.dayKey(for: startDate, calendar: sourceCalendar)
                 let components = naturalKey.split(separator: "-").compactMap { Int($0) }
                 let logicalStart = components.count == 3
                     ? calendar.date(from: DateComponents(year: components[0], month: components[1], day: components[2])) ?? calendar.startOfDay(for: startDate)
@@ -126,7 +133,7 @@ struct DesktopTranscriptSnapshot: Equatable, Sendable {
                 let sText = startDate.formatted(clock)
                 let eText = endDate.formatted(clock)
                 let rText = sText == eText ? sText : "\(sText)–\(eText)"
-                rangeLabel = rText + (pair.window.timezoneOffset == nil || pair.window.dateEvidence == "timezone_unknown" ? " · UTC（时区待确认）" : "")
+                rangeLabel = rText
                 let dayPrefix = logicalStart.formatted(.dateTime.locale(locale).month().day())
                 datedLabel = "\(dayPrefix) \(rText)"
             } else {
@@ -186,8 +193,9 @@ struct DesktopSources: View {
     private var selectedDayKey: String { DesktopTranscriptSnapshot.dayKey(for: day, calendar: calendar) }
     private func isEarly(_ item: DesktopTranscriptWindow) -> Bool {
         guard let timestamp = item.recordedAt else { return false }
-        return TranscriptReadingBoundary.isEarly(Date(timeIntervalSince1970: timestamp),
-            offset: item.window.timezoneOffset ?? 0, hour: model.dayStartHour)
+        let date = Date(timeIntervalSince1970: timestamp)
+        return TranscriptReadingBoundary.isEarly(date,
+            offset: item.window.displayTimeZone().secondsFromGMT(for: date), hour: model.dayStartHour)
     }
     private var earlyExpanded: Bool {
         expandedDays[selectedDayKey] ?? TranscriptReadingBoundary.initiallyExpanded(
@@ -337,9 +345,6 @@ struct DesktopSources: View {
             HStack(spacing: 12) {
                 Text("转录").font(.system(size: 22, weight: .semibold)).accessibilityAddTraits(.isHeader)
                 Spacer()
-                if !dayIllustrations.isEmpty {
-                    Button("当天贴纸") { timelineAnchor = "masthead" }.buttonStyle(.plain)
-                }
                 Button("刷新", systemImage: "arrow.clockwise") { Task { await model.loadContext() } }
                     .labelStyle(.iconOnly).buttonStyle(.plain).disabled(model.contextLoading)
                     .help("刷新转录").accessibilityIdentifier("desktop.transcripts.refresh")
@@ -545,13 +550,13 @@ struct DesktopSourceReader: View {
 
     private var sourceCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: window?.timezoneOffset ?? 0) ?? .gmt
+        calendar.timeZone = window?.displayTimeZone() ?? .current
         return calendar
     }
 
     private func spanClock(_ timestamp: Double, offset: Int?) -> String {
         var format = Self.secondFormat
-        format.timeZone = TimeZone(secondsFromGMT: offset ?? window?.timezoneOffset ?? 0) ?? .gmt
+        format.timeZone = offset.flatMap(TimeZone.init(secondsFromGMT:)) ?? sourceCalendar.timeZone
         return Date(timeIntervalSince1970: timestamp).formatted(format)
     }
 
@@ -560,7 +565,7 @@ struct DesktopSourceReader: View {
         let start = Date(timeIntervalSince1970: timestamp)
         let end = Date(timeIntervalSince1970: endAt ?? timestamp)
         var clock = Self.clockFormat
-        clock.timeZone = TimeZone(secondsFromGMT: window?.timezoneOffset ?? 0) ?? .gmt
+        clock.timeZone = sourceCalendar.timeZone
         let startLabel = start.formatted(clock)
         let endLabel = end.formatted(clock)
         return startLabel == endLabel ? startLabel : "\(startLabel)–\(endLabel)"
