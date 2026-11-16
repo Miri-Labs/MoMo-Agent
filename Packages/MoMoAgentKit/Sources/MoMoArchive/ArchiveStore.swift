@@ -44,6 +44,7 @@ public struct AcceptedChunkID: Sendable, Equatable {
 @frozen
 public enum InboxCommitOutcome: Sendable, Equatable {
     case accepted(AcceptedChunkID)
+    case duplicate(AcceptedChunkID)
     case missing
     case ignored
 }
@@ -281,7 +282,9 @@ public actor ArchiveStore {
             return .accepted(AcceptedChunkID(receipt.chunkID))
         case .restored(let receipt):
             return .accepted(AcceptedChunkID(receipt.chunkID))
-        case .duplicate, .deleted, .expired, .noLongerPending:
+        case .duplicate(let receipt):
+            return .duplicate(AcceptedChunkID(receipt.chunkID))
+        case .deleted, .expired, .noLongerPending:
             return .ignored
         }
     }
@@ -580,6 +583,37 @@ public actor ArchiveStore {
         return source
     }
 
+    public func sourceDeviceID(for batch: ReceiptBatch) throws -> UUID {
+        guard let first = batch.items.first else { throw ArchiveError.staleSource }
+        let source = try sourceDeviceID(for: first)
+        for item in batch.items.dropFirst() {
+            guard try sourceDeviceID(for: item) == source else { throw ArchiveError.staleSource }
+        }
+        return source
+    }
+
+    public func urgentReceiptControlMessages(forChunkIDs chunkIDs: [UUID], sourceDeviceID: UUID?) throws -> [ControlMessage] {
+        guard let sourceDeviceID, !chunkIDs.isEmpty else { return [] }
+        var seen: Set<UUID> = []
+        var receipts: [Receipt] = []
+        for chunkID in chunkIDs where seen.insert(chunkID).inserted {
+            guard let row = try database.rows(
+                "SELECT r.payload FROM receipt_outbox r JOIN chunks c ON c.id=r.chunk_id JOIN sessions s ON s.id=c.session_id WHERE r.chunk_id=? AND r.sent=0 AND s.deleted=0 AND c.retention='present' AND s.source_device=?",
+                [.text(chunkID.uuidString), .text(sourceDeviceID.uuidString)]
+            ).first else { continue }
+            receipts.append(try WireJSON.decode(Receipt.self, from: row.requireData(0)))
+        }
+        guard !receipts.isEmpty else { return [] }
+        var messages: [ControlMessage] = []
+        var index = 0
+        while index < receipts.count {
+            let end = min(receipts.count, index + ReceiptBatchLimits.maximumItems)
+            messages.append(try ControlMessage.packReceipts(Array(receipts[index..<end])))
+            index = end
+        }
+        return messages
+    }
+
     public func applyReceipt(_ applied: ReceiptApplied) throws {
         let expected = try receiptForChunk(applied.receipt.chunkID)
         guard expected == applied.receipt else { throw ArchiveError.staleSource }
@@ -593,13 +627,19 @@ public actor ArchiveStore {
     public func controlWasApplied(_ message: ControlMessage) throws -> Bool {
         switch message {
         case .receipt(let receipt):
-            guard let row = try database.rows("SELECT r.payload,c.receipt_applied FROM receipt_outbox r JOIN chunks c ON c.id=r.chunk_id WHERE r.id=?", [.text(receipt.receiptID.uuidString)]).first else { return false }
-            return try row.requireInt(1) == 1 && WireJSON.decode(Receipt.self, from: row.requireData(0)) == receipt
+            return try receiptWasApplied(receipt)
+        case .receiptBatch(let batch):
+            return try batch.items.allSatisfy { try receiptWasApplied($0) }
         case .deleteSession(let deletion):
             guard let row = try database.rows("SELECT message,acknowledged_device FROM deletions WHERE id=?", [.text(deletion.deletionID.uuidString)]).first else { return false }
             return try row.string(1) != nil && WireJSON.decode(DeleteSession.self, from: row.requireData(0)) == deletion
         default: return false
         }
+    }
+
+    private func receiptWasApplied(_ receipt: Receipt) throws -> Bool {
+        guard let row = try database.rows("SELECT r.payload,c.receipt_applied FROM receipt_outbox r JOIN chunks c ON c.id=r.chunk_id WHERE r.id=?", [.text(receipt.receiptID.uuidString)]).first else { return false }
+        return try row.requireInt(1) == 1 && WireJSON.decode(Receipt.self, from: row.requireData(0)) == receipt
     }
 
     public func recoverInterruptedJobs() throws {

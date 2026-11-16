@@ -544,6 +544,8 @@ private struct FileQueueDiagnostic: Encodable {
     public var isFileChannelCoolingDown: Bool { submissions.isChannelCoolingDown() }
     public var outstandingFileCount: Int { session.outstandingFileTransfers.count }
     public var outstandingControlCount: Int { session.outstandingUserInfoTransfers.count }
+    public var outstandingControlBytes: Int { controlSubmissions.outstandingByteCount }
+    public var interactiveOutstandingControlCount: Int { interactiveControls.outstandingCount }
     public var canAdmitMoreFiles: Bool {
         !submissions.isChannelCoolingDown() && session.outstandingFileTransfers.count < submissions.maximumOutstandingCount
     }

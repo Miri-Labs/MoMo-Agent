@@ -32,6 +32,7 @@ final class PhoneReceiveCoordinator {
     private var replayPendingControls = false
     private var receiptCursor: Int64 = 0
     private var replayReceiptSweep = false
+    private var replaySweepWrapped = false
     private var pendingInboxRecovery = false
     private var lastChangedNotificationUptime: Double = -.infinity
     private var coalescedChangedTask: Task<Void, Never>?
@@ -102,6 +103,14 @@ final class PhoneReceiveCoordinator {
         holdBackgroundSyncWindow(seconds: 5)
         for item in items {
             try? confirmControlDelivery(.receipt(item.receipt))
+        }
+        if let batch = try? ControlMessage.packReceipts(items.map(\.receipt)) {
+            try? confirmControlDelivery(batch)
+        }
+        for message in controlFailures.failedMessages {
+            if (try? await archive.controlWasApplied(message)) == true {
+                try? confirmControlDelivery(message)
+            }
         }
         await publishStatus()
         await scheduleAutomaticRecovery()
@@ -360,6 +369,7 @@ final class PhoneReceiveCoordinator {
         if selectedWatchWatermark?.sourceDeviceID != snapshot?.sourceDeviceID {
             receiptCursor = 0
             replayReceiptSweep = true
+            replaySweepWrapped = false
         }
         selectedWatchWatermark = snapshot
     }
@@ -415,6 +425,14 @@ final class PhoneReceiveCoordinator {
                         case .receiptApplied(let value):
                             try await archive.applyReceipt(value)
                             try confirmControlDelivery(.receipt(value.receipt))
+                        case .receiptAppliedBatch(let batch):
+                            _ = try await archive.applyReceipts(batch.items)
+                            for item in batch.items {
+                                try confirmControlDelivery(.receipt(item.receipt))
+                            }
+                            if let packed = try? ControlMessage.packReceipts(batch.items.map(\.receipt)) {
+                                try confirmControlDelivery(packed)
+                            }
                         case .deleteApplied(let value): try await archive.applyDeletionAcknowledgement(value)
                         case .epochEnded(let value): try await archive.receiveEpochEnd(value); contentsChanged = true
                         case .epochInterrupted(let value): try await archive.receiveEpochInterruption(value); contentsChanged = true
@@ -439,6 +457,7 @@ final class PhoneReceiveCoordinator {
                     }
                 }
             } catch { onFailure(String(localized: "无法读取设备同步消息：\(error.localizedDescription)")) }
+            var committedChunkIDs: [UUID] = []
             do {
                 let inboxPageLimit = 64
                 let listed = try await archive.listPendingInboxItems(limit: inboxPageLimit + 1)
@@ -457,8 +476,10 @@ final class PhoneReceiveCoordinator {
                             contentsChanged = true
                             onFailure(String(localized: "已接收的原音文件缺失，请在资料库检查。"))
                         case .accepted(let acceptedID):
+                            let chunkUUID = acceptedID.uuidValue
+                            committedChunkIDs.append(chunkUUID)
                             contentsChanged = true
-                            onAudioReceived(acceptedID.uuidValue)
+                            onAudioReceived(chunkUUID)
                             let nowUptime = Double(DispatchTime.now().uptimeNanoseconds) * 1e-9
                             if (!notifiedFirstAccepted && nowUptime - lastChangedNotificationUptime >= 2.0)
                                 || nowUptime - lastChangedNotificationUptime >= 4.0 {
@@ -466,6 +487,8 @@ final class PhoneReceiveCoordinator {
                                 lastChangedNotificationUptime = nowUptime
                                 shouldNotifyChangedNow = true
                             }
+                        case .duplicate(let duplicateID):
+                            committedChunkIDs.append(duplicateID.uuidValue)
                         case .ignored:
                             break
                         }
@@ -492,7 +515,10 @@ final class PhoneReceiveCoordinator {
                 if active, let transport, transport.peerState == .available {
                     let replay = replayPendingControls
                     replayPendingControls = false
-                    if replay { replayReceiptSweep = true }
+                    if replay, !replayReceiptSweep {
+                        replayReceiptSweep = true
+                        replaySweepWrapped = false
+                    }
                     let receiver = ControlMessage.receiverIdentity(identity)
                     if receiverConfigurationIsApplied {
                         try confirmControlDelivery(receiver)
@@ -500,7 +526,6 @@ final class PhoneReceiveCoordinator {
                         if replay { try transport.allowControlReplay(receiver) }
                         try transport.transferControl(receiver)
                     }
-                    let pendingReceipts = (try? await archive.pendingReceiptCount(sourceDeviceID: selectedWatchWatermark?.sourceDeviceID)) ?? 0
                     if selectedWatchWatermark == nil, (try? await archive.pendingReceiptCount(sourceDeviceID: nil)) ?? 0 > 0 {
                         transport.requestPeerStatus()
                     }
@@ -511,12 +536,27 @@ final class PhoneReceiveCoordinator {
                         let routes = try transport.transferControlRoutes(message, refreshQueue: false)
                         if routes.background == .deferred && routes.interactive != .submitted && routes.interactive != .alreadySubmitted { break }
                     }
-                    let allowInteractiveReceipts = pendingReceipts <= 4
+                    if !committedChunkIDs.isEmpty {
+                        let urgentMessages = try await archive.urgentReceiptControlMessages(
+                            forChunkIDs: committedChunkIDs,
+                            sourceDeviceID: selectedWatchWatermark?.sourceDeviceID)
+                        for urgent in urgentMessages {
+                            try transport.allowControlReplay(urgent)
+                            let allowInteractive = transport.interactiveOutstandingControlCount < 2
+                            _ = try transport.transferControlRoutes(urgent, refreshQueue: false, allowInteractive: allowInteractive)
+                        }
+                    }
                     await submitPendingControls(submit: { message in
-                        let allowInteractive: Bool
-                        if case .receipt = message { allowInteractive = allowInteractiveReceipts }
-                        else { allowInteractive = true }
-                        return try transport.transferControlRoutes(message, refreshQueue: false, allowInteractive: allowInteractive)
+                        switch message {
+                        case .receipt, .receiptBatch:
+                            let allowInteractive = transport.interactiveOutstandingControlCount == 0
+                            if !allowInteractive, transport.outstandingControlBytes > 6 * 1024 {
+                                return (.deferred, .deferred)
+                            }
+                            return try transport.transferControlRoutes(message, refreshQueue: false, allowInteractive: allowInteractive)
+                        default:
+                            return try transport.transferControlRoutes(message, refreshQueue: false, allowInteractive: true)
+                        }
                     },
                         replay: { try transport.allowControlReplay($0) }, retrying: transport.hasDueControlRetries)
                 }
@@ -564,6 +604,7 @@ final class PhoneReceiveCoordinator {
         let messageSource: UUID?
         switch message {
         case .receipt(let receipt): messageSource = try await archive.sourceDeviceID(for: receipt)
+        case .receiptBatch(let batch): messageSource = try await archive.sourceDeviceID(for: batch)
         case .reconcileResponse(let response): messageSource = response.sourceDeviceID
         default: return false
         }
@@ -625,31 +666,67 @@ final class PhoneReceiveCoordinator {
         let startingCursor = receiptCursor
         for failedMessage in controlFailures.failedMessages {
             guard selectedWatchWatermark?.sourceDeviceID == source else { return }
-            guard case .receipt(let receipt) = failedMessage,
-                  try await archive.sourceDeviceID(for: receipt) == source,
-                  !(try await archive.controlWasApplied(failedMessage)) else { continue }
+            let matchesSource: Bool
+            switch failedMessage {
+            case .receipt(let receipt):
+                matchesSource = (try? await archive.sourceDeviceID(for: receipt)) == source
+            case .receiptBatch(let batch):
+                matchesSource = (try? await archive.sourceDeviceID(for: batch)) == source
+            default:
+                matchesSource = false
+            }
+            guard matchesSource, !(try await archive.controlWasApplied(failedMessage)) else { continue }
             if replayReceiptSweep { try replay(failedMessage) }
             let routes = try submit(failedMessage)
             guard routes.background != .deferred || routes.interactive == .submitted || routes.interactive == .alreadySubmitted else { return }
         }
-        let page = try await archive.pendingReceiptPage(after: receiptCursor, sourceDeviceID: source)
-        for entry in page.entries {
+        // Scan forward through already-submitted batches without resetting cursor to 0 on deferral,
+        // and emit at most one newly submitted batch per pass so transport completion paces draining.
+        var scannedPages = 0
+        while scannedPages < 64 {
+            scannedPages += 1
+            let page = try await archive.pendingReceiptPage(
+                after: receiptCursor,
+                limit: ReceiptBatchLimits.maximumItems,
+                sourceDeviceID: source)
             guard selectedWatchWatermark?.sourceDeviceID == source else { return }
-            let message = ControlMessage.receipt(entry.receipt)
-            if replayReceiptSweep { try replay(message) }
-            let routes = try submit(message)
-            guard routes.background != .deferred || routes.interactive == .submitted || routes.interactive == .alreadySubmitted else { return }
-            receiptCursor = entry.sequence
+            if !page.entries.isEmpty {
+                let message = try ControlMessage.packReceipts(page.entries.map(\.receipt))
+                if replayReceiptSweep { try replay(message) }
+                let routes = try submit(message)
+                guard routes.background != .deferred || routes.interactive == .submitted || routes.interactive == .alreadySubmitted else {
+                    return
+                }
+                receiptCursor = page.scannedThrough
+                if routes.background == .submitted || routes.interactive == .submitted {
+                    if !page.hasMore {
+                        finishReceiptSweepAtEnd(startingCursor: startingCursor, retrying: retrying)
+                    }
+                    return
+                }
+            }
+            if page.hasMore {
+                receiptCursor = page.scannedThrough
+            } else {
+                finishReceiptSweepAtEnd(startingCursor: startingCursor, retrying: retrying)
+                return
+            }
         }
-        if page.hasMore {
-            receiptCursor = page.scannedThrough
-            requested = true
-        } else {
-            receiptCursor = 0
-            replayReceiptSweep = false
-            if startingCursor != 0, retrying {
+        requested = true
+    }
+
+    private func finishReceiptSweepAtEnd(startingCursor: Int64, retrying: Bool) {
+        receiptCursor = 0
+        if replayReceiptSweep {
+            if startingCursor == 0 || replaySweepWrapped {
+                replayReceiptSweep = false
+                replaySweepWrapped = false
+            } else {
+                replaySweepWrapped = true
                 requested = true
             }
+        } else if startingCursor != 0, retrying {
+            requested = true
         }
     }
 

@@ -568,6 +568,33 @@ import MoMoContracts
         #expect(pending.map(\.message) == [.receiptApplied(newApplied)])
     }
 
+    @Test func receiptAppliedBatchMarksAllConstituentReceiptsDeliveredInOneTransaction() async throws {
+        let fixture = try RecordingFixture()
+        defer { fixture.clean() }
+        let store = try await boundStore(fixture)
+        let chunks = try await addChunks(ReceiptBatchLimits.maximumItems, fixture: fixture, store: store)
+        var appliedItems: [ReceiptApplied] = []
+        for chunk in chunks {
+            let receipt = try Receipt(
+                receiverDeviceID: fixture.receiverID,
+                libraryInstanceID: fixture.libraryID,
+                chunkID: chunk.envelope.manifest.chunkID,
+                audioSHA256: chunk.envelope.manifest.audioSHA256,
+                manifestSHA256: chunk.envelope.manifestSHA256
+            )
+            appliedItems.append(try await store.applyReceipt(receipt))
+        }
+        #expect(try await store.hasPendingControlMessages())
+        let packed = try ControlMessage.packReceiptsApplied(appliedItems)
+        try await store.markControlPreserved(
+            packed,
+            receiverDeviceID: fixture.receiverID,
+            libraryInstanceID: fixture.libraryID
+        )
+        #expect(try await !store.hasPendingControlMessages())
+        #expect(try await store.controlBatch(kind: .receipt, after: 0, limit: 32).isEmpty)
+    }
+
     private func response(_ request: ReconcileRequest, state: (ReconcileChunkIdentity) throws -> ReconcileItemState) throws -> ReconcileResponse {
         try ReconcileResponse(requestID: request.messageID, requestSHA256: request.requestSHA256,
             sourceDeviceID: request.sourceDeviceID, receiverDeviceID: request.receiverDeviceID, libraryInstanceID: request.libraryInstanceID,

@@ -78,3 +78,45 @@ import MoMoContracts
     let data = try JSONSerialization.data(withJSONObject: object)
     #expect(throws: ContractError.self) { try WireJSON.decode(StatusSnapshot.self, from: data) }
 }
+
+@Test func receiptBatchesFitControlBudgetPreserveDeterministicIdentityAndRejectInvalidItems() throws {
+    let receiver = UUID(), library = UUID()
+    let receipts = try (0..<ReceiptBatchLimits.maximumItems).map { index in
+        try Receipt(
+            receiverDeviceID: receiver,
+            libraryInstanceID: library,
+            chunkID: UUID(),
+            audioSHA256: ContentHash.sha256(Data("audio-\(index)".utf8)),
+            manifestSHA256: ContentHash.sha256(Data("manifest-\(index)".utf8))
+        )
+    }
+    let batchA = try ReceiptBatch(items: receipts)
+    let batchB = try ReceiptBatch(items: receipts)
+    #expect(batchA.messageID == batchB.messageID)
+    #expect(try ControlMessage.packReceipts([receipts[0]]) == .receipt(receipts[0]))
+    #expect(try ControlMessage.packReceipts(receipts) == .receiptBatch(batchA))
+
+    let applied = receipts.map { ReceiptApplied(receipt: $0) }
+    let appliedBatchA = try ReceiptAppliedBatch(items: applied)
+    let appliedBatchB = try ReceiptAppliedBatch(items: applied)
+    #expect(appliedBatchA.messageID == appliedBatchB.messageID)
+    #expect(try ControlMessage.packReceiptsApplied([applied[0]]) == .receiptApplied(applied[0]))
+    #expect(try ControlMessage.packReceiptsApplied(applied) == .receiptAppliedBatch(appliedBatchA))
+
+    for message in [ControlMessage.receiptBatch(batchA), .receiptAppliedBatch(appliedBatchA)] {
+        let encoded = try WireJSON.encode(message)
+        #expect(encoded.count <= 6_800)
+        #expect(try WireJSON.decode(ControlMessage.self, from: encoded) == message)
+    }
+
+    #expect(throws: ContractError.self) { _ = try ReceiptBatch(items: []) }
+    #expect(throws: ContractError.self) { _ = try ReceiptBatch(items: [receipts[0], receipts[0]]) }
+    let wrongLibrary = try Receipt(
+        receiverDeviceID: receiver,
+        libraryInstanceID: UUID(),
+        chunkID: UUID(),
+        audioSHA256: receipts[0].audioSHA256,
+        manifestSHA256: receipts[0].manifestSHA256
+    )
+    #expect(throws: ContractError.self) { _ = try ReceiptBatch(items: [receipts[0], wrongLibrary]) }
+}

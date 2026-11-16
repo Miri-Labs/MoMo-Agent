@@ -243,7 +243,7 @@ final class ControlInbox: Sendable {
             return 1
         case .reconcileRequest, .reconcileResponse:
             return 2
-        case .receipt, .receiptApplied, .epochEnded, .epochInterrupted, .captureMark:
+        case .receipt, .receiptBatch, .receiptApplied, .receiptAppliedBatch, .epochEnded, .epochInterrupted, .captureMark:
             return 3
         }
     }
@@ -332,18 +332,7 @@ final class ControlInbox: Sendable {
     }
 
     private static func messageID(for message: ControlMessage) -> UUID {
-        switch message {
-        case .receiverIdentity(let value): return value.messageID
-        case .epochEnded(let value): return value.messageID
-        case .epochInterrupted(let value): return value.messageID
-        case .captureMark(let value): return value.messageID
-        case .receipt(let value): return value.messageID
-        case .receiptApplied(let value): return value.messageID
-        case .deleteSession(let value): return value.messageID
-        case .deleteApplied(let value): return value.messageID
-        case .reconcileRequest(let value): return value.messageID
-        case .reconcileResponse(let value): return value.messageID
-        }
+        message.messageID
     }
 
     private static func prefixedFileURL(in directory: URL, rank: Int, id: UUID) -> URL {

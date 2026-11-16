@@ -53,6 +53,113 @@ public struct ReceiptApplied: Codable, Equatable, Sendable {
     }
 }
 
+public enum ReceiptBatchLimits {
+    // Leaves >= 9.8 KiB inside the 16 KiB LinkControlBudget so a full 16-item ReconcileResponse always fits alongside one batch.
+    public static let maximumItems = 12
+    public static let maximumEncodedBytes = ReconciliationLimits.maximumEncodedBytes
+
+    static func deterministicUUID(_ seed: String) throws -> UUID {
+        let hex = Array(ContentHash.sha256(Data(seed.utf8)).prefix(32))
+        let formatted = "\(String(hex[0..<8]))-\(String(hex[8..<12]))-\(String(hex[12..<16]))-\(String(hex[16..<20]))-\(String(hex[20..<32]))"
+        guard let id = UUID(uuidString: formatted) else {
+            throw ContractError.invalidField("receipt_batch_id")
+        }
+        return id
+    }
+}
+
+public struct ReceiptBatch: Codable, Equatable, Sendable {
+    public let messageID: UUID
+    public let items: [Receipt]
+
+    public init(messageID: UUID? = nil, items: [Receipt]) throws {
+        try self.init(messageID: messageID, items: items, validateEncodedSize: true)
+    }
+
+    private init(messageID: UUID?, items: [Receipt], validateEncodedSize: Bool) throws {
+        guard !items.isEmpty, items.count <= ReceiptBatchLimits.maximumItems else {
+            throw ContractError.invalidField("receipt_batch_items")
+        }
+        let receiver = items[0].receiverDeviceID
+        let library = items[0].libraryInstanceID
+        var seenChunks: Set<UUID> = []
+        for item in items {
+            guard item.receiverDeviceID == receiver, item.libraryInstanceID == library,
+                  seenChunks.insert(item.chunkID).inserted else {
+                throw ContractError.invalidField("receipt_batch_items")
+            }
+        }
+        let resolvedID: UUID
+        if let messageID {
+            resolvedID = messageID
+        } else {
+            let seed = "receipt-batch/\(receiver.uuidString)/\(library.uuidString)/" +
+                items.map(\.receiptID.uuidString).joined(separator: ",")
+            resolvedID = try ReceiptBatchLimits.deterministicUUID(seed)
+        }
+        self.messageID = resolvedID
+        self.items = items
+        if validateEncodedSize, try WireJSON.encode(self).count > ReceiptBatchLimits.maximumEncodedBytes {
+            throw ContractError.invalidField("receipt_batch_size")
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey { case messageID, items }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(messageID: c.decode(UUID.self, forKey: .messageID),
+                      items: c.decode([Receipt].self, forKey: .items),
+                      validateEncodedSize: false)
+    }
+}
+
+public struct ReceiptAppliedBatch: Codable, Equatable, Sendable {
+    public let messageID: UUID
+    public let items: [ReceiptApplied]
+
+    public init(messageID: UUID? = nil, items: [ReceiptApplied]) throws {
+        try self.init(messageID: messageID, items: items, validateEncodedSize: true)
+    }
+
+    private init(messageID: UUID?, items: [ReceiptApplied], validateEncodedSize: Bool) throws {
+        guard !items.isEmpty, items.count <= ReceiptBatchLimits.maximumItems else {
+            throw ContractError.invalidField("receipt_applied_batch_items")
+        }
+        let receiver = items[0].receipt.receiverDeviceID
+        let library = items[0].receipt.libraryInstanceID
+        var seenChunks: Set<UUID> = []
+        for item in items {
+            guard item.receipt.receiverDeviceID == receiver, item.receipt.libraryInstanceID == library,
+                  seenChunks.insert(item.receipt.chunkID).inserted else {
+                throw ContractError.invalidField("receipt_applied_batch_items")
+            }
+        }
+        let resolvedID: UUID
+        if let messageID {
+            resolvedID = messageID
+        } else {
+            let seed = "receipt-applied-batch/\(receiver.uuidString)/\(library.uuidString)/" +
+                items.map(\.messageID.uuidString).joined(separator: ",")
+            resolvedID = try ReceiptBatchLimits.deterministicUUID(seed)
+        }
+        self.messageID = resolvedID
+        self.items = items
+        if validateEncodedSize, try WireJSON.encode(self).count > ReceiptBatchLimits.maximumEncodedBytes {
+            throw ContractError.invalidField("receipt_applied_batch_size")
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey { case messageID, items }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(messageID: c.decode(UUID.self, forKey: .messageID),
+                      items: c.decode([ReceiptApplied].self, forKey: .items),
+                      validateEncodedSize: false)
+    }
+}
+
 public struct DeleteSession: Codable, Equatable, Sendable {
     public let messageID: UUID
     public let deletionID: UUID
@@ -103,7 +210,9 @@ public enum ControlMessage: Codable, Equatable, Sendable {
     case epochInterrupted(CaptureEpochInterrupted)
     case captureMark(CaptureMark)
     case receipt(Receipt)
+    case receiptBatch(ReceiptBatch)
     case receiptApplied(ReceiptApplied)
+    case receiptAppliedBatch(ReceiptAppliedBatch)
     case deleteSession(DeleteSession)
     case deleteApplied(DeleteApplied)
     case reconcileRequest(ReconcileRequest)
@@ -116,12 +225,24 @@ public enum ControlMessage: Codable, Equatable, Sendable {
         case .epochInterrupted(let value): value.messageID
         case .captureMark(let value): value.messageID
         case .receipt(let value): value.messageID
+        case .receiptBatch(let value): value.messageID
         case .receiptApplied(let value): value.messageID
+        case .receiptAppliedBatch(let value): value.messageID
         case .deleteSession(let value): value.messageID
         case .deleteApplied(let value): value.messageID
         case .reconcileRequest(let value): value.messageID
         case .reconcileResponse(let value): value.messageID
         }
+    }
+
+    public static func packReceipts(_ items: [Receipt]) throws -> ControlMessage {
+        if items.count == 1 { return .receipt(items[0]) }
+        return .receiptBatch(try ReceiptBatch(items: items))
+    }
+
+    public static func packReceiptsApplied(_ items: [ReceiptApplied]) throws -> ControlMessage {
+        if items.count == 1 { return .receiptApplied(items[0]) }
+        return .receiptAppliedBatch(try ReceiptAppliedBatch(items: items))
     }
 }
 

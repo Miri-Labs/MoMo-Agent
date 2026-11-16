@@ -74,6 +74,11 @@ struct LocalSyncIntegrationTests {
                 },
                 applyReceipts: { items in
                     try await store.applyReceipts(items)
+                },
+                reconcile: { request in
+                    let response = try await store.receiveReconcileRequest(request)
+                    try await store.markReconcileResponseSubmitted(messageID: response.messageID)
+                    return response
                 }
             ),
             includeLoopback: true
@@ -139,11 +144,49 @@ struct LocalSyncIntegrationTests {
             #expect(receipts.count == 6)
             #expect(try await store.pendingReceiptCount(sourceDeviceID: sourceID) == 6)
 
+            // Urgent receipts and batch application lookup cover newly committed chunks without waiting behind older items.
+            let urgent = try await store.urgentReceiptControlMessages(
+                forChunkIDs: chunks.map(\.envelope.manifest.chunkID),
+                sourceDeviceID: sourceID)
+            #expect(urgent.count == 1)
+            if case .receiptBatch(let batch) = urgent[0] {
+                #expect(batch.items.count == 6)
+                #expect(try await !store.controlWasApplied(urgent[0]))
+            } else {
+                Issue.record("Expected 6 receipts to pack into one ReceiptBatch")
+            }
+
+            // Reconcile over HTTP recovers all 6 receipts plus 1 unknown missing chunk without re-uploading stored audio.
+            let missingAudio = makeTestWAV(frameCount: 8_000, fillByte: 99)
+            let missingEnvelope = try ManifestEnvelope(manifest: ChunkManifest(
+                sessionID: sessionID, epochID: epochID, sourceDeviceID: sourceID, sourceBuild: "tests",
+                sequence: 6, frames: FrameRange(start: 6 * 8_000, count: 8_000),
+                timebaseHz: 16_000, wallClockAnchor: Date(timeIntervalSince1970: 1_790_000_000),
+                timezoneOffset: 28_800, codec: .pcmInt16, sampleRate: 16_000, channels: 1,
+                decodedFrameCount: 8_000, byteCount: Int64(missingAudio.count),
+                audioSHA256: ContentHash.sha256(missingAudio), sourceKind: .fixture))
+            var identities = try chunks.map { try ReconcileChunkIdentity(envelope: $0.envelope) }
+            identities.append(try ReconcileChunkIdentity(envelope: missingEnvelope))
+            let reconcileReq = try ReconcileRequest(
+                sourceDeviceID: sourceID,
+                receiverDeviceID: receiverID,
+                libraryInstanceID: libraryID,
+                items: identities)
+            let reconcileResp = try await client.reconcile(route: route, request: reconcileReq)
+            #expect(reconcileResp.results.count == 7)
+            let reconciledReceipts = reconcileResp.results.compactMap { result -> Receipt? in
+                if case .received(let receipt) = result.state { return receipt }
+                return nil
+            }
+            #expect(reconciledReceipts.count == 6)
+            #expect(reconcileResp.results.last?.state == .unknown)
+
             let acked = try await client.sendReceiptsApplied(
                 route: route,
                 items: receipts.map { ReceiptApplied(receipt: $0) })
             #expect(acked == 6)
             #expect(try await store.pendingReceiptCount(sourceDeviceID: sourceID) == 0)
+            #expect(try await store.controlWasApplied(urgent[0]))
         }
     }
 

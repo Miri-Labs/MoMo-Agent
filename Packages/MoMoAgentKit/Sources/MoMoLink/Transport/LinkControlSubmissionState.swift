@@ -31,6 +31,8 @@ public struct LinkControlSubmissionState: Sendable {
     private let maximumOutstandingCount: Int
     public var hasRetryableControls: Bool { !retryNotBefore.isEmpty }
     public var isRecoveringChannel: Bool { channelRetryNotBefore != nil }
+    public var outstandingCount: Int { outstanding.values.reduce(0) { $0 + $1.count } }
+    public var outstandingByteCount: Int { outstanding.values.reduce(0) { $0 + $1.bytes * $1.count } }
     public func hasDueControlRetries(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         guard !retryNotBefore.isEmpty else { return false }
         if let channelRetryAt = channelRetryNotBefore, now < channelRetryAt { return false }
