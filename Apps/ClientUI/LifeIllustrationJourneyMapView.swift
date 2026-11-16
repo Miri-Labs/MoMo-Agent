@@ -74,26 +74,13 @@ struct LifeIllustrationJourneyMapView: View {
         }
         #else
         .sheet(item: $detail) { item in
-            if let url = store.imageURL(for: item, thumbnail: false) {
-                ScrollView {
-                    VStack(spacing: 20) {
-                        LifeIllustrationMetadata(illustration: item, position: (items.firstIndex { $0.id == item.id } ?? 0) + 1, count: items.count)
-                        LifeIllustrationZoomView(url: url).frame(width: 480, height: 480)
-                            .modifier(LifeIllustrationPlate())
-                        LifeIllustrationDetailView(illustration: item, previous: previous(item)) { detail = nil; showSource(item); closeMap() }
-                    }.padding(24)
-                }
-                .frame(minWidth: 560, minHeight: 680)
-                .toolbar {
-                    Button("关闭", systemImage: "xmark") { detail = nil }
-                    Button("上一幅", systemImage: "chevron.left") { moveDetail(-1) }
-                        .disabled(item.id == items.first?.id)
-                    Button("下一幅", systemImage: "chevron.right") { moveDetail(1) }
-                        .disabled(item.id == items.last?.id)
-                    ShareLink(item: url)
-                    Button("删除", systemImage: "trash", role: .destructive) { delete(item) }
-                }
+            LifeIllustrationViewer(store: store, initialID: item.id, referenceDay: referenceDay,
+                close: { detail = nil }) { source in
+                detail = nil
+                closeMap()
+                showSource(source)
             }
+            .frame(minWidth: 420, idealWidth: 640, minHeight: 520, idealHeight: 740)
         }
         #endif
         .onChange(of: items.map(\.id)) { _, ids in
@@ -107,18 +94,6 @@ struct LifeIllustrationJourneyMapView: View {
 
     private func closeMap() {
         if let close { close() } else { dismiss() }
-    }
-
-    #if os(macOS)
-    private func moveDetail(_ offset: Int) {
-        guard let detail, let index = items.firstIndex(where: { $0.id == detail.id }), items.indices.contains(index + offset) else { return }
-        self.detail = items[index + offset]
-    }
-    #endif
-
-    private func previous(_ item: LifeIllustration) -> LifeIllustration? {
-        guard let index = items.firstIndex(where: { $0.id == item.id }), index > 0 else { return nil }
-        return items[index - 1]
     }
 
     private func displayPlace(for stop: IllustrationJourneyStop) -> String? {

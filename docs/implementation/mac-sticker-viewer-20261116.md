@@ -1,0 +1,15 @@
+# Mac sticker viewer — 0.7.2
+
+Clicking a sticker on a day without location coordinates previously opened the journey map's fallback list: a full-width outlined row, a 68-point thumbnail and an otherwise empty page. The Mac now opens the selected artwork directly. Days with geographic evidence retain the existing journey map; its image-detail sheet shares the new viewer.
+
+The standard visual profile uses the existing warm paper, original artwork and native controls. A grid would add a second selection step for the common single-image day, while an inspector would overemphasize a short caption. The chosen layout centers a bounded image above its time, complete summary and source action. Date and navigation occupy a compact header. A thumbnail strip and arrow-key navigation appear only for multiple images. Window resizing reflows the page; long text scrolls without truncation.
+
+Transparent source margins are removed only from a cached display image, off the main actor, with a small margin around every visible pixel. Original PNG bytes and sharing URLs stay unchanged. The native Mac scroll view retains pinch/double-click zoom and resets on image changes. Selection remains owned by the viewer and follows updated initial IDs; the store continues to own persistence, deletion and errors. No new custom animation, glass, blur or background service was added.
+
+## Validation
+
+- Production-view preview, populated from an isolated copy of the existing artwork cache: single/multiple images, 400×560 and 660×740 windows, wider layout, light/dark and high-contrast appearances, disabled animations, repeated left/right navigation and zoom-then-switch. Accessibility inspection exposes labeled native controls and selected thumbnails. Only default text size was used, as required by the repository.
+- `Tests/Support/run-mac-sticker-tests.py` compiles the production cache and exercises asymmetric transparent shapes, edge content, a full canvas and an empty canvas. All visible pixels, original file bytes and decoded-cache reuse are checked.
+- Static SwiftUI audit: no high-severity finding. Existing phone gestures/animation and fixed sizing were reviewed separately from this Mac-only change. The Mac page uses solid colors and no custom animation; system-level accessibility preferences and a full VoiceOver reading session were not changed during this run.
+
+Final signed build, installed-app interaction and cleanup results are recorded after delivery.
