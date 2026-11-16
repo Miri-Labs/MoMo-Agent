@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import json
+from pathlib import Path
 import time
 
 from context_store import canonical, digest
+from momo_memory import memory_home
 from situational_context import read_situational_context
 
 PULSE_STATE_KEY = "life_pulse_state"
@@ -240,7 +242,22 @@ def describe_deltas(prev_vector: dict | None, curr_vector: dict) -> list[str]:
     return deltas
 
 
-def format_pulse_brief(situation: dict, deltas: list[str]) -> str:
+def _read_proactive_preferences(data_dir) -> str:
+    if data_dir is None:
+        return ""
+    base = Path(data_dir)
+    for candidate in (base / "memories/PROACTIVE_PREFERENCES.md", memory_home(base) / "memories/PROACTIVE_PREFERENCES.md"):
+        if candidate.is_file():
+            try:
+                text = candidate.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if text:
+                return text[:1500]
+    return ""
+
+
+def format_pulse_brief(situation: dict, deltas: list[str], *, data_dir=None) -> str:
     clock = situation["clock"]
     devices = situation["devices"]
     mobility = situation["mobility_and_place"]
@@ -372,6 +389,12 @@ def format_pulse_brief(situation: dict, deltas: list[str]) -> str:
     else:
         lines.append("- 暂无未完成待办提醒快照")
 
+    prefs = _read_proactive_preferences(data_dir)
+    if prefs:
+        lines.append("")
+        lines.append("[用户主动守护偏好（PROACTIVE_PREFERENCES.md）]")
+        lines.append(prefs)
+
     return "\n".join(lines)
 
 
@@ -418,7 +441,7 @@ def maybe_emit_pulse(
         "id": f"pulse-{stamp}",
         "thread_id": f"momo:pulse:{day}",
         "title": f"生活态势脉搏 · {summary_tail}",
-        "text": format_pulse_brief(situation, deltas),
+        "text": format_pulse_brief(situation, deltas, data_dir=data_dir),
     }
 
     if emit_fn is not None:

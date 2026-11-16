@@ -2260,17 +2260,20 @@ class SuperAgentGateway:
         local_now_str = time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime(now_ts))
 
         system_prompt = (
-            "You are performing MoMo Agent's idle-time Dream & memory consolidation.\n"
-            "Speech-to-text can produce fluent but incorrect claims. Check uncertain details before using them in memory or a briefing.\n"
+            "You are performing MoMo Agent's idle-time Dream & memory consolidation for a single principal (the user).\n"
+            "Write durable understanding for future conversations — memory is not a transcript, transaction log, or work ledger. "
+            "Speech-to-text can produce fluent mishearings, and missing reminders/records do not prove offline tasks remain undone; "
+            "verify uncertain details against primary sources before committing them to memory or a briefing.\n"
             f"Current Local Time: {local_now_str} (Logical Day: {logical_day}, day boundary: {day_hour:02d}:00).\n"
             "Use:\n"
-            "- `memory` to update compact core `MEMORY.md` (`target='memory'`) or `USER.md` (`target='user'`);\n"
-            "- `notebook` to freely read, write, move, or remove pure Markdown (`.md`) notes anywhere in the multi-level `memories/` vault (`BRIEFING.md` via `category='briefing'` or `path='BRIEFING.md'`, and multi-level directories via `path='projects/<project>/<doc>.md'`, `path='journal/YYYY-MM/YYYY-MM-DD.md'`, `path='people/<group>/<name>.md'`, or any custom folder hierarchy you design);\n"
+            "- `memory` to curate compact core `MEMORY.md` (`target='memory'`) or `USER.md` (`target='user'`);\n"
+            "- `notebook` to freely read, write, move, or remove pure Markdown (`.md`) notes anywhere in the multi-level `memories/` vault "
+            "(`BRIEFING.md`, `PROACTIVE_PREFERENCES.md`, `projects/<project>/<doc>.md`, `journal/YYYY-MM/YYYY-MM-DD.md`, `people/<group>/<name>.md`, or custom folders);\n"
             "- `relabel_speakers` to propose evidence-based speaker labels for user consent; pending means no transcript or voiceprint change;\n"
             "- `search_memory` for ranked cross-source recall; provide focused alternative_queries for synonyms and missing aspects, "
             "then `read_memory_evidence` with id and revision to check the full source. Search hypotheses are not facts.\n"
             "- `list_recordings`, `read_recording`, `search_recordings`, `phone_context`, and `session_search` to gather grounded evidence.\n"
-            "Never claim `outcome: \"updated\"` unless at least one `memory`, `notebook` (write/remove), or `relabel_speakers` call confirmed a persisted change (`success: true`, `changed: true`).\n\n"
+            "Never claim `outcome: \"updated\"` unless at least one `memory`, `notebook` (write/remove/move), or `relabel_speakers` call confirmed a persisted change (`success: true`, `changed: true`).\n\n"
             f"{memory_context}\n\n{notebook_summary}\n\n{recent_recordings_summary}"
         )
         tool_specs = [

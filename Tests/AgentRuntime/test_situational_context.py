@@ -764,6 +764,34 @@ class LifePulseAndGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(ctx["messages"][-1]["id"], ev2["id"])
                 self.assertEqual(ctx["body"]["recent_tickets"][0]["id"], "t-pulse-1")
 
+    def test_proactive_preferences_roundtrip_and_life_pulse_injection(self) -> None:
+        from momo_memory import MoMoMemory
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "Agent"
+            store = ContextStore(data / "context")
+            try:
+                mem = MoMoMemory(data)
+                written = mem.write_notebook(
+                    category="proactive_preferences",
+                    content="# 主动守护偏好\n\n- 日常电量高于 15% 时无需提醒充电。\n- 重要外部会议前 30 分钟优先准备对方背景速览。",
+                )
+                self.assertTrue(written["success"])
+                self.assertEqual(written["path"], "PROACTIVE_PREFERENCES.md")
+                read_back = mem.read_notebook(path="proactive-preferences.md")
+                self.assertTrue(read_back["success"])
+                self.assertIn("无需提醒充电", read_back["content"])
+
+                dev = str(uuid.uuid4())
+                sync_device_telemetry(store, make_telemetry_payload(dev, observed_at=BASE_TS))
+                emitted = []
+                res = life_pulse.maybe_emit_pulse(store, emitted.append, data_dir=data, now=BASE_TS)
+                self.assertIsNotNone(res)
+                self.assertIn("[用户主动守护偏好（PROACTIVE_PREFERENCES.md）]", emitted[0]["text"])
+                self.assertIn("无需提醒充电", emitted[0]["text"])
+            finally:
+                store.close()
+
 
 class SituationalMCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_mcp_exposes_read_situational_context_only_outside_memory_only_mode(self) -> None:
