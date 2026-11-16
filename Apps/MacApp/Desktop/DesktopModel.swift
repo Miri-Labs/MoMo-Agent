@@ -92,7 +92,7 @@ final class DesktopModel {
     var providerURL = ""
     var modelName = ""
     var providerKey = ""
-    var dayStartHour = DayStartBoundary.defaultHour
+    var dayStartHour = TranscriptReadingBoundary.defaultHour
     var proactiveSnapshot: DesktopProactiveSnapshot?
     var taskStore: RemoteTaskStore?
     var memories: [ContextMemory] = []
@@ -1053,51 +1053,34 @@ final class DesktopModel {
     func showFiles() { NSWorkspace.shared.open(dataDirectory.appendingPathComponent("workspace")) }
 
     func loadDayBoundaryConfiguration() {
-        let file = dataDirectory.appendingPathComponent("runtime/day-boundary.json")
+        let file = dataDirectory.appendingPathComponent("runtime/transcript-reading.json")
         let resolved: Int
         if let raw = try? Data(contentsOf: file),
            let parsed = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any],
-           let hour = parsed["day_start_hour"] as? Int,
-           DayStartBoundary.hourRange.contains(hour) {
+           let hour = parsed["early_transcript_hour"] as? Int,
+           TranscriptReadingBoundary.hourRange.contains(hour) {
             resolved = hour
         } else {
-            resolved = DayStartBoundary.resolvedHour()
+            resolved = TranscriptReadingBoundary.resolvedHour()
         }
         dayStartHour = resolved
-        DayStartBoundary.setCurrentHour(resolved)
-        if !FileManager.default.fileExists(atPath: file.path) {
-            try? writeDayBoundaryConfiguration(hour: resolved)
-        }
     }
 
     private func writeDayBoundaryConfiguration(hour: Int) throws {
-        let file = dataDirectory.appendingPathComponent("runtime/day-boundary.json")
+        let file = dataDirectory.appendingPathComponent("runtime/transcript-reading.json")
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let payload: [String: Int] = ["day_start_hour": hour]
-        let encoded = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+        let encoded = try JSONSerialization.data(withJSONObject: ["early_transcript_hour": hour], options: [.sortedKeys])
         try privateWrite(encoded, to: file)
     }
 
     func selectDayStartHour(_ hour: Int) {
-        let clamped = min(max(hour, DayStartBoundary.hourRange.lowerBound), DayStartBoundary.hourRange.upperBound)
-        guard clamped != dayStartHour || DayStartBoundary.currentHour != clamped else { return }
-        dayStartHour = clamped
-        DayStartBoundary.setCurrentHour(clamped)
-        try? writeDayBoundaryConfiguration(hour: clamped)
-        if !sources.isEmpty {
-            transcriptVersionCounter &+= 1
-            let nextVer = transcriptVersionCounter
-            let currentSources = sources
-            Task {
-                let built = await Task.detached(priority: .userInitiated) {
-                    DesktopTranscriptSnapshot.build(sources: currentSources, dayStartHour: clamped, version: nextVer)
-                }.value
-                self.transcriptSnapshot = built
-            }
-        }
-        if connection != nil {
-            Task { await loadContext(silent: true) }
-        }
+        guard TranscriptReadingBoundary.hourRange.contains(hour), hour != dayStartHour else { return }
+        do {
+            try writeDayBoundaryConfiguration(hour: hour)
+            UserDefaults.standard.set(hour, forKey: TranscriptReadingBoundary.defaultsKey)
+            dayStartHour = hour
+            if connection != nil { Task { await loadContext(silent: true) } }
+        } catch { memoryError = String(localized: "阅读设置未保存，请重试。") }
     }
 
     nonisolated private static func parseProactiveSnapshot(_ data: Data) -> DesktopProactiveSnapshot? {

@@ -110,7 +110,7 @@ struct SettingsView: View {
                 Section("对话模式") { ChatModeSettings(store: store) }
             }
             Section {
-                settingsLink("每天起点", symbol: "clock", value: speechSettings.dayStartHourLabel, id: "settings.advanced.dayStartHour") {
+                settingsLink("凌晨记录默认折叠至", symbol: "clock", value: speechSettings.dayStartHourLabel, id: "settings.advanced.dayStartHour") {
                     DayStartSettingsView(settings: speechSettings)
                 }
                 if let illustrations {
@@ -183,11 +183,11 @@ private struct DayStartSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Picker("每天起点", selection: Binding(
+                Picker("凌晨记录默认折叠至", selection: Binding(
                     get: { settings.dayStartHour }, set: { settings.selectDayStartHour($0) }
                 )) {
                     ForEach(Array(PhoneSpeechSettings.dayStartHourRange), id: \.self) { hour in
-                        Text(DayStartBoundary.label(for: hour)).monospacedDigit().tag(hour)
+                        Text(TranscriptReadingBoundary.label(for: hour)).monospacedDigit().tag(hour)
                     }
                 }
                 .pickerStyle(.menu)
@@ -196,12 +196,12 @@ private struct DayStartSettingsView: View {
                     .disabled(settings.dayStartHour == PhoneSpeechSettings.defaultDayStartHour)
                     .accessibilityIdentifier("settings.advanced.dayStartHour.reset")
             } footer: {
-                Text("早于该时间的凌晨录音会归入前一天。默认 08:00。")
-                Text("修改后立即重排时间线日期归属，已有录音和文字保留。")
+                Text("只折叠显示，不改变录音日期。默认 08:00。")
+                Text("选择“全部展开”可按时间顺序阅读全天。")
             }
             if let failure = settings.failure { Text(verbatim: failure).foregroundStyle(MoMoPalette.failure) }
         }
-        .navigationTitle("每天起点")
+        .navigationTitle("凌晨记录默认折叠至")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

@@ -125,18 +125,53 @@ struct TimelineTests {
         #expect(combined.paragraphs.count == 2)
     }
 
-    @Test func midnightStillClipsAudioByDateWithoutDuplicatingTheSentence() async throws {
+    @Test func midnightConservesAudioFramesAndDoesNotDuplicateSentenceText() async throws {
         let fixture = try Fixture(); defer { fixture.remove() }
         let store = try fixture.store()
         let date = TimelineDay(anchor.addingTimeInterval(28_800), calendar: TimelineDay.calendar)
         let next = date.adding(days: 1)
         let boundary = next.startDate(calendar: TimelineDay.calendar).addingTimeInterval(-28_800)
-        try await add(fixture, store: store, at: boundary.addingTimeInterval(-0.05), text: "跨午夜的完整一句文字应只归属一次，原音按日期裁切。")
+        try await add(fixture, store: store, at: boundary.addingTimeInterval(-0.05), text: "跨午夜的一句原文只出现一次，原音保持连续。")
         let before = try await store.timelineDay(date), after = try await store.timelineDay(next)
         #expect(before.count == 1 && after.count == 1)
         #expect((before + after).flatMap(\.paragraphs).count == 1)
+        #expect(after[0].paragraphs.isEmpty)
+        #expect(before[0].paragraphs[0].audioSource?.frames.count == 1_600)
+        #expect(before[0].sources[0].frames.end == after[0].sources[0].frames.start)
+        #expect(before[0].sources[0].epochID == after[0].sources[0].epochID)
         let frames: Int64 = (before + after).flatMap(\.sources).reduce(0) { $0 + $1.frames.count }
         #expect(frames == 1_600)
+        let playback = try await store.playbackTimelines(sources: (before + after).flatMap(\.sources))
+        #expect(playback.flatMap(\.parts).reduce(0) { $0 + $1.frames.count } == 1_600)
+    }
+
+    @Test func sentenceCrossingEightDoesNotInventAnEmptyDaytimeRow() async throws {
+        let f = try Fixture(); defer { f.remove() }
+        let store = try f.store()
+        let eight = ISO8601DateFormatter().date(from: "2026-11-16T00:00:00Z")!
+        try await add(f, store: store, at: eight.addingTimeInterval(-0.05), text: "一句话跨过八点仍应完整。")
+        let day = TimelineDay(eight.addingTimeInterval(28_800), calendar: TimelineDay.calendar)
+        let windows = try await store.timelineDay(day)
+        #expect(windows.count == 1)
+        #expect(windows.flatMap(\.paragraphs).count == 1)
+        #expect(windows.flatMap(\.sources).reduce(0) { $0 + $1.frames.count } == 1600)
+    }
+
+    @Test func conversationFrom0759To0801KeepsDaytimeTextOutsideTheFold() async throws {
+        let f = try Fixture(); defer { f.remove() }
+        let store = try f.store()
+        let eight = try #require(ISO8601DateFormatter().date(from: "2026-11-16T00:00:00Z"))
+        try await add(f, store: store, at: eight.addingTimeInterval(-60), text: "七点五十九的原文")
+        try await add(f, store: store, at: eight.addingTimeInterval(60), text: "八点零一的原文")
+        let day = TimelineDay(eight.addingTimeInterval(28_800), calendar: TimelineDay.calendar)
+        let folded = try await store.timelineDay(day, earlyHour: 8)
+        let all = try await store.timelineDay(day, earlyHour: 0)
+        #expect(folded.count == 2)
+        #expect(all.count == 1)
+        let daytime = folded.filter { !TranscriptReadingBoundary.isEarly($0.id.start, offset: $0.id.timezoneOffset, hour: 8) }
+        #expect(daytime.flatMap(\.paragraphs).map(\.text) == ["八点零一的原文"])
+        #expect(Set(folded.flatMap(\.paragraphs).map(\.id)) == Set(all.flatMap(\.paragraphs).map(\.id)))
+        #expect(folded.flatMap(\.sources).reduce(0) { $0 + $1.frames.count } == 3_200)
     }
 
     @Test func recordedTimezoneAndMidnightDetermineDayNotPhoneOrReceiptTime() async throws {
@@ -152,18 +187,18 @@ struct TimelineTests {
         #expect(try await store.earliestTimelineDay() == utcDay.adding(days: 1))
     }
 
-    @Test func defaultEightAMDayBoundaryKeepsLateNightRecordingsOnPrecedingDay() async throws {
-        #expect(TimelineDay.defaultStartHour == 8)
-        #expect(TimelineDay.currentStartHour == 8)
+    @Test func naturalDaysIgnoreLegacyStartHourAndSplitTheReadingBoundary() async throws {
+        #expect(TimelineDay.defaultStartHour == 0)
+        #expect(TimelineDay.currentStartHour == 0)
         let fixture = try Fixture(); defer { fixture.remove() }
         let store = try fixture.store()
         // 2026-11-04 23:30:00 +08:00 -> 2026-11-04 15:30:00Z
         let lateEvening = try #require(ISO8601DateFormatter().date(from: "2026-11-04T15:30:00Z"))
-        // 2026-11-05 01:30:00 +08:00 -> 2026-11-04 17:30:00Z (still belongs to 2026-11-04!)
+        // 2026-11-05 01:30:00 +08:00 -> 2026-11-04 17:30:00Z
         let afterMidnight = try #require(ISO8601DateFormatter().date(from: "2026-11-04T17:30:00Z"))
-        // 2026-11-05 07:59:30 +08:00 -> 2026-11-04 23:59:30Z (still belongs to 2026-11-04!)
+        // 2026-11-05 07:59:30 +08:00 -> 2026-11-04 23:59:30Z
         let beforeEightAM = try #require(ISO8601DateFormatter().date(from: "2026-11-04T23:59:30Z"))
-        // 2026-11-05 08:00:00 +08:00 -> 2026-11-05 00:00:00Z (starts 2026-11-05!)
+        // 2026-11-05 08:00:00 +08:00 -> 2026-11-05 00:00:00Z
         let atEightAM = try #require(ISO8601DateFormatter().date(from: "2026-11-05T00:00:00Z"))
 
         try await add(fixture, store: store, at: lateEvening, text: "深夜十一点半的讨论")
@@ -175,24 +210,32 @@ struct TimelineTests {
         let nov5 = nov4.adding(days: 1)
         #expect(nov4.year == 2026 && nov4.month == 11 && nov4.day == 4)
         #expect(nov5.year == 2026 && nov5.month == 11 && nov5.day == 5)
-        #expect(TimelineDay(afterMidnight.addingTimeInterval(28_800), calendar: TimelineDay.calendar) == nov4)
-        #expect(TimelineDay(beforeEightAM.addingTimeInterval(28_800), calendar: TimelineDay.calendar) == nov4)
+        #expect(TimelineDay(afterMidnight.addingTimeInterval(28_800), calendar: TimelineDay.calendar) == nov5)
+        #expect(TimelineDay(beforeEightAM.addingTimeInterval(28_800), calendar: TimelineDay.calendar) == nov5)
         #expect(TimelineDay(atEightAM.addingTimeInterval(28_800), calendar: TimelineDay.calendar) == nov5)
         // Literal calendar picker date never shifts backward even at 00:00.
         #expect(TimelineDay(calendarDate: nov5.date(calendar: TimelineDay.calendar), calendar: TimelineDay.calendar) == nov5)
-        // Custom startHour (e.g. 0 or 4) shifts the boundary cleanly.
-        #expect(TimelineDay(afterMidnight.addingTimeInterval(28_800), calendar: TimelineDay.calendar, startHour: 0) == nov5)
-        #expect(TimelineDay(afterMidnight.addingTimeInterval(28_800), calendar: TimelineDay.calendar, startHour: 4) == nov4)
+        // Old caller arguments cannot shift natural-day ownership.
+        for legacyHour in [0, 8, 23] {
+            #expect(TimelineDay(afterMidnight.addingTimeInterval(28_800), calendar: TimelineDay.calendar, startHour: legacyHour) == nov5)
+            #expect(nov5.startDate(calendar: TimelineDay.calendar, startHour: legacyHour) == nov5.startDate(calendar: TimelineDay.calendar))
+        }
 
         let nov4Windows = try await store.timelineDay(nov4)
         let nov5Windows = try await store.timelineDay(nov5)
         let nov4Texts = nov4Windows.flatMap(\.paragraphs).map(\.text)
         let nov5Texts = nov5Windows.flatMap(\.paragraphs).map(\.text)
         #expect(nov4Texts.contains("深夜十一点半的讨论"))
-        #expect(nov4Texts.contains("凌晨一点半继续的讨论"))
-        #expect(nov4Texts.contains("早上七点五十九分的补充"))
+        #expect(!nov4Texts.contains("凌晨一点半继续的讨论"))
+        #expect(!nov4Texts.contains("早上七点五十九分的补充"))
         #expect(!nov4Texts.contains("早上八点新一天的开始"))
-        #expect(nov5Texts == ["早上八点新一天的开始"])
+        #expect(Set(nov5Texts) == Set(["凌晨一点半继续的讨论", "早上七点五十九分的补充", "早上八点新一天的开始"]))
+        #expect(nov5Texts.count == 3)
+        #expect(nov5Windows.count == 3)
+        let unfolded = try await store.timelineDay(nov5, earlyHour: 0)
+        #expect(unfolded.count == 2)
+        #expect(Set(unfolded.flatMap(\.paragraphs).map(\.id)) == Set(nov5Windows.flatMap(\.paragraphs).map(\.id)))
+        #expect(try await store.earliestTimelineDay() == nov4)
     }
 
     @Test func oldWindowRevisionIsRejectedAfterNewTextAndPlaybackChecksEachSession() async throws {

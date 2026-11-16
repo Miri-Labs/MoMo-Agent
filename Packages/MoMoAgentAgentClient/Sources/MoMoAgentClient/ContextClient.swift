@@ -12,11 +12,15 @@ public struct SourceEnvelope: Codable, Sendable, Equatable {
         public let text: String
         public let recordedAt: Double
         public let isOwner: Bool?
-        public init(id: UUID, text: String, recordedAt: Date, isOwner: Bool? = nil) {
+        public let timezoneOffset: Int?
+        public let endAt: Double?
+        public init(id: UUID, text: String, recordedAt: Date, isOwner: Bool? = nil, timezoneOffset: Int? = nil, endAt: Date? = nil) {
             self.id = id.uuidString.lowercased()
             self.text = text
             self.recordedAt = recordedAt.timeIntervalSince1970
             self.isOwner = isOwner
+            self.timezoneOffset = timezoneOffset
+            self.endAt = endAt?.timeIntervalSince1970
         }
     }
     public let libraryId: String
@@ -166,6 +170,9 @@ public struct ContextSourceWindow: Decodable, Sendable, Identifiable, Equatable 
     public let totalCharacters: Int
     public let summary: String?
     public let preview: String?
+    public let naturalDay: String?
+    public let timezoneOffset: Int?
+    public let dateEvidence: String?
 
     public init(
         id: String,
@@ -177,7 +184,8 @@ public struct ContextSourceWindow: Decodable, Sendable, Identifiable, Equatable 
         end: Int,
         totalCharacters: Int,
         summary: String?,
-        preview: String?
+        preview: String?,
+        naturalDay: String? = nil, timezoneOffset: Int? = nil, dateEvidence: String? = nil
     ) {
         self.id = id
         self.sourceId = sourceId
@@ -189,6 +197,9 @@ public struct ContextSourceWindow: Decodable, Sendable, Identifiable, Equatable 
         self.totalCharacters = totalCharacters
         self.summary = summary
         self.preview = preview
+        self.naturalDay = naturalDay
+        self.timezoneOffset = timezoneOffset
+        self.dateEvidence = dateEvidence
     }
 }
 public struct ContextSource: Decodable, Sendable, Identifiable, Equatable {
@@ -207,6 +218,8 @@ public struct SourcePage: Decodable, Sendable {
     public let nextCursor: String?
 }
 public struct SourceTextSpan: Decodable, Sendable, Identifiable, Equatable {
+    public let timezoneOffset: Int?
+    public let endAt: Double?
     public let id: String
     public let recordedAt: Double?
     public let text: String?

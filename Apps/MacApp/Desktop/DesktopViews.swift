@@ -625,7 +625,7 @@ struct DesktopSettings: View {
         return Page.allCases.filter { destination in
             let terms: [String]
             switch destination {
-            case .general: terms = [String(localized: "通用"), String(localized: "时间线"), String(localized: "每天起点"), String(localized: "生活插画")]
+            case .general: terms = [String(localized: "通用"), String(localized: "时间线"), String(localized: "凌晨记录默认折叠至"), String(localized: "生活插画")]
             case .controls: terms = [String(localized: "电脑控制"), String(localized: "屏幕与控制权限"), String(localized: "连接与权限")]
             case .runtime: terms = [String(localized: "运行环境"), String(localized: "智能体引擎"), String(localized: "应用更新"), String(localized: "结果文件夹"), "DeepSeek Harness", "SuperAgent", "Proactive"]
             case .model: terms = [String(localized: "模型"), String(localized: "聊天模式"), String(localized: "创作"), "Creator", "API", "Codex", "Claude", "Antigravity", "Gemini"]
@@ -696,22 +696,22 @@ struct DesktopSettings: View {
         Section("时间线") {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("每天起点").font(.system(size: 14))
-                    Text("早于该时间的凌晨录音会归入前一天。默认 08:00。")
+                    Text("凌晨记录默认折叠至").font(.system(size: 14))
+                    Text("只折叠显示，不改变录音日期。默认 08:00。")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 16)
-                if model.dayStartHour != DayStartBoundary.defaultHour {
-                    Button("恢复默认") { model.selectDayStartHour(DayStartBoundary.defaultHour) }
+                if model.dayStartHour != TranscriptReadingBoundary.defaultHour {
+                    Button("恢复默认") { model.selectDayStartHour(TranscriptReadingBoundary.defaultHour) }
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier("settings.dayStartHour.reset")
                 }
-                Picker("每天起点", selection: Binding(
+                Picker("凌晨记录默认折叠至", selection: Binding(
                     get: { model.dayStartHour },
                     set: { model.selectDayStartHour($0) }
                 )) {
-                    ForEach(Array(DayStartBoundary.hourRange), id: \.self) { hour in
-                        Text(DayStartBoundary.label(for: hour)).tag(hour)
+                    ForEach(Array(TranscriptReadingBoundary.hourRange), id: \.self) { hour in
+                        Text(TranscriptReadingBoundary.label(for: hour)).tag(hour)
                     }
                 }
                 .labelsHidden()

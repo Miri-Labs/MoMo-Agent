@@ -3,6 +3,51 @@ import XCTest
 @testable import MoMoAgentClient
 
 final class LifeIllustrationTests: XCTestCase, @unchecked Sendable {
+    func testMidnightStickerReferencesJumpToTheSingleOriginalSentence() throws {
+        let first = LifeIllustrationSourceAnchor(day: "2026-11-16", recordedAt: 100,
+            timezoneOffset: 28800, sourceId: "source", spanId: "span", dateEvidence: "recorded_offset")
+        let continuation = LifeIllustrationSourceAnchor(day: "2026-11-17", recordedAt: 101,
+            timezoneOffset: 28800, sourceId: "source", spanId: "span", dateEvidence: "recorded_offset")
+        let hash = String(repeating: "a", count: 64)
+        let item = LifeIllustration(id: "same-image", windowStart: 100, windowEnd: 102,
+            logicalDay: first.day, timezone: "Asia/Shanghai", place: nil,
+            assetSha256: hash, thumbnailSha256: hash, width: 1024, height: 1024,
+            sourceIds: ["source"], createdAt: 200, updatedAt: 300,
+            sourceDays: [first.day, continuation.day], sourceAnchors: [continuation, first])
+        XCTAssertTrue(item.belongs(to: continuation.day))
+        XCTAssertEqual(item.sourceAnchor(on: continuation.day), continuation)
+        XCTAssertEqual(item.transcriptAnchor(on: continuation.day), first)
+        XCTAssertEqual(item.transcriptAnchor(on: first.day), first)
+    }
+
+    func testLegacyCacheProjectsSourceWindowWithoutChangingIdentityOrPixels() throws {
+        let start = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-15T15:59:00Z")).timeIntervalSince1970
+        let hash = String(repeating: "a", count: 64)
+        let item = LifeIllustration(id: "same-image", windowStart: start, windowEnd: start + 120,
+            logicalDay: "2026-11-14", timezone: "Asia/Shanghai", place: nil,
+            assetSha256: hash, thumbnailSha256: hash, width: 1024, height: 1024,
+            sourceIds: ["source"], createdAt: start + 864000, updatedAt: start + 864000)
+        XCTAssertEqual(item.naturalDays, ["2026-11-15", "2026-11-16"])
+        XCTAssertEqual(item.primaryDay, "2026-11-15")
+        XCTAssertTrue(item.crossesMidnight)
+        XCTAssertTrue(item.belongs(to: "2026-11-16"))
+        XCTAssertEqual(item.logicalDay, "2026-11-14", "Projection must not rewrite cached evidence")
+        XCTAssertEqual(item.assetSha256, hash)
+        let roundtrip = try JSONDecoder().decode(LifeIllustration.self, from: JSONEncoder().encode(item))
+        XCTAssertEqual(roundtrip, item)
+    }
+
+    func testLegacyCursorReplaysManifestOnceWhileKeepingOfflineAssets() throws {
+        let legacy = Data(#"{"cursor":"42","items":{},"verifiedStamps":{}}"#.utf8)
+        let snapshot = try JSONDecoder().decode(LifeIllustrationCache.Snapshot.self, from: legacy)
+        XCTAssertEqual(snapshot.cursor, "0")
+        XCTAssertEqual(snapshot.dateProjectionVersion, 1)
+        var advanced = snapshot
+        advanced.cursor = "43"
+        let restored = try JSONDecoder().decode(LifeIllustrationCache.Snapshot.self, from: JSONEncoder().encode(advanced))
+        XCTAssertEqual(restored.cursor, "43")
+    }
+
     func testSettingsRefreshNeverReplacesUnreadableManifestOrDeletesItsSavedImage() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -192,6 +237,37 @@ final class LifeIllustrationTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(cursors, ["0", "1", "1", "1", "1", "1"])
     }
 
+    @MainActor func testClockMetadataDeltaUpdatesExistingImageWithoutDownloadingItAgain() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let route = IllustrationTransport()
+        let store = try makeStore(directory, route: route)
+        try await store.synchronize()
+        let before = try XCTUnwrap(store.items.first)
+        let url = try XCTUnwrap(store.imageURL(for: before, thumbnail: false))
+        let bytes = try Data(contentsOf: url)
+        await route.enrichClock()
+        try await store.synchronize()
+        XCTAssertEqual(store.items.count, 1)
+        let after = try XCTUnwrap(store.items.first)
+        XCTAssertEqual(before.id, after.id)
+        XCTAssertEqual(before.assetSha256, after.assetSha256)
+        XCTAssertEqual(after.naturalDays, ["2026-11-16", "2026-11-17"])
+        XCTAssertEqual(after.transcriptAnchor(on: "2026-11-17")?.spanId, "span")
+        XCTAssertEqual(after.transcriptAnchor(on: "2026-11-17")?.day, "2026-11-16")
+        XCTAssertEqual(try Data(contentsOf: url), bytes)
+        let downloads = await route.assetRequests
+        let cursors = await route.cursors
+        XCTAssertEqual(downloads, 2)
+        XCTAssertEqual(cursors, ["0", "1"])
+        let restored = try makeStore(directory, route: route)
+        await restored.waitForCacheHydration()
+        XCTAssertEqual(restored.items, [after])
+        try await restored.synchronize()
+        let restoredCursors = await route.cursors
+        XCTAssertEqual(restoredCursors, ["0", "1", "2"])
+    }
+
     @MainActor func testHashMismatchDoesNotAdvanceCursorAndRetriesOnlyUncachedBytes() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -358,6 +434,7 @@ private actor IllustrationTransport: AgentTransport {
     var deletedHistory = false
     var offline = false
     var unauthorized = false
+    var enrichedClock = false
     private var assetBarrier: (number: Int, stream: AsyncStream<Void>, started: @Sendable () -> Void)?
     func holdAsset(number: Int, stream: AsyncStream<Void>, started: @escaping @Sendable () -> Void) {
         assetBarrier = (number, stream, started)
@@ -379,6 +456,7 @@ private actor IllustrationTransport: AgentTransport {
     func replayDeletedHistory() { deletedHistory = true }
     func setOffline(_ value: Bool) { offline = value }
     func setUnauthorized(_ value: Bool) { unauthorized = value }
+    func enrichClock() { enrichedClock = true }
 
     func open(_ request: URLRequest) async throws -> AgentByteStream? {
         requests.append(request)
@@ -406,14 +484,21 @@ private actor IllustrationTransport: AgentTransport {
             let item = LifeIllustration(id: "illustration-1", windowStart: 100, windowEnd: 200, logicalDay: "2026-11-05",
                 timezone: "Asia/Shanghai", place: "杭州", assetSha256: LifeIllustrationCache.digest(original),
                 thumbnailSha256: LifeIllustrationCache.digest(thumbnail), width: 1024, height: 1024,
-                sourceIds: ["library/session"], createdAt: 201, updatedAt: 201)
+                sourceIds: ["library/session"], createdAt: 201, updatedAt: enrichedClock ? 202 : 201,
+                sourceDays: enrichedClock ? ["2026-11-16", "2026-11-17"] : nil,
+                sourceAnchors: enrichedClock ? [
+                    LifeIllustrationSourceAnchor(day: "2026-11-16", recordedAt: 100, timezoneOffset: 28800,
+                        sourceId: "library/session", spanId: "span", dateEvidence: "recorded_offset"),
+                    LifeIllustrationSourceAnchor(day: "2026-11-17", recordedAt: 101, timezoneOffset: 28800,
+                        sourceId: "library/session", spanId: "span", dateEvidence: "recorded_offset")
+                ] : nil)
             if deletedHistory {
                 data = try encode(LifeIllustrationManifest(items: cursor == "0" ? [.illustration(item)] : [.tombstone(tombstone)],
                     nextCursor: cursor == "0" ? "1" : "2", hasMore: cursor == "0"))
             } else {
                 data = try encode(LifeIllustrationManifest(
-                    items: deleted ? [.tombstone(tombstone)] : cursor == "0" ? [.illustration(item)] : [],
-                    nextCursor: invalidPagination ? cursor : deleted ? "2" : "1", hasMore: invalidPagination))
+                    items: deleted ? [.tombstone(tombstone)] : (cursor == "0" || enrichedClock && cursor == "1") ? [.illustration(item)] : [],
+                    nextCursor: invalidPagination ? cursor : (deleted || enrichedClock) ? "2" : "1", hasMore: invalidPagination))
             }
         case "delete":
             deleted = true

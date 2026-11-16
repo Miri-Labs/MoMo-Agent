@@ -49,11 +49,22 @@ public struct LifeIllustrationRoutePoint: Codable, Equatable, Sendable {
     }
 }
 
+public struct LifeIllustrationSourceAnchor: Codable, Equatable, Sendable {
+    public let day: String
+    public let recordedAt: Double
+    public let timezoneOffset: Int
+    public let sourceId: String?
+    public let spanId: String?
+    public let dateEvidence: String
+}
+
 public struct LifeIllustration: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let windowStart: Double
     public let windowEnd: Double
     public let logicalDay: String
+    public let sourceDays: [String]?
+    public let sourceAnchors: [LifeIllustrationSourceAnchor]?
     public let timezone: String
     public let place: String?
     public let summary: String?
@@ -74,8 +85,10 @@ public struct LifeIllustration: Codable, Equatable, Identifiable, Sendable {
                 place: String?, assetSha256: String, thumbnailSha256: String, width: Int, height: Int,
                 sourceIds: [String], createdAt: Double, updatedAt: Double,
                 summary: String? = nil, latitude: Double? = nil, longitude: Double? = nil,
-                placeStart: Double? = nil, placeEnd: Double? = nil, routePoints: [LifeIllustrationRoutePoint] = []) {
+                placeStart: Double? = nil, placeEnd: Double? = nil, routePoints: [LifeIllustrationRoutePoint] = [],
+                sourceDays: [String]? = nil, sourceAnchors: [LifeIllustrationSourceAnchor]? = nil) {
         self.id = id; self.windowStart = windowStart; self.windowEnd = windowEnd
+        self.sourceDays = sourceDays; self.sourceAnchors = sourceAnchors
         self.logicalDay = logicalDay; self.timezone = timezone; self.place = place
         self.assetSha256 = assetSha256; self.thumbnailSha256 = thumbnailSha256
         self.width = width; self.height = height; self.sourceIds = sourceIds
@@ -89,6 +102,7 @@ public struct LifeIllustration: Codable, Equatable, Identifiable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case sourceDays, sourceAnchors
         case id, windowStart, windowEnd, logicalDay, timezone, place, summary, latitude, longitude
         case placeStart, placeEnd, routePoints, assetSha256, thumbnailSha256, width, height, sourceIds, createdAt, updatedAt
     }
@@ -99,6 +113,8 @@ public struct LifeIllustration: Codable, Equatable, Identifiable, Sendable {
         windowStart = try values.decode(Double.self, forKey: .windowStart)
         windowEnd = try values.decode(Double.self, forKey: .windowEnd)
         logicalDay = try values.decode(String.self, forKey: .logicalDay)
+        sourceDays = try values.decodeIfPresent([String].self, forKey: .sourceDays)
+        sourceAnchors = try values.decodeIfPresent([LifeIllustrationSourceAnchor].self, forKey: .sourceAnchors)
         timezone = try values.decode(String.self, forKey: .timezone)
         place = try values.decodeIfPresent(String.self, forKey: .place)
         summary = try values.decodeIfPresent(String.self, forKey: .summary)
@@ -116,15 +132,62 @@ public struct LifeIllustration: Codable, Equatable, Identifiable, Sendable {
         updatedAt = try values.decode(Double.self, forKey: .updatedAt)
     }
 
+    /// Offline legacy caches project the saved source window in its saved timezone.
+    /// No generated-at timestamp or current device timezone participates.
+    public var naturalDays: [String] {
+        if let sourceDays, !sourceDays.isEmpty { return sourceDays }
+        guard windowStart.isFinite, windowEnd.isFinite, windowEnd > windowStart,
+              let zone = TimeZone(identifier: timezone) else { return [logicalDay] }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        var cursor = Date(timeIntervalSince1970: windowStart)
+        let end = Date(timeIntervalSince1970: windowEnd)
+        var days: [String] = []
+        while cursor < end {
+            let parts = calendar.dateComponents([.year, .month, .day], from: cursor)
+            days.append(String(format: "%04d-%02d-%02d", parts.year!, parts.month!, parts.day!))
+            guard let next = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: cursor)), next > cursor else { break }
+            cursor = next
+        }
+        return days
+    }
+
+    public var primaryDay: String { naturalDays.first ?? logicalDay }
+    public var crossesMidnight: Bool { naturalDays.count > 1 }
+    public func belongs(to day: String) -> Bool { naturalDays.contains(day) }
+    public func sourceAnchor(on day: String) -> LifeIllustrationSourceAnchor? {
+        sourceAnchors?.first { $0.day == day }
+    }
+
+    /// Cross-midnight audio may reference one sentence from both dates. Its
+    /// transcript is displayed once, on the date where that sentence started.
+    public func transcriptAnchor(on day: String) -> LifeIllustrationSourceAnchor? {
+        guard let anchor = sourceAnchor(on: day), let source = anchor.sourceId, let span = anchor.spanId else {
+            return sourceAnchor(on: day)
+        }
+        return sourceAnchors?.filter { $0.sourceId == source && $0.spanId == span }
+            .min { $0.recordedAt < $1.recordedAt } ?? anchor
+    }
+
     func validate() throws {
         guard !id.isEmpty, windowStart.isFinite, windowEnd.isFinite, windowEnd > windowStart,
               createdAt.isFinite, updatedAt.isFinite, width > 0, height > 0,
               !logicalDay.isEmpty, TimeZone(identifier: timezone) != nil,
               !sourceIds.isEmpty, sourceIds.allSatisfy({ !$0.isEmpty }),
               Self.isSHA256(assetSha256), Self.isSHA256(thumbnailSha256),
+              sourceDays.map({ !$0.isEmpty && $0.allSatisfy(Self.validDay) }) ?? true,
+              sourceAnchors.map({ $0.allSatisfy { Self.validDay($0.day) && $0.recordedAt.isFinite
+                  && (-64_800...64_800).contains($0.timezoneOffset) } }) ?? true,
               validPlace, routePoints.count <= 128, routePoints.allSatisfy(\.isValid) else {
             throw LifeIllustrationError.invalidManifest
         }
+    }
+
+    private static func validDay(_ value: String) -> Bool {
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX"); format.timeZone = TimeZone(secondsFromGMT: 0)
+        format.dateFormat = "yyyy-MM-dd"; format.isLenient = false
+        return value.count == 10 && format.date(from: value).map { format.string(from: $0) == value } == true
     }
 
     private var validPlace: Bool {

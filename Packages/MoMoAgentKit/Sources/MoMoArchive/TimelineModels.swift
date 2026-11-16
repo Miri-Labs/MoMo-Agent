@@ -3,12 +3,12 @@ import MoMoContracts
 
 /// A calendar date, independent of the phone's current UTC offset.
 public struct TimelineDay: Codable, Hashable, Comparable, Sendable, Identifiable {
-    public static let defaultStartHour = DayStartBoundary.defaultHour
+    public static let defaultStartHour = 0
     public static let startHourRange = DayStartBoundary.hourRange
     public static let startHourDefaultsKey = DayStartBoundary.defaultsKey
-    public static var currentStartHour: Int { DayStartBoundary.currentHour }
+    public static var currentStartHour: Int { 0 }
     public static func setCurrentStartHour(_ hour: Int, defaults: UserDefaults? = .standard) {
-        DayStartBoundary.setCurrentHour(hour, defaults: defaults)
+        // Compatibility no-op: callers cannot change natural-day ownership.
     }
 
     public let year: Int
@@ -17,7 +17,8 @@ public struct TimelineDay: Codable, Hashable, Comparable, Sendable, Identifiable
     public var id: String { "\(year)-\(month)-\(day)" }
 
     public init(_ date: Date, calendar: Calendar = .current, startHour: Int = TimelineDay.currentStartHour) {
-        let anchor = DayStartBoundary.logicalDayStart(for: date, calendar: calendar, startHour: startHour)
+        // Legacy startHour arguments are accepted but never change source date ownership.
+        let anchor = calendar.startOfDay(for: date)
         let parts = calendar.dateComponents([.year, .month, .day], from: anchor)
         year = parts.year!; month = parts.month!; day = parts.day!
     }
@@ -33,9 +34,9 @@ public struct TimelineDay: Codable, Hashable, Comparable, Sendable, Identifiable
         calendar.date(from: DateComponents(year: year, month: month, day: day))!
     }
 
-    /// Start instant of this recording day (`08:00` by default).
+    /// Natural-day midnight. The legacy argument cannot move historical recordings.
     public func startDate(calendar: Calendar = .current, startHour: Int = TimelineDay.currentStartHour) -> Date {
-        DayStartBoundary.boundaryStart(forCalendarDay: date(calendar: calendar), calendar: calendar, startHour: startHour)
+        calendar.startOfDay(for: date(calendar: calendar))
     }
 
     public func adding(days: Int) -> Self {

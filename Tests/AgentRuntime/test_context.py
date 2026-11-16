@@ -133,41 +133,123 @@ class ContextTests(unittest.TestCase):
         page = self.store.read_source(receipt['source_id'], receipt['source_revision'], refreshed[0]['offset'], refreshed[0]['end'] - refreshed[0]['offset'])
         self.assertEqual([spans[0]['text'], spans[1]['text']], [s['text'] for s in page['spans']])
 
-    def test_window_grouping_uses_default_eight_am_boundary_and_respects_custom_day_start_hour(self):
+    def test_natural_dates_and_reading_boundary_are_independent(self):
         import datetime as dt, json
-        late_night = dt.datetime(2026, 11, 4, 23, 58, 0).timestamp()
-        after_midnight = dt.datetime(2026, 11, 5, 0, 2, 0).timestamp()
-        before_eight = dt.datetime(2026, 11, 5, 7, 58, 0).timestamp()
-        after_eight = dt.datetime(2026, 11, 5, 8, 2, 0).timestamp()
-        spans = [
-            dict(id=str(uuid.uuid4()), text='深夜十一点五十八还在讨论项目排期。', recorded_at=late_night),
-            dict(id=str(uuid.uuid4()), text='凌晨零点零二分继续同一段讨论。', recorded_at=after_midnight),
-            dict(id=str(uuid.uuid4()), text='早上七点五十八分的收尾补充。', recorded_at=before_eight),
-            dict(id=str(uuid.uuid4()), text='早上八点零二分进入新一天早会。', recorded_at=after_eight),
-        ]
+        zone = dt.timezone(dt.timedelta(hours=8))
+        times = [dt.datetime(2026, 11, day, hour, minute, tzinfo=zone).timestamp()
+                 for day, hour, minute in [(15, 23, 59), (16, 0, 1), (16, 7, 59), (16, 8, 0)]]
+        spans = [dict(id=str(uuid.uuid4()), text=f'这是第 {i} 段，边界内容不能丢失。', recorded_at=at,
+                      timezone_offset=28800) for i, at in enumerate(times)]
         payload = copy.deepcopy(self.payload)
         payload.update(version=3, spans=spans, text_sha256=digest('\n'.join(s['text'] for s in spans)))
         self.store.sync_source(payload)
-
-        # Default 08:00 boundary: 23:58 + 00:02 stay in one window; 07:58 vs 08:02 split across the 08:00 boundary.
         windows = self.store.list_sources()['items'][0]['windows']
-        self.assertEqual(3, len(windows))
-        self.assertEqual(late_night, windows[0]['recorded_at'])
-        self.assertEqual(after_midnight, windows[0]['end_at'])
-        self.assertEqual(before_eight, windows[1]['recorded_at'])
-        self.assertEqual(before_eight, windows[1]['end_at'])
-        self.assertEqual(after_eight, windows[2]['recorded_at'])
+        self.assertEqual(['2026-11-15', '2026-11-16', '2026-11-16', '2026-11-16'], [w['natural_day'] for w in windows])
+        self.assertEqual(times, [w['recorded_at'] for w in windows])
+        legacy = Path(self.temporary.name) / 'runtime/day-boundary.json'
+        legacy.parent.mkdir(exist_ok=True)
+        legacy.write_text('{"day_start_hour": 23}')
+        self.assertEqual(windows, self.store.list_sources()['items'][0]['windows'])
+        (legacy.parent / 'transcript-reading.json').write_text('{"early_transcript_hour": 0}')
+        unfolded = self.store.list_sources()['items'][0]['windows']
+        self.assertEqual(3, len(unfolded))
+        self.assertEqual(times[-1], unfolded[-1]['end_at'])
+        self.assertEqual('{"day_start_hour": 23}', legacy.read_text())
 
-        # Custom 00:00 boundary: 23:58 vs 00:02 split at midnight; 07:58 + 08:02 stay together (4 min apart on same day).
-        cfg_file = Path(self.temporary.name) / 'runtime' / 'day-boundary.json'
-        cfg_file.parent.mkdir(parents=True, exist_ok=True)
-        cfg_file.write_text(json.dumps({'day_start_hour': 0}), encoding='utf-8')
-        windows_midnight = self.store.list_sources()['items'][0]['windows']
-        self.assertEqual(3, len(windows_midnight))
-        self.assertEqual(late_night, windows_midnight[0]['recorded_at'])
-        self.assertEqual(late_night, windows_midnight[0]['end_at'])
-        self.assertEqual(after_midnight, windows_midnight[1]['recorded_at'])
-        self.assertEqual(before_eight, windows_midnight[2]['recorded_at'])
-        self.assertEqual(after_eight, windows_midnight[2]['end_at'])
+    def test_clock_evidence_enriches_same_revision_and_survives_old_clients(self):
+        self.store.list_sources()  # Warm the old, unzoned projection first.
+        payload = copy.deepcopy(self.payload)
+        payload['spans'][0].update(timezone_offset=-18000, end_at=payload['spans'][0]['recorded_at'] + 30)
+        self.store.sync_source(payload)
+        projected = self.store.list_sources()['items'][0]['windows'][0]
+        self.assertEqual(-18000, projected['timezone_offset'])
+        detail = self.store.read_source(projected['source_id'])
+        self.assertEqual(-18000, detail['spans'][0]['timezone_offset'])
+        self.assertEqual(payload['spans'][0]['end_at'], detail['spans'][0]['end_at'])
+        # An old client may omit enrichment; it must not erase evidence or reject identical text.
+        self.store.sync_source(copy.deepcopy(self.payload))
+        self.assertEqual(-18000, self.store.list_sources()['items'][0]['windows'][0]['timezone_offset'])
+        payload['spans'][0]['timezone_offset'] = 28800
+        with self.assertRaises(Conflict): self.store.sync_source(payload)
+
+    def test_warm_cache_clock_enrichment_matches_read_and_both_window_builders(self):
+        import datetime as dt
+        from unittest.mock import patch
+        for version, (hour, minute, second, days) in enumerate([(17, 0, 0, ['2026-11-16']),
+                (15, 59, 59, ['2026-11-15', '2026-11-16'])], start=2):
+            with self.subTest(clock=(hour, minute, second)):
+                payload = copy.deepcopy(self.payload)
+                payload['version'] = version
+                at = dt.datetime(2026, 11, 15, hour, minute, second, tzinfo=dt.timezone.utc).timestamp()
+                payload['spans'][0]['recorded_at'] = at
+                if minute == 59:
+                    payload['spans'].append(dict(id=str(uuid.uuid4()), recorded_at=at + 2, text='午夜后的下一句话'))
+                    payload['text_sha256'] = digest('\n'.join(s['text'] for s in payload['spans']))
+                receipt = self.store.sync_source(payload)
+                old = self.store.list_sources()['items'][0]['windows']
+                self.assertEqual('2026-11-15', old[0]['natural_day'])
+                self.assertEqual('timezone_unknown', old[0]['date_evidence'])
+                for span in payload['spans']:
+                    span.update(timezone_offset=28800, end_at=span['recorded_at'] + 2)
+                # Wall-clock rollback must not make the old cache entry valid.
+                with patch('context_store.time.time', return_value=1):
+                    enriched = self.store.sync_source(payload)
+                self.assertEqual(receipt['source_revision'], enriched['source_revision'])
+                self.assertNotEqual(receipt['revision'], enriched['revision'])
+                reopened = ContextStore(self.temporary.name)
+                try:
+                    listed = reopened.list_sources()['items'][0]['windows']
+                    detail = reopened.read_source(receipt['source_id'], receipt['source_revision'])
+                    built = reopened.build_windows(receipt['source_id'], receipt['source_revision'],
+                                                   payload, False, {}, {}, set())
+                finally:
+                    reopened.close()
+                self.assertEqual(days, [w['natural_day'] for w in listed])
+                self.assertEqual(listed, built)
+                self.assertEqual(28800, detail['spans'][0]['timezone_offset'])
+                self.assertEqual(at + 2, detail['spans'][0]['end_at'])
+                self.assertEqual(listed, self.store.list_sources()['items'][0]['windows'])
+
+    def test_desktop_reading_preference_is_read_from_runtime_beside_context(self):
+        from context_store import read_early_transcript_hour
+        root = Path(self.temporary.name)
+        (root / 'runtime').mkdir(exist_ok=True)
+        (root / 'runtime/transcript-reading.json').write_text('{"early_transcript_hour": 0}')
+        self.assertEqual(0, read_early_transcript_hour(root / 'context'))
+
+    def test_source_crossing_midnight_preserves_full_interval_without_repeating_text(self):
+        import datetime as dt
+        from context_store import natural_groups
+        start = dt.datetime(2026, 11, 16, 23, 59, 59, tzinfo=dt.timezone.utc).timestamp()
+        span = dict(id=str(uuid.uuid4()), text='跨午夜仍是同一句话', recorded_at=start, end_at=start + 2, timezone_offset=0)
+        groups = natural_groups([span], 8)
+        self.assertEqual(['2026-11-16'], [g['natural_day'] for g in groups])
+        self.assertEqual([span['text']], [text for g in groups for text in g['texts']])
+        self.assertEqual(start + 2, groups[0]['end_at'])
+        self.assertEqual(0, groups[0]['offset'])
+        self.assertEqual(len(span['text']), groups[0]['end'])
+
+    def test_one_conversation_across_eight_is_not_folded_as_one_early_window(self):
+        import datetime as dt
+        from context_store import natural_groups
+        start = dt.datetime(2026, 11, 16, 7, 59, tzinfo=dt.timezone.utc).timestamp()
+        spans = [dict(id=str(uuid.uuid4()), text=text, recorded_at=start + offset, timezone_offset=0)
+                 for text, offset in [('七点五十九的原文', 0), ('八点零一的原文', 120)]]
+        folded = natural_groups(spans, 8)
+        self.assertEqual([True, False], [g['key'][2] for g in folded])
+        self.assertEqual([0, len(spans[0]['text']) + 1], [g['offset'] for g in folded])
+        self.assertEqual(1, len(natural_groups(spans, 0)))
+
+    def test_recorded_offsets_cover_dst_and_missing_evidence_is_explicit(self):
+        from context_store import natural_groups, source_clock
+        import datetime as dt
+        spans = [dict(id=str(uuid.uuid4()), text='夏令时回拨两次一点半', recorded_at=1793511000 + i * 3600,
+                      timezone_offset=offset) for i, offset in enumerate([-14400, -18000])]
+        groups = natural_groups(spans, 8)
+        self.assertEqual([-14400, -18000], [g['timezone_offset'] for g in groups])
+        self.assertEqual(groups[0]['natural_day'], groups[1]['natural_day'])
+        self.assertEqual(['01:30', '01:30'], [dt.datetime.fromtimestamp(sp['recorded_at'], source_clock(sp)[0]).strftime('%H:%M') for sp in spans])
+        del spans[0]['timezone_offset']
+        self.assertEqual('timezone_unknown', natural_groups(spans[:1], 8)[0]['date_evidence'])
 
 if __name__=='__main__': unittest.main()

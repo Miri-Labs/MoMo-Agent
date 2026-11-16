@@ -77,18 +77,18 @@ extension ArchiveStore {
     }
 
     func spanLocations(_ spans: [TranscriptSpan], sessionID: UUID, generation: Int64) throws -> [UUID: TranscriptSpanLocation] {
-        let rows = try database.rows("SELECT id,epoch_id,wall_clock_anchor,timebase_hz,retention FROM chunks WHERE session_id=?", [.text(sessionID.uuidString)])
-        var chunks: [UUID: (epochID: UUID, wallClockAnchor: Date, timebaseHz: Double, present: Bool)] = [:]
+        let rows = try database.rows("SELECT id,epoch_id,wall_clock_anchor,timebase_hz,retention,timezone_offset FROM chunks WHERE session_id=?", [.text(sessionID.uuidString)])
+        var chunks: [UUID: (epochID: UUID, wallClockAnchor: Date, timebaseHz: Double, present: Bool, offset: Int?)] = [:]
         chunks.reserveCapacity(rows.count)
         for row in rows {
             let chunkID = try row.requireUUID(0)
             let epochID = try row.requireUUID(1)
             let present = try row.requireString(4) == "present"
             if let anchor = row.double(2), let rate = row.double(3), rate > 0 {
-                chunks[chunkID] = (epochID, Date(timeIntervalSince1970: anchor), rate, present)
+                chunks[chunkID] = (epochID, Date(timeIntervalSince1970: anchor), rate, present, row.integer(5).map(Int.init))
             } else if let mRow = try database.rows("SELECT manifest FROM chunks WHERE id=?", [.text(chunkID.uuidString)]).first {
                 let manifest = try WireJSON.decode(ChunkManifest.self, from: mRow.requireData(0))
-                chunks[chunkID] = (manifest.epochID, manifest.wallClockAnchor, manifest.timebaseHz, present)
+                chunks[chunkID] = (manifest.epochID, manifest.wallClockAnchor, manifest.timebaseHz, present, manifest.timezoneOffset)
             }
         }
         return try Dictionary(uniqueKeysWithValues: spans.map { span in
@@ -98,7 +98,7 @@ extension ArchiveStore {
             // All chunks in an epoch retain the writer's original wall clock anchor.
             let date = chunk.wallClockAnchor.addingTimeInterval(Double(first.frames.start) / chunk.timebaseHz)
             let available = span.sourceRanges.allSatisfy { chunks[$0.chunkID]?.present == true }
-            return (span.id, TranscriptSpanLocation(recordedAt: date, audioAvailable: available,
+            return (span.id, TranscriptSpanLocation(timezoneOffset: chunk.offset, recordedAt: date, audioAvailable: available,
                 audioSource: TimelineAudioSource(sessionID: sessionID, generation: generation,
                     epochID: chunk.epochID, frames: span.frames, timebaseHz: chunk.timebaseHz, wallClockAnchor: chunk.wallClockAnchor)))
         })
