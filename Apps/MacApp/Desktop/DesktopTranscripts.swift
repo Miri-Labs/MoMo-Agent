@@ -337,9 +337,6 @@ struct DesktopSources: View {
             HStack(spacing: 12) {
                 Text("转录").font(.system(size: 22, weight: .semibold)).accessibilityAddTraits(.isHeader)
                 Spacer()
-                if !dayIllustrations.isEmpty {
-                    Button("当天贴纸") { timelineAnchor = "masthead" }.buttonStyle(.plain)
-                }
                 Button("刷新", systemImage: "arrow.clockwise") { Task { await model.loadContext() } }
                     .labelStyle(.iconOnly).buttonStyle(.plain).disabled(model.contextLoading)
                     .help("刷新转录").accessibilityIdentifier("desktop.transcripts.refresh")
