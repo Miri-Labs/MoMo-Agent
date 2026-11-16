@@ -762,10 +762,162 @@ class IllustrationTests(unittest.TestCase):
     def test_access_route_allowlist(self):
         base = '/context/v1/life-illustrations/'
         for method, path in [('GET', 'settings'), ('POST', 'settings'), ('GET', 'manifest?cursor=0&limit=10'),
-                             ('GET', 'assets/' + 'a'*64), ('POST', 'delete')]:
+                             ('GET', 'assets/' + 'a'*64), ('POST', 'delete'), ('POST', 'retry')]:
             self.assertIsNotNone(permitted_route(method, base + path))
-        for path in ['assets/../state.sqlite', 'manifest?url=https://evil.test', 'settings?admin=1']:
+        for path in ['assets/../state.sqlite', 'manifest?url=https://evil.test', 'settings?admin=1', 'retry?force=1']:
             self.assertIsNone(permitted_route('GET', base + path))
+        self.assertIsNone(permitted_route('POST', base + 'retry?force=1'))
+
+    def test_long_continuous_conversation_splits_at_natural_pauses_without_orphan_tail(self):
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        data = Path(tmp.name)
+        ctx = ContextStore(data / 'context'); self.addCleanup(ctx.close)
+        queue = LifeIllustrations(data); self.addCleanup(queue.close)
+        queue.update_settings({'enabled': True}, READY, self.start)
+        # ~161-minute continuous session (77m + 84m): reaching 75m on the second segment leaves <20m tail, so no 3rd orphan is created.
+        spans = []
+        cursor = self.start
+        for index in range(46):
+            spans.append(dict(id=str(uuid.uuid4()), recorded_at=cursor, text=f'第{index + 1}段：{TEXT}'))
+            cursor += 210
+        body = '\n'.join(s['text'] for s in spans)
+        ctx.sync_source(dict(
+            library_id=str(uuid.uuid4()), session_id=str(uuid.uuid4()), device_id=str(uuid.uuid4()),
+            generation=0, version=1, deleted=False, recorded_at=self.start,
+            spans=spans, text_sha256=digest(body),
+        ))
+        # Mid-session (at minute 105), the first ~77m segment is already settled and admitted before the run finishes.
+        queue.scan(ctx, self.start + 105 * 60)
+        early_rows = queue.db.execute('SELECT * FROM slots ORDER BY window_start').fetchall()
+        self.assertEqual(1, len(early_rows))
+        # After the entire ~161m session settles, we get 2 bounded episodes and zero <20m orphan tail.
+        now = cursor + 2400
+        queue.scan(ctx, now)
+        rows = queue.db.execute('SELECT * FROM slots ORDER BY window_start').fetchall()
+        self.assertEqual(2, len(rows))
+        for r in rows:
+            self.assertGreaterEqual(r['window_end'] - r['window_start'], 20 * 60)
+        queue.scan(ctx, now + 600)
+        self.assertEqual(2, queue.db.execute('SELECT COUNT(*) FROM slots').fetchone()[0])
+
+    def test_late_arriving_audio_after_early_slot_is_admitted_without_swallowing(self):
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        data = Path(tmp.name)
+        ctx = ContextStore(data / 'context'); self.addCleanup(ctx.close)
+        queue = LifeIllustrations(data); self.addCleanup(queue.close)
+        queue.update_settings({'enabled': True}, READY, self.start)
+        lib_id, sess_id, dev_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+        # First 1 minute arrives from Watch, settles, and gets marked skipped (like 2026-11-12 14:25..14:26).
+        early_span = dict(id=str(uuid.uuid4()), recorded_at=self.start + 60, text=TEXT)
+        ctx.sync_source(dict(
+            library_id=lib_id, session_id=sess_id, device_id=dev_id,
+            generation=0, version=1, deleted=False, recorded_at=self.start + 60,
+            spans=[early_span], text_sha256=digest(TEXT),
+        ))
+        queue.scan(ctx, self.start + 900)
+        self.generator.prepare = lambda evidence: 'SKIP'
+        queue.advance(self.generator, ctx, self.start + 900)
+        self.assertEqual('skipped', queue.db.execute('SELECT state FROM slots').fetchone()[0])
+
+        # Now 45 minutes of delayed Watch audio in the same continuous conversation (<10m gap) arrives!
+        late_spans = [early_span] + [
+            dict(id=str(uuid.uuid4()), recorded_at=self.start + 240 + idx * 300, text=f'后续深入讨论{idx}：{TEXT}')
+            for idx in range(9)
+        ]
+        body = '\n'.join(s['text'] for s in late_spans)
+        ctx.sync_source(dict(
+            library_id=lib_id, session_id=sess_id, device_id=dev_id,
+            generation=0, version=2, deleted=False, recorded_at=self.start + 60,
+            spans=late_spans, text_sha256=digest(body),
+        ))
+        self.generator.prepare = lambda evidence: 'SUMMARY: 后续长讨论\nBRIEF: 两人在白板前核对完整方案。'
+        now = self.start + 4200
+        queue.scan(ctx, now)
+        rows = queue.db.execute('SELECT * FROM slots ORDER BY window_start').fetchall()
+        self.assertEqual(2, len(rows))
+        self.assertEqual('skipped', rows[0]['state'])
+        self.assertEqual('pending', rows[1]['state'])
+        self.assertGreaterEqual(rows[1]['window_start'], rows[0]['window_end'])
+        queue.advance(self.generator, ctx, now)
+        self.assertEqual(1, len(queue.manifest()['items']))
+
+    def test_legacy_mega_slot_preserves_saved_artwork_and_backfills_uncovered_hours(self):
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        data = Path(tmp.name)
+        ctx = ContextStore(data / 'context'); self.addCleanup(ctx.close)
+        queue = LifeIllustrations(data); self.addCleanup(queue.close)
+        queue.update_settings({'enabled': True}, READY, self.start)
+        spans = []
+        # 5-hour continuous Saturday afternoon: segment 1 talks about shampoo, segment 2 talks about cardboard box, segment 3 talks about Cuphead.
+        topics = [
+            '两人商量补买一千五百毫升大瓶洗发水，对比现有余量，还没有下单购买。' * 2,
+            '一人示意同伴查看纸盒内层，指出里面没有锡纸，讨论这样的纸盒能不能放进设备加热。' * 2,
+            '几人在客厅尝试把茶杯头切到双人模式，核对手柄连接顺序与按键映射，尚未开局。' * 2,
+        ]
+        cursor = self.start
+        for topic in topics:
+            for _ in range(25):
+                spans.append(dict(id=str(uuid.uuid4()), recorded_at=cursor, text=topic))
+                cursor += 180  # 75 minutes per topic (~225 minutes total -> 3 exact natural segments)
+        body = '\n'.join(s['text'] for s in spans)
+        ctx.sync_source(dict(
+            library_id=str(uuid.uuid4()), session_id=str(uuid.uuid4()), device_id=str(uuid.uuid4()),
+            generation=0, version=1, deleted=False, recorded_at=self.start,
+            spans=spans, text_sha256=digest(body),
+        ))
+        # Seed a legacy unsplit ready mega-slot covering the entire 252m window, depicting topic #2 (cardboard box).
+        ev, versions, sem, _ = evidence_for(ctx, self.start, cursor + 60)
+        mega_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f'momo-life-v1:{self.start}:{cursor + 60}'))
+        queue.db.execute('''INSERT INTO slots
+            (id,window_start,window_end,logical_day,timezone,state,source_versions,evidence,semantic_hash,
+             summary,brief,created_at,updated_at)
+            VALUES(?,?,?,'2026-11-04','Asia/Shanghai','submitting',?,?,?,?,?,?,?)''',
+            (mega_id, self.start, cursor + 60, json.dumps(versions), json.dumps(ev), sem,
+             '查看纸盒内层没有锡纸，讨论能否加热', '示意同伴看纸盒内部没有锡纸，讨论纸盒能否加热。', self.start, self.start))
+        queue.save_image(mega_id, png(), now=self.start + 100)
+        saved_mega = dict(queue.db.execute('SELECT * FROM slots WHERE id=?', (mega_id,)).fetchone())
+
+        now = cursor + 1800
+        queue.scan(ctx, now)
+        rows = queue.db.execute('SELECT * FROM slots ORDER BY window_start').fetchall()
+        # Topic #1 and Topic #3 become pending, while Topic #2 (matched to mega_id) is skipped and mega_id is untouched!
+        self.assertEqual(3, len(rows))
+        self.assertEqual(saved_mega, dict(queue.db.execute('SELECT * FROM slots WHERE id=?', (mega_id,)).fetchone()))
+        pending_texts = [r['evidence'] for r in rows if r['state'] == 'pending']
+        self.assertEqual(2, len(pending_texts))
+        self.assertTrue(any('洗发水' in ev_json for ev_json in pending_texts))
+        self.assertTrue(any('茶杯头' in ev_json for ev_json in pending_texts))
+        self.assertFalse(any('没有锡纸' in ev_json for ev_json in pending_texts))
+        # Second scan adds nothing.
+        queue.scan(ctx, now + 600)
+        self.assertEqual(3, queue.db.execute('SELECT COUNT(*) FROM slots').fetchone()[0])
+
+    def test_preparing_transient_failure_gets_extended_retries_and_retry_endpoint_recovers_stuck_slots(self):
+        self.generator.prepare = lambda evidence: (_ for _ in ()).throw(RuntimeError('proxy timeout'))
+        self.generate()
+        # Unlike submitting admission (3 attempts), pre-submission scene extraction survives >3 transient network failures.
+        for step in range(4):
+            self.assertEqual('pending', self.row()['state'])
+            self.queue.advance(self.generator, self.context, self.start + 20000 + step * 7200)
+        self.assertEqual('pending', self.row()['state'])
+        self.queue.advance(self.generator, self.context, self.start + 60000)
+        self.assertEqual('failed', self.row()['state'])
+        self.assertEqual(1, self.queue.settings(READY)['retryable_count'])
+
+        # Explicit POST /v1/life-illustrations/retry clears invalid/failed/needs_review without touching deleted/ready, and re-scans.
+        (self.data / 'api-key').write_text('retry-key')
+        service = ContextService(self.data, dict(data_url='http://127.0.0.1:0', workspace_id='test'))
+        thread = threading.Thread(target=service.server.serve_forever, daemon=True); thread.start()
+        base = f'http://127.0.0.1:{service.server.server_port}/v1/life-illustrations/'
+        try:
+            with patch.object(CodexIllustrationGenerator, 'availability', return_value=READY):
+                req = urllib.request.Request(base + 'retry', headers={'Authorization': 'Bearer retry-key', 'Content-Type': 'application/json'}, data=b'{}', method='POST')
+                with urllib.request.urlopen(req) as resp:
+                    payload = json.load(resp)
+                self.assertEqual(0, payload['retryable_count'])
+                self.assertEqual(1, payload['pending_count'])
+        finally:
+            service.server.shutdown(); service.server.server_close(); thread.join()
 
     def test_authenticated_settings_manifest_and_binary_asset(self):
         self.generate(); sha = self.row()['asset_sha256']

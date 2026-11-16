@@ -68,6 +68,18 @@ class ContextTests(unittest.TestCase):
         self.store.close(); self.store = ContextStore(self.temporary.name)
         self.assertEqual(self.receipt, self.store.sync_source(self.payload))
         self.assertEqual(1, self.store.db.execute('SELECT COUNT(*) FROM jobs').fetchone()[0])
+        # Out-of-order earlier Watch chunk arrival shifting session-level recorded_at or sub-ms end_at float rounding at same revision succeeds.
+        earlier_session_start = copy.deepcopy(self.payload)
+        span_ts = earlier_session_start['spans'][0]['recorded_at']
+        earlier_session_start['recorded_at'] = span_ts - 50
+        earlier_session_start['spans'][0]['end_at'] = span_ts + 4.123456
+        self.assertEqual(self.receipt['source_revision'], self.store.sync_source(earlier_session_start)['source_revision'])
+        float_drift = copy.deepcopy(earlier_session_start)
+        float_drift['spans'][0]['end_at'] = span_ts + 4.1234564
+        self.assertEqual(self.receipt['source_revision'], self.store.sync_source(float_drift)['source_revision'])
+        saved_doc = json.loads(self.store.db.execute('SELECT payload FROM sources WHERE id=?', (self.receipt['source_id'],)).fetchone()[0])
+        self.assertEqual(float(span_ts - 50), saved_doc['recorded_at'])
+        # Mutating an actual span's recorded_at at the same revision still raises Conflict.
         changed = copy.deepcopy(self.payload); changed['spans'][0]['recorded_at'] = 999
         with self.assertRaises(Conflict): self.store.sync_source(changed)
     def test_full_pagination_never_silently_truncates(self):

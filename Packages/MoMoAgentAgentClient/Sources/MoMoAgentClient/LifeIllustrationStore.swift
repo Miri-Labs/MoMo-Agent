@@ -323,6 +323,23 @@ public final class LifeIllustrationStore {
         } catch { self.error = error.localizedDescription; throw error }
     }
 
+    public func retryIncomplete() async throws {
+        guard !mutating, let client else { throw LifeIllustrationError.unavailable }
+        mutating = true; defer { mutating = false }
+        await cancelRefresh()
+        let revision = revision
+        let currentCache = cache
+        do {
+            let updated = try await client.retryLifeIllustrations()
+            try checkCurrent(revision)
+            try? await currentCache?.saveSettings(updated)
+            try checkCurrent(revision)
+            settings = updated
+            hasLoadedSettings = true
+            error = nil
+        } catch { self.error = error.localizedDescription; throw error }
+    }
+
     public func delete(_ item: LifeIllustration) async throws {
         guard !mutating, let client, let cache else { throw LifeIllustrationError.unavailable }
         mutating = true; defer { mutating = false }

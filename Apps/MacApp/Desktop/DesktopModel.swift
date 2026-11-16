@@ -937,16 +937,24 @@ final class DesktopModel {
     }
 
     nonisolated private static func fetchAllMemories(client: AgentClient) async throws -> [ContextMemory] {
-        var collected: [ContextMemory] = []
-        var cursor: String?
-        var revision: Int64?
-        repeat {
-            let page = try await client.memories(after: cursor, revision: revision, limit: 200)
-            collected += page.items
-            cursor = page.nextCursor
-            revision = page.revision
-        } while cursor != nil
-        return collected
+        for attempt in 0..<4 {
+            var collected: [ContextMemory] = []
+            var cursor: String?
+            var revision: Int64?
+            do {
+                repeat {
+                    let page = try await client.memories(after: cursor, revision: revision, limit: 200)
+                    collected += page.items
+                    cursor = page.nextCursor
+                    revision = page.revision
+                } while cursor != nil
+                return collected
+            } catch AgentClientError.http(409, "revision_conflict", _, _) where attempt < 3 {
+                try await Task.sleep(for: .milliseconds(150))
+                continue
+            }
+        }
+        return []
     }
 
     nonisolated private static func fetchAllSources(client: AgentClient) async throws -> [ContextSource] {
@@ -1057,7 +1065,11 @@ final class DesktopModel {
                     memoryError = nil
                 }
             } catch {
-                if AgentTransportFailure.isTransient(error) {
+                let isRevisionRace: Bool = {
+                    if case AgentClientError.http(409, "revision_conflict", _, _) = error { return true }
+                    return false
+                }()
+                if AgentTransportFailure.isTransient(error) || isRevisionRace {
                     Task { [weak self] in
                         try? await Task.sleep(for: .milliseconds(1500))
                         await self?.loadContext(silent: true)
@@ -1073,8 +1085,13 @@ final class DesktopModel {
 
     func forgetMemory(_ memory: ContextMemory) async throws {
         guard let connection, let url = connection.dataURL else { throw DesktopError.message(String(localized: "Mac 尚未连接。")) }
-        try await dataClient(for: connection, url: url).forget(ForgetMemory(memory: memory))
-        await loadContext()
+        do {
+            try await dataClient(for: connection, url: url).forget(ForgetMemory(memory: memory))
+            await loadContext()
+        } catch AgentClientError.http(409, "revision_conflict", _, _) {
+            await loadContext()
+            throw DesktopError.message(String(localized: "该条记忆刚刚已更新，列表已刷新，请核对后再删除。"))
+        }
     }
 
     func triggerDream() async throws {

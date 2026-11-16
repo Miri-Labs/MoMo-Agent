@@ -202,8 +202,12 @@ final class PhoneContextSync {
             guard memoryGeneration == owner, !AgentTransportFailure.isCancelled(error) else { throw error }
             memoryRetry = Self.retryWindow(error)
             recordAuthenticationFailure(error)
-            failure = AgentTransportFailure.isTransient(error)
-                ? String(localized: "笔记暂未刷新，请稍后重试。") : error.localizedDescription
+            if case AgentClientError.http(409, "revision_conflict", _, _) = error {
+                failure = String(localized: "记忆正在后台更新，稍后自动刷新。")
+            } else {
+                failure = AgentTransportFailure.isTransient(error)
+                    ? String(localized: "笔记暂未刷新，请稍后重试。") : error.localizedDescription
+            }
             throw error
         }
     }
@@ -317,6 +321,11 @@ final class PhoneContextSync {
             if case AgentClientError.http(401, _, _, _) = error {
                 authenticationRequired = true; background(); onAuthenticationRequired?(error)
             }
+            if case AgentClientError.http(409, "revision_conflict", _, _) = error {
+                try? await synchronizeMemories()
+                failure = String(localized: "该条记忆刚刚已更新，列表已刷新，请核对后再操作。")
+                return
+            }
             failure = AgentTransportFailure.isTransient(error)
                 ? String(localized: "暂时无法连接 Mac，请稍后重试。")
                 : error.localizedDescription
@@ -365,6 +374,11 @@ final class PhoneContextSync {
             if case AgentClientError.http(401, _, _, _) = error {
                 authenticationRequired = true; background(); onAuthenticationRequired?(error)
             }
+            if case AgentClientError.http(409, "revision_conflict", _, _) = error {
+                await refreshMemories()
+                failure = String(localized: "记忆正在后台整理中，稍后自动刷新。")
+                return
+            }
             failure = AgentTransportFailure.isTransient(error)
                 ? String(localized: "暂时无法连接 Mac，请稍后重试。")
                 : error.localizedDescription
@@ -409,17 +423,17 @@ final class PhoneContextSync {
             try await deliver(source)
         }
     }
-    private func stage(_ recording: RecordingSummary, allowEmptyInitial: Bool = true, checkpoint: Bool = true) async throws -> Source {
+    private func stage(_ recording: RecordingSummary, allowEmptyInitial: Bool = true, checkpoint: Bool = true, forceRebuild: Bool = false) async throws -> Source {
         let id = recording.sessionID.uuidString.lowercased()
         let coverage = CoverageStamp(chunks: recording.chunkCount, transcriptionState: recording.transcriptionState.rawValue,
             audioState: recording.audioState.rawValue, fingerprint: configurationFingerprint)
-        if let saved = state.sources[id], !saved.envelope.deleted, saved.coverage == coverage,
+        if !forceRebuild, let saved = state.sources[id], !saved.envelope.deleted, saved.coverage == coverage,
            saved.envelope.generation == recording.generation, saved.envelope.version == recording.transcriptVersion,
            saved.envelope.spans.allSatisfy({ $0.timezoneOffset != nil && $0.endAt != nil }),
            saved.envelope.pendingTranscriptionRanges?.isEmpty == true { return saved }
         let pending = try await archive.pendingTranscriptionIntervals(sessionID: recording.sessionID, configurationFingerprint: configurationFingerprint)
             .map { SourceEnvelope.PendingTranscriptionRange(start: $0.start.timeIntervalSince1970, end: $0.end.timeIntervalSince1970) }
-        if var saved = state.sources[id], !saved.envelope.deleted,
+        if !forceRebuild, var saved = state.sources[id], !saved.envelope.deleted,
            saved.envelope.generation == recording.generation, saved.envelope.version == recording.transcriptVersion,
            saved.envelope.spans.allSatisfy({ $0.timezoneOffset != nil && $0.endAt != nil }) {
             if saved.envelope.pendingTranscriptionRanges != pending || saved.coverage != coverage {
@@ -532,13 +546,18 @@ final class PhoneContextSync {
         var cursor: String?
         var firstError: Error?
         var hadDeferredProjection = false
+        var deferredIDs = Set<String>()
         repeat {
             try Task.checkCancellation()
             let page = try await archive.recordingsPage(limit: 100, cursor: cursor)
             for recording in page.items {
                 do { _ = try await stage(recording, allowEmptyInitial: false, checkpoint: false) }
                 catch ArchiveError.missingTranscript, ArchiveError.sessionDeleted { continue }
-                catch ArchiveError.projectionConflict { hadDeferredProjection = true; continue }
+                catch ArchiveError.projectionConflict {
+                    hadDeferredProjection = true
+                    deferredIDs.insert(recording.sessionID.uuidString.lowercased())
+                    continue
+                }
                 catch is CancellationError { throw CancellationError() }
                 catch { if firstError == nil { firstError = error } }
             }
@@ -563,13 +582,21 @@ final class PhoneContextSync {
             return lhs == rhs ? $0 < $1 : lhs > rhs
         }
         var delivered = 0
-        for id in pendingIDs {
+        for id in pendingIDs where !deferredIDs.contains(id) {
             try Task.checkCancellation()
             guard let source = state.sources[id], source.receipt == nil, source.deliveryFailure == nil else { continue }
             do {
                 try await deliver(source, checkpoint: false)
                 delivered += 1
                 if delivered % 10 == 0 { try checkpointSources() }
+            }
+            catch let AgentClientError.http(409, "revision_conflict", message, _) {
+                if try await recoverRevisionConflict(id: id, staleSource: source, message: message) {
+                    delivered += 1
+                    if delivered % 10 == 0 { try checkpointSources() }
+                    continue
+                }
+                hadDeferredProjection = true
             }
             catch is CancellationError { throw CancellationError() }
             catch {
@@ -606,34 +633,84 @@ final class PhoneContextSync {
         return false
     }
 
+    private func recoverRevisionConflict(id: String, staleSource: Source, message: String?) async throws -> Bool {
+        guard let sessionID = UUID(uuidString: id) else { return false }
+        if staleSource.envelope.deleted, message?.localizedStandardContains("deleted") == true {
+            var updated = state
+            updated.sources.removeValue(forKey: id)
+            try commit(updated, persist: false)
+            return true
+        }
+        do {
+            let summary = try await archive.recordingSummary(sessionID: sessionID)
+            let fresh = try await stage(summary, allowEmptyInitial: false, checkpoint: false, forceRebuild: true)
+            if fresh.envelope != staleSource.envelope {
+                try await deliver(fresh, checkpoint: false)
+                return true
+            }
+            // If Mac already holds a strictly newer revision from this phone (e.g. lost receipt before state save),
+            // drop the stale local entry so the next archive update re-stages cleanly.
+            if message?.localizedStandardContains("stale or deleted") == true {
+                var updated = state
+                updated.sources.removeValue(forKey: id)
+                try commit(updated, persist: false)
+                return true
+            }
+            return false
+        } catch ArchiveError.sessionDeleted {
+            if message?.localizedStandardContains("deleted") == true {
+                var updated = state
+                updated.sources.removeValue(forKey: id)
+                try commit(updated, persist: false)
+                return true
+            }
+            let tombstone = Source(envelope: staleSource.envelope.tombstone())
+            var updated = state; updated.sources[id] = tombstone
+            try commit(updated, persist: false)
+            try await deliver(tombstone, checkpoint: false)
+            return true
+        } catch ArchiveError.missingTranscript, ArchiveError.projectionConflict {
+            return false
+        }
+    }
+
     private func checkpointSources() throws {
         if stateNeedsPersistence { try commit(state) }
     }
 
     private func downloadMemories(owner: UUID) async throws {
-        // Publish only a complete, consistent snapshot. A concurrent Mac write retries on the next refresh.
+        // Publish only a complete, consistent snapshot. If Mac updates memories mid-pagination, restart from page 1.
         var items: [ContextMemory] = [], revision: Int64?, after: String?
         var seen = Set<String>()
         var verifiedLegacyIdentity = false
-        repeat {
-            try Task.checkCancellation()
-            let page = try await client.memories(after: after, revision: revision)
-            try Task.checkCancellation()
-            guard memoryGeneration == owner else { throw CancellationError() }
-            if let workspace = page.workspaceId {
-                guard workspace == state.connection.workspaceID else { throw SyncError.identity }
-            } else if !verifiedLegacyIdentity {
-                // Older Macs identify their notebook through status; never stamp unverified content with our identity.
-                let status = try await client.contextStatus()
-                try Task.checkCancellation()
-                guard memoryGeneration == owner else { throw CancellationError() }
-                try validate(status)
-                verifiedLegacyIdentity = true
+        for attempt in 0..<4 {
+            items = []; revision = nil; after = nil; seen = []
+            do {
+                repeat {
+                    try Task.checkCancellation()
+                    let page = try await client.memories(after: after, revision: revision)
+                    try Task.checkCancellation()
+                    guard memoryGeneration == owner else { throw CancellationError() }
+                    if let workspace = page.workspaceId {
+                        guard workspace == state.connection.workspaceID else { throw SyncError.identity }
+                    } else if !verifiedLegacyIdentity {
+                        // Older Macs identify their notebook through status; never stamp unverified content with our identity.
+                        let status = try await client.contextStatus()
+                        try Task.checkCancellation()
+                        guard memoryGeneration == owner else { throw CancellationError() }
+                        try validate(status)
+                        verifiedLegacyIdentity = true
+                    }
+                    if let revision, revision != page.revision { throw SyncError.invalidPagination }
+                    revision = page.revision; items += page.items; after = page.nextCursor
+                    if let after, !seen.insert(after).inserted { throw SyncError.invalidPagination }
+                } while after != nil
+                break
+            } catch AgentClientError.http(409, "revision_conflict", _, _) where attempt < 3 {
+                try await Task.sleep(for: .milliseconds(150))
+                continue
             }
-            if let revision, revision != page.revision { throw SyncError.invalidPagination }
-            revision = page.revision; items += page.items; after = page.nextCursor
-            if let after, !seen.insert(after).inserted { throw SyncError.invalidPagination }
-        } while after != nil
+        }
         try Task.checkCancellation()
         guard memoryGeneration == owner else { throw CancellationError() }
         let cached = MemoryCache(libraryID: state.libraryID, instanceID: state.connection.instanceID,

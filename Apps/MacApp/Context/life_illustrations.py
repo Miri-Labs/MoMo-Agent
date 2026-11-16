@@ -20,6 +20,14 @@ from context_store import canonical, digest, read_day_start_hour, read_early_tra
 INTERVALS = (2, 3, 4, 6)
 SETTLE_SECONDS = 600
 EPISODE_GAP_SECONDS = 600
+SOFT_EPISODE_SECONDS = 4500
+NATURAL_SPLIT_GAP_SECONDS = 90
+MAX_EPISODE_SECONDS = 7200
+MIN_SPLIT_REMAINDER_SECONDS = 1200
+MIN_ADJACENT_FRAGMENT_SECONDS = 600
+LEGACY_MEGA_SLOT_SECONDS = MAX_EPISODE_SECONDS + 1800
+PREPARING_MAX_ATTEMPTS = 6
+SUBMITTING_MAX_ATTEMPTS = 3
 MIN_SUBSTANTIVE_CHARS = 80
 MIN_MEANINGFUL_CLAUSES = 4
 MAX_ASSET_BYTES = 8 * 1024 * 1024
@@ -44,6 +52,11 @@ PURE_FILLER_RE = re.compile(
 def semantic_text(text):
     # Punctuation/spacing corrections do not justify another image or invalidate one.
     return ''.join(c for c in unicodedata.normalize('NFKC', text) if c.isalnum()).casefold()
+
+
+def _text_bigrams(text):
+    normalized = semantic_text(text or '')
+    return {normalized[index:index + 2] for index in range(len(normalized) - 1)} if len(normalized) >= 2 else set()
 
 
 def substantive_clause(raw_clause):
@@ -422,7 +435,15 @@ class LifeIllustrations:
         row.update(availability, day_start_hour=0, early_transcript_hour=read_early_transcript_hour(self.data))
         row['pending_count'] = self.db.execute("SELECT COUNT(*) FROM slots WHERE state IN ('pending','preparing','submitting')").fetchone()[0]
         row['needs_review_count'] = self.db.execute("SELECT COUNT(*) FROM slots WHERE state='needs_review'").fetchone()[0]
+        row['retryable_count'] = self.db.execute("SELECT COUNT(*) FROM slots WHERE state IN ('invalid','failed','needs_review')").fetchone()[0]
         return row
+
+    def retry_incomplete(self, context, availability, now=None):
+        now = time.time() if now is None else now
+        with self.write():
+            self.db.execute("DELETE FROM slots WHERE state IN ('invalid','failed','needs_review')")
+        self.scan(context, now=now)
+        return self.settings(availability)
 
     def update_settings(self, body, availability, now=None):
         if not isinstance(body, dict) or set(body) - {'enabled', 'interval_hours'}:
@@ -607,7 +628,73 @@ class LifeIllustrations:
                 self.db.execute("UPDATE slots SET source_versions=? WHERE id=? AND state NOT IN ('deleted','invalid')", (canonical(versions), row['id']))
         self.db.execute("INSERT OR REPLACE INTO metadata VALUES('reconciled_sources',?)", (signature,))
 
-    def _episodes(self, context, day_start_hour):
+    @staticmethod
+    def _group_spans_into_episodes(spans, cut_intervals=()):
+        runs = []
+        for recorded_at, _, _, span in spans:
+            text = span['text']
+            if conversation_density(text)[1] < 2:
+                continue
+            zone, _ = source_clock(span)
+            offset = int(zone.utcoffset(None).total_seconds() // 60)
+            name = f'GMT{"+" if offset >= 0 else "-"}{abs(offset) // 60:02d}:{abs(offset) % 60:02d}'
+            local = dt.datetime.fromtimestamp(recorded_at, zone)
+            logical_day = local.date().isoformat()
+            est_end = max(span.get("end_at") or recorded_at, recorded_at + max(2.0, min(60.0, len(text) * 0.22)))
+            item = (recorded_at, est_end, logical_day, name, text)
+            if runs and runs[-1]['timezone'] == name:
+                crossed_cut = any(c_start < recorded_at and c_end > runs[-1]['last_recorded_at']
+                                  for c_start, c_end in cut_intervals)
+                if not crossed_cut and recorded_at - runs[-1]['speech_end'] <= EPISODE_GAP_SECONDS:
+                    runs[-1]['items'].append(item)
+                    runs[-1]['speech_end'] = max(runs[-1]['speech_end'], est_end)
+                    runs[-1]['last_recorded_at'] = max(runs[-1]['last_recorded_at'], recorded_at)
+                    continue
+            runs.append(dict(timezone=name, speech_end=est_end, last_recorded_at=recorded_at, items=[item]))
+
+        episodes = []
+        for run in runs:
+            run_end = run['speech_end']
+            current = None
+            for recorded_at, est_end, logical_day, name, text in run['items']:
+                if current is not None:
+                    gap = recorded_at - current['speech_end']
+                    elapsed = recorded_at - current['start']
+                    remaining = run_end - recorded_at
+                    split_here = (
+                        remaining >= MIN_SPLIT_REMAINDER_SECONDS
+                        and ((elapsed >= SOFT_EPISODE_SECONDS and gap >= NATURAL_SPLIT_GAP_SECONDS)
+                             or elapsed >= MAX_EPISODE_SECONDS)
+                    )
+                else:
+                    split_here = True
+                if split_here:
+                    current = dict(
+                        start=recorded_at,
+                        speech_end=est_end,
+                        last_recorded_at=recorded_at,
+                        logical_day=logical_day,
+                        timezone=name,
+                        texts=[text],
+                    )
+                    episodes.append(current)
+                else:
+                    current['speech_end'] = max(current['speech_end'], est_end)
+                    current['last_recorded_at'] = max(current['last_recorded_at'], recorded_at)
+                    current['texts'].append(text)
+
+        for index, episode in enumerate(episodes):
+            upper = max(episode['speech_end'], episode['last_recorded_at'] + 1.0, episode['start'] + 60.0)
+            if index + 1 < len(episodes):
+                upper = min(upper, episodes[index + 1]['start'])
+            for c_start, _ in cut_intervals:
+                if c_start > episode['last_recorded_at']:
+                    upper = min(upper, c_start)
+            episode['window_start'] = episode['start']
+            episode['window_end'] = max(episode['last_recorded_at'] + 1e-3, upper)
+        return episodes
+
+    def _raw_spans_and_pending_ranges(self, context):
         spans, pending_ranges = [], []
         for row in context.db.execute('SELECT id,payload FROM sources WHERE deleted=0 ORDER BY id'):
             payload = json.loads(row['payload'])
@@ -616,36 +703,37 @@ class LifeIllustrations:
             for span in payload.get('spans', []):
                 spans.append((float(span['recorded_at']), row['id'], span['id'], span))
         spans.sort(key=lambda item: (item[0], item[1], item[2]))
-        episodes = []
-        for recorded_at, _, _, span in spans:
-            text = span['text']
-            if conversation_density(text)[1] < 2:
-                continue
-            zone, quality = source_clock(span)
-            offset = int(zone.utcoffset(None).total_seconds() // 60)
-            name = f'GMT{"+" if offset >= 0 else "-"}{abs(offset) // 60:02d}:{abs(offset) % 60:02d}'
-            local = dt.datetime.fromtimestamp(recorded_at, zone)
-            logical_day = local.date().isoformat()
-            est_end = max(span.get("end_at") or recorded_at, recorded_at + max(2.0, min(60.0, len(text) * 0.22)))
-            if (episodes and episodes[-1]['timezone'] == name
-                    and recorded_at - episodes[-1]['speech_end'] <= EPISODE_GAP_SECONDS):
-                episodes[-1]['speech_end'] = max(episodes[-1]['speech_end'], est_end)
-                episodes[-1]['last_recorded_at'] = max(episodes[-1]['last_recorded_at'], recorded_at)
-            else:
-                episodes.append(dict(
-                    start=recorded_at,
-                    speech_end=est_end,
-                    last_recorded_at=recorded_at,
-                    logical_day=logical_day,
-                    timezone=name,
-                ))
-        for index, episode in enumerate(episodes):
-            upper = max(episode['speech_end'], episode['last_recorded_at'] + 1.0, episode['start'] + 60.0)
-            if index + 1 < len(episodes):
-                upper = min(upper, episodes[index + 1]['start'])
-            episode['window_start'] = episode['start']
-            episode['window_end'] = max(episode['last_recorded_at'] + 1e-3, upper)
-        return episodes, pending_ranges
+        return spans, pending_ranges
+
+    def _episodes(self, context, day_start_hour):
+        spans, pending_ranges = self._raw_spans_and_pending_ranges(context)
+        return self._group_spans_into_episodes(spans), pending_ranges
+
+    def _blocking_intervals(self, base_episodes):
+        blocked, settled_windows = [], []
+        rows = self.db.execute(
+            'SELECT state,window_start,window_end,summary,brief FROM slots ORDER BY window_start'
+        ).fetchall()
+        for row in rows:
+            s_start, s_end = row['window_start'], row['window_end']
+            if row['state'] == 'ready' and (s_end - s_start) > LEGACY_MEGA_SLOT_SECONDS:
+                sub_episodes = [ep for ep in base_episodes if ep['window_start'] < s_end and ep['window_end'] > s_start]
+                if len(sub_episodes) >= 2:
+                    target = _text_bigrams((row['summary'] or '') + ' ' + (row['brief'] or ''))
+                    anchor = max(
+                        sub_episodes,
+                        key=lambda ep: (len(target & _text_bigrams(' '.join(ep['texts']))), -ep['window_start']),
+                    )
+                    interval = (anchor['window_start'], anchor['window_end'])
+                    blocked.append(interval)
+                    settled_windows.append(interval)
+                    continue
+            interval = (s_start, s_end)
+            blocked.append(interval)
+            if row['state'] in ('ready', 'deleted'):
+                settled_windows.append(interval)
+        blocked.sort()
+        return blocked, settled_windows
 
     def scan(self, context, now=None):
         now = time.time() if now is None else now
@@ -653,8 +741,12 @@ class LifeIllustrations:
         settings = self.db.execute('SELECT * FROM settings WHERE id=1').fetchone()
         if not settings['enabled']:
             return
-        day_start_hour = read_day_start_hour(self.data)
-        episodes, pending_ranges = self._episodes(context, day_start_hour)
+        raw_spans, pending_ranges = self._raw_spans_and_pending_ranges(context)
+        base_episodes = self._group_spans_into_episodes(raw_spans)
+        blocked, settled_windows = self._blocking_intervals(base_episodes)
+        uncovered_spans = [item for item in raw_spans if not any(b_start <= item[0] < b_end for b_start, b_end in blocked)]
+        episodes = self._group_spans_into_episodes(uncovered_spans, cut_intervals=blocked)
+        source_entries = _preload_source_entries(context) if episodes else []
         for episode in episodes:
             start, end = episode['window_start'], episode['window_end']
             # Enabling generation also resumes never-generated history; existing slots still prevent replay.
@@ -664,9 +756,15 @@ class LifeIllustrations:
             if any(p_start < episode['speech_end'] + EPISODE_GAP_SECONDS and p_end > start - EPISODE_GAP_SECONDS
                    for p_start, p_end in pending_ranges):
                 continue
-            if self.db.execute('SELECT 1 FROM slots WHERE window_start<? AND window_end>?', (end, start)).fetchone():
-                continue  # Interval changes and re-enabling cannot bill an overlapping conversation again.
-            evidence, versions, semantic, pending = evidence_for(context, start, end)
+            if any(b_start < end and b_end > start for b_start, b_end in blocked):
+                continue
+            abuts_settled = any(
+                (0 <= start - w_end <= EPISODE_GAP_SECONDS) or (0 <= w_start - episode['speech_end'] <= EPISODE_GAP_SECONDS)
+                for w_start, w_end in settled_windows
+            )
+            if abuts_settled and (episode['speech_end'] - start) < MIN_ADJACENT_FRAGMENT_SECONDS:
+                continue
+            evidence, versions, semantic, pending = evidence_for(context, start, end, source_entries=source_entries)
             if pending:
                 continue
             text = '\n'.join(span['text'] for part in evidence['passages'] for span in part['spans'])
@@ -818,9 +916,11 @@ class LifeIllustrations:
             if current['state'] not in ('preparing', 'submitting'):
                 return False
             safe_retry = current['state'] == 'preparing' or getattr(error, 'safe_to_retry', False)
+            max_attempts = PREPARING_MAX_ATTEMPTS if current['state'] == 'preparing' else SUBMITTING_MAX_ATTEMPTS
             attempts = max(current['attempt'], row['attempt'] + 1)
-            state = 'pending' if safe_retry and attempts < 3 else ('failed' if safe_retry else 'needs_review')
+            state = 'pending' if safe_retry and attempts < max_attempts else ('failed' if safe_retry else 'needs_review')
             code = 'service_unavailable' if safe_retry else 'generation_outcome_unknown'
+            backoff = min(3600, 60 * 2**attempts)
             self.db.execute('UPDATE slots SET state=?,attempt=?,retry_at=?,error=?,updated_at=? WHERE id=? AND state=?',
-                            (state, attempts, now + 60 * 2**attempts, code, now, row['id'], current['state']))
+                            (state, attempts, now + backoff, code, now, row['id'], current['state']))
             return False

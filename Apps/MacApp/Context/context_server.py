@@ -28,6 +28,7 @@ class ContextService:
         self.key = (self.data / "api-key").read_text().strip()
         self.memory = MoMoMemory(self.data)
         self.stopped = threading.Event()
+        self.illustration_wake = threading.Event()
         self.next_dispatch = time.monotonic() + 60
         store = ContextStore(self.directory); store.close()
         illustrations = LifeIllustrations(self.data); illustrations.recover(); illustrations.close()
@@ -62,16 +63,23 @@ class ContextService:
                         illustrations = LifeIllustrations(service.data)
                         illustrations.reconcile(store)
                         suffix = url.path.removeprefix('/v1/life-illustrations/')
-                        if suffix == 'settings':
+                        if suffix in ('settings', 'retry'):
                             from life_illustration_generator import CodexIllustrationGenerator
                             availability = CodexIllustrationGenerator(service.data).availability()
                         if self.command == 'POST':
                             size = int(self.headers.get('Content-Length', '0'))
-                            if not 0 < size <= 4096:
+                            if size > 4096 or (suffix != 'retry' and size <= 0):
                                 self.respond(413, {'error': {'code': 'body_too_large'}}); return
-                            body = json.loads(self.rfile.read(size))
+                            body = json.loads(self.rfile.read(size)) if size > 0 else {}
                             if suffix == 'settings':
                                 result = illustrations.update_settings(body, availability)
+                                if result.get('enabled'):
+                                    service.illustration_wake.set()
+                            elif suffix == 'retry':
+                                if not isinstance(body, dict) or body:
+                                    raise ValueError('retry takes no parameters')
+                                result = illustrations.retry_incomplete(store, availability)
+                                service.illustration_wake.set()
                             elif suffix == 'delete':
                                 result = illustrations.delete(body['id'])
                             else:
@@ -193,6 +201,7 @@ class ContextService:
 
     def close(self):
         self.stopped.set()
+        self.illustration_wake.set()
         if self.threads[0].is_alive():
             self.server.shutdown()
         self.server.server_close()
@@ -269,7 +278,11 @@ class ContextService:
 
     def dispatch_illustrations(self):
         # A separate worker and idle admission keep image work out of chat and summary queues.
-        while not self.stopped.wait(30):
+        while not self.stopped.is_set():
+            self.illustration_wake.wait(30)
+            self.illustration_wake.clear()
+            if self.stopped.is_set():
+                break
             store = ContextStore(self.directory)
             illustrations = LifeIllustrations(self.data)
             try:

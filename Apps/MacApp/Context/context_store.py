@@ -291,6 +291,7 @@ class ContextStore:
         def _core_payload(doc: dict) -> dict:
             out = dict(doc)
             out.pop('pending_transcription_ranges', None)
+            out.pop('recorded_at', None)
             if isinstance(out.get("spans"), list):
                 out["spans"] = [
                     {k: v for k, v in s.items() if k not in ("is_owner", "timezone_offset", "end_at")} if isinstance(s, dict) else s
@@ -306,12 +307,16 @@ class ContextStore:
                 if previous["revision"] == revision:
                     prev_payload = json.loads(previous["payload"])
                     if prev_payload != payload:
+                        if prev_payload.get("recorded_at") is not None and payload.get("recorded_at") is not None:
+                            payload["recorded_at"] = min(float(prev_payload["recorded_at"]), float(payload["recorded_at"]))
                         old_spans = {sp["id"]: sp for sp in prev_payload.get("spans", [])}
                         for sp in payload.get("spans", []):
                             old = old_spans.get(sp["id"], {})
                             for key in ("timezone_offset", "end_at"):
                                 if old.get(key) is not None:
                                     if sp.get(key) is None:
+                                        sp[key] = old[key]
+                                    elif key == "end_at" and abs(float(old[key]) - float(sp[key])) < 1e-3:
                                         sp[key] = old[key]
                                     elif old[key] != sp[key]:
                                         raise Conflict("Source clock evidence differs at the same revision")

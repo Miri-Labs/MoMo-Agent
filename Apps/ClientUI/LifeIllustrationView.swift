@@ -240,6 +240,22 @@ struct LifeIllustrationSettingsControls: View {
         Text(store.settingsDetailStatus).font(.footnote).foregroundStyle(.secondary)
             .accessibilityIdentifier("lifeIllustration.settings.subscription")
             .task { await store.refresh() }
+        if store.settings.pendingCount > 0 {
+            Text("后台排队待生成：\(store.settings.pendingCount) 张")
+                .font(.footnote).foregroundStyle(.secondary)
+                .accessibilityIdentifier("lifeIllustration.settings.pendingCount")
+        }
+        if store.settings.retryableCount > 0 {
+            HStack {
+                Text("未完成的历史时段：\(store.settings.retryableCount) 张")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Spacer()
+                Button("重新入队生成") { retry() }
+                    .font(.footnote)
+                    .disabled(!store.settings.supported || !store.settings.enabled || saving)
+                    .accessibilityIdentifier("lifeIllustration.settings.retry")
+            }
+        }
         if let failure = failure ?? store.error {
             Text(failure).font(.footnote).foregroundStyle(MoMoPalette.failure)
         }
@@ -250,6 +266,15 @@ struct LifeIllustrationSettingsControls: View {
         Task {
             defer { saving = false }
             do { try await store.updateSettings(enabled: enabled, intervalHours: interval); failure = nil }
+            catch { failure = error.localizedDescription }
+        }
+    }
+
+    private func retry() {
+        saving = true
+        Task {
+            defer { saving = false }
+            do { try await store.retryIncomplete(); failure = nil }
             catch { failure = error.localizedDescription }
         }
     }

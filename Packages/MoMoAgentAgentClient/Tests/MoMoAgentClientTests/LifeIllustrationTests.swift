@@ -407,6 +407,25 @@ final class LifeIllustrationTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(pending.tombstone().pendingTranscriptionRanges, [])
     }
 
+    @MainActor
+    func testRetryIncompleteAndLegacySettingsDecode() async throws {
+        // Legacy manifest.json settings without retryableCount fall back cleanly to needsReviewCount.
+        let legacyJSON = Data(#"{"enabled":true,"intervalHours":3,"supported":true,"serviceStatus":"ready","needsReviewCount":3}"#.utf8)
+        let decoded = try JSONDecoder().decode(LifeIllustrationSettings.self, from: legacyJSON)
+        XCTAssertEqual(decoded.retryableCount, 3)
+
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let route = IllustrationTransport()
+        await route.setRetryable(count: 5)
+        let store = try makeStore(directory, route: route)
+        await store.refresh()
+        XCTAssertEqual(store.settings.retryableCount, 5)
+        try await store.retryIncomplete()
+        XCTAssertEqual(store.settings.retryableCount, 0)
+        XCTAssertEqual(store.settings.pendingCount, 5)
+    }
+
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("life-illustration-test-\(UUID())")
     }
@@ -457,6 +476,7 @@ private actor IllustrationTransport: AgentTransport {
     func setOffline(_ value: Bool) { offline = value }
     func setUnauthorized(_ value: Bool) { unauthorized = value }
     func enrichClock() { enrichedClock = true }
+    func setRetryable(count: Int) { settings.retryableCount = count; settings.enabled = true }
 
     func open(_ request: URLRequest) async throws -> AgentByteStream? {
         requests.append(request)
@@ -503,6 +523,12 @@ private actor IllustrationTransport: AgentTransport {
         case "delete":
             deleted = true
             data = try encode(LifeIllustrationTombstone(id: "illustration-1", deleted: true, updatedAt: 200))
+        case "retry":
+            XCTAssertEqual(request.httpMethod, "POST")
+            settings.pendingCount += settings.retryableCount
+            settings.retryableCount = 0
+            settings.needsReviewCount = 0
+            data = try encode(settings)
         default:
             assetRequests += 1
             if let barrier = assetBarrier, barrier.number == assetRequests {

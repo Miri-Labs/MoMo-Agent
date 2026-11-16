@@ -41,7 +41,7 @@ def permitted_route(method, path):
         suffix = target.removeprefix('/v1/life-illustrations/')
         query = parse_qs(parts.query, keep_blank_values=True)
         valid = (method == 'GET' and suffix == 'settings' and not parts.query or
-                 method == 'POST' and suffix in ('settings', 'delete') and not parts.query or
+                 method == 'POST' and suffix in ('settings', 'delete', 'retry') and not parts.query or
                  method == 'GET' and re.fullmatch(r'assets/[a-f0-9]{64}', suffix) and not parts.query or
                  method == 'GET' and suffix == 'manifest' and set(query) <= {'cursor', 'limit'}
                  and all(len(value) == 1 and value[0].isdigit() for value in query.values()))

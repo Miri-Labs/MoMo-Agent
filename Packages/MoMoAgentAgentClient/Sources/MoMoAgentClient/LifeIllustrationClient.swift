@@ -12,6 +12,11 @@ extension AgentClient {
         return try decodeLifeIllustrations(await request(path: ["v1", "life-illustrations", "settings"], method: "POST", body: body))
     }
 
+    public func retryLifeIllustrations() async throws -> LifeIllustrationSettings {
+        try decodeLifeIllustrations(await request(
+            path: ["v1", "life-illustrations", "retry"], method: "POST", body: Data("{}".utf8)))
+    }
+
     public func lifeIllustrationManifest(cursor: String = "0") async throws -> LifeIllustrationManifest {
         try decodeLifeIllustrations(await request(path: ["v1", "life-illustrations", "manifest"],
             query: [.init(name: "cursor", value: cursor), .init(name: "limit", value: "100")]))
