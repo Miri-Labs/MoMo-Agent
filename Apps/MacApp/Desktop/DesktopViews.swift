@@ -823,6 +823,7 @@ struct PairingQRCode: View {
 
 struct DesktopChat: View {
     @Environment(\.openWindow) private var openWindow
+    private let headerOverlap: CGFloat = 12
     @Bindable var model: DesktopModel
     var isActive: Bool = true
     var composerFocusToken: UInt64 = 0
@@ -831,78 +832,49 @@ struct DesktopChat: View {
     @State private var showingActiveTasks = false
     @State private var dismissedBriefingCardIDs: Set<String> = DreamDismissedCardsStore.load()
     @State private var showingBriefingDetail = false
+    @Environment(\.accessibilityReduceMotion) private var reduced
 
     private var briefingDocument: DreamBriefingDocument? {
         model.vaultSnapshot.briefingDocument
-    }
-
-    private static var timeGreeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<12: return String(localized: "早上好，今天想推进什么？")
-        case 12..<18: return String(localized: "下午好，有什么交给 MoMo？")
-        case 18..<23: return String(localized: "晚上好，有什么交给 MoMo？")
-        default: return String(localized: "夜深了，有什么想交给 MoMo？")
-        }
     }
 
     var body: some View {
         VStack(spacing: 0) {
             if let store = model.taskStore {
                 let isEmpty = store.isEmpty
-                // Grok Bot (`sand`) unified 44pt stage header bar (uses native vector avatar instead of a second WKWebView)
-                DesktopChatHeaderBar(
-                    store: store,
-                    showIdentity: !isEmpty,
-                    showingActiveTasks: $showingActiveTasks
-                )
 
-                if isEmpty {
-                    // Grok Bot zero-state hero: centered mascot, optical heading, inline composer, and X-Card suggestions
-                    Spacer(minLength: 24)
-                    VStack(spacing: 20) {
-                        VStack(spacing: 12) {
-                            PersonalAgentSlot(
-                                size: 104,
-                                active: isActive && store.hasActiveTask,
-                                playful: true,
-                                expression: store.hasActiveTask ? .thinking : .present
-                            )
-                            Text(Self.timeGreeting)
-                                .font(.system(size: 21, weight: .medium))
-                                .tracking(-0.32)
-                                .foregroundStyle(MoMoPalette.ink)
+                // Iconic centered MoMo live mascot header: kept in one stable identity across empty <-> active chat!
+                ZStack {
+                    if !isEmpty {
+                        HStack(spacing: 0) {
+                            DesktopWindowDragRegion()
+                            Spacer().frame(width: 120)
+                            DesktopWindowDragRegion()
                         }
-
-                        DesktopComposerHost(
-                            store: store,
-                            focusRequestToken: composerFocusToken,
-                            onSent: { composeRevision += 1 },
-                            onPreviewAttachment: { previewAttachment = $0 },
-                            onError: { model.failure = $0 }
-                        )
-                        .frame(maxWidth: 680)
-                        .padding(.horizontal, 28)
-
-                        DesktopHomeSuggestionsHost(
-                            store: store,
-                            briefingDocument: briefingDocument,
-                            compact: false,
-                            dismissedBriefingCardIDs: $dismissedBriefingCardIDs,
-                            onSent: { composeRevision += 1 },
-                            onOpenBriefing: { showingBriefingDetail = true },
-                            onOpenNotebook: { model.selection = "memory" },
-                            onError: { model.failure = $0 }
-                        )
-                        .frame(maxWidth: 696)
                     }
-                    Spacer(minLength: 36)
-                } else {
+                    VStack(spacing: isEmpty ? 18 : 6) {
+                        PersonalAgentSlot(
+                            size: isEmpty ? 144 : 56,
+                            active: isActive && (isEmpty || store.hasActiveTask),
+                            playful: isEmpty,
+                            expression: store.hasActiveTask ? .thinking : .present
+                        )
+                        PhoneBrandWordmark(.momo, size: isEmpty ? 22 : 12)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(maxHeight: isEmpty ? .infinity : nil)
+                .padding(.top, isEmpty ? 0 : 12)
+                .padding(.bottom, isEmpty ? 0 : 8)
+                .zIndex(1)
+
+                if !isEmpty {
                     // Isolated transcript host: never re-evaluates or rebuilds 400+ message snapshot when typing in draft!
                     DesktopChatTranscriptStage(
                         store: store,
                         readingPosition: model.readingPosition,
                         composeRevision: composeRevision,
+                        headerOverlap: headerOverlap,
                         isChatVisible: isActive && !showingActiveTasks && !showingBriefingDetail && previewAttachment == nil,
                         isChatSelected: isActive,
                         onReadingPosition: model.rememberReadingPosition,
@@ -913,55 +885,56 @@ struct DesktopChat: View {
                         },
                         onError: { model.failure = $0 }
                     )
-
-                    DesktopHomeSuggestionsHost(
-                        store: store,
-                        briefingDocument: briefingDocument,
-                        compact: true,
-                        dismissedBriefingCardIDs: $dismissedBriefingCardIDs,
-                        onSent: { composeRevision += 1 },
-                        onOpenBriefing: { showingBriefingDetail = true },
-                        onOpenNotebook: { model.selection = "memory" },
-                        onError: { model.failure = $0 }
-                    )
-                    .frame(maxWidth: 724)
-
-                    RemoteTaskControlsView(store: store, returnDesktop: {
-                        do { try model.desktopHost?.returnControl() }
-                        catch { model.failure = error.localizedDescription }
-                    })
-                    .frame(maxWidth: 724)
-
-                    RemoteTaskRecoveryView(store: store)
-                        .frame(maxWidth: 724)
-
-                    if let failure = store.interactionFailure {
-                        Text(failure)
-                            .font(.system(size: 12))
-                            .foregroundStyle(MoMoPalette.failure)
-                            .padding(.bottom, 4)
-                    }
-
-                    DesktopComposerHost(
-                        store: store,
-                        focusRequestToken: composerFocusToken,
-                        onSent: { composeRevision += 1 },
-                        onPreviewAttachment: { previewAttachment = $0 },
-                        onError: { model.failure = $0 }
-                    )
-                    .frame(maxWidth: 724)
-                    .padding(.horizontal, 28)
-                    .padding(.bottom, 16)
-                    .padding(.top, 6)
+                    .padding(.top, -headerOverlap)
                 }
+
+                DesktopHomeSuggestionsHost(
+                    store: store,
+                    briefingDocument: briefingDocument,
+                    compact: !isEmpty,
+                    dismissedBriefingCardIDs: $dismissedBriefingCardIDs,
+                    onSent: { composeRevision += 1 },
+                    onOpenBriefing: { showingBriefingDetail = true },
+                    onOpenNotebook: { model.selection = "memory" },
+                    onError: { model.failure = $0 }
+                )
+                .frame(maxWidth: 724)
+
+                RemoteTaskControlsView(store: store, returnDesktop: {
+                    do { try model.desktopHost?.returnControl() }
+                    catch { model.failure = error.localizedDescription }
+                })
+                .frame(maxWidth: 724)
+
+                RemoteTaskRecoveryView(store: store)
+                    .frame(maxWidth: 724)
+
+                if let failure = store.interactionFailure {
+                    Text(failure)
+                        .font(.system(size: 12))
+                        .foregroundStyle(MoMoPalette.failure)
+                        .padding(.bottom, 4)
+                }
+
+                DesktopComposerHost(
+                    store: store,
+                    focusRequestToken: composerFocusToken,
+                    onSent: { composeRevision += 1 },
+                    onPreviewAttachment: { previewAttachment = $0 },
+                    onError: { model.failure = $0 }
+                )
+                .frame(maxWidth: 724)
+                .padding(.horizontal, 28)
+                .padding(.bottom, 18)
+                .padding(.top, 8)
             } else {
                 ZStack {
                     DesktopWindowDragRegion()
                 }
                 .frame(height: 44)
                 Spacer()
-                PersonalAgentSlot(size: 116, active: false, expression: .concerned)
-                PhoneBrandWordmark(.momo, size: 22).padding(.top, 10)
+                PersonalAgentSlot(size: 144, active: false, expression: .concerned)
+                PhoneBrandWordmark(.momo, size: 24).padding(.top, 10)
                 Text("MoMo 暂时没有连接上")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(MoMoPalette.muted)
@@ -978,6 +951,22 @@ struct DesktopChat: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MoMoPalette.canvas)
+        .overlay(alignment: .topLeading) {
+            if model.taskStore?.isEmpty == true {
+                DesktopWindowDragRegion()
+                    .frame(height: 44)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 8) {
+                if let store = model.taskStore {
+                    DesktopChatModeCapsule(store: store)
+                }
+                DesktopActiveTasksBadgeButton(store: model.taskStore, showingActiveTasks: $showingActiveTasks)
+            }
+            .padding(.top, 12)
+            .padding(.trailing, 16)
+        }
         .task {
             if model.memories.isEmpty {
                 await model.loadContextIfStale(maxAge: 15)
@@ -1007,6 +996,7 @@ struct DesktopChat: View {
                 .background(MoMoPalette.paper)
             }
         }
+        .animation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.86), value: model.taskStore?.isEmpty)
     }
 }
 
@@ -1015,6 +1005,7 @@ private struct DesktopChatTranscriptStage: View {
     let store: RemoteTaskStore
     let readingPosition: ChatReadingPosition?
     let composeRevision: Int
+    let headerOverlap: CGFloat
     let isChatVisible: Bool
     let isChatSelected: Bool
     let onReadingPosition: (ChatReadingPosition) -> Void
@@ -1029,7 +1020,7 @@ private struct DesktopChatTranscriptStage: View {
             scrollToBottomRequest: composeRevision,
             isChatVisible: isChatVisible,
             isChatSelected: isChatSelected,
-            headerInset: 4,
+            headerInset: headerOverlap,
             onReadingPosition: onReadingPosition,
             onAttachment: { id in
                 if let att = store.attachment(id: id) {
@@ -1085,60 +1076,7 @@ private struct DesktopHomeSuggestionsHost: View {
                 onOpenNotebook: onOpenNotebook
             )
             .padding(.top, compact ? 6 : 2)
-            .padding(.bottom, compact ? 4 : 0)
-        }
-    }
-}
-
-/// Grok Bot (`sand`) unified 44pt stage header bar with native avatar, mode toggle pill, and async tasks island.
-private struct DesktopChatHeaderBar: View {
-    let store: RemoteTaskStore
-    let showIdentity: Bool
-    @Binding var showingActiveTasks: Bool
-
-    var body: some View {
-        ZStack {
-            DesktopWindowDragRegion()
-            HStack(spacing: 10) {
-                if showIdentity {
-                    HStack(spacing: 8) {
-                        SandNativeAvatarBadge(
-                            size: 24,
-                            online: true,
-                            busy: store.hasActiveTask,
-                            ringBackground: MoMoPalette.canvas
-                        )
-                        Text("MoMo")
-                            .font(.system(size: 13.5, weight: .medium))
-                            .tracking(-0.1)
-                            .foregroundStyle(MoMoPalette.ink)
-                        if store.hasActiveTask {
-                            HStack(spacing: 5) {
-                                SandWorkingDots()
-                                Text("思考中")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(MoMoPalette.muted)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(MoMoPalette.ink.opacity(0.045), in: Capsule())
-                        }
-                    }
-                }
-                Spacer(minLength: 12)
-                DesktopChatModeCapsule(store: store)
-                DesktopActiveTasksBadgeButton(store: store, showingActiveTasks: $showingActiveTasks)
-            }
-            .padding(.horizontal, 16)
-        }
-        .frame(height: 44)
-        .overlay(alignment: .bottom) {
-            if showIdentity {
-                Rectangle()
-                    .fill(MoMoPalette.borderSubtle)
-                    .frame(height: 0.5)
-                    .allowsHitTesting(false)
-            }
+            .padding(.bottom, compact ? 4 : 6)
         }
     }
 }

@@ -64,16 +64,24 @@ struct PersonalAgentSlot: View {
     var conversationID: UUID?
     var action: () -> Void = {}
     @State private var greeting = 0
+    @State private var greetingPulse = false
+    @State private var greetingTask: Task<Void, Never>?
     @State private var visible = false
 
     var body: some View {
         ZStack {
             // UIKit-backed live content must not be rendered as a Button label snapshot.
-            PersonalAgentActor(size: size, active: active && visible, greeting: greeting, playful: playful,
+            PersonalAgentActor(size: size, active: (active || greetingPulse) && visible, greeting: greeting, playful: playful,
                                expression: expression, conversationID: conversationID)
                 .allowsHitTesting(false)
             Button {
                 greeting += 1
+                greetingPulse = true
+                greetingTask?.cancel()
+                greetingTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(980))
+                    if !Task.isCancelled { greetingPulse = false }
+                }
                 action()
             } label: {
                 Color.clear.frame(width: size, height: size).contentShape(Rectangle())
@@ -84,7 +92,7 @@ struct PersonalAgentSlot: View {
         }
         .frame(width: size, height: size)
         .onAppear { visible = true }
-        .onDisappear { visible = false }
+        .onDisappear { visible = false; greetingTask?.cancel(); greetingPulse = false }
     }
 }
 
