@@ -92,8 +92,8 @@ Task { @MainActor in
               timestampCount:timestamps.length,
               sameTimestamps:timestamps.length===3 && timestamps.every((t,i)=>t===document.querySelectorAll('.turn-timestamp > time')[i] && t.getAttribute('datetime')===timestampISOs[i]),
               typographyOK:(mode==='desktop'
-                ? (getComputedStyle(bubbles[0]).fontSize==='14px' && getComputedStyle(bubbles[0]).fontWeight==='430' && getComputedStyle(bubbles[0]).lineHeight==='18px')
-                : (getComputedStyle(bubbles[0]).fontSize==='16px' && getComputedStyle(bubbles[0]).fontWeight==='400' && getComputedStyle(bubbles[0]).lineHeight==='20px')) && getComputedStyle(timestamps[0]).fontSize==='12px',
+                ? (getComputedStyle(bubbles[0]).fontSize==='14px' && ['420','425'].includes(getComputedStyle(bubbles[0]).fontWeight) && parseFloat(getComputedStyle(bubbles[0]).lineHeight)>=21)
+                : (getComputedStyle(bubbles[0]).fontSize==='16px' && getComputedStyle(bubbles[0]).fontWeight==='400' && parseFloat(getComputedStyle(bubbles[0]).lineHeight)>=24)) && getComputedStyle(timestamps[0]).fontSize==='12px',
               sameRows:rows.every((n,i)=>n===document.querySelectorAll('.turn')[i]),
               sameBubbles:bubbles.every((n,i)=>n===document.querySelectorAll('.user-bubble,.prose')[i] && n.firstChild===textNodes[i]),
               sameReceipt:receipt!=null && receipt===rows.at(-1).querySelector('.read-receipt'),

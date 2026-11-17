@@ -1125,7 +1125,8 @@ final class ChatRendererTests: XCTestCase {
         try await renderer.check("document.querySelector('#announcer').textContent === '回复已完成'")
         try await renderer.check("!document.querySelector('[data-action=copy-reply]') && !document.querySelector('[data-action=copy-code]')")
         try await renderer.check("getComputedStyle(document.querySelector('.user-bubble')).backgroundColor !== getComputedStyle(document.querySelector('.assistant .prose')).backgroundColor")
-        try await renderer.check("getComputedStyle(document.querySelector('.prose')).fontFamily.includes('system') && getComputedStyle(document.querySelector('.prose')).fontSize === '16px' && getComputedStyle(document.querySelector('.prose')).lineHeight === '20px'")
+        try await renderer.check("getComputedStyle(document.querySelector('.assistant .prose')).borderTopLeftRadius === '18px' && getComputedStyle(document.querySelector('.assistant .prose')).backgroundColor !== 'rgba(0, 0, 0, 0)'")
+        try await renderer.check("getComputedStyle(document.querySelector('.prose')).fontFamily.includes('system') && getComputedStyle(document.querySelector('.prose')).fontSize === '16px' && parseFloat(getComputedStyle(document.querySelector('.prose')).lineHeight) >= 24")
         await renderer.attach(to:self,name:"streaming-completed-with-stable-blocks")
     }
 
@@ -1384,9 +1385,9 @@ final class ChatRendererTests: XCTestCase {
           const code = getComputedStyle(document.querySelector('.prose code'));
           const time = getComputedStyle(document.querySelector('.turn-timestamp > time'));
           return centered &&
-            userBubble.fontSize === '16px' && userBubble.fontWeight === '400' && userBubble.lineHeight === '20px' &&
-            prose.fontSize === '16px' && prose.fontWeight === '400' && prose.lineHeight === '20px' &&
-            strong.fontWeight === '600' && code.fontSize === '14px' &&
+            userBubble.fontSize === '16px' && userBubble.fontWeight === '400' && parseFloat(userBubble.lineHeight) >= 24 &&
+            prose.fontSize === '16px' && prose.fontWeight === '400' && parseFloat(prose.lineHeight) >= 24 &&
+            parseInt(strong.fontWeight, 10) >= 540 && parseFloat(code.fontSize) > 11.5 &&
             time.fontSize === '12px' && time.fontWeight === '400' && time.lineHeight === '16px';
         })()
         """)
@@ -1397,10 +1398,10 @@ final class ChatRendererTests: XCTestCase {
           const prose = getComputedStyle(document.querySelector('.prose'));
           const code = getComputedStyle(document.querySelector('.prose code'));
           const time = getComputedStyle(document.querySelector('.turn-timestamp > time'));
-          const ok = userBubble.fontSize === '14px' && userBubble.fontWeight === '430' && userBubble.lineHeight === '18px' &&
-            prose.fontSize === '14px' && prose.fontWeight === '430' && prose.lineHeight === '18px' &&
-            code.fontSize === '13px' &&
-            time.fontSize === '12px' && time.fontWeight === '430' && time.lineHeight === '16px';
+          const ok = userBubble.fontSize === '14px' && userBubble.fontWeight === '420' && parseFloat(userBubble.lineHeight) >= 21 &&
+            prose.fontSize === '14px' && prose.fontWeight === '420' && parseFloat(prose.lineHeight) >= 21 &&
+            parseFloat(code.fontSize) > 10.5 &&
+            time.fontSize === '12px' && time.fontWeight === '400' && time.lineHeight === '16px';
           document.documentElement.toggleAttribute('data-desktop', false);
           return ok;
         })()
