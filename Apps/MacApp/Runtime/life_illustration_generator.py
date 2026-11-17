@@ -322,11 +322,12 @@ class CodexIllustrationGenerator:
                     completion = run_antigravity_completion(
                         model=llm['model_id'],
                         messages=messages,
-                        tools=openai_tools if (use_tools and step < 3) else None,
+                        tools=openai_tools if use_tools else None,
                         tool_choice='none' if (use_tools and step >= 3) else None,
                         data_dir=self.data,
                         timeout=120.0,
                         background=True,
+                        oneshot=not use_tools,
                     )
                 except Exception as err:
                     record_provider_issue(self.data, err, provider='antigravity')

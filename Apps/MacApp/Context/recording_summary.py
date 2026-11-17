@@ -11,6 +11,8 @@ from context_store import Conflict, canonical, digest
 PART_BYTES = 32_000
 RESULT_BYTES = 8_000
 MAX_INPUT_BYTES = 2_000_000
+LIVE_WINDOW_SETTLE_SECONDS = 90.0
+RECOMPUTE_COOLDOWN_SECONDS = 600.0
 POLICY = '''你正在为 MoMo Agent 的录音详情生成总结。只输出简洁的中文 Markdown 总结，直接写内容，不寒暄、不说明正在总结。
 先用一句话概括主题，再列出有信息量的要点、明确决定和确实提到的待办；没有的栏目不写。总长尽量在 300–600 字以内。
 转录由语音识别生成，常有同音字、近音词、中英混杂误听或词形破碎（例如把“GitHub Actions”误听成“get up 的 action”，或把常见技术、产品、工具名、缩写识别成发音相近的普通词），也可能漏字、重复、混有多人发言。请结合上下文语境与领域常识主动推断并还原明显被误听的专业术语、产品/工具名与固定搭配，不要机械照抄不通顺的错词；若语境仍不足以唯一确定原词，则按讨论的实际动作或含义客观表述，不要硬猜具体名称。
@@ -32,7 +34,7 @@ def chunks(text, budget=PART_BYTES):
     return result
 
 
-def enqueue(store, body):
+def enqueue(store, body, *, auto_background=False, window_end_at=None):
     library = str(uuid.UUID(body['library_id']))
     revision, text, window = body['revision'], body['text'], body['window_id']
     if not isinstance(window, str) or not re.fullmatch(r'-?\d+-[-\d]+', window):
@@ -45,6 +47,7 @@ def enqueue(store, body):
         raise ValueError('Recording exceeds 2 MB; nothing was truncated or accepted')
     identity = str(uuid.uuid5(uuid.NAMESPACE_URL, 'momo-summary-v1:' + library + ':' + revision))
     fingerprint = digest(text)
+    end_ts = float(window_end_at) if isinstance(window_end_at, (int, float)) else None
     with store.write():
         previous = store.db.execute('SELECT * FROM recording_summaries WHERE id=?', (identity,)).fetchone()
         if previous and previous['fingerprint'] != fingerprint:
@@ -53,10 +56,24 @@ def enqueue(store, body):
             AND first_attempt IS NULL AND json_extract(input,'$.library_id')=? AND json_extract(input,'$.window_id')=?""",
                          (identity, library, window))
         if not previous:
-            store.db.execute('INSERT OR IGNORE INTO recording_summaries(id,fingerprint,input,parts) VALUES(?,?,?,?)',
-                             (identity, fingerprint, canonical({'library_id': library, 'revision': revision, 'window_id': window}), canonical(chunks(text))))
+            store.db.execute(
+                'INSERT OR IGNORE INTO recording_summaries(id,fingerprint,input,parts,auto_background,window_end_at) VALUES(?,?,?,?,?,?)',
+                (
+                    identity,
+                    fingerprint,
+                    canonical({'library_id': library, 'revision': revision, 'window_id': window}),
+                    canonical(chunks(text)),
+                    int(bool(auto_background)),
+                    end_ts,
+                ),
+            )
         elif previous['state'] == 'superseded':
-            store.db.execute("UPDATE recording_summaries SET state='pending',error=NULL WHERE id=?", (identity,))
+            store.db.execute(
+                "UPDATE recording_summaries SET state='pending',error=NULL,auto_background=?,window_end_at=COALESCE(?,window_end_at) WHERE id=?",
+                (int(bool(auto_background)), end_ts, identity),
+            )
+        elif not auto_background and previous['state'] == 'pending' and previous['auto_background']:
+            store.db.execute("UPDATE recording_summaries SET auto_background=0 WHERE id=?", (identity,))
     return read(store, identity)
 
 
@@ -68,9 +85,36 @@ def read(store, identity):
             'text': row['result'], 'error': row['error']}
 
 
-def next_job(store):
+def next_job(store, now=None):
     # Reconcile an admitted run before starting another. Multiple GETs never trigger inference.
-    return store.db.execute("SELECT * FROM recording_summaries WHERE state IN ('pending','running') ORDER BY CASE WHEN state='running' THEN 0 ELSE 1 END, rowid LIMIT 1").fetchone()
+    running = store.db.execute(
+        "SELECT * FROM recording_summaries WHERE state='running' ORDER BY rowid LIMIT 1"
+    ).fetchone()
+    if running is not None:
+        return running
+
+    ts = time.time() if now is None else float(now)
+    candidates = store.db.execute(
+        "SELECT * FROM recording_summaries WHERE state='pending' ORDER BY auto_background ASC, rowid ASC"
+    ).fetchall()
+    for row in candidates:
+        # Explicit user requests and already-started multi-part reductions run without delay.
+        if not row['auto_background'] or row['first_attempt'] is not None or row['stage'] > 0 or row['part'] > 0:
+            return row
+        end_at = row['window_end_at']
+        if isinstance(end_at, (int, float)) and ts - float(end_at) < LIVE_WINDOW_SETTLE_SECONDS:
+            continue
+        inp = json.loads(row['input'])
+        last_done = store.db.execute(
+            """SELECT MAX(finished) FROM recording_summaries
+               WHERE state='done' AND finished IS NOT NULL
+                 AND json_extract(input,'$.library_id')=? AND json_extract(input,'$.window_id')=?""",
+            (inp.get('library_id'), inp.get('window_id')),
+        ).fetchone()[0]
+        if isinstance(last_done, (int, float)) and ts - float(last_done) < RECOMPUTE_COOLDOWN_SECONDS:
+            continue
+        return row
+    return None
 
 
 def operation(job):
@@ -122,8 +166,11 @@ def advance(store, job, request):
                 if not guarantee.get('durable') or not guarantee.get('supported') or guarantee.get('retention_seconds', 0) <= 120:
                     raise Conflict('Gateway lacks durable summary admission')
                 first = time.time(); deadline = first + guarantee['retention_seconds'] - 60
-                claimed = store.db.execute("UPDATE recording_summaries SET first_attempt=?,replay_before=? WHERE id=? AND state='pending' AND first_attempt IS NULL",
-                                           (first, deadline, job['id'])).rowcount
+                with store.write():
+                    claimed = store.db.execute(
+                        "UPDATE recording_summaries SET first_attempt=?,replay_before=? WHERE id=? AND state='pending' AND first_attempt IS NULL",
+                        (first, deadline, job['id']),
+                    ).rowcount
                 if not claimed:
                     return
             if time.time() >= deadline:
@@ -131,7 +178,8 @@ def advance(store, job, request):
             run = request('/v1/runs', {'input': prompt(job), 'session_id': session}, operation(job))
             if not isinstance(run.get('run_id'), str) or not run['run_id']:
                 raise Conflict('Invalid summary admission receipt')
-            store.db.execute("UPDATE recording_summaries SET run_id=?,state='running',error=NULL WHERE id=?", (run['run_id'], job['id']))
+            with store.write():
+                store.db.execute("UPDATE recording_summaries SET run_id=?,state='running',error=NULL WHERE id=?", (run['run_id'], job['id']))
             # Native 202 acknowledges only run_id/status; identity and output come from GET.
             run = request('/v1/runs/' + urllib.parse.quote(run['run_id'], safe=''))
         if run.get('session_id') != session or not run.get('run_id') or (job['run_id'] and run['run_id'] != job['run_id']):
@@ -147,5 +195,8 @@ def advance(store, job, request):
     except Exception as error:
         terminal = isinstance(error, Conflict) or isinstance(error, urllib.error.HTTPError) and error.code in {400, 403, 404, 409, 410, 422}
         # No transcript, account details or upstream response body in public error fields.
-        store.db.execute("UPDATE recording_summaries SET state=CASE WHEN ? THEN 'needs_review' ELSE state END,error=? WHERE id=? AND state IN ('pending','running')",
-                         (int(terminal), 'summary_needs_review' if terminal else 'connection_unavailable', job['id']))
+        with store.write():
+            store.db.execute(
+                "UPDATE recording_summaries SET state=CASE WHEN ? THEN 'needs_review' ELSE state END,error=? WHERE id=? AND state IN ('pending','running')",
+                (int(terminal), 'summary_needs_review' if terminal else 'connection_unavailable', job['id']),
+            )

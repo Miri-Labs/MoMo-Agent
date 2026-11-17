@@ -202,6 +202,11 @@ class ContextStore:
             with self.write():
                 if 'checkpoint_page' not in {row[1] for row in self.db.execute('PRAGMA table_info(memory_reviews)')}:
                     self.db.execute('ALTER TABLE memory_reviews ADD COLUMN checkpoint_page INTEGER NOT NULL DEFAULT 0')
+                summary_cols = {row[1] for row in self.db.execute('PRAGMA table_info(recording_summaries)')}
+                if 'auto_background' not in summary_cols:
+                    self.db.execute('ALTER TABLE recording_summaries ADD COLUMN auto_background INTEGER NOT NULL DEFAULT 0')
+                if 'window_end_at' not in summary_cols:
+                    self.db.execute('ALTER TABLE recording_summaries ADD COLUMN window_end_at REAL')
             initialized_id = _db_identity(db_path)
             if initialized_id is not None:
                 with _CACHE_LOCK:
@@ -399,7 +404,12 @@ class ContextStore:
                     tz_offset = int(_dt.datetime.fromtimestamp(g["recorded_at"]).astimezone().utcoffset().total_seconds())
                     win_key = f"{int(g['recorded_at'])}-{tz_offset}"
                     try:
-                        recording_summary.enqueue(self, {"library_id": library_id, "window_id": win_key, "revision": fp, "text": w_text})
+                        recording_summary.enqueue(
+                            self,
+                            {"library_id": library_id, "window_id": win_key, "revision": fp, "text": w_text},
+                            auto_background=True,
+                            window_end_at=g["end_at"],
+                        )
                         active_fps.add(fp)
                     except Exception:
                         pass
@@ -649,6 +659,8 @@ class ContextStore:
                             recording_summary.enqueue(
                                 self,
                                 {"library_id": library_id, "window_id": win_key, "revision": fp, "text": w_text},
+                                auto_background=True,
+                                window_end_at=w["end_at"],
                             )
                             active_fps.add(fp)
                         except Exception:
