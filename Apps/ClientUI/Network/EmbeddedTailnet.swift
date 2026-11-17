@@ -56,6 +56,11 @@ final class EmbeddedTailnet {
         hostname = "momo-" + device + "-" + String(directory.lastPathComponent.lowercased().filter { $0.isLetter || $0.isNumber }.suffix(8))
     }
 
+    private var canRebuildForRecoveryNow: Bool {
+        guard let lastRecoveryRestart else { return true }
+        return lastRecoveryRestart.duration(to: .now) >= recoveryRestartInterval
+    }
+
     func start() async throws {
         guard proxySettingsError == nil else { throw TailnetError.unavailable }
         let checkedProxy = needsProxyCheck
@@ -63,14 +68,26 @@ final class EmbeddedTailnet {
         if let closing { await closing.value }
         try Task.checkCancellation()
         guard !signingOut, !signedOut else { throw TailnetError.loginRequired }
-        if needsRestart { try await rebuildForRecovery(); return try await start() }
+        if needsRestart, (node == nil || canRebuildForRecoveryNow) {
+            try await rebuildForRecovery()
+            return try await start()
+        }
         if let existing = node {
             let attempt = generation
-            if checkedProxy || state != "Running" {
-                await refreshStatus()
+            let recoveringWithinCooldown = needsRestart
+            if checkedProxy || state != "Running" || recoveringWithinCooldown {
+                await refreshStatus(ignoreFailedRestartGate: recoveringWithinCooldown)
                 try Task.checkCancellation()
                 guard attempt == generation else { throw CancellationError() }
-                if needsRestart { try await rebuildForRecovery(); return try await start() }
+                if state == "Running" {
+                    needsRestart = false
+                } else if needsRestart {
+                    if canRebuildForRecoveryNow {
+                        try await rebuildForRecovery()
+                        return try await start()
+                    }
+                    if state == "failed" { throw TailnetError.unavailable }
+                }
             }
             if Self.startupStates.contains(state) {
                 ensureNodeUp(existing, attempt: attempt)
@@ -181,8 +198,8 @@ final class EmbeddedTailnet {
         )
     }
 
-    func refreshStatus() async {
-        guard let node, !(needsRestart && state == "failed") else { return }
+    func refreshStatus(ignoreFailedRestartGate: Bool = false) async {
+        guard let node, ignoreFailedRestartGate || !(needsRestart && state == "failed") else { return }
         let attempt = generation
         do {
             let data = try await node.statusJSON()
@@ -305,11 +322,10 @@ final class EmbeddedTailnet {
         }
         func cached() -> URLSession? { media ? desktopMediaSession : desktopControl ? desktopControlSession : interactive ? interactiveSession : session }
         if let cached = cached() { return cached }
-        let (configuration, _) = try await URLSessionConfiguration.tailscaleSession(node)
+        let (configuration, _) = try await Self.makeTailnetSessionConfiguration(node)
         guard attempt == generation, sessionAttempt == sessionGeneration else { throw CancellationError() }
         // History and uploads must not occupy the chat connection pool.
         if let cached = cached() { return cached }
-        Self.isolateTailnetProxyConfiguration(configuration)
         configuration.timeoutIntervalForRequest = 45
         let created = URLSession(configuration: configuration, delegate: TailnetNoRedirects(diagnostics: diagnostics), delegateQueue: nil)
         if media { desktopMediaSession = created }
@@ -351,11 +367,19 @@ final class EmbeddedTailnet {
                 if path.status == .unsatisfied { details["reason"] = String(describing: path.unsatisfiedReason) }
                 self.diagnostics.recordLink("networkPath", String(describing: path.status), details: details)
                 guard previous != nil, previous != signature else { return }
-                self.invalidateCachedSessions(finishTasks: true)
+                if path.status == .unsatisfied {
+                    self.invalidateCachedSessions(finishTasks: false)
+                }
                 if self.node != nil {
                     self.needsProxyCheck = true
                     self.needsPeerWarmup = true
                     self.lastPeerWarmupAt = nil
+                    if path.status == .satisfied {
+                        // Keep healthy 127.0.0.1 loopback URLSessions alive so WireGuard magicsock roams
+                        // seamlessly across Wi-Fi/Cellular/VPN changes without dropping active SSE streams;
+                        // verify the loopback listener in the background.
+                        await self.checkProxyIfNeeded()
+                    }
                 }
             }
         }
@@ -439,6 +463,15 @@ final class EmbeddedTailnet {
         return pool.dataTask(with: request)
     }
 
+    private static func makeTailnetSessionConfiguration(_ node: TailscaleNode) async throws -> (URLSessionConfiguration, (address: String, localAPIKey: String)) {
+        // Use .ephemeral rather than .default so CFNetwork never shares global cookie/credential
+        // state or dynamic system-proxy mutations with the private loopback SOCKS5 session.
+        let configuration = URLSessionConfiguration.ephemeral
+        let loopback = try await configuration.proxyVia(node)
+        Self.isolateTailnetProxyConfiguration(configuration)
+        return (configuration, (address: loopback.address, localAPIKey: loopback.localAPIKey))
+    }
+
     private static func isolateTailnetProxyConfiguration(_ configuration: URLSessionConfiguration) {
         // Leave connectionProxyDictionary nil: in CFNetwork, a non-nil empty dictionary ([:]) overrides
         // proxyConfigurations with an explicit DIRECT proxy table and bypasses Tailscale's loopback SOCKS5
@@ -501,8 +534,7 @@ final class EmbeddedTailnet {
             }
             do {
                 try Task.checkCancellation()
-                let (configuration, loopback) = try await URLSessionConfiguration.tailscaleSession(node)
-                Self.isolateTailnetProxyConfiguration(configuration)
+                let (configuration, loopback) = try await Self.makeTailnetSessionConfiguration(node)
                 let probe = URLSession(configuration: configuration, delegate: TailnetNoRedirects(), delegateQueue: nil)
                 defer { probe.invalidateAndCancel() }
                 let loopbackAddress = loopback.address
@@ -589,8 +621,7 @@ final class EmbeddedTailnet {
         let sessionAttempt = sessionGeneration
         let task = Task { [weak self] in
             do {
-                let (configuration, loopback) = try await URLSessionConfiguration.tailscaleSession(node)
-                Self.isolateTailnetProxyConfiguration(configuration)
+                let (configuration, loopback) = try await Self.makeTailnetSessionConfiguration(node)
                 let probe = URLSession(configuration: configuration, delegate: TailnetNoRedirects(), delegateQueue: nil)
                 defer { probe.invalidateAndCancel() }
                 var request = URLRequest(url: URL(string: "http://\(loopback.address)/localapi/v0/status")!)
@@ -611,7 +642,9 @@ final class EmbeddedTailnet {
                    let status = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let backendState = status["BackendState"] as? String {
                     self.state = backendState
-                    if Self.startupStates.contains(backendState) {
+                    if backendState == "Running" {
+                        self.needsRestart = false
+                    } else if Self.startupStates.contains(backendState) {
                         self.ensureNodeUp(node, attempt: attempt)
                     }
                 }

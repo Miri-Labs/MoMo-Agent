@@ -127,6 +127,7 @@ final class DesktopModel {
     @ObservationIgnored private var lastStatusRefreshAt = Date.distantPast
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
     @ObservationIgnored private var activeObserver: NSObjectProtocol?
+    @ObservationIgnored private var backgroundActivity: NSObjectProtocol?
     @ObservationIgnored private var accessProcess: Process?
     @ObservationIgnored private var agentProcess: Process?
     @ObservationIgnored private var connection: AgentConnection?
@@ -258,6 +259,15 @@ final class DesktopModel {
                 }
             } catch { failure = error.localizedDescription }
         }
+        if !isLivePreviewClient, backgroundActivity == nil {
+            // Prevent macOS App Nap from throttling embedded tsnet WireGuard/DERP goroutines and
+            // tunnel lease heartbeats when MoMo Agent's window is hidden or behind full-screen apps,
+            // while still allowing normal idle system sleep.
+            backgroundActivity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiatedAllowingIdleSystemSleep],
+                reason: "Keep MoMo Agent Tailnet peer and background runtime responsive"
+            )
+        }
         if wakeObserver == nil {
             wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
@@ -294,7 +304,7 @@ final class DesktopModel {
                         && !self.isPairingDevice
                         && self.status?.agentOnline == true
                         && (self.status?.tunnel.state == "connected" || self.status?.tunnel.state == "stopped")
-                    interval = (!NSApplication.shared.isActive && healthy) ? .seconds(8) : .seconds(3)
+                    interval = (!NSApplication.shared.isActive && healthy) ? .seconds(5) : .seconds(3)
                 } else {
                     interval = .seconds(3)
                 }
@@ -897,11 +907,20 @@ final class DesktopModel {
                     servedEmbeddedNode = (currentGen, targetPort)
                 }
                 if !alreadyConnected || needsInteractiveCheck || embeddedHealth.needsProbe(url) {
-                    let session = try await tailnet.connectedSession()
-                    probeSession = session
-                    probe = (url, currentGen)
                     var request = URLRequest(url: url.appendingPathComponent("pair/identity")); request.timeoutInterval = 5
-                    let response = try await TailnetChunkStream.read(request, session: session, network: tailnet, limit: 64 * 1024)
+                    probe = (url, currentGen)
+                    let response: (data: Data, status: Int, contentType: String?, retryAfter: String?)
+                    do {
+                        let session = try await tailnet.connectedSession()
+                        probeSession = session
+                        response = try await TailnetChunkStream.read(request, session: session, network: tailnet, limit: 64 * 1024)
+                    } catch where AgentTransportFailure.isSocketOrLinkFailure(error) || AgentTransportFailure.isConfigurationFailure(error) {
+                        if let probeSession { tailnet.failedRequest(error, session: probeSession) }
+                        try await Task.sleep(for: .milliseconds(250))
+                        let retrySession = try await tailnet.connectedSession()
+                        probeSession = retrySession
+                        response = try await TailnetChunkStream.read(request, session: retrySession, network: tailnet, limit: 64 * 1024)
+                    }
                     let instanceID = try await Task.detached(priority: .utility) {
                         (try? JSONSerialization.jsonObject(with: response.data) as? [String: String])?["instance_id"]
                     }.value
@@ -1216,6 +1235,7 @@ final class DesktopModel {
     func shutdown() {
         if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver); self.wakeObserver = nil }
         if let activeObserver { NotificationCenter.default.removeObserver(activeObserver); self.activeObserver = nil }
+        if let backgroundActivity { ProcessInfo.processInfo.endActivity(backgroundActivity); self.backgroundActivity = nil }
         Task { await tailnet.close() }
         desktopHost?.stop(); desktopHost = nil
         cancelModelConnection()

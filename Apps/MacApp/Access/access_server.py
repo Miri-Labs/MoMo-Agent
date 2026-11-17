@@ -65,7 +65,8 @@ class AccessService:
         h = {'Authorization': 'Bearer ' + self.key, 'Content-Type': 'application/json',
              'X-MoMo-Session-Key': 'momo:' + self.connection['assistant_id']}
         h.update(headers or {})
-        timeout = ClientTimeout(total=None, sock_connect=10, sock_read=45) if streaming else ClientTimeout(total=60, sock_connect=10)
+        stream_read = 300 if method == 'POST' else 45
+        timeout = ClientTimeout(total=None, sock_connect=10, sock_read=stream_read) if streaming else ClientTimeout(total=60, sock_connect=10)
         return await self.session.request(method, url, data=body, headers=h, allow_redirects=False, timeout=timeout)
 
     async def status(self):
@@ -173,11 +174,31 @@ class AccessService:
                     headers={'Retry-After':upstream.headers['Retry-After']} if 'Retry-After' in upstream.headers else None)
             response = web.StreamResponse(headers={'Content-Type':'text/event-stream', 'Cache-Control':'no-store', 'X-Accel-Buffering':'no'})
             await response.prepare(request)
+            iterator = upstream.content.iter_any().__aiter__()
+            pending_chunk = None
             try:
-                async for chunk in upstream.content.iter_any():
-                    if not self.tunnel.enabled or not self.store.authorized(self.token(request)): break
-                    await response.write(chunk)
+                while self.tunnel.enabled and self.store.authorized(self.token(request)):
+                    if pending_chunk is None:
+                        pending_chunk = asyncio.create_task(iterator.__anext__())
+                    done, _ = await asyncio.wait({pending_chunk}, timeout=15.0)
+                    if done:
+                        try:
+                            chunk = pending_chunk.result()
+                        except StopAsyncIteration:
+                            pending_chunk = None
+                            break
+                        pending_chunk = None
+                        if chunk:
+                            await response.write(chunk)
+                    else:
+                        # Emit SSE comment heartbeats every 15s during silent upstream turns so neither
+                        # Tailscale's 90s reverse-proxy IdleTimeout nor mobile NAT ever drops the stream.
+                        await response.write(b': keepalive\n\n')
             except (OSError, ClientError, asyncio.TimeoutError): pass
+            finally:
+                if pending_chunk is not None and not pending_chunk.done():
+                    pending_chunk.cancel()
+                    await asyncio.gather(pending_chunk, return_exceptions=True)
             return response
 
     async def control(self, request):

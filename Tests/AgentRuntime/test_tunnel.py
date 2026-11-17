@@ -88,6 +88,8 @@ class TunnelTests(unittest.IsolatedAsyncioTestCase):
         service.session = Session()
         timeout = await service.upstream('GET', '/v1/runs/fixture/events', streaming=True)
         self.assertIsNone(timeout.total); self.assertEqual(45, timeout.sock_read)
+        post_stream = await service.upstream('POST', '/momo/v1/conversation/messages', streaming=True)
+        self.assertIsNone(post_stream.total); self.assertEqual(300, post_stream.sock_read)
         timeout = await service.upstream('GET', '/v1/capabilities')
         self.assertEqual(60, timeout.total)
 

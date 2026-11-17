@@ -95,6 +95,9 @@ class EmbeddedTests(unittest.IsolatedAsyncioTestCase):
             manager.provider.report({'state': 'connected', 'endpoint': 'http://100.64.0.1:8767'}, now)
             await manager.tick(probe)
             self.assertEqual('connected', manager.provider.state['state'])
+            now += 30
+            await manager.tick(probe)
+            self.assertEqual('connected', manager.provider.state['state'])
             now += 16
             await manager.tick(probe)
             self.assertEqual('needs_setup', manager.provider.state['state'])
