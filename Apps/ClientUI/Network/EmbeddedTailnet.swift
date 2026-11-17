@@ -440,9 +440,10 @@ final class EmbeddedTailnet {
     }
 
     private static func isolateTailnetProxyConfiguration(_ configuration: URLSessionConfiguration) {
-        // Clear system HTTP/PAC proxy dictionaries (e.g., VPN/Clash/Surge DIRECT rules for 100.64.0.0/10)
-        // so CFNetwork never bypasses Tailscale's loopback SOCKS5 ProxyConfiguration into an ATS -1022 failure.
-        configuration.connectionProxyDictionary = [:]
+        // Leave connectionProxyDictionary nil: in CFNetwork, a non-nil empty dictionary ([:]) overrides
+        // proxyConfigurations with an explicit DIRECT proxy table and bypasses Tailscale's loopback SOCKS5
+        // ProxyConfiguration into ATS -1022, whereas nil preserves proxyConfigurations with failover disabled.
+        configuration.connectionProxyDictionary = nil
         configuration.urlCache = nil
         configuration.httpCookieStorage = nil
         configuration.urlCredentialStorage = nil

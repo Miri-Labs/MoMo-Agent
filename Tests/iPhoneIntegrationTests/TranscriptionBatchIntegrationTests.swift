@@ -827,6 +827,60 @@ final class TranscriptionBatchIntegrationTests: XCTestCase {
         let morningSummary = try await archive.recordings().first { $0.id == morningSessionID }
         XCTAssertEqual(morningSummary?.transcriptVersion, 0)
     }
+
+    func testRepeatedHotLiveArrivalsDuringBacklogNeverCancelOrLivelock() async throws {
+        let fixture = try fixture()
+        let archive = try ArchiveStore(rootURL: fixture.root.appendingPathComponent("phone"), receiverDeviceID: UUID())
+        let backlogA = try await TranscriptionIntegrationScenario.ingest(
+            fixture.chunks,
+            archive: archive,
+            wallClockAnchor: Date().addingTimeInterval(-10_800)
+        )
+        let backlogB = try await TranscriptionIntegrationScenario.ingest(
+            fixture.chunks,
+            archive: archive,
+            wallClockAnchor: Date().addingTimeInterval(-7_200)
+        )
+        let gate = BatchNativeGate()
+        defer { gate.release() }
+        let outcomes = OSAllocatedUnfairLock(initialState: [SpeechDiagnostics.Outcome]())
+        let engine = try SpeechEngine(
+            bundle: fixture.model,
+            configuration: SpeechConfiguration(),
+            continuousArchive: true,
+            onDiagnostics: { diag in outcomes.withLock { $0.append(diag.outcome) } },
+            onEvent: gate.observe
+        )
+        engine.setSceneForeground(true)
+        let coordinator = try TranscriptionCoordinator(archive: archive, speech: engine, startSuspended: false)
+        await coordinator.requestWork()
+        let arrival = Task { () -> [UUID] in
+            defer { gate.release() }
+            try await gate.waitForStart()
+            var liveIDs: [UUID] = []
+            for idx in 0..<3 {
+                let live = try await TranscriptionIntegrationScenario.ingest(
+                    fixture.chunks,
+                    archive: archive,
+                    wallClockAnchor: Date().addingTimeInterval(Double(-180 + idx * 30))
+                )
+                liveIDs.append(live.sessionID)
+                await coordinator.onHotLiveWorkArrived(foreground: true, ultraHot: true)
+                await coordinator.requestWork()
+            }
+            return liveIDs
+        }
+        let report = await coordinator.runUntilIdle()
+        gate.finishEvents()
+        let liveIDs = try await arrival.value
+        XCTAssertFalse(gate.timedOut)
+        XCTAssertNil(report.snapshot.failureCode)
+        XCTAssertFalse(outcomes.withLock { $0.contains(.cancelled) },
+                       "Repeated onHotLiveWorkArrived notifications must commit in-flight VAD pages cleanly without cancelling native inference.")
+        for id in [backlogA.sessionID, backlogB.sessionID] + liveIDs {
+            try await assertOfficialTranscript(id, archive: archive)
+        }
+    }
     #endif
 
     func testBackgroundBatchRecoveryResumesReadyAndExpiredBatchesExceptUserPaused() async throws {

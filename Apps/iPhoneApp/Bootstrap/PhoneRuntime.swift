@@ -661,17 +661,20 @@ final class PhoneRuntime {
            !activeSystemTaskRunning,
            backgroundTasks?.hasActiveContinuedGrant != true,
            let transcription,
-           (await transcription.snapshot()).execution == nil,
-           !(await transcription.hasUnreservedPriorityWork()) {
+           (await transcription.snapshot()).execution == nil {
+            let hasPriority = await transcription.hasUnreservedPriorityWork()
             let excluded = backgroundTasks?.pendingContinuedBatchID ?? requestedTranscriptionBatchID
-            if let resumedID = try? await transcription.resumeSystemEndedBatchForBackgroundProcessing(excludingBatchID: excluded) {
-                _ = try? await transcription.startBatch(id: resumedID, origin: .foreground) { [weak self] _ in
-                    Task { @MainActor in
-                        guard let self, !self.isForeground, self.transcriptionContinuation?.isActive == true else { return }
-                        if await self.transcription?.finishForegroundContinuationIfIdle() == true {
-                            self.transcriptionContinuation?.finish()
-                        }
-                    }
+            if let resumedID = try? await transcription.resumeSystemEndedBatchForBackgroundProcessing(excludingBatchID: excluded),
+               let handle = try? await transcription.startBatch(id: resumedID, origin: .foreground, onFinished: { [weak self] _ in
+                   Task { @MainActor in
+                       guard let self, !self.isForeground, self.transcriptionContinuation?.isActive == true else { return }
+                       if await self.transcription?.finishForegroundContinuationIfIdle() == true {
+                           self.transcriptionContinuation?.finish()
+                       }
+                   }
+               }) {
+                if hasPriority {
+                    await transcription.requestPriorityInterleaving(execution: handle)
                 }
             }
         }
@@ -790,11 +793,10 @@ final class PhoneRuntime {
                 } else {
                     prioritySummary = nil
                 }
-                let hasUrgentLiveWork = prioritySummary?.hasHotLiveWork ?? false
                 let shouldInterleaveSameDay = prioritySummary?.hasAnyPriorityWork ?? false
                 if let requestedID = requestedTranscriptionBatchID {
                     if let requestedBatch = batches.first(where: { $0.id == requestedID }) {
-                        if !hasUrgentLiveWork, (requestedBatch.state == .ready || requestedBatch.state == .paused) {
+                        if requestedBatch.state == .ready || requestedBatch.state == .paused {
                             if requestedBatch.state == .paused { _ = try await transcription.resumeBatch(id: requestedID) }
                             let handle = try await transcription.startBatch(id: requestedID, origin: .foreground) { [weak self] completion in
                                 Task { @MainActor in
@@ -817,7 +819,7 @@ final class PhoneRuntime {
                         requestedTranscriptionBatchID = nil
                     }
                 }
-                if !hasUrgentLiveWork, let batch = batches.first(where: { isBatchAutomaticallyResumable($0) }) {
+                if let batch = batches.first(where: { isBatchAutomaticallyResumable($0) }) {
                     if batch.state == .paused { _ = try await transcription.resumeBatch(id: batch.id) }
                     let handle = try await transcription.startBatch(id: batch.id, origin: .foreground) { [weak self] completion in
                         guard completion.reason == .completed || completion.reason == .userPaused else { return }

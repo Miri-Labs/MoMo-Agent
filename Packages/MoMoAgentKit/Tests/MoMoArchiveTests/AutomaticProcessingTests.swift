@@ -639,6 +639,30 @@ struct AutomaticProcessingTests {
         try await store.cancelEpochAnalysis(ticket: prefixTicket)
     }
 
+    @Test func livePriorityWorkSummaryDetectsHotTailArrivalWhileSameEpochBacklogAttemptIsActive() async throws {
+        let openWatch = try Fixture()
+        defer { openWatch.remove() }
+        let store = try openWatch.store()
+        let anchor = now.addingTimeInterval(-7_200)
+        // Chunk 0 sits in Tier-2 same-day backlog (2 hours ago).
+        _ = try await ingest(openWatch, into: store, anchor: anchor, start: 0, sequence: 0)
+        let backlogTicket = try await nextAnalysis(store)
+        #expect(!store.isHotLiveAnalysis(backlogTicket, now: now, calendar: calendar))
+        #expect(try await store.livePriorityWorkSummary(
+            configurationFingerprint: fingerprint, now: now, calendar: calendar
+        ).hasHotLiveWork == false)
+
+        // While `backlogTicket` holds `attempt_id != nil` on `openWatch.epochID`, a new hot chunk arrives at `now - 60s`.
+        let hotStart: Int64 = 7_140 * 16_000
+        _ = try await ingest(openWatch, into: store, anchor: anchor, start: hotStart, sequence: 1)
+        let summary = try await store.livePriorityWorkSummary(
+            configurationFingerprint: fingerprint, now: now, calendar: calendar
+        )
+        #expect(summary.hasHotLiveWork)
+        #expect(summary.hasUltraHotLiveWork)
+        try await store.cancelEpochAnalysis(ticket: backlogTicket)
+    }
+
     private func nextAnalysis(_ store: ArchiveStore, at time: Date? = nil) async throws -> EpochAnalysisTicket {
         let work = try #require(await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: time ?? now, calendar: calendar))
         guard case .analysis(let ticket) = work else { throw ArchiveError.invalidTranscript }
