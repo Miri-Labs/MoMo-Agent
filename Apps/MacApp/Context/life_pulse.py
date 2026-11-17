@@ -313,8 +313,9 @@ def format_pulse_brief(situation: dict, deltas: list[str], *, data_dir=None) -> 
             mp_parts.append(f"实时运动状态={motion['activity']} (距今 {int(motion['age_seconds'])}s)")
         if isinstance(visit, dict):
             v_status = "停留中" if visit.get("ongoing") else f"已离开({visit.get('end_local')})"
+            v_label = f"{visit['title']} " if visit.get("title") else ""
             mp_parts.append(
-                f"最近地点停留=({visit['latitude']:.4f}, {visit['longitude']:.4f}, ±{int(visit['accuracy'])}m, "
+                f"最近地点停留={v_label}({visit['latitude']:.4f}, {visit['longitude']:.4f}, ±{int(visit['accuracy'])}m, "
                 f"到达 {visit.get('start_local') or '未知'}, {v_status})"
             )
         lines.append(f"- 出行与位置：{'；'.join(mp_parts)}")
@@ -394,6 +395,15 @@ def format_pulse_brief(situation: dict, deltas: list[str], *, data_dir=None) -> 
         lines.append("")
         lines.append("[用户主动守护偏好（PROACTIVE_PREFERENCES.md）]")
         lines.append(prefs)
+
+    if data_dir is not None:
+        from life_context import core_memory_snapshot
+
+        core = core_memory_snapshot(data_dir)
+        if core["combined"]:
+            lines.append("")
+            lines.append("[核心生活与主线背景（USER.md / MEMORY.md 摘要）]")
+            lines.append(core["combined"][:2200])
 
     return "\n".join(lines)
 

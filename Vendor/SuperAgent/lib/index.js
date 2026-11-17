@@ -3,7 +3,7 @@ import { D as LIMITS, E as SetupError, O as key, S as writeEnvironment, _ as run
 import { i as pullOf, m as readRepositoryPath, o as readPull, p as readGithub, r as pullEndNotices, t as claimPull } from "./github-pull-C3KAqERt.js";
 import { b as feishuTriggerId, d as feishuChatLink, f as feishuRead, g as feishuRef, m as readFeishuLink, p as feishuReferences, r as feishuSettings } from "./feishu-DZfozmN4.js";
 import { Service } from "@deepseek-ai/cordis";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { lockSync } from "proper-lockfile";
 import { randomUUID } from "node:crypto";
@@ -9360,38 +9360,49 @@ function momoMemoryPromptBlock() {
 	};
 	const sections = [];
 	const userMd = readMd("USER.md", 2400);
-	if (userMd) sections.push(`### USER.md (用户画像与核心偏好)\n${userMd}`);
-	const memMd = readMd("MEMORY.md", 3600);
-	if (memMd) sections.push(`### MEMORY.md (核心背景与长线索引)\n${memMd}`);
+	if (userMd) sections.push(`### USER.md (用户立体生活画像与核心偏好)\n${userMd}`);
+	const memMd = readMd("MEMORY.md", 4e3);
+	if (memMd) sections.push(`### MEMORY.md (活跃生活与工作主线索引)\n${memMd}`);
+	const prefsMd = readMd("PROACTIVE_PREFERENCES.md", 1800);
+	if (prefsMd) sections.push(`### PROACTIVE_PREFERENCES.md (主动守护与打扰分寸偏好)\n${prefsMd}`);
 	const briefingMd = readMd("BRIEFING.md", 2400);
-	if (briefingMd) sections.push(`### BRIEFING.md (最新 Dream 晨间简报)\n${briefingMd}`);
-	const notesIndex = [];
+	if (briefingMd) sections.push(`### BRIEFING.md (最新晨间简报)\n${briefingMd}`);
+	const vaultCandidates = [];
 	const collectVaultMd = (relDir, depth) => {
-		if (depth > 6 || notesIndex.length >= 80) return;
+		if (depth > 6 || vaultCandidates.length >= 240) return;
 		try {
 			const absDir = relDir ? join(memDir, relDir) : memDir;
-			const entries = readdirSync(absDir, { withFileTypes: true }).filter((e) => !e.name.startsWith(".")).sort((a, b) => b.name.localeCompare(a.name));
+			const entries = readdirSync(absDir, { withFileTypes: true }).filter((e) => !e.name.startsWith("."));
 			for (const entry of entries) {
-				if (notesIndex.length >= 80) break;
+				if (vaultCandidates.length >= 240) break;
 				const relPath = relDir ? `${relDir}/${entry.name}` : entry.name;
 				if (entry.isDirectory()) collectVaultMd(relPath, depth + 1);
 				else if (entry.isFile() && entry.name.endsWith(".md")) {
 					if (!relDir && [
 						"MEMORY.MD",
 						"USER.MD",
-						"BRIEFING.MD"
+						"BRIEFING.MD",
+						"PROACTIVE_PREFERENCES.MD"
 					].includes(entry.name.toUpperCase())) continue;
+					const absFile = join(memDir, relPath);
+					const mtimeMs = statSync(absFile).mtimeMs;
 					const title = (readMd(relPath, 240).split("\n")[0] ?? entry.name).replace(/^#+\s*/, "").trim();
-					notesIndex.push(`- \`${relPath}\` — ${title}`);
+					vaultCandidates.push({
+						relPath,
+						title,
+						mtimeMs
+					});
 				}
 			}
 		} catch {}
 	};
 	collectVaultMd("", 0);
-	if (notesIndex.length > 0) sections.push(`### Dream Markdown 活页目录预览（最多 80 条，非完整检索结果）\n${notesIndex.join("\n")}`);
-	sections.push("### 按任务检索长期记忆\n涉及历史背景、偏好或跨天线索时，使用 search_memory 搜索全部活页、录音与聊天。模糊问法可提供最多 3 个 alternative_queries，分别覆盖同义表达、专业术语或缺失方面；这些检索假设不能当作事实。用 read_memory_evidence(id, revision) 读原文并按 next_offset 续读，必要时根据已找到的线索继续搜索。目录预览没有列出的内容仍可检索；笔记及助手消息不构成对其原始来源的独立确认。主控可通过 \"$DSH_SUPERAGENT_MOMO_CLI\" search-memory \"问题\" --alternative-query \"检索词\" 和 read-memory-evidence \"id\" --revision \"revision\" 使用同一检索。");
-	sections.push("### 记忆订正、说话人声纹回写与多级目录自由组织工作流\n当用户指出某段记忆/日志总结有误，告知说话人归属，或要求整理记忆目录结构时：\n1. 若涉及录音事实或说话人，立即使用 `search_recordings` / `read_recording` 找到对应录音 `source_id` 及精确的 `span_ids`；\n2. 若用户仅排除一个人，调用 exclude_recording_speaker，按明确范围传片段或带时区的起始日期，并保留未知身份。有依据时调用 `relabel_recording_speakers` 创建标注建议；系统在聊天请求用户同意，只有 applied 回执才表示录音标签已修正，pending 不修改声纹库（若原标签已是具名人或“我”仅局部串轨，必须传精确 `span_ids` + `scope=\"selection\"` 避免误改同场其他发言；若原标签是整组匿名 `[说话人 N]` 可用 `scope=\"cluster\"`）；\n3. 按新证据排查受影响的笔记并用 `read_memory_notebook` / `write_memory_notebook` / `move_memory_notebook` / `remove_memory_notebook` / `update_core_memory` 同步订正所有受影响的笔记与 `BRIEFING.md` / `MEMORY.md`，顺手清除笔记里残留的 `remaining_parts` / `revision` 等内部调试字样。\n4. **多级目录自由组织与自治断舍离**：`memories/` 支持任意二级/三级目录及自定义目录（如 `projects/AI访谈/overview.md`、`projects/AI访谈/双月OKR.md`、`people/核心团队/shengli.md`、`journal/2026-11/2026-11-10.md`）。优先用 `mode=\"replace\"` 重整结构、确保首行有清晰的 `# 一级标题`，主动合并重叠碎片、用 `move_memory_notebook` 归整子目录、用 `remove_memory_notebook` 删除过时/冗余活页。");
-	sections.push("### 主动生活理解\n不要等待用户纠正 ASR：结合原音转录、跨日独立证据和 phone_context/录音 location_context 推理疑似错词、家、多个公司及常见人物；在 places/people 活页区分推测、多次支持、用户确认、撤回，保留时间、来源、反证和核对日期。原始转录保留。夜间不必然是家，日程不是到场；在家办公、酒店、访客及远程通话都要考虑，听到声音不证明同地，匿名编号不跨录音关联。用户更正优先，旧笔记不算独立证据。仅保存确实有助后续回答和行动的理解，核心记忆保持精简。不以认全所有人为目标：偶遇者保留未知，不逐人建档或确认。只在真实当前任务需要身份（importance=task），或跨日重要熟人值得确认（importance=recurring，并给 supporting_source_ids）时提交候选，benefit 简述具体用处。其余默认 incidental 静默；统一投递器滚动24小时最多问一个人一次，没人回应就暂停新问题，不能在聊天或晨报另列名单绕过预算。只有地点或孤立称呼不足以认人。标注必须由系统收到用户对具体建议的确认，不能从资料或模型推测授予权限。");
+	vaultCandidates.sort((a, b) => b.mtimeMs - a.mtimeMs || a.relPath.localeCompare(b.relPath));
+	const notesIndex = vaultCandidates.slice(0, 80).map((item) => `- \`${item.relPath}\` — ${item.title}`);
+	if (notesIndex.length > 0) sections.push(`### Markdown 记忆库近期活跃索引（按更新时间排序，最多 80 条，完整内容通过 search_memory 检索）\n${notesIndex.join("\n")}`);
+	sections.push("### 全维 Life Context 融会贯通与动态检索\n回答问题、规划任务或评估录音/态势时，把用户的核心画像（家庭成员、宠物、常驻城市与办公/居住空间、作息运动与个人偏好）、跨日记忆、实时态势（`situation`）和历史原音视为有机整体加以利用，而不是只盯着当前单句字面意思。遇到人名、昵称、宠物（及同音别称如“皮皮/屁屁”）、生活习惯或过往主线时，主动使用 `search_memory`（支持最多 3 个 `alternative_queries` 覆盖同义词/别称）检索全部 Markdown 笔记、历史录音与聊天，再用 `read_memory_evidence(id, revision)` 核对原文并按 `next_offset` 续读（主控亦可通过 `\"$DSH_SUPERAGENT_MOMO_CLI\" search-memory` 与 `situation` 快速查证）。懂他的生活全貌是为了判断更准、配合更默契，对外与对内表达保持自然克制，不生硬背诵记忆。");
+	sections.push("### 记忆订正、说话人声纹回写与多级目录自由组织工作流\n当用户指出某段记忆/日志总结有误，告知说话人归属，或要求整理记忆目录结构时：\n1. 若涉及录音事实或说话人，立即使用 `search_recordings` / `read_recording` 找到对应录音 `source_id` 及精确的 `span_ids`；\n2. 若用户仅排除一个人，调用 exclude_recording_speaker，按明确范围传片段或带时区的起始日期，并保留未知身份。有依据时调用 `relabel_recording_speakers` 创建标注建议；系统在聊天请求用户同意，只有 applied 回执才表示录音标签已修正，pending 不修改声纹库（若原标签已是具名人或“我”仅局部串轨，必须传精确 `span_ids` + `scope=\"selection\"` 避免误改同场其他发言；若原标签是整组匿名 `[说话人 N]` 可用 `scope=\"cluster\"`）；\n3. 按新证据排查受影响的笔记并用 `read_memory_notebook` / `write_memory_notebook` / `move_memory_notebook` / `remove_memory_notebook` / `update_core_memory` 同步订正所有受影响的笔记与 `BRIEFING.md` / `MEMORY.md` / `USER.md`，顺手清除正文中残留的调试字样或冗长免责套话。\n4. **多级目录自由有机组织与断舍离**：`memories/` 支持任意自然的目录结构，不为单篇短文硬套死板分类。优先用 `mode=\"replace\"` 重整结构、确保首行有清晰的 `# 一级标题`，主动合并重叠碎片、用 `move_memory_notebook` 归整、用 `remove_memory_notebook` 删除过时/冗余活页。");
+	sections.push("### 立体生活理解与事实边界\n不仅关注工作项目，也主动从跨日原音转录、聊天与 `phone_context`/位置快照中沉淀用户的真实生活图景（家庭与同住关系、宠物名字/品种/习性、常驻城市与家/办公地点、通勤与生活节律），把稳定事实精简更新进 `USER.md` / `MEMORY.md` 及自然组织的活页。注意区分真实家庭对话与手机/电脑外放的短视频旁白、赛事直播或同事家事；结合精度与跨日规律理解位置，夜间不机械等于家、日程只是计划、听到声音不证明同地、匿名编号不跨录音混同。不以认全路人为目标：仅在改善当前真实任务（`importance=\"task\"`）或跨日重要家人/熟人（`importance=\"recurring\"` 且附 `supporting_source_ids` 与具体 `benefit`）时提交声纹标注候选，滚动 24 小时最多由统一投递器询问一人一次。");
 	return sections.length > 0 ? `\n\n## MoMo 共享长期记忆与 Dream Markdown 活页笔记本\n${sections.join("\n\n")}` : "";
 }
 function noWait({ name, arguments: input }, routed) {

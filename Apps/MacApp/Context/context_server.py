@@ -32,6 +32,7 @@ class ContextService:
         self.memory = MoMoMemory(self.data)
         self.stopped = threading.Event()
         self.illustration_wake = threading.Event()
+        self.illustration_manual = threading.Event()
         self.next_dispatch = time.monotonic() + 60
         store = ContextStore(self.directory); store.close()
         illustrations = LifeIllustrations(self.data); illustrations.recover(); illustrations.close()
@@ -66,7 +67,7 @@ class ContextService:
                         illustrations = LifeIllustrations(service.data)
                         illustrations.reconcile(store)
                         suffix = url.path.removeprefix('/v1/life-illustrations/')
-                        if suffix in ('settings', 'retry'):
+                        if suffix in ('settings', 'retry', 'regenerate'):
                             from life_illustration_generator import CodexIllustrationGenerator
                             availability = CodexIllustrationGenerator(service.data).availability()
                         if self.command == 'POST':
@@ -82,6 +83,12 @@ class ContextService:
                                 if not isinstance(body, dict) or body:
                                     raise ValueError('retry takes no parameters')
                                 result = illustrations.retry_incomplete(store, availability)
+                                service.illustration_wake.set()
+                            elif suffix == 'regenerate':
+                                if not isinstance(body, dict) or set(body) != {'id'}:
+                                    raise ValueError('regenerate requires exact {"id": "<slot_id>"}')
+                                result = illustrations.regenerate(body['id'], store, availability)
+                                service.illustration_manual.set()
                                 service.illustration_wake.set()
                             elif suffix == 'delete':
                                 result = illustrations.delete(body['id'])
@@ -325,7 +332,11 @@ class ContextService:
                 generator = CodexIllustrationGenerator(self.data)
                 if generator.availability()['supported']:
                     illustrations.scan(store)
-                    while not self.stopped.is_set() and memory_review.chat_idle(self.data, time.time(), idle_seconds=60):
+                    manual = self.illustration_manual.is_set()
+                    if manual:
+                        self.illustration_manual.clear()
+                    while not self.stopped.is_set() and (manual or memory_review.chat_idle(self.data, time.time(), idle_seconds=60)):
+                        manual = False
                         if not illustrations.advance(generator, store):
                             break
                 else:

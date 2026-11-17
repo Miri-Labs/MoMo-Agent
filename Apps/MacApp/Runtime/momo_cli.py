@@ -79,6 +79,20 @@ def _cmd_recordings(data: Path, args: argparse.Namespace) -> dict:
 
 
 def _cmd_life_illustrations(data: Path, args: argparse.Namespace) -> dict:
+    if getattr(args, "regenerate", None):
+        conn = json.loads((data / "connection.json").read_text(encoding="utf-8"))
+        api_key = (data / "api-key").read_text(encoding="utf-8").strip()
+        url = f"{conn['data_url'].rstrip('/')}/v1/life-illustrations/regenerate"
+        body = json.dumps({"id": args.regenerate}).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=20) as resp:
+            return json.loads(resp.read().decode("utf-8"))
     from life_illustrations import LifeIllustrations
     from life_illustration_generator import CodexIllustrationGenerator
     queue = LifeIllustrations(data)
@@ -528,6 +542,27 @@ def _cmd_web_extract(data: Path, args: argparse.Namespace) -> dict:
     return parsed if isinstance(parsed, dict) else {"success": False, "error": "Web extract unavailable"}
 
 
+def _cmd_dream(data: Path, args: argparse.Namespace) -> dict:
+    conn = json.loads((data / "connection.json").read_text(encoding="utf-8"))
+    api_key = (data / "api-key").read_text(encoding="utf-8").strip()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    if args.run:
+        url = f"{conn['data_url'].rstrip('/')}/v1/memories/dream"
+        req = urllib.request.Request(
+            url,
+            data=b"{}",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with opener.open(req, timeout=20) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    url = f"{conn['data_url'].rstrip('/')}/v1/status"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"}, method="GET")
+    with opener.open(req, timeout=20) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    return payload.get("memory_review") or payload
+
+
 def _cmd_briefing(data: Path, args: argparse.Namespace) -> dict:
     if args.regenerate:
         conn = json.loads((data / "connection.json").read_text(encoding="utf-8"))
@@ -559,9 +594,10 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     rec_list = sub.add_parser("recordings", help="List synchronized voice recordings")
-    illustrations = sub.add_parser('life-illustrations', help='Read actual background illustration states; never triggers generation')
+    illustrations = sub.add_parser('life-illustrations', help='Read actual background illustration states or queue single-slot regeneration')
     illustrations.add_argument('--after', type=int, default=0)
     illustrations.add_argument('--limit', type=int, default=50)
+    illustrations.add_argument('--regenerate', default=None, help='Queue regeneration of a specific illustration slot ID via ContextService')
     rec_list.add_argument("--after", default="")
     rec_list.add_argument("--limit", type=int, default=25)
 
@@ -669,6 +705,9 @@ def main() -> int:
     brief_cmd = sub.add_parser("briefing", help="Inspect holistic morning briefing evidence or trigger live regeneration")
     brief_cmd.add_argument("--regenerate", action="store_true", help="Regenerate today's holistic Morning Briefing via gateway")
 
+    dream_cmd = sub.add_parser("dream", help="Inspect Dream memory curation status or enqueue a manual Dream run")
+    dream_cmd.add_argument("--run", action="store_true", help="Enqueue immediate manual Dream curation via ContextService")
+
     args = parser.parse_args()
     data = args.data_dir.expanduser().resolve()
     handlers = {
@@ -694,6 +733,7 @@ def main() -> int:
         "web-extract": _cmd_web_extract,
         "pim": _cmd_pim,
         "briefing": _cmd_briefing,
+        "dream": _cmd_dream,
     }
     try:
         output = handlers[args.command](data, args)

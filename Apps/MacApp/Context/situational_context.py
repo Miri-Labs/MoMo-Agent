@@ -180,6 +180,12 @@ def _build_concise_summary(
             step_str += f"({steps_age})"
         parts.append(step_str)
 
+    visit = mobility.get("visit")
+    if isinstance(visit, dict) and visit.get("title"):
+        v_title = str(visit["title"]).strip()[:20]
+        if v_title:
+            parts.append(f"位置 {v_title}")
+
     upcoming = schedule.get("upcoming_events") or []
     if upcoming:
         ev0 = upcoming[0]
@@ -305,8 +311,10 @@ def read_situational_context(store, data_dir=None, now: float | None = None) -> 
         )
         latest_v = v_recs[-1]
         ongoing = "start" in latest_v and "end" not in latest_v
+        v_title = (latest_v.get("title") or "").strip() or None
         visit_info = {
             "id": latest_v["id"],
+            **({"title": v_title} if v_title else {}),
             "latitude": latest_v["latitude"],
             "longitude": latest_v["longitude"],
             "accuracy": latest_v["accuracy"],
