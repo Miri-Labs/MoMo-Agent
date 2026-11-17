@@ -263,22 +263,45 @@ import UIKit
         let input = app.textFields["remote.input"]
         XCTAssertTrue(input.waitForExistence(timeout: 20), app.debugDescription)
         input.tap()
-        input.typeText("测试原生气泡长按")
+        input.typeText("测试原生气泡长按与局部文字选择体验")
         app.buttons["remote.send"].tap()
 
-        let userBubble = app.webViews.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "测试原生气泡长按")).firstMatch
-        XCTAssertTrue(userBubble.waitForExistence(timeout: 10), app.debugDescription)
+        let retry = app.buttons["发送失败，点击重试"].firstMatch
+        if retry.waitForExistence(timeout: 8) { retry.tap() }
+
+        let userBubble = app.webViews.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "测试原生气泡长按与局部文字选择体验")).firstMatch
+        XCTAssertTrue(userBubble.waitForExistence(timeout: 12), app.debugDescription)
+        let assistantBubble = app.webViews.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "处理好了")).firstMatch
+        _ = assistantBubble.waitForExistence(timeout: 12)
 
         let transcript = app.descendants(matching: .any)["assistant.transcript"].firstMatch
         if app.keyboards.firstMatch.exists { transcript.swipeDown() }
-        try await Task.sleep(for: .milliseconds(500))
+        try await Task.sleep(for: .milliseconds(600))
 
         userBubble.press(forDuration: 1.0)
         let copyAction = app.buttons["拷贝"]
+        let selectTextAction = app.buttons["选择文本"]
         let appeared = copyAction.waitForExistence(timeout: 5)
         capture(app, "Native iMessage UIContextMenu on User Bubble")
         XCTAssertTrue(appeared, "Expected native iOS UIContextMenu '拷贝' button on long-press. Hierarchy:\n\(app.debugDescription)")
-        copyAction.tap()
+        XCTAssertTrue(selectTextAction.exists, "Expected '选择文本' action in UIContextMenu")
+
+        selectTextAction.tap()
+        let editCopyItem = app.menuItems["拷贝"]
+        XCTAssertTrue(editCopyItem.waitForExistence(timeout: 5), "Expected native iOS EditMenu '拷贝' item in-place on bubble. Hierarchy:\n\(app.debugDescription)")
+        capture(app, "In-Place Text Selection on User Bubble")
+        XCTAssertFalse(app.navigationBars["选择文本"].exists, "Select Text must highlight in-place like iMessage, never open a modal sheet")
+
+        if assistantBubble.exists {
+            assistantBubble.press(forDuration: 1.0)
+            XCTAssertTrue(selectTextAction.waitForExistence(timeout: 5), "Long-pressing another bubble should cleanly switch context menu")
+            selectTextAction.tap()
+            XCTAssertTrue(editCopyItem.waitForExistence(timeout: 5), "Expected native iOS EditMenu '拷贝' item in-place on assistant bubble")
+            capture(app, "In-Place Text Selection on Assistant Bubble")
+            editCopyItem.tap()
+        } else {
+            editCopyItem.tap()
+        }
     }
     private func darkFraction(_ image: UIImage) throws -> Double {
         let cg = try XCTUnwrap(image.cgImage), width = cg.width, height = cg.height

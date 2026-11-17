@@ -833,6 +833,24 @@
       flushBubbleRegions();
     });
   }
+  let hadActiveBubbleSelection = false;
+  function clearBubbleSelection() {
+    hadActiveBubbleSelection = false;
+    window.getSelection()?.removeAllRanges();
+    document.querySelectorAll('[data-selecting]').forEach(node => node.removeAttribute('data-selecting'));
+  }
+  function beginBubbleSelection(id) {
+    hadActiveBubbleSelection = false;
+    document.querySelectorAll('[data-selecting]').forEach(node => node.removeAttribute('data-selecting'));
+    for (const node of root.querySelectorAll('[data-bubble-id]')) {
+      if (node.dataset.bubbleId === id) {
+        node.setAttribute('data-selecting', 'true');
+        void node.offsetHeight;
+        return true;
+      }
+    }
+    return false;
+  }
   function setBubbleHidden(id, hidden) {
     for (const node of root.querySelectorAll('[data-bubble-id]')) {
       if (node.dataset.bubbleId === id) {
@@ -850,6 +868,7 @@
       post('pressedBubble', { hit: false, selectedText: (window.getSelection()?.toString() || '').trim() });
       return;
     }
+    const docRect = document.documentElement.getBoundingClientRect();
     const r = bubble.getBoundingClientRect();
     post('pressedBubble', {
       hit: true,
@@ -857,6 +876,8 @@
       messageID: bubble.dataset.messageId || '',
       isUser: bubble.classList.contains('user-bubble'),
       isLink: Boolean(target.closest('a,button,summary')),
+      docX: r.left - docRect.left,
+      docY: r.top - docRect.top,
       dx: r.left - event.clientX,
       dy: r.top - event.clientY,
       vpX: r.left,
@@ -907,7 +928,17 @@
   window.addEventListener('touchend',finishTouch,{ passive:true });
   window.addEventListener('touchcancel',finishTouch,{ passive:true });
   document.addEventListener('selectionchange',() => {
-    if (window.getSelection()?.isCollapsed && latest) renderTurns(false);
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) {
+      if (document.querySelector('[data-selecting]')) hadActiveBubbleSelection = true;
+      return;
+    }
+    if (hadActiveBubbleSelection) {
+      hadActiveBubbleSelection = false;
+      document.querySelectorAll('[data-selecting]').forEach(node => node.removeAttribute('data-selecting'));
+      post('selectionCleared', true);
+    }
+    if (latest) renderTurns(false);
   });
   new ResizeObserver(follow).observe(document.body);
   // A growing native composer/keyboard resizes the viewport, not necessarily the body.
@@ -948,6 +979,6 @@
     pageSuspended = false; brandMotion.resume();
     if (latest) renderTurns(false); else syncActivityMotion();
   });
-  window.MoMoChat = { render, patchTailMessage, openChat, scrollToBottom, saveReadingPosition, suspend, setSuspended, setBubbleHidden };
+  window.MoMoChat = { render, patchTailMessage, openChat, scrollToBottom, saveReadingPosition, suspend, setSuspended, setBubbleHidden, beginBubbleSelection, clearBubbleSelection };
   post('ready',true);
 })();
