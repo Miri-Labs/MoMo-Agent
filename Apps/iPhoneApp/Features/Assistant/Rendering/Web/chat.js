@@ -780,40 +780,48 @@
     const docRect = document.documentElement.getBoundingClientRect();
     const ox = docRect.left, oy = docRect.top;
     const regions = [];
-    for (const node of root.querySelectorAll('.user-bubble[data-copy-text], .assistant .prose[data-copy-text]')) {
-      const r = node.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0 || r.bottom < -300 || r.top > vh + 300) continue;
-      const copyText = node.dataset.copyText || '';
-      if (!copyText) continue;
-      const codeBlocks = [];
-      for (const wrap of node.querySelectorAll('.code-wrap')) {
-        const cr = wrap.getBoundingClientRect();
-        const code = wrap.querySelector('code')?.textContent || '';
-        if (cr.width > 0 && cr.height > 0 && code) {
-          codeBlocks.push({ x: cr.left - ox, y: cr.top - oy, vpX: cr.left, vpY: cr.top, width: cr.width, height: cr.height, text: code });
+    const children = root.children;
+    const startIdx = firstVisibleTurnIndex(children, -300);
+    for (let i = startIdx; i < children.length; i++) {
+      const row = children[i];
+      const rowRect = row.getBoundingClientRect();
+      if (rowRect.top > vh + 300) break;
+      if (rowRect.bottom < -300) continue;
+      for (const node of row.querySelectorAll('.user-bubble[data-copy-text], .assistant .prose[data-copy-text]')) {
+        const r = node.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0 || r.bottom < -300 || r.top > vh + 300) continue;
+        const copyText = node.dataset.copyText || '';
+        if (!copyText) continue;
+        const codeBlocks = [];
+        for (const wrap of node.querySelectorAll('.code-wrap')) {
+          const cr = wrap.getBoundingClientRect();
+          const code = wrap.querySelector('code')?.textContent || '';
+          if (cr.width > 0 && cr.height > 0 && code) {
+            codeBlocks.push({ x: cr.left - ox, y: cr.top - oy, vpX: cr.left, vpY: cr.top, width: cr.width, height: cr.height, text: code });
+          }
         }
-      }
-      const links = [];
-      for (const el of node.querySelectorAll('a, button, summary')) {
-        const lr = el.getBoundingClientRect();
-        if (lr.width > 0 && lr.height > 0) {
-          links.push({ x: lr.left - ox, y: lr.top - oy, vpX: lr.left, vpY: lr.top, width: lr.width, height: lr.height });
+        const links = [];
+        for (const el of node.querySelectorAll('a, button, summary')) {
+          const lr = el.getBoundingClientRect();
+          if (lr.width > 0 && lr.height > 0) {
+            links.push({ x: lr.left - ox, y: lr.top - oy, vpX: lr.left, vpY: lr.top, width: lr.width, height: lr.height });
+          }
         }
+        regions.push({
+          id: node.dataset.bubbleId || '',
+          messageID: node.dataset.messageId || '',
+          isUser: node.classList.contains('user-bubble'),
+          x: r.left - ox,
+          y: r.top - oy,
+          vpX: r.left,
+          vpY: r.top,
+          width: r.width,
+          height: r.height,
+          copyText,
+          codeBlocks,
+          links
+        });
       }
-      regions.push({
-        id: node.dataset.bubbleId || '',
-        messageID: node.dataset.messageId || '',
-        isUser: node.classList.contains('user-bubble'),
-        x: r.left - ox,
-        y: r.top - oy,
-        vpX: r.left,
-        vpY: r.top,
-        width: r.width,
-        height: r.height,
-        copyText,
-        codeBlocks,
-        links
-      });
     }
     return regions;
   }
@@ -833,34 +841,15 @@
       flushBubbleRegions();
     });
   }
-  let hadActiveBubbleSelection = false;
-  function clearBubbleSelection() {
-    hadActiveBubbleSelection = false;
-    window.getSelection()?.removeAllRanges();
-    document.querySelectorAll('[data-selecting]').forEach(node => node.removeAttribute('data-selecting'));
-  }
-  function beginBubbleSelection(id) {
-    hadActiveBubbleSelection = false;
-    document.querySelectorAll('[data-selecting]').forEach(node => node.removeAttribute('data-selecting'));
-    for (const node of root.querySelectorAll('[data-bubble-id]')) {
-      if (node.dataset.bubbleId === id) {
-        node.setAttribute('data-selecting', 'true');
-        void node.offsetHeight;
-        return true;
-      }
-    }
-    return false;
-  }
   function setBubbleHidden(id, hidden) {
-    for (const node of root.querySelectorAll('[data-bubble-id]')) {
-      if (node.dataset.bubbleId === id) {
-        if (hidden) node.setAttribute('data-context-hidden', 'true');
-        else node.removeAttribute('data-context-hidden');
-      }
+    const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id.replace(/"/g, '\\"');
+    const node = root.querySelector(`[data-bubble-id="${escaped}"]`);
+    if (node) {
+      if (hidden) node.setAttribute('data-context-hidden', 'true');
+      else node.removeAttribute('data-context-hidden');
     }
   }
   document.addEventListener('pointerdown', event => {
-    flushBubbleRegions();
     const target = event.target;
     if (!(target instanceof Element)) return;
     const bubble = target.closest('.user-bubble[data-copy-text], .assistant .prose[data-copy-text]');
@@ -918,27 +907,25 @@
     pin.observe(window.scrollY,window.innerHeight,document.documentElement.scrollHeight);
     updateJump();
     scheduleReadingPosition();
-    syncBubbleRegions();
   },{ passive:true });
-  window.addEventListener('scrollend',saveReadingPosition,{ passive:true });
+  window.addEventListener('scrollend',() => { saveReadingPosition(); syncBubbleRegions(); },{ passive:true });
   window.addEventListener('wheel',() => { openingChat = false; cancelScrollIntent(); wheelScrolling = true; clearTimeout(wheelTimer); wheelTimer = setTimeout(() => { wheelScrolling = false; },300); },{ passive:true });
-  window.addEventListener('touchstart',() => { openingChat = false; cancelScrollIntent(); userScrolling = true; flushBubbleRegions(); },{ passive:true });
+  window.addEventListener('touchstart',() => { openingChat = false; cancelScrollIntent(); userScrolling = true; },{ passive:true });
   window.addEventListener('keydown',() => { openingChat = false; cancelScrollIntent(); });
   const finishTouch = () => { userScrolling = false; };
   window.addEventListener('touchend',finishTouch,{ passive:true });
   window.addEventListener('touchcancel',finishTouch,{ passive:true });
+  let hadDesktopSelection = false;
   document.addEventListener('selectionchange',() => {
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed) {
-      if (document.querySelector('[data-selecting]')) hadActiveBubbleSelection = true;
+      hadDesktopSelection = true;
       return;
     }
-    if (hadActiveBubbleSelection) {
-      hadActiveBubbleSelection = false;
-      document.querySelectorAll('[data-selecting]').forEach(node => node.removeAttribute('data-selecting'));
-      post('selectionCleared', true);
+    if (hadDesktopSelection && latest) {
+      hadDesktopSelection = false;
+      renderTurns(false);
     }
-    if (latest) renderTurns(false);
   });
   new ResizeObserver(follow).observe(document.body);
   // A growing native composer/keyboard resizes the viewport, not necessarily the body.
@@ -979,6 +966,6 @@
     pageSuspended = false; brandMotion.resume();
     if (latest) renderTurns(false); else syncActivityMotion();
   });
-  window.MoMoChat = { render, patchTailMessage, openChat, scrollToBottom, saveReadingPosition, suspend, setSuspended, setBubbleHidden, beginBubbleSelection, clearBubbleSelection };
+  window.MoMoChat = { render, patchTailMessage, openChat, scrollToBottom, saveReadingPosition, suspend, setSuspended, setBubbleHidden };
   post('ready',true);
 })();

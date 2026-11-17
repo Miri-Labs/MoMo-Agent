@@ -287,20 +287,41 @@ import UIKit
         XCTAssertTrue(selectTextAction.exists, "Expected '选择文本' action in UIContextMenu")
 
         selectTextAction.tap()
+        let selectionTextView = app.textViews["assistant.bubbleSelectionTextView"]
+        XCTAssertTrue(selectionTextView.waitForExistence(timeout: 3), "Expected native UITextView bubble selection overlay")
         let editCopyItem = app.menuItems["拷贝"]
         XCTAssertTrue(editCopyItem.waitForExistence(timeout: 5), "Expected native iOS EditMenu '拷贝' item in-place on bubble. Hierarchy:\n\(app.debugDescription)")
         capture(app, "In-Place Text Selection on User Bubble")
         XCTAssertFalse(app.navigationBars["选择文本"].exists, "Select Text must highlight in-place like iMessage, never open a modal sheet")
 
-        if assistantBubble.exists {
-            assistantBubble.press(forDuration: 1.0)
-            XCTAssertTrue(selectTextAction.waitForExistence(timeout: 5), "Long-pressing another bubble should cleanly switch context menu")
-            selectTextAction.tap()
-            XCTAssertTrue(editCopyItem.waitForExistence(timeout: 5), "Expected native iOS EditMenu '拷贝' item in-place on assistant bubble")
-            capture(app, "In-Place Text Selection on Assistant Bubble")
+        // Verify dragging the native iOS blue grabber handle is responsive and never hangs
+        let trailingGrabber = app.otherElements["com.apple.text.grabber.trailing"].firstMatch
+        if trailingGrabber.exists {
+            let startCoord = trailingGrabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            let dragTarget = selectionTextView.coordinate(withNormalizedOffset: CGVector(dx: 0.48, dy: 0.5))
+            startCoord.press(forDuration: 0.15, thenDragTo: dragTarget)
+        } else {
+            let wordCoord = selectionTextView.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5))
+            wordCoord.doubleTap()
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        capture(app, "Responsive Handle Drag Selection in Native Bubble UITextView")
+        if editCopyItem.waitForExistence(timeout: 3) {
             editCopyItem.tap()
         } else {
-            editCopyItem.tap()
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.65)).tap()
+        }
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !selectionTextView.exists }, object: nil)], timeout: 4)
+
+        if assistantBubble.exists {
+            assistantBubble.press(forDuration: 1.0)
+            XCTAssertTrue(selectTextAction.waitForExistence(timeout: 5), "Long-pressing assistant bubble should open context menu")
+            selectTextAction.tap()
+            XCTAssertTrue(selectionTextView.waitForExistence(timeout: 3), "Expected native UITextView selection on assistant bubble")
+            _ = editCopyItem.waitForExistence(timeout: 4)
+            capture(app, "In-Place Text Selection on Assistant Bubble")
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.68)).tap()
+            await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !selectionTextView.exists }, object: nil)], timeout: 4)
         }
     }
     private func darkFraction(_ image: UIImage) throws -> Double {
