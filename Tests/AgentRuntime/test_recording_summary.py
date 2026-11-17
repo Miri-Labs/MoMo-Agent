@@ -192,13 +192,13 @@ class RecordingSummaryTests(unittest.TestCase):
             self.store,
             {**self.body, 'revision': digest('live-2'), 'text': '正在开会讨论第一句。补充第二句。'},
             auto_background=True,
-            window_end_at=now - 300.0,
+            window_end_at=now - summary.LIVE_WINDOW_SETTLE_SECONDS - 60.0,
         )
         rev3 = summary.enqueue(
             self.store,
             {**self.body, 'revision': digest('live-3'), 'text': '正在开会讨论第一句。补充第二句。补充第三句定稿。'},
             auto_background=True,
-            window_end_at=now - 300.0,
+            window_end_at=now - summary.LIVE_WINDOW_SETTLE_SECONDS - 60.0,
         )
         self.assertEqual('superseded', summary.read(self.store, rev2['id'])['state'])
         self.assertIsNone(summary.next_job(self.store, now=now + 200.0))
