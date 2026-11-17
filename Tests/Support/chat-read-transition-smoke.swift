@@ -108,7 +108,15 @@ Task { @MainActor in
             passed = passed && stable
             _ = try await web.evaluateJavaScript("fixture.messages.push(message('reply','assistant','我可以帮你查资料、整理录音和完成任务。')); fixture.waitingForReply=false; fixture.busy=false; MoMoChat.render(fixture); true")
             try await settle()
-            let reply = try await web.evaluateJavaScript("document.querySelector('#working').hidden && rows.at(-1).querySelector('.user-bubble')===bubbles.at(-1) && rows.at(-1).querySelector('.read-receipt')===receipt && receipt?.getAttribute('aria-hidden')==='true'") as? Bool == true
+            let reply = try await web.evaluateJavaScript("""
+            document.querySelector('#working').hidden &&
+            !document.querySelector('[data-action=copy-reply]') &&
+            !document.querySelector('[data-action=copy-code]') &&
+            document.querySelector('.actions').hidden &&
+            rows.at(-1).querySelector('.user-bubble')===bubbles.at(-1) &&
+            rows.at(-1).querySelector('.read-receipt')===receipt &&
+            receipt?.getAttribute('aria-hidden')==='true'
+            """) as? Bool == true
             passed = passed && reply
             try await capture(mode + "-reply")
 

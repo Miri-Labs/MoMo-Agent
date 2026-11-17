@@ -714,6 +714,11 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
             UIPasteboard.general.string = text
             #endif
         }
+        case "haptic":
+            #if os(iOS)
+            let style: UIImpactFeedbackGenerator.FeedbackStyle = (body["value"] as? String) == "light" ? .light : .medium
+            UIImpactFeedbackGenerator(style: style).impactOccurred()
+            #endif
         case "link":
             if let text = body["value"] as? String, let url = URL(string: text) {
                 // Source/version authorization is still performed by RecordingSourceLinks.
