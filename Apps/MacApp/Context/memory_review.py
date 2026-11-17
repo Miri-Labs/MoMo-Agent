@@ -13,7 +13,7 @@ from personal_context import INSTRUCTION as PERSONAL_CONTEXT
 CHAT_IDLE_SECONDS = 10 * 60
 DREAM_INTERVAL = 24 * 60 * 60
 AUTOMATIC_INTERVAL = DREAM_INTERVAL
-CURATION_POLICY_VERSION = "v9-holistic-briefing-and-rhythm"
+CURATION_POLICY_VERSION = "v10-holistic-life-context"
 MAX_BYTES = 32_000
 MAX_PARTS = 48
 RECEIPT = '''最后只返回 JSON：{"memory_review":{"outcome":"updated 或 no_change","reason":"本批保存、合并、清理、目录分层重整或纠正了什么（含记忆、Markdown 活页笔记重组/移动/删除或说话人修正），或为何无需改动"}}。
@@ -21,9 +21,9 @@ updated 需要 memory、notebook 或 relabel_speakers 的实际变更回执。�
 TRANSCRIPT_GUIDANCE = Path(__file__).with_name('dream-transcript-evidence.md').read_text(encoding='utf-8').strip()
 POLICY = TRANSCRIPT_GUIDANCE + '\n\n' + PERSONAL_CONTEXT + '\n\n' + '''这是 MoMo Agent 的闲时记忆与生活上下文自治整理（Dream / Autonomous Memory Curation），不是用户的新任务。记忆的意义是为“下一次对话”传递真正持久有用的理解，而不是保存逐字流水账、事务日志或工具执行账本。
 所有持久产出物均为纯 Markdown（`.md`）：
-- `USER.md`（通过 `memory` 工具）：用户明确表达的稳定身份、沟通习惯与核心原则；
-- `MEMORY.md`（通过 `memory` 工具）：高信噪比的当前活跃主线、跨会话关键约定、有效承诺及指向深层笔记的索引；
-- `memories/` 知识库（通过 `notebook` 工具）：Obsidian 式纯 Markdown 多级知识库（含 `BRIEFING.md`、记录主动打扰分寸的 `PROACTIVE_PREFERENCES.md`、以及 `projects/<项目名>/overview.md`、`journal/2026-11/2026-11-10.md`、`people/核心团队/小林.md` 等多级目录，不往笔记里写 JSON）。
+- `USER.md`（通过 `memory` 工具）：用户的立体常驻画像——不仅包含沟通与简报偏好，更应提炼经跨日证据或明确表达确认的**所在城市与常驻办公/居住空间特征、家庭成员与同住关系、宠物名字/品种/习性、长期作息与个人习惯**；
+- `MEMORY.md`（通过 `memory` 工具）：高信噪比的当前活跃主线（涵盖核心生活/家庭锚点与工作主线）、跨会话关键约定、有效承诺及指向深层笔记的索引；
+- `memories/` 知识库（通过 `notebook` 工具）：Obsidian 式自由生长的纯 Markdown 知识库（含 `BRIEFING.md`、`PROACTIVE_PREFERENCES.md`，以及按内容自然组织的项目的、日志、人物、生活/家庭/地点等任意多级目录活页，不僵硬套用固定模板，不往笔记里写 JSON）。
 
 ## 知识库自治原则（Context Hygiene & Vault Stewardship）
 注意力预算是有限的，臃肿陈旧的笔记会稀释未来的判断力。你拥有完整的知识库园丁自治权：
@@ -308,25 +308,27 @@ def next_review(store, data, now):
 
 
 DREAM_INSTRUCTION = """
-执行闲时 Dream；聚焦新证据、认知纠偏与未来复用价值，按需覆盖以下范围，不必为凑工作量全库重写：
+执行闲时 Dream；聚焦新证据、认知纠偏与未来复用价值，把工作脉络与立体个人生活上下文（Life Context）同等打磨扎实，不必为凑工作量全库重写：
 涉及跨天背景、重复或冲突时，先用 search_memory 检索，再用 read_memory_evidence(id, revision) 核对原文并按 next_offset 续读；旧笔记及助手自身回复不构成独立事实确认。
-1. 【后验纠错、人物地点理解与主动偏好沉淀】
-   - 回查录音、phone_context 与用户聊天，主动订正同音错词、旧笔记误判、家/办公点与常见人物关系的演变，按生活理解规则维护 places/、people/ 及受影响的日志与项目页。
+1. 【立体生活画像、家庭宠物与空间脉络沉淀（`USER.md` + `MEMORY.md` + 自由活页）】
+   - 回查录音、`phone_context` 与用户聊天，不只提取工作会议：主动梳理并更新用户的**家庭与同住成员、宠物（名字及常见 ASR 同音词如“皮皮/屁屁”、品种猫/狗、外貌习性）、常驻城市与家/办公地点轨迹、运动娱乐与日常节律**（甄别真实家庭互动与手机/电脑外放的短视频、赛事直播或同事个人经历）。
+   - 若当前 `USER.md` / `MEMORY.md` 尚未完整沉淀家庭结构、宠物具体物种与名字、或常驻城市与住处/办公地脉络，主动调用 `search_memory`（搜索居家、家人、猫狗宠物、回家/公司等跨日线索）配合 `read_memory_evidence` 与 `phone_context(kind='visits')` 回溯历史原音补齐，不必只看本批增量页。
+   - 将稳定确认的家庭/宠物/常驻地/偏好画像维护进 `USER.md`；将活跃生活与工作索引维护进 `MEMORY.md`；需要展开的生活、家庭、地点或人物背景自然沉淀到对应活页（用温暖干净的管家笔触书写，清除冷冰冰的长篇免责套话或连篇“已撤回归因”流水账）。
    - 若用户在聊天中明确表达了对主动提醒的话题、时机或打扰分寸偏好，将其整理保存至 `PROACTIVE_PREFERENCES.md`（单次说“这次不用”不视为长期退订）。
    - 对确有长期价值的候选说话人用 relabel_speakers 提交精确片段建议；仅在收到 applied 回执后按已确认身份记述。
-2. 【知识库结构归整与断舍离（`notebook(action='list'/'read'/'write'/'move'/'remove')` + `memory`）】
+2. 【知识库有机归整与断舍离（`notebook(action='list'/'read'/'write'/'move'/'remove')` + `memory`）】
    - 先用 `notebook(action='list')` 审视相关目录与字数，保持知识库精悍清晰：
-     a) **多级目录归档**：当同一大项目积累多篇专题或日志跨月、人物分属不同协作圈时，按合理二级/三级目录（如 `projects/AI访谈/overview.md`、`journal/2026-11/2026-11-16.md`、`people/核心团队/小林.md`）组织，并用 `move` 迁移散落旧页、同步引用路径；
+     a) **自然分层归档**：按主题聚合度用合理目录组织笔记（如项目专题子目录、按月归档的 `journal/YYYY-MM/YYYY-MM-DD.md`、人物/生活/空间活页），并用 `move` 迁移散落旧页、同步引用路径，不为单篇短文硬套空壳层级；
      b) **合并冗余与清理陈旧**：将细碎重叠笔记的有效结论并入主活页后 `remove` 碎片文件（保留 `PROACTIVE_PREFERENCES.md`）；任何缺 `# 一级标题` 或残留裸 UUID / 内部审计套话的笔记，用 `mode='replace'` 重写为干净手记；在 `MEMORY.md` 中及时移除已办结或过期的条目。
 3. 【全天时空拼图、原音脉络与生理节律对账（`notebook` 每日日志）】
    - 通过 `phone_context(kind='all')` 与 `phone_context(kind='health')`（及页面附带的 `health_and_activity_summary`）核对到访地点（`visits`）、出行姿态（`motion`）、日程（`calendar`）、待办（`reminders`）以及睡眠阶段、HRV/静息心率恢复趋势与运动消耗；有 `next_cursor` 时按需续读。牢记视野谦逊：日程只代表计划，待办从快照消失或未打勾都不单独证明已完成或未完成（用户可能在线下办妥）；结合当天全部录音（`list_recordings` / `read_recording`）与聊天（`session_search`）客观更新当日日志（若该月份已有 `journal/YYYY-MM/` 子目录则统一写入 `journal/YYYY-MM/YYYY-MM-DD.md`）。瞬时电量等临时数值留在资料层，不写入 `MEMORY.md` / `USER.md`。
-   - 包含：`# YYYY-MM-DD · <当日主线标题>`、`## 时空与事件脉络`（融合真实会议/对话录音要点并附 `[HH:MM 原音](momoagent://source/...)` 锚点，同时简记当日睡眠/运动/精力节律）、`## 思考火花与决策演变`、`## 承诺与待办对账`。
+   - 包含：`# YYYY-MM-DD · <当日主线标题>`、`## 时空与事件脉络`（融合真实会议/对话与日常生活关键脉络并附 `[HH:MM 原音](momoagent://source/...)` 锚点，同时简记当日睡眠/运动/精力节律）、`## 思考火花与决策演变`、`## 承诺与待办对账`。
 4. 【在研项目盘点与边界隔离（`projects/` + `topics/`）】
    - 按业务域、核心术语与参与人区分独立项目，不将不同项目的排期、规则或人物串写混同。
    - 维护 `projects/overview.md`（`# 在研项目总览`）及各活跃项目活页 `projects/<项目短名>.md`（或项目子目录），清晰呈现项目目标、当前定案结论、核心相关人与下一步杠杆点；`topics/` 仅保留跨项目或需独立沉淀的方法论专题。
-5. 【晨间简报昼夜分工与四维全景合成（`BRIEFING.md` + `memory`）】
-   - **凌晨睡眠前不预写死次日简报**：若 `Current Local Time` 处于每日分界线之前的凌晨时段（如 `00:00–07:59`，用户尚未睡醒、当晚睡眠与晨间 HRV 尚未出炉），本轮专注把 `journal`、`projects/`、`people/`、`MEMORY.md` 与 `USER.md` 沉淀扎实，**不要提前把次日日期写入 `BRIEFING.md`**（系统会在早晨醒后结合整晚睡眠恢复、全天录音脉络与今日日程实时生成晨间简报）。
-   - **白天触发整理时（如 `08:00` 及之后手动运行 Dream）**：先回读最新 `journal`、`list_recordings`、`phone_context(kind='health')` 与 `phone_context(kind='all')`，撰写融合 **「状态与节律（睡眠/HRV/心率恢复）+ 昨日原音与推进脉络（优先真实会议录音与业务进展，主动降权在聊天框里调试 MoMo 自身的元对话）+ 今日焦点与必办（对齐日程待办）+ 底部可执行 `## 卡片：`」** 的 `# 晨间简报 · YYYY-MM-DD` 写入 `BRIEFING.md`（可见正文约 220–320 字）。
+5. 【晨间简报昼夜分工与全景合成（`BRIEFING.md` + `memory`）】
+   - **凌晨睡眠前不预写死次日简报**：若 `Current Local Time` 处于每日分界线之前的凌晨时段（如 `00:00–07:59`，用户尚未睡醒、当晚睡眠与晨间 HRV 尚未出炉），本轮专注把 `journal`、项目/人物/生活活页、`MEMORY.md` 与 `USER.md` 沉淀扎实，**不要提前把次日日期写入 `BRIEFING.md`**（系统会在早晨醒后结合整晚睡眠恢复、全天录音脉络与今日日程实时生成晨间简报）。
+   - **白天触发整理时（如 `08:00` 及之后手动运行 Dream）**：先回读最新 `journal`、`list_recordings`、`phone_context(kind='health')` 与 `phone_context(kind='all')`，撰写融合 **「状态与节律（睡眠/HRV/心率恢复）+ 昨日原音与推进脉络（优先真实会议与生活脉络，主动降权在聊天框里调试 MoMo 自身的元对话）+ 今日焦点与必办（对齐日程待办）+ 底部可执行 `## 卡片：`」** 的 `# 晨间简报 · YYYY-MM-DD` 写入 `BRIEFING.md`（可见正文约 220–320 字）。
    - 最后用 `memory` 工具精炼校准 `USER.md` 与 `MEMORY.md`。若所有来源与笔记均已整洁最新且无需任何调整，返回 `no_change`。"""
 
 

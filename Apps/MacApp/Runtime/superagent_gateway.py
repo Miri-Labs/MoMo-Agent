@@ -4685,6 +4685,8 @@ class SuperAgentGateway:
             limit = max(5, min(50, int(request.query.get("limit", "20") or 20)))
         except ValueError:
             limit = 20
+        from life_context import build_life_context_pack
+
         if thread_id.startswith("transcript:") or source_id:
             raw_tid = thread_id.partition(":")[2]
             sid = source_id or re.split(r":[ws]\d+", raw_tid, maxsplit=1)[0]
@@ -4692,11 +4694,21 @@ class SuperAgentGateway:
                 sid, message_id=message_id, cursor=cursor, limit=limit
             )
             recent_tickets = self._recent_proactive_ticket_summaries(source_id=sid, max_items=8)
+            life_ctx = build_life_context_pack(
+                self.data,
+                texts=[m["text"] for m in messages[-6:] if m.get("text")],
+                exclude_source_ids={sid},
+                include_core_memory=False,
+                include_situation=True,
+                recall_limit=5,
+                max_recall_chars=1800,
+            )
             payload: dict = {
                 "messages": messages,
                 "body": {
                     "source_id": sid,
                     **({"recent_tickets": recent_tickets} if recent_tickets else {}),
+                    **({"life_context": life_ctx} if life_ctx else {}),
                 },
             }
             if next_cursor:
@@ -4721,12 +4733,21 @@ class SuperAgentGateway:
                 for row in reversed(sig_rows)
             ]
             recent_tickets = self._recent_proactive_ticket_summaries(max_items=8)
+            life_ctx = build_life_context_pack(
+                self.data,
+                texts=[m["text"] for m in sig_messages[-2:] if m.get("text")],
+                include_core_memory=False,
+                include_situation=False,
+                recall_limit=4,
+                max_recall_chars=1400,
+            )
             return web.json_response(
                 {
                     "messages": sig_messages,
                     "body": {
                         "thread_id": clean_tid,
                         **({"recent_tickets": recent_tickets} if recent_tickets else {}),
+                        **({"life_context": life_ctx} if life_ctx else {}),
                     },
                 }
             )
@@ -4743,7 +4764,24 @@ class SuperAgentGateway:
             }
             for row in reversed(rows)
         ]
-        return web.json_response({"messages": messages, "body": {"thread_id": thread_id}})
+        owner_texts = [m["text"] for m in messages if m.get("from") == "owner" and m.get("text")][-4:]
+        life_ctx = build_life_context_pack(
+            self.data,
+            texts=owner_texts,
+            include_core_memory=False,
+            include_situation=True,
+            recall_limit=6,
+            max_recall_chars=2000,
+        )
+        return web.json_response(
+            {
+                "messages": messages,
+                "body": {
+                    "thread_id": thread_id,
+                    **({"life_context": life_ctx} if life_ctx else {}),
+                },
+            }
+        )
 
     def _transcript_thread_messages(
         self,

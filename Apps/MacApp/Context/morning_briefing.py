@@ -386,7 +386,15 @@ def build_holistic_briefing_pack(data: Path, chat_db, *, now: float | None = Non
             "pack": {},
         }
 
+    from life_context import core_memory_snapshot
+
+    core_mem = core_memory_snapshot(base)
+
     pack = {
+        "user_and_core_memory": {
+            "user_profile": core_mem["user"] or None,
+            "core_memory": core_mem["memory"] or None,
+        },
         "physiology_and_recovery": physiology,
         "recent_recordings_36h": recordings,
         "recent_journals": journal_notes,

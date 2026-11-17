@@ -502,10 +502,37 @@ class LifeIllustrations:
     def status(self, after=0, limit=50):
         if type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError('Invalid illustration status page')
-        rows = self.db.execute('''SELECT rowid,id,window_start,window_end,state,error,updated_at FROM slots
+        rows = self.db.execute('''SELECT rowid,id,window_start,window_end,state,summary,brief,error,updated_at FROM slots
             WHERE rowid>? ORDER BY rowid LIMIT ?''', (after, limit + 1)).fetchall()
         return dict(items=[{key: row[key] for key in row.keys() if key != 'rowid'} for row in rows[:limit]],
                     next_cursor=rows[limit - 1]['rowid'] if len(rows) > limit else None)
+
+    def regenerate(self, identity, context, availability, now=None):
+        identity = str(uuid.UUID(identity))
+        now = time.time() if now is None else now
+        with self.write():
+            row = self.db.execute('SELECT * FROM slots WHERE id=?', (identity,)).fetchone()
+            if not row or row['state'] == 'deleted':
+                raise ValueError('Unknown illustration')
+            evidence, versions, semantic, _ = evidence_for(context, row['window_start'], row['window_end'])
+            primary = recording_location(context, row['window_start'], row['window_end'], evidence['visits'])
+            place_start, place_end = completed_place_interval(primary)
+            zone = saved_zone(row['timezone'])
+            day_start = (
+                dt.datetime.combine(dt.date.fromisoformat(row['logical_day']), dt.time(0), tzinfo=zone).timestamp()
+                if zone is not None
+                else row['window_start']
+            )
+            route = trajectory_evidence(context, day_start, row['window_end'])
+            evidence['trajectory'] = route
+            self.db.execute('''UPDATE slots SET state='pending',source_versions=?,evidence=?,semantic_hash=?,
+                brief=NULL,summary=NULL,request_id=NULL,response_id=NULL,attempt=0,retry_at=0,error=NULL,
+                place=?,latitude=?,longitude=?,place_start=?,place_end=?,route_points=?,updated_at=?
+                WHERE id=?''',
+                (canonical(versions), canonical(evidence), semantic, primary.get('title'),
+                 primary.get('latitude'), primary.get('longitude'), place_start, place_end,
+                 canonical(route), max(now, float(row['updated_at']) + 0.000001), identity))
+        return dict(id=identity, state='pending', **self.settings(availability))
 
     def delete(self, identity, now=None, state='deleted'):
         identity = str(uuid.UUID(identity))
@@ -869,7 +896,7 @@ class LifeIllustrations:
         if not generator.availability()['supported'] or not self.db.execute('SELECT enabled FROM settings WHERE id=1').fetchone()[0]:
             return False
         row, evidence = None, None
-        for candidate in self.db.execute("SELECT * FROM slots WHERE state='pending' AND retry_at<=? ORDER BY window_start DESC", (now,)).fetchall():
+        for candidate in self.db.execute("SELECT * FROM slots WHERE state='pending' AND retry_at<=? ORDER BY updated_at DESC, window_start DESC", (now,)).fetchall():
             cand_evidence, _, _, pending = evidence_for(context, candidate['window_start'], candidate['window_end'])
             if not pending:
                 cand_evidence['visits'] = json.loads(candidate['evidence']).get('visits', [])
@@ -910,6 +937,7 @@ class LifeIllustrations:
             self.reconcile(context)
             self.save_image(row['id'], raw)
             spool.unlink(missing_ok=True)
+            self.prune_assets()
             return True
         except Exception as error:
             current = self.db.execute('SELECT state,attempt FROM slots WHERE id=?', (row['id'],)).fetchone()

@@ -125,9 +125,9 @@ def prompt(batch):
             + "\n【重要写入与后验自纠偏指引】"
             "1) **严禁张冠李戴与过早归因**：同场会议常有多人发言，绝不能因为某位具名参与者（如 `[佳辰]`）在场或声纹偶发串轨，就把相邻的 `[说话人 N]` 或未确认主讲人的内容（如介绍 OKR、汇报模块）盲目归因到该具名人头上！证据不足以确认主讲人时请客观写“会上介绍双月 OKR”或“某参会者提出…”，确认后再具名；"
             "2) **跨批次后验自省纠错（Retrospective Self-Correction）**：写入前必须先用 `notebook(action='read')` 读取已有的 `journal/YYYY-MM-DD.md`、相关 `projects/*.md` 和 `people/*.md`！一旦后续段落中的称呼、点名互动、职责分工或新声纹标签暴露出**前序批次总结错了说话人或结论**（例如前面误写成“佳辰介绍 OKR”，后文互动证明其实是 `shengli` 讲的），必须**立即主动推翻并改写已有笔记中的错误归属**，同时用 `read_recording` 定位前序误标片段并调用 `relabel_speakers`（原标签若已是具名人仅局部串轨必须用 `scope='selection'` 精确传入 `span_ids`；原标签若是整组匿名 `[说话人 N]` 可用 `scope='cluster'`）提出标注建议供用户确认，pending 不能视作已改标签；只有 applied 回执后才按确认身份更新人物页；"
-            "3) **先收敛整合、严禁碎片化乱建笔记或盲目追加**：先调用 `notebook(action='list')` 查看现有 `projects/` 与 `topics/` 结构！常规项目进展直接用 `mode='replace'` 融入已有的 `projects/<项目短名>.md` 与当日 `journal/YYYY-MM-DD.md`，**严禁因为单次批次聊到某个小功能点、小实验或一句话线索就新建零碎的 `topics/*.md`**；每篇 `.md` 首行必须有清晰的 `# 一级标题`，更新已有笔记时优先整合重写、删去过时冗余内容而非无脑往底部堆砌追加；若发现早期碎片笔记已被主项目覆盖，可用 `notebook(action='remove')` 直接清理；"
+            "3) **工作进展与立体生活画像并重、严禁碎片化乱建或盲目追加**：先调用 `notebook(action='list')` 查看现有结构！除常规工作项目（融入 `projects/<项目短名>.md`）外，对真实日常居家录音中反复印证的**家庭成员、宠物（名字、ASR 同音词如“皮皮/屁屁”、猫/狗品种与习性）、常驻城市/住处/办公地及生活习惯**，及时提炼进 `USER.md` 与对应人物/生活活页（注意剥离短视频旁白、赛事解说等背景媒体音，不把视频台词当用户经历）；**严禁因为单次聊到某个小词就新建零碎的 `topics/*.md`**，更新已有笔记优先 `mode='replace'` 重整，清除过时冗余内容与冗长的免责套话；"
             "4) **严禁把内部批次信息写进笔记正文**：`remaining_parts` 与 `source_revision` 仅供你内部知晓进度，**绝对禁止**在任何 `.md` 笔记中写出 `revision 0:xxx`、`remaining_parts=xxx`、`来源与边界：本次仅整理…暂不重标` 等审计/调试套话；"
-            "5) `MEMORY.md` 仅保留精炼核心背景与索引（格式为 `**【项目/主题】**（YYYY-MM-DD）：简洁要点`）。"
+            "5) `USER.md` 沉淀稳定的个人/家庭/宠物/常驻地与偏好画像，`MEMORY.md` 仅保留精炼核心背景与索引（格式为 `**【项目/主题】**（YYYY-MM-DD）：简洁要点`）。"
             "\n需要前后文核对说话人时用 `read_recording` 按 `source_revision` 分页补读。\n" + RECEIPT + "\n"
             + "source_id=" + batch["source_id"] + " source_revision=" + batch["source_revision"]
             + "\nTRANSCRIPT_BATCH_JSON=" + canonical(batch))
