@@ -117,8 +117,11 @@ class PairingStore:
             now = self.now()
             last = self._last_seen_written.get(row['id'])
             if last is None or abs(now - last) >= 10:
-                with self.db: self.db.execute('UPDATE devices SET last_seen=? WHERE id=?', (now, row['id']))
-                self._last_seen_written[row['id']] = now
+                try:
+                    with self.db: self.db.execute('UPDATE devices SET last_seen=? WHERE id=?', (now, row['id']))
+                    self._last_seen_written[row['id']] = now
+                except sqlite3.OperationalError:
+                    pass
         return bool(row)
 
     def device_id(self, token):

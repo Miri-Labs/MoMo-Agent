@@ -14,10 +14,29 @@ struct EmbeddedTailnetTransport: AgentTransport {
         do {
             return try await openOnce(request, url: url, desktop: desktop, media: media)
         } catch {
-            guard Self.canRetryBeforeResponse(request, after: error) else { throw error }
+            guard Self.canRetryBeforeResponse(request, after: error) else {
+                throw Self.remapResidualPolicyBypass(error)
+            }
             try await Task.sleep(for: .milliseconds(250))
-            return try await openOnce(request, url: url, desktop: desktop, media: media)
+            do {
+                return try await openOnce(request, url: url, desktop: desktop, media: media)
+            } catch {
+                throw Self.remapResidualPolicyBypass(error)
+            }
         }
+    }
+
+    private static func remapResidualPolicyBypass(_ error: Error) -> Error {
+        // Endpoint has already passed TailnetEndpoint.accepts (http://100.64.0.0/10:8767).
+        // Any residual -1022 means CFNetwork bypassed the local SOCKS5 proxy during a VPN/path
+        // transition; surface a transient TailnetError so callers retry cleanly instead of
+        // permanently disabling the connection or showing raw English ATS messages.
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain,
+           URLError.Code(rawValue: nsError.code) == .appTransportSecurityRequiresSecureConnection {
+            return TailnetError.unavailable
+        }
+        return error
     }
 
     private func openOnce(_ request: URLRequest, url: URL, desktop: Bool, media: Bool) async throws -> AgentByteStream {
@@ -59,11 +78,16 @@ struct EmbeddedTailnetTransport: AgentTransport {
     }
 
     private static func canRetryBeforeResponse(_ request: URLRequest, after error: Error) -> Bool {
-        guard !AgentTransportFailure.isCancelled(error), !(error is AgentClientError) else { return false }
+        guard !AgentTransportFailure.isCancelled(error), !(error is AgentClientError), request.httpBodyStream == nil else { return false }
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain,
+           URLError.Code(rawValue: nsError.code) == .appTransportSecurityRequiresSecureConnection {
+            // Local CFNetwork pre-flight rejection before any socket connect; 0 bytes left the device.
+            return true
+        }
         let method = (request.httpMethod ?? "GET").uppercased()
         let idempotent = ["GET", "HEAD"].contains(method) || request.value(forHTTPHeaderField: "Idempotency-Key") != nil
-        guard idempotent, request.httpBodyStream == nil else { return false }
-        let nsError = error as NSError
+        guard idempotent else { return false }
         if nsError.domain == NSURLErrorDomain {
             let code = URLError.Code(rawValue: nsError.code)
             return [.badURL, .timedOut, .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet].contains(code)
