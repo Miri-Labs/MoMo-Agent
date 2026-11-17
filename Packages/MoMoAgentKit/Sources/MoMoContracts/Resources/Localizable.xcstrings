@@ -1,698 +1,6 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
-    "%@待整理": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ to transcribe"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文字起こし待ち：%@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "전사 대기 %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@待整理"
-          }
-        }
-      }
-    },
-    "%@原音待同步": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ of audio awaiting sync"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "音声 %@ の同期待ち"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "오디오 %@ 동기화 대기"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@原音待同步"
-          }
-        }
-      }
-    },
-    "创作": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Creator"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "クリエイター"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "크리에이터"
-          }
-        }
-      }
-    },
-    "已接收 %@ 原音": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ of audio received"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "音声 %@ を受信済み"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "오디오 %@ 수신됨"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已接收 %@ 原音"
-          }
-        }
-      }
-    },
-    "整理进度": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Transcription progress"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文字起こしの進捗"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "전사 진행률"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "整理进度"
-          }
-        }
-      }
-    },
-    "后台整理": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Background"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "バックグラウンド"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "백그라운드"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "后台整理"
-          }
-        }
-      }
-    },
-    "已申请": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Requested"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "申請済み"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "요청됨"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已申请"
-          }
-        }
-      }
-    },
-    "整理已暂停": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Transcription paused"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文字起こしを一時停止中"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "전사 일시 정지됨"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "整理已暂停"
-          }
-        }
-      }
-    },
-    "后台整理已暂停": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Background processing paused"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "バックグラウンド処理を一時停止中"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "백그라운드 처리 일시 정지됨"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "后台整理已暂停"
-          }
-        }
-      }
-    },
-    "整理暂未完成": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Transcription incomplete"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文字起こしが未完了"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "전사 미완료"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "整理暂未完成"
-          }
-        }
-      }
-    },
-    "无法完成": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not complete"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "完了できませんでした"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法完成"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "無法完成"
-          }
-        }
-      }
-    },
-    "暂时无法同步": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sync temporarily unavailable"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一時的に同期できません"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "일시적으로 동기화할 수 없어요"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂时无法同步"
-          }
-        }
-      }
-    },
-    "未完成的任务": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Incomplete tasks"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未完了のタスク"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未完成的任务"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未完成的任務"
-          }
-        }
-      }
-    },
-    "标准": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Standard"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "標準"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "표준"
-          }
-        }
-      }
-    },
-    "消息已保存，等待送达确认": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Message saved. Waiting for delivery confirmation."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メッセージを保存しました。配信の確認を待っています。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "메시지를 저장했어요. 전달 확인을 기다리고 있어요."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "消息已保存，等待送达确认"
-          }
-        }
-      }
-    },
-    "正在恢复同步": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Resuming sync"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同期を再開中"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "동기화 재개 중"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在恢复同步"
-          }
-        }
-      }
-    },
-    "等待原音同步": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Waiting for audio"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "音声の同期待ち"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "오디오 동기화 대기"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等待原音同步"
-          }
-        }
-      }
-    },
-    "创作模式": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Creator mode"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "クリエイターモード"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "크리에이터 모드"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "创作模式"
-          }
-        }
-      }
-    },
-    "对话模式": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Conversation mode"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "会話モード"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "대화 모드"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对话模式"
-          }
-        }
-      }
-    },
-    "在创作模式下，可以让 MoMo 添加个人扩展。扩展保存在 Mac 上。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In Creator mode, ask MoMo to add personal extensions. They’re saved on your Mac."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "クリエイターモードでは、MoMo に個人用の拡張機能を追加してもらえます。拡張機能は Mac に保存されます。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "크리에이터 모드에서 MoMo에게 개인용 확장 기능을 추가해 달라고 할 수 있습니다. 확장 기능은 Mac에 저장됩니다."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在创作模式下，可以让 MoMo 添加个人扩展。扩展保存在 Mac 上。"
-          }
-        }
-      }
-    },
-    "结果未送达": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Result not delivered"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "結果を届けられませんでした"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "结果未送达"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "結果未送達"
-          }
-        }
-      }
-    },
-    "聊天模式": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chat mode"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "チャットモード"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "채팅 모드"
-          }
-        }
-      }
-    },
-    "选择「创作」后，在聊天里告诉 MoMo 想加什么功能。个人扩展保存在 Mac 上。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose Creator, then tell MoMo in chat what to add. Personal extensions are saved on your Mac."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「クリエイター」を選んで、追加したい機能をチャットで MoMo に伝えてください。拡張機能はお使いの Mac に保存されます。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "크리에이터를 선택한 뒤 채팅에서 MoMo에게 추가할 기능을 알려 주세요. 개인 확장 기능은 Mac에 저장됩니다."
-          }
-        }
-      }
-    },
-    "请更新 Mac 上的 MoMo 以使用创作模式。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Update MoMo on your Mac to use Creator mode."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "クリエイターモードを使うには、Mac の MoMo をアップデートしてください。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "크리에이터 모드를 사용하려면 Mac의 MoMo를 업데이트하세요."
-          }
-        }
-      }
-    },
-    "部分原音暂不可用": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Some audio is unavailable"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一部の音声を利用できません"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "일부 오디오를 사용할 수 없음"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "部分原音暂不可用"
-          }
-        }
-      }
-    },
     "\n\n[相关档案](": {
       "extractionState": "manual",
       "generatesSymbol": false,
@@ -1265,6 +573,64 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@–%@ · %@"
+          }
+        }
+      }
+    },
+    "%@原音待同步": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ of audio awaiting sync"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声 %@ の同期待ち"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오디오 %@ 동기화 대기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@原音待同步"
+          }
+        }
+      }
+    },
+    "%@待整理": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ to transcribe"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こし待ち：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전사 대기 %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@待整理"
           }
         }
       }
@@ -2428,12 +1794,6 @@
     "Claude 订阅暂不支持": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude 订阅暂不支持"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -2451,18 +1811,18 @@
             "state": "translated",
             "value": "Claude 구독은 지원되지 않음"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 订阅暂不支持"
+          }
         }
       }
     },
     "Claude 订阅暂不支持，切换为 Codex 订阅后可用。": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude 订阅暂不支持，切换为 Codex 订阅后可用。"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -2479,6 +1839,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude 구독은 이 기능을 지원하지 않습니다. Codex 구독으로 전환하면 사용할 수 있습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 订阅暂不支持，切换为 Codex 订阅后可用。"
           }
         }
       }
@@ -2502,12 +1868,6 @@
     "Codex 订阅可用": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Codex 订阅可用"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -2524,6 +1884,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Codex 구독으로 사용 가능"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex 订阅可用"
           }
         }
       }
@@ -4106,12 +3472,6 @@
     "上一幅": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上一幅"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -4128,6 +3488,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "이전 일러스트"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一幅"
           }
         }
       }
@@ -5020,12 +4386,6 @@
     "下一幅": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "下一幅"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -5042,6 +4402,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "다음 일러스트"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一幅"
           }
         }
       }
@@ -7832,12 +7198,6 @@
     "修改备忘录": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "修改备忘录"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -7854,6 +7214,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모 수정"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改备忘录"
           }
         }
       }
@@ -8573,6 +7939,35 @@
         }
       }
     },
+    "全选": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select All"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてを選択"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 선택"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全选"
+          }
+        }
+      }
+    },
     "全部日期": {
       "localizations": {
         "en": {
@@ -8615,6 +8010,35 @@
           "stringUnit": {
             "state": "translated",
             "value": "共 %lld 项"
+          }
+        }
+      }
+    },
+    "共享…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "공유…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享…"
           }
         }
       }
@@ -9490,12 +8914,6 @@
     "分享插画": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分享插画"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -9512,6 +8930,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "일러스트 공유"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享插画"
           }
         }
       }
@@ -9726,15 +9150,61 @@
         }
       }
     },
-    "删除": {
+    "创作": {
       "extractionState": "manual",
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creator"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリエイター"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크리에이터"
+          }
+        }
+      }
+    },
+    "创作模式": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creator mode"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリエイターモード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크리에이터 모드"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除"
+            "value": "创作模式"
           }
-        },
+        }
+      }
+    },
+    "删除": {
+      "extractionState": "manual",
+      "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -9751,6 +9221,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "삭제"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
           }
         }
       }
@@ -9873,12 +9349,6 @@
     "删除备忘录": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "删除备忘录"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -9895,6 +9365,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모 삭제"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除备忘录"
           }
         }
       }
@@ -12827,6 +12303,64 @@
         }
       }
     },
+    "后台整理": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンド"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백그라운드"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台整理"
+          }
+        }
+      }
+    },
+    "后台整理已暂停": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background processing paused"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンド処理を一時停止中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백그라운드 처리 일시 정지됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台整理已暂停"
+          }
+        }
+      }
+    },
     "后台整理已申请": {
       "extractionState": "manual",
       "generatesSymbol": false,
@@ -14331,6 +13865,35 @@
         }
       }
     },
+    "在创作模式下，可以让 MoMo 添加个人扩展。扩展保存在 Mac 上。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In Creator mode, ask MoMo to add personal extensions. They’re saved on your Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリエイターモードでは、MoMo に個人用の拡張機能を追加してもらえます。拡張機能は Mac に保存されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크리에이터 모드에서 MoMo에게 개인용 확장 기능을 추가해 달라고 할 수 있습니다. 확장 기능은 Mac에 저장됩니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在创作模式下，可以让 MoMo 添加个人扩展。扩展保存在 Mac 上。"
+          }
+        }
+      }
+    },
     "在对话中参考日程": {
       "extractionState": "manual",
       "generatesSymbol": false,
@@ -15012,12 +14575,6 @@
     "备忘录": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "备忘录"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -15034,6 +14591,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备忘录"
           }
         }
       }
@@ -16154,6 +15717,63 @@
         }
       }
     },
+    "对话模式": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversation mode"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話モード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화 모드"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对话模式"
+          }
+        }
+      }
+    },
+    "对话结束约 10 分钟、转录完成后自动生成。已保存的插画会保留。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generated automatically about 10 minutes after a conversation ends and transcription finishes. Saved illustrations are kept."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話終了から約10分後、文字起こしが完了すると自動生成します。保存済みのイラストは保持されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화가 끝난 후 약 10분이 지나고 받아쓰기가 완료되면 자동으로 생성됩니다. 저장된 일러스트는 유지됩니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对话结束约 10 分钟、转录完成后自动生成。已保存的插画会保留。"
+          }
+        }
+      }
+    },
     "对账发现部分原音已不可用，请在手机检查。": {
       "extractionState": "manual",
       "generatesSymbol": false,
@@ -16922,12 +16542,6 @@
     "已修改备忘录": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已修改备忘录"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -16944,6 +16558,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모 수정됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已修改备忘录"
           }
         }
       }
@@ -17237,12 +16857,6 @@
     "已删除备忘录": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已删除备忘录"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -17259,6 +16873,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모 삭제됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除备忘录"
           }
         }
       }
@@ -18222,6 +17842,35 @@
         }
       }
     },
+    "已接收 %@ 原音": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ of audio received"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声 %@ を受信済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오디오 %@ 수신됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已接收 %@ 原音"
+          }
+        }
+      }
+    },
     "已接收的原音文件缺失，请在资料库检查。": {
       "extractionState": "manual",
       "generatesSymbol": false,
@@ -18905,12 +18554,6 @@
     "已查找备忘录": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已查找备忘录"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -18927,6 +18570,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모 검색됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已查找备忘录"
           }
         }
       }
@@ -19089,12 +18738,6 @@
     "已查看备忘录文件夹": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已查看备忘录文件夹"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -19111,6 +18754,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모 폴더 확인됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已查看备忘录文件夹"
           }
         }
       }
@@ -19427,12 +19076,6 @@
     "已添加备忘录": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已添加备忘录"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -19449,6 +19092,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모 추가됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加备忘录"
           }
         }
       }
@@ -19511,6 +19160,35 @@
           "stringUnit": {
             "state": "translated",
             "value": "已添加日程"
+          }
+        }
+      }
+    },
+    "已申请": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requested"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "申請済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已申请"
           }
         }
       }
@@ -19746,12 +19424,6 @@
     "已读取备忘录": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已读取备忘录"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -19768,6 +19440,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모 읽음"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已读取备忘录"
           }
         }
       }
@@ -20829,6 +20507,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前"
+          }
+        }
+      }
+    },
+    "当前 API 服务额度不足或正处于限流状态，请检查账户额度或更换服务。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The API service is out of quota or currently rate-limited. Check your account balance or switch providers."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在の API サービスは利用枠の上限に達しているかレート制限中です。残高を確認するかサービスを変更してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 API 서비스의 한도가 부족하거나 요청 제한 상태입니다. 계정 잔액을 확인하거나 서비스를 변경하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前 API 服务额度不足或正处于限流状态，请检查账户额度或更换服务。"
           }
         }
       }
@@ -22443,23 +22149,6 @@
         }
       }
     },
-    "录音资料暂未上传，稍后自动重试。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recording uploads will retry shortly."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "录音资料暂未上传，稍后自动重试。"
-          }
-        }
-      }
-    },
     "录音片段缺少原始时间，尚未同步。": {
       "localizations": {
         "en": {
@@ -22652,6 +22341,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "录音资料恢复失败"
+          }
+        }
+      }
+    },
+    "录音资料暂未上传，稍后自动重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording uploads will retry shortly."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音资料暂未上传，稍后自动重试。"
           }
         }
       }
@@ -25802,6 +25508,93 @@
         }
       }
     },
+    "拷贝": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コピー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복사"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拷贝"
+          }
+        }
+      }
+    },
+    "拷贝代码": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Code"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードをコピー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "코드 복사"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拷贝代码"
+          }
+        }
+      }
+    },
+    "拷贝整条消息": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Full Message"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージ全体をコピー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 메시지 복사"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拷贝整条消息"
+          }
+        }
+      }
+    },
     "持续录音中": {
       "extractionState": "manual",
       "generatesSymbol": false,
@@ -27778,12 +27571,6 @@
     "放大插画": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "放大插画"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -27800,6 +27587,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "일러스트 확대"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "放大插画"
           }
         }
       }
@@ -27985,6 +27778,35 @@
         }
       }
     },
+    "整理已暂停": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription paused"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしを一時停止中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전사 일시 정지됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整理已暂停"
+          }
+        }
+      }
+    },
     "整理日志": {
       "extractionState": "manual",
       "generatesSymbol": false,
@@ -28011,6 +27833,35 @@
           "stringUnit": {
             "state": "translated",
             "value": "整理日志"
+          }
+        }
+      }
+    },
+    "整理暂未完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription incomplete"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしが未完了"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전사 미완료"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整理暂未完成"
           }
         }
       }
@@ -28147,6 +27998,35 @@
           "stringUnit": {
             "state": "translated",
             "value": "整理这一段"
+          }
+        }
+      }
+    },
+    "整理进度": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription progress"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしの進捗"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전사 진행률"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整理进度"
           }
         }
       }
@@ -28755,6 +28635,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法安全连接此服务。请检查 API 地址与证书。"
+          }
+        }
+      }
+    },
+    "无法完成": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not complete"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了できませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法完成"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法完成"
           }
         }
       }
@@ -31093,6 +31001,35 @@
         }
       }
     },
+    "暂时无法同步": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync temporarily unavailable"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時的に同期できません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시적으로 동기화할 수 없어요"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时无法同步"
+          }
+        }
+      }
+    },
     "暂时无法打开录音": {
       "localizations": {
         "en": {
@@ -31809,6 +31746,34 @@
         }
       }
     },
+    "更换模型服务": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch Model Provider"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルサービスを変更"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 서비스 변경"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更换模型服务"
+          }
+        }
+      }
+    },
     "更改未采用。相关档案可能已经更新；可以放弃本次建议，让助理重新整理。": {
       "extractionState": "manual",
       "generatesSymbol": false,
@@ -31835,6 +31800,35 @@
           "stringUnit": {
             "state": "translated",
             "value": "更改未采用。相关档案可能已经更新；可以放弃本次建议，让助理重新整理。"
+          }
+        }
+      }
+    },
+    "更新后重试": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry after update"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新後に再試行"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트 후 다시 시도"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新后重试"
           }
         }
       }
@@ -32746,6 +32740,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "未完成"
+          }
+        }
+      }
+    },
+    "未完成的任务": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incomplete tasks"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未完了のタスク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未完成的任务"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未完成的任務"
           }
         }
       }
@@ -34249,12 +34271,6 @@
     "查找备忘录": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "查找备忘录"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -34271,6 +34287,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모 찾기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找备忘录"
           }
         }
       }
@@ -34675,12 +34697,6 @@
     "查看备忘录文件夹": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "查看备忘录文件夹"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -34697,6 +34713,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모 폴더 보기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看备忘录文件夹"
           }
         }
       }
@@ -35247,6 +35269,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "查看闹钟"
+          }
+        }
+      }
+    },
+    "标准": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표준"
           }
         }
       }
@@ -37738,6 +37783,35 @@
         }
       }
     },
+    "正在恢复同步": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resuming sync"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期を再開中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동기화 재개 중"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在恢复同步"
+          }
+        }
+      }
+    },
     "正在恢复配对…": {
       "localizations": {
         "en": {
@@ -39537,12 +39611,6 @@
     "每 %lld 小时": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每 %lld 小时"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -39559,6 +39627,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld시간마다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每 %lld 小时"
           }
         }
       }
@@ -40147,6 +40221,35 @@
         }
       }
     },
+    "消息已保存，等待送达确认": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message saved. Waiting for delivery confirmation."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージを保存しました。配信の確認を待っています。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지를 저장했어요. 전달 확인을 기다리고 있어요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "消息已保存，等待送达确认"
+          }
+        }
+      }
+    },
     "消息排版暂不可用，重新打开聊天可重试。": {
       "extractionState": "manual",
       "generatesSymbol": false,
@@ -40225,12 +40328,6 @@
     "添加备忘录": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "添加备忘录"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -40247,6 +40344,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모 추가"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加备忘录"
           }
         }
       }
@@ -40959,12 +41062,6 @@
     "生成间隔": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "生成间隔"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -40982,18 +41079,18 @@
             "state": "translated",
             "value": "생성 간격"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成间隔"
+          }
         }
       }
     },
     "生活插画": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "生活插画"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -41011,18 +41108,18 @@
             "state": "translated",
             "value": "일상 일러스트"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生活插画"
+          }
         }
       }
     },
     "生活插画下载校验失败，请稍后重试。": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "生活插画下载校验失败，请稍后重试。"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -41040,18 +41137,18 @@
             "state": "translated",
             "value": "일러스트 다운로드 확인에 실패했습니다. 나중에 다시 시도하세요."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生活插画下载校验失败，请稍后重试。"
+          }
         }
       }
     },
     "生活插画同步进度无效，请稍后重试。": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "生活插画同步进度无效，请稍后重试。"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -41069,18 +41166,18 @@
             "state": "translated",
             "value": "일러스트 동기화 진행 상태가 유효하지 않습니다. 나중에 다시 시도하세요."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生活插画同步进度无效，请稍后重试。"
+          }
         }
       }
     },
     "生活插画暂不可用。": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "生活插画暂不可用。"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -41098,18 +41195,18 @@
             "state": "translated",
             "value": "일상 일러스트를 현재 사용할 수 없습니다."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生活插画暂不可用。"
+          }
         }
       }
     },
     "生活插画资料不完整，请稍后重试。": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "生活插画资料不完整，请稍后重试。"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -41126,6 +41223,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "일러스트 정보가 불완전합니다. 나중에 다시 시도하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生活插画资料不完整，请稍后重试。"
           }
         }
       }
@@ -41628,12 +41731,6 @@
     "登录 Codex 订阅后可用。": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "登录 Codex 订阅后可用。"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -41650,6 +41747,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Codex 구독으로 로그인하면 사용할 수 있습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录 Codex 订阅后可用。"
           }
         }
       }
@@ -42519,23 +42622,6 @@
         }
       }
     },
-    "笔记暂未刷新，稍后自动重试。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Notes couldn’t refresh. Another attempt will follow shortly."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "笔记暂未刷新，稍后自动重试。"
-          }
-        }
-      }
-    },
     "稍后自动重试": {
       "extractionState": "manual",
       "generatesSymbol": false,
@@ -42615,12 +42701,6 @@
     "空格放大": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "空格放大"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -42638,18 +42718,18 @@
             "state": "translated",
             "value": "스페이스바로 확대"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空格放大"
+          }
         }
       }
     },
     "空格还原": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "空格还原"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -42666,6 +42746,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "스페이스바로 복원"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空格还原"
           }
         }
       }
@@ -42802,6 +42888,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "立即同步"
+          }
+        }
+      }
+    },
+    "笔记暂未刷新，稍后自动重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notes couldn’t refresh. Another attempt will follow shortly."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "笔记暂未刷新，稍后自动重试。"
           }
         }
       }
@@ -42987,6 +43090,35 @@
           "stringUnit": {
             "state": "translated",
             "value": "等待原音传到手机后自动整理。"
+          }
+        }
+      }
+    },
+    "等待原音同步": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for audio"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声の同期待ち"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오디오 동기화 대기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待原音同步"
           }
         }
       }
@@ -44604,6 +44736,34 @@
         }
       }
     },
+    "结果未送达": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Result not delivered"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結果を届けられませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结果未送达"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結果未送達"
+          }
+        }
+      }
+    },
     "统计时间": {
       "extractionState": "manual",
       "generatesSymbol": false,
@@ -45269,6 +45429,29 @@
         }
       }
     },
+    "聊天模式": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat mode"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットモード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "채팅 모드"
+          }
+        }
+      }
+    },
     "聊天记录": {
       "comment": "Chat renderer UI. Keep {0}, {1} and other numbered arguments unchanged.",
       "extractionState": "manual",
@@ -45492,6 +45675,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "自动转写暂未恢复，音频已保留。重新打开 App 后会再试。"
+          }
+        }
+      }
+    },
+    "自定义 API 密钥不可用，请检查密钥后重试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The custom API key is unavailable. Check the key and try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタム API キーが利用できません。キーを確認して再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 지정 API 키를 사용할 수 없습니다. 키를 확인한 후 다시 시도하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义 API 密钥不可用，请检查密钥后重试。"
           }
         }
       }
@@ -47974,6 +48185,29 @@
         }
       }
     },
+    "请更新 Mac 上的 MoMo 以使用创作模式。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update MoMo on your Mac to use Creator mode."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリエイターモードを使うには、Mac の MoMo をアップデートしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크리에이터 모드를 사용하려면 Mac의 MoMo를 업데이트하세요."
+          }
+        }
+      }
+    },
     "请更新电脑上的 MoMo Agent": {
       "localizations": {
         "en": {
@@ -48281,12 +48515,6 @@
     "请选择 2、3、4 或 6 小时。": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请选择 2、3、4 或 6 小时。"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -48303,6 +48531,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "2, 3, 4, 6시간 중에서 선택하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择 2、3、4 或 6 小时。"
           }
         }
       }
@@ -48430,12 +48664,6 @@
     "读取备忘录": {
       "comment": "Chat renderer UI",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "读取备忘录"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -48452,6 +48680,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "메모 읽기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取备忘录"
           }
         }
       }
@@ -50284,12 +50518,6 @@
     "返回转录": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "返回转录"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -50306,6 +50534,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "전사로 돌아가기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回转录"
           }
         }
       }
@@ -50329,12 +50563,6 @@
     "还原插画": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "还原插画"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -50351,6 +50579,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "일러스트 크기 복원"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还原插画"
           }
         }
       }
@@ -52284,12 +52518,6 @@
     "这段转录已不可用，请刷新后重试。": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这段转录已不可用，请刷新后重试。"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -52306,6 +52534,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "이 전사를 사용할 수 없습니다. 새로 고친 후 다시 시도하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这段转录已不可用，请刷新后重试。"
           }
         }
       }
@@ -53369,6 +53603,29 @@
         }
       }
     },
+    "选择「创作」后，在聊天里告诉 MoMo 想加什么功能。个人扩展保存在 Mac 上。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Creator, then tell MoMo in chat what to add. Personal extensions are saved on your Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「クリエイター」を選んで、追加したい機能をチャットで MoMo に伝えてください。拡張機能はお使いの Mac に保存されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크리에이터를 선택한 뒤 채팅에서 MoMo에게 추가할 기능을 알려 주세요. 개인 확장 기능은 Mac에 저장됩니다."
+          }
+        }
+      }
+    },
     "选择一段转录": {
       "localizations": {
         "en": {
@@ -53501,6 +53758,35 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择文件"
+          }
+        }
+      }
+    },
+    "选择文本": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Text"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テキストを選択"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "텍스트 선택"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择文本"
           }
         }
       }
@@ -54345,6 +54631,35 @@
           "stringUnit": {
             "state": "translated",
             "value": "部分原音文件缺失，请查看同步与转写详情。"
+          }
+        }
+      }
+    },
+    "部分原音暂不可用": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some audio is unavailable"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一部の音声を利用できません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일부 오디오를 사용할 수 없음"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分原音暂不可用"
           }
         }
       }
@@ -55674,6 +55989,35 @@
         }
       }
     },
+    "重新选择录音": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose recording again"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を選び直す"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "녹음 다시 선택"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新选择录音"
+          }
+        }
+      }
+    },
     "重新配对": {
       "localizations": {
         "en": {
@@ -55716,64 +56060,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "重要的人物、关系和相处背景。"
-          }
-        }
-      }
-    },
-    "更新后重试": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Retry after update"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更新後に再試行"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "업데이트 후 다시 시도"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更新后重试"
-          }
-        }
-      }
-    },
-    "重新选择录音": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose recording again"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録音を選び直す"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "녹음 다시 선택"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新选择录音"
           }
         }
       }
@@ -56648,12 +56934,6 @@
     "需要 Codex 订阅": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "需要 Codex 订阅"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -56670,6 +56950,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Codex 구독 필요"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要 Codex 订阅"
           }
         }
       }
@@ -57791,118 +58077,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "鼠标状态已变化，请重新接管。"
-          }
-        }
-      }
-    },
-    "对话结束约 10 分钟、转录完成后自动生成。已保存的插画会保留。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Generated automatically about 10 minutes after a conversation ends and transcription finishes. Saved illustrations are kept."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对话结束约 10 分钟、转录完成后自动生成。已保存的插画会保留。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "会話終了から約10分後、文字起こしが完了すると自動生成します。保存済みのイラストは保持されます。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "대화가 끝난 후 약 10분이 지나고 받아쓰기가 완료되면 자동으로 생성됩니다. 저장된 일러스트는 유지됩니다."
-          }
-        }
-      }
-    },
-    "更换模型服务": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更换模型服务"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Switch Model Provider"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "モデルサービスを変更"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "모델 서비스 변경"
-          }
-        }
-      }
-    },
-    "自定义 API 密钥不可用，请检查密钥后重试。": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自定义 API 密钥不可用，请检查密钥后重试。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The custom API key is unavailable. Check the key and try again."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "カスタム API キーが利用できません。キーを確認して再試行してください。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "사용자 지정 API 키를 사용할 수 없습니다. 키를 확인한 후 다시 시도하세요."
-          }
-        }
-      }
-    },
-    "当前 API 服务额度不足或正处于限流状态，请检查账户额度或更换服务。": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前 API 服务额度不足或正处于限流状态，请检查账户额度或更换服务。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The API service is out of quota or currently rate-limited. Check your account balance or switch providers."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "現在の API サービスは利用枠の上限に達しているかレート制限中です。残高を確認するかサービスを変更してください。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "현재 API 서비스의 한도가 부족하거나 요청 제한 상태입니다. 계정 잔액을 확인하거나 서비스를 변경하세요."
           }
         }
       }

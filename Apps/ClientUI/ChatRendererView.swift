@@ -2,6 +2,9 @@ import SwiftUI
 import WebKit
 import OSLog
 import MoMoContracts
+#if os(iOS)
+import UIKit.UIGestureRecognizerSubclass
+#endif
 
 struct ChatScrollRequest: Equatable {
     enum Destination { case entry, resumeTab, latest }
@@ -31,9 +34,6 @@ struct ChatRendererView: View {
     @State private var rendererReady = ChatWebSurface.hasWarmRenderedView
     @State private var nativeFocusedRequest: String?
     @State private var nativeEntryPlaced = false
-    #if os(iOS)
-    @State private var selectingBubbleTarget: PendingBubbleSelectionTarget?
-    #endif
 
     var body: some View {
         VStack(spacing: 0) {
@@ -52,58 +52,22 @@ struct ChatRendererView: View {
                         failed: { renderingFailed = true }, rendered: { rendererReady = true },
                         recovering: { rendererReady = false },
                         open: { openURL($0) }, regenerate: onRegenerate,
-                        readingPosition: onReadingPosition, systemAction: onSystemAction, attachment: onAttachment, retryMessage: onRetryMessage,
-                        hiddenBubbleID: {
-                            #if os(iOS)
-                            selectingBubbleTarget?.id
-                            #else
-                            nil
-                            #endif
-                        }(),
-                        onRequestBubbleSelection: { target in
-                            #if os(iOS)
-                            selectingBubbleTarget = target
-                            #endif
-                        })
+                        readingPosition: onReadingPosition, systemAction: onSystemAction, attachment: onAttachment, retryMessage: onRetryMessage)
                         .opacity(rendererReady ? 1 : 0)
                         .accessibilityHidden(!rendererReady)
                         .accessibilityIdentifier("assistant.transcript")
                     if !rendererReady { plainTranscript }
-                    #if os(iOS)
-                    if let target = selectingBubbleTarget {
-                        BubbleSelectionOverlayRepresentable(
-                            target: target,
-                            dark: colorScheme == .dark,
-                            scale: CGFloat(max(0.85, min(2.0, fontSize / Double(PhoneTextStyle.body.size)))),
-                            headerInset: headerInset,
-                            onDismiss: { selectingBubbleTarget = nil }
-                        )
-                        .ignoresSafeArea()
-                    }
-                    #endif
                 }
             }
         }
         .background(MoMoPalette.canvas)
         .phoneSoftTopEdge()
         .onChange(of: isChatSelected) { _, selected in
-            #if os(iOS)
-            if !selected { selectingBubbleTarget = nil }
-            #endif
             if selected { scrollRequest = ChatScrollRequest(destination: .resumeTab) }
         }
         .onChange(of: scrollToBottomRequest) { scrollRequest = ChatScrollRequest(destination: .latest) }
-        .onChange(of: snapshot.sessionID) {
-            #if os(iOS)
-            selectingBubbleTarget = nil
-            #endif
-            renderingFailed = false
-            scrollRequest = ChatScrollRequest(destination: .entry)
-        }
+        .onChange(of: snapshot.sessionID) { renderingFailed = false; scrollRequest = ChatScrollRequest(destination: .entry) }
         .onChange(of: scenePhase) {
-            #if os(iOS)
-            if scenePhase != .active { selectingBubbleTarget = nil }
-            #endif
             if scenePhase == .active, renderingFailed { rendererReady = false; renderingFailed = false }
         }
     }
@@ -363,8 +327,6 @@ private struct ChatWebSurface: ChatWebRepresentable {
     let systemAction: (UUID) -> Void
     let attachment: (UUID) -> Void
     let retryMessage: (UUID) -> Void
-    var hiddenBubbleID: String? = nil
-    var onRequestBubbleSelection: (PendingBubbleSelectionTarget) -> Void = { _ in }
 
     func makeCoordinator() -> ChatWebCoordinator {
         let coordinator = ChatWebCoordinator(failed: failed, open: open, regenerate: regenerate, readingPosition: readingPosition, systemAction: systemAction)
@@ -373,7 +335,6 @@ private struct ChatWebSurface: ChatWebRepresentable {
         coordinator.setActive(active)
         coordinator.attachment = attachment
         coordinator.retryMessage = retryMessage
-        coordinator.onRequestBubbleSelection = onRequestBubbleSelection
         return coordinator
     }
 
@@ -448,10 +409,6 @@ private struct ChatWebSurface: ChatWebRepresentable {
         context.coordinator.systemAction = systemAction
         context.coordinator.attachment = attachment
         context.coordinator.retryMessage = retryMessage
-        context.coordinator.onRequestBubbleSelection = onRequestBubbleSelection
-        #if os(iOS)
-        context.coordinator.syncSelectionHiddenBubble(hiddenBubbleID)
-        #endif
         if !active { context.coordinator.setActive(false) }
         context.coordinator.update(.init(snapshot: snapshot, appearance: .init(dark: dark, reduceMotion: reduceMotion, scale: scale, headerInset: headerInset)), scrollRequest: scrollRequest)
         if active { context.coordinator.setActive(true) }
@@ -485,6 +442,7 @@ private struct ChatWebSurface: ChatWebRepresentable {
             return
         }
         #else
+        coordinator.dismissActiveBubbleSelection(animated: false)
         if let interaction = coordinator.contextMenuInteraction {
             web.removeInteraction(interaction)
             coordinator.contextMenuInteraction = nil
@@ -501,10 +459,12 @@ private struct ChatWebSurface: ChatWebRepresentable {
 #if os(iOS)
 extension ChatWebCoordinator: UIGestureRecognizerDelegate {
     @objc func dismissKeyboardOnDrag(_ gesture: UIPanGestureRecognizer) {
+        guard activeBubbleSelectionView == nil else { return }
         let delta = gesture.translation(in: webView)
         if delta.y > 12, delta.y > abs(delta.x) { webView?.window?.endEditing(true) }
     }
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard activeBubbleSelectionView == nil else { return false }
         guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
         let velocity = pan.velocity(in: webView)
         return velocity.y > 0 && velocity.y > abs(velocity.x)
@@ -512,14 +472,6 @@ extension ChatWebCoordinator: UIGestureRecognizerDelegate {
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
 }
 #endif
-
-struct PendingBubbleSelectionTarget: Equatable, Sendable {
-    let id: String
-    let isUser: Bool
-    let copyText: String
-    let rectInWebView: CGRect
-    let pressLocationInWebView: CGPoint
-}
 
 struct ChatRenderPayload: Encodable, Equatable, Sendable {
     struct Appearance: Encodable, Equatable, Sendable {
@@ -557,7 +509,6 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
     var systemAction: (UUID) -> Void
     var attachment: (UUID) -> Void = { _ in }
     var retryMessage: (UUID) -> Void = { _ in }
-    var onRequestBubbleSelection: (PendingBubbleSelectionTarget) -> Void = { _ in }
     var rendered: () -> Void = {}
     var recovering: () -> Void = {}
     var bubbleRegions: [ChatBubbleRegion] = []
@@ -567,8 +518,10 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
     fileprivate weak var activePreviewHost: UIView?
     fileprivate var activeContextBubbleID: String?
     fileprivate var activeContextBubbleRect: CGRect?
-    fileprivate var activeSelectionHiddenBubbleID: String?
-    fileprivate var pendingBubbleSelectionTarget: PendingBubbleSelectionTarget?
+    fileprivate weak var activeBubbleSelectionView: TelegramBubbleSelectionView?
+    fileprivate var cachedSelectionRawLayout: RawExtractedBubbleLayout?
+    fileprivate var selectionPrefetchGeneration = 0
+    fileprivate var pendingSelectionRequest: PendingBubbleSelectionRequest?
     #else
     fileprivate var pendingMacCopyText: String?
     fileprivate var pendingMacCodeText: String?
@@ -597,6 +550,12 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
     }
 
     func update(_ payload: ChatRenderPayload, scrollRequest: ChatScrollRequest? = nil) {
+        #if os(iOS)
+        if let sent, (sent.snapshot.sessionID != payload.snapshot.sessionID || sent.appearance != payload.appearance) {
+            dismissActiveBubbleSelection(animated: false)
+            cachedSelectionRawLayout = nil
+        }
+        #endif
         pending = payload; pendingScroll = scrollRequest
         scheduleFlush()
     }
@@ -634,6 +593,9 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
         let suspended = !value && active
         active = value
         if !value {
+            #if os(iOS)
+            dismissActiveBubbleSelection(animated: false)
+            #endif
             coalescedFlushTask?.cancel(); coalescedFlushTask = nil
             if suspended, ready {
                 webView?.callAsyncJavaScript(
@@ -672,6 +634,10 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
 
     private func reloadDocument() {
         guard let webView, let resourceDirectory else { failed(); return }
+        #if os(iOS)
+        dismissActiveBubbleSelection(animated: false)
+        cachedSelectionRawLayout = nil
+        #endif
         coalescedFlushTask?.cancel(); coalescedFlushTask = nil
         reloads += 1; needsReload = false; ready = false; sending = false
         documentID = UUID(); sent = nil; didRender = false; lastFlushTime = nil
@@ -976,8 +942,8 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
     }
 
     func resolveBubbleHit(at location: CGPoint, in webView: WKWebView) -> (id: String, messageID: String, isUser: Bool, rectInWebView: CGRect, copyText: String, codeText: String?)? {
-        guard activeSelectionHiddenBubbleID == nil else { return nil }
-        let contentView = webView.scrollView.subviews.first { String(describing: type(of: $0)).contains("WKContentView") } ?? webView.scrollView.subviews.first
+        guard activeBubbleSelectionView == nil else { return nil }
+        let contentView = Self.findWKContentView(in: webView)
         if let pressed = pressedBubble, pressed.timestamp.duration(to: .now) < .milliseconds(700) {
             if pressed.hit {
                 if pressed.isLink { return nil }
@@ -1009,15 +975,90 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
         return nil
     }
 
-    fileprivate func syncSelectionHiddenBubble(_ id: String?) {
-        guard id != activeSelectionHiddenBubbleID else { return }
-        if let oldID = activeSelectionHiddenBubbleID {
-            setDOMBubbleHidden(oldID, hidden: false)
+    static func findWKContentView(in webView: WKWebView) -> UIView? {
+        webView.scrollView.subviews.first { String(describing: type(of: $0)).contains("WKContentView") }
+            ?? webView.scrollView.subviews.first
+    }
+
+    fileprivate func dismissActiveBubbleSelection(animated: Bool) {
+        selectionPrefetchGeneration &+= 1
+        guard let view = activeBubbleSelectionView else { return }
+        activeBubbleSelectionView = nil
+        view.dismissSelection(animated: animated)
+    }
+
+    fileprivate func prefetchBubbleSelectionLayout(_ id: String) {
+        if cachedSelectionRawLayout?.id == id { return }
+        fetchBubbleSelectionLayout(id) { [weak self] raw in
+            guard let self, let raw else { return }
+            self.cachedSelectionRawLayout = raw
         }
-        activeSelectionHiddenBubbleID = id
-        if let newID = id {
-            setDOMBubbleHidden(newID, hidden: true)
+    }
+
+    fileprivate func fetchBubbleSelectionLayout(_ id: String, completion: @escaping @MainActor (RawExtractedBubbleLayout?) -> Void) {
+        guard let webView,
+              let idData = try? JSONEncoder().encode(id),
+              let idJSON = String(data: idData, encoding: .utf8) else {
+            completion(nil)
+            return
         }
+        let doc = documentID
+        webView.evaluateJavaScript("window.MoMoChat?.extractBubbleSelectionLayout ? window.MoMoChat.extractBubbleSelectionLayout(\(idJSON)) : null") { [weak self] result, _ in
+            Task { @MainActor in
+                guard let self, self.webView === webView, self.documentID == doc,
+                      let dict = result as? [String: Any],
+                      let parsed = RawExtractedBubbleLayout.parse(dict) else {
+                    completion(nil)
+                    return
+                }
+                completion(parsed)
+            }
+        }
+    }
+
+    fileprivate func activateBubbleSelection(_ request: PendingBubbleSelectionRequest) {
+        dismissActiveBubbleSelection(animated: false)
+        if let cached = cachedSelectionRawLayout, cached.id == request.id {
+            mountBubbleSelection(raw: cached, request: request)
+            return
+        }
+        let gen = selectionPrefetchGeneration
+        fetchBubbleSelectionLayout(request.id) { [weak self] raw in
+            guard let self, self.selectionPrefetchGeneration == gen, let raw else { return }
+            self.cachedSelectionRawLayout = raw
+            self.mountBubbleSelection(raw: raw, request: request)
+        }
+    }
+
+    private func mountBubbleSelection(raw: RawExtractedBubbleLayout, request: PendingBubbleSelectionRequest) {
+        guard let webView else { return }
+        let scrollView = webView.scrollView
+        let contentView = Self.findWKContentView(in: webView)
+        let originOffset = contentView.map { scrollView.convert(CGPoint.zero, from: $0) } ?? .zero
+        let layout = ExtractedBubbleSelectionLayout.build(from: raw, originOffset: originOffset)
+        guard !layout.lines.isEmpty, layout.nsText.length > 0 else { return }
+
+        let dark = pending?.appearance.dark ?? (webView.traitCollection.userInterfaceStyle == .dark)
+        let headerInset = pending?.appearance.headerInset ?? 0
+        let pressInScroll = scrollView.convert(request.pressLocationInWebView, from: webView)
+        let contentW = max(scrollView.contentSize.width, webView.bounds.width)
+        let contentH = max(scrollView.contentSize.height, webView.bounds.height + 200)
+
+        let overlay = TelegramBubbleSelectionView(
+            frame: CGRect(x: 0, y: 0, width: contentW, height: contentH),
+            webView: webView,
+            layout: layout,
+            pressLocationInScroll: pressInScroll,
+            dark: dark,
+            headerInset: headerInset,
+            reduceMotion: pending?.appearance.reduceMotion ?? false,
+            onDismiss: { [weak self] animated in
+                self?.dismissActiveBubbleSelection(animated: animated)
+            }
+        )
+        scrollView.addSubview(overlay)
+        activeBubbleSelectionView = overlay
+        overlay.presentSelectionInPlace()
     }
 
     fileprivate func setDOMBubbleHidden(_ id: String, hidden: Bool, completion: (@MainActor () -> Void)? = nil) {
@@ -1099,18 +1140,22 @@ extension ChatWebCoordinator: UIContextMenuInteractionDelegate {
     func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                 configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
         guard let webView, let hit = resolveBubbleHit(at: location, in: webView) else { return nil }
+        dismissActiveBubbleSelection(animated: false)
         activePreviewHost?.removeFromSuperview()
         activePreviewHost = nil
         activeContextBubbleID = hit.id
         activeContextBubbleRect = hit.rectInWebView
+        pendingSelectionRequest = nil
 
         let hitID = hit.id
         let isUser = hit.isUser
-        let hitRect = hit.rectInWebView
         let copyText = hit.copyText
         let codeText = hit.codeText
         let messageID = hit.messageID
         let canRegenerate = (pending?.snapshot.canRegenerate == true) && (pending?.snapshot.busy == false) && !hit.isUser && !messageID.isEmpty
+
+        // Pre-warm exact DOM glyph boxes while the user inspects the context menu so tapping "选择文本" activates in <1ms.
+        prefetchBubbleSelectionLayout(hitID)
 
         return UIContextMenuConfiguration(identifier: hitID as NSString, previewProvider: nil) { [weak self] _ in
             var actions: [UIMenuElement] = [
@@ -1130,13 +1175,15 @@ extension ChatWebCoordinator: UIContextMenuInteractionDelegate {
             actions.append(
                 UIAction(title: String(localized: "选择文本", bundle: AppLanguage.resourceBundle),
                          image: UIImage(systemName: "selection.pin.in.out")) { [weak self] _ in
-                    self?.pendingBubbleSelectionTarget = PendingBubbleSelectionTarget(
+                    guard let self else { return }
+                    let req = PendingBubbleSelectionRequest(
                         id: hitID,
                         isUser: isUser,
-                        copyText: copyText,
-                        rectInWebView: hitRect,
                         pressLocationInWebView: location
                     )
+                    self.pendingSelectionRequest = req
+                    self.setDOMBubbleHidden(hitID, hidden: false)
+                    self.activateBubbleSelection(req)
                 }
             )
             if canRegenerate {
@@ -1181,6 +1228,9 @@ extension ChatWebCoordinator: UIContextMenuInteractionDelegate {
 
     func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                 previewForDismissingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        if pendingSelectionRequest != nil {
+            return nil
+        }
         guard let host = activePreviewHost, host.superview != nil else { return nil }
         let parameters = UIPreviewParameters()
         parameters.backgroundColor = .clear
@@ -1195,19 +1245,30 @@ extension ChatWebCoordinator: UIContextMenuInteractionDelegate {
                                 animator: (any UIContextMenuInteractionAnimating)?) {
         let host = activePreviewHost
         let bubbleID = activeContextBubbleID
-        let selectTarget = pendingBubbleSelectionTarget
+        let hadSelectionRequest = (pendingSelectionRequest != nil)
         activePreviewHost = nil
         activeContextBubbleID = nil
         activeContextBubbleRect = nil
-        pendingBubbleSelectionTarget = nil
+        pendingSelectionRequest = nil
+
+        if hadSelectionRequest {
+            host?.removeFromSuperview()
+            if let bubbleID {
+                setDOMBubbleHidden(bubbleID, hidden: false)
+            }
+            if let animator {
+                animator.addCompletion { [weak self] in
+                    MainActor.assumeIsolated {
+                        self?.activeBubbleSelectionView?.ensureEditMenuPresented()
+                    }
+                }
+            } else {
+                activeBubbleSelectionView?.ensureEditMenuPresented()
+            }
+            return
+        }
 
         let cleanup: @MainActor () -> Void = { [weak self] in
-            if let selectTarget, let self {
-                host?.removeFromSuperview()
-                self.activeSelectionHiddenBubbleID = selectTarget.id
-                self.onRequestBubbleSelection(selectTarget)
-                return
-            }
             if let bubbleID, let self {
                 self.setDOMBubbleHidden(bubbleID, hidden: false) {
                     host?.removeFromSuperview()
@@ -1224,350 +1285,946 @@ extension ChatWebCoordinator: UIContextMenuInteractionDelegate {
     }
 }
 
-private struct BubbleSelectionOverlayRepresentable: UIViewRepresentable {
-    let target: PendingBubbleSelectionTarget
-    let dark: Bool
-    let scale: CGFloat
-    let headerInset: CGFloat
-    let onDismiss: () -> Void
+fileprivate struct PendingBubbleSelectionRequest: Sendable {
+    let id: String
+    let isUser: Bool
+    let pressLocationInWebView: CGPoint
+}
 
-    func makeUIView(context: Context) -> BubbleTextSelectionOverlayView {
-        BubbleTextSelectionOverlayView(
-            frame: .zero,
-            target: target,
-            dark: dark,
-            scale: scale,
-            headerInset: headerInset,
-            onDismiss: onDismiss
+fileprivate struct RawExtractedBubbleLayout: Sendable {
+    struct RawBox: Sendable {
+        let startUTF16: Int
+        let endUTF16: Int
+        let docX: CGFloat
+        let docY: CGFloat
+        let width: CGFloat
+        let height: CGFloat
+    }
+
+    let id: String
+    let isUser: Bool
+    let docRect: CGRect
+    let text: String
+    let boxes: [RawBox]
+
+    static func parse(_ dict: [String: Any]) -> RawExtractedBubbleLayout? {
+        guard let id = dict["id"] as? String, !id.isEmpty,
+              let text = dict["text"] as? String, !text.isEmpty else { return nil }
+        let rawNumbers: [NSNumber]? = (dict["boxes"] as? [NSNumber])
+            ?? (dict["boxes"] as? [Any])?.compactMap { $0 as? NSNumber }
+        guard let rawNumbers, rawNumbers.count >= 6 else { return nil }
+
+        let isUser = (dict["isUser"] as? Bool) ?? false
+        let docX = CGFloat((dict["docX"] as? NSNumber)?.doubleValue ?? 0)
+        let docY = CGFloat((dict["docY"] as? NSNumber)?.doubleValue ?? 0)
+        let width = CGFloat((dict["width"] as? NSNumber)?.doubleValue ?? 0)
+        let height = CGFloat((dict["height"] as? NSNumber)?.doubleValue ?? 0)
+        let utf16Len = (text as NSString).length
+
+        var boxes: [RawBox] = []
+        boxes.reserveCapacity(rawNumbers.count / 6)
+        var i = 0
+        while i + 5 < rawNumbers.count {
+            let s = max(0, min(utf16Len, rawNumbers[i].intValue))
+            let e = max(s, min(utf16Len, rawNumbers[i + 1].intValue))
+            let x = CGFloat(rawNumbers[i + 2].doubleValue)
+            let y = CGFloat(rawNumbers[i + 3].doubleValue)
+            let w = CGFloat(rawNumbers[i + 4].doubleValue)
+            let h = CGFloat(rawNumbers[i + 5].doubleValue)
+            if e > s, w > 0, h > 0 {
+                boxes.append(RawBox(startUTF16: s, endUTF16: e, docX: x, docY: y, width: w, height: h))
+            }
+            i += 6
+        }
+        guard !boxes.isEmpty else { return nil }
+        return RawExtractedBubbleLayout(
+            id: id,
+            isUser: isUser,
+            docRect: CGRect(x: docX, y: docY, width: width, height: height),
+            text: text,
+            boxes: boxes
+        )
+    }
+}
+
+fileprivate struct ExtractedBubbleSelectionLayout {
+    struct GlyphBox {
+        let startUTF16: Int
+        let endUTF16: Int
+        let rect: CGRect
+
+        func slicedRect(for selected: NSRange) -> CGRect? {
+            let s = max(startUTF16, selected.location)
+            let e = min(endUTF16, NSMaxRange(selected))
+            guard e > s else { return nil }
+            let total = endUTF16 - startUTF16
+            guard total > 1, (s > startUTF16 || e < endUTF16) else { return rect }
+            let f0 = CGFloat(s - startUTF16) / CGFloat(total)
+            let f1 = CGFloat(e - startUTF16) / CGFloat(total)
+            return CGRect(
+                x: rect.minX + rect.width * f0,
+                y: rect.minY,
+                width: max(2, rect.width * (f1 - f0)),
+                height: rect.height
+            )
+        }
+    }
+
+    struct SelectionLine {
+        var rect: CGRect
+        var glyphs: [GlyphBox]
+    }
+
+    let id: String
+    let isUser: Bool
+    let bubbleRect: CGRect
+    let text: String
+    let nsText: NSString
+    let glyphs: [GlyphBox]
+    let lines: [SelectionLine]
+
+    static func build(from raw: RawExtractedBubbleLayout, originOffset: CGPoint) -> ExtractedBubbleSelectionLayout {
+        let bubbleRect = raw.docRect.offsetBy(dx: originOffset.x, dy: originOffset.y)
+        let glyphs: [GlyphBox] = raw.boxes.map { box in
+            GlyphBox(
+                startUTF16: box.startUTF16,
+                endUTF16: box.endUTF16,
+                rect: CGRect(
+                    x: box.docX + originOffset.x,
+                    y: box.docY + originOffset.y,
+                    width: box.width,
+                    height: box.height
+                )
+            )
+        }
+
+        var lines: [SelectionLine] = []
+        for glyph in glyphs {
+            if let lastIdx = lines.indices.last,
+               abs(glyph.rect.midY - lines[lastIdx].rect.midY) <= max(glyph.rect.height, lines[lastIdx].rect.height) * 0.45 {
+                lines[lastIdx].rect = lines[lastIdx].rect.union(glyph.rect)
+                lines[lastIdx].glyphs.append(glyph)
+            } else {
+                lines.append(SelectionLine(rect: glyph.rect, glyphs: [glyph]))
+            }
+        }
+        for idx in lines.indices {
+            lines[idx].glyphs.sort { $0.rect.minX < $1.rect.minX }
+        }
+        lines.sort { $0.rect.midY < $1.rect.midY }
+
+        return ExtractedBubbleSelectionLayout(
+            id: raw.id,
+            isUser: raw.isUser,
+            bubbleRect: bubbleRect,
+            text: raw.text,
+            nsText: raw.text as NSString,
+            glyphs: glyphs,
+            lines: lines
         )
     }
 
-    func updateUIView(_ uiView: BubbleTextSelectionOverlayView, context: Context) {
-        uiView.onDismiss = onDismiss
-    }
+    func characterIndex(at point: CGPoint) -> Int {
+        let total = nsText.length
+        guard total > 0, let firstLine = lines.first, let lastLine = lines.last else { return 0 }
+        if point.y < firstLine.rect.minY - 10 { return 0 }
+        if point.y > lastLine.rect.maxY + 10 { return total }
 
-    static func dismantleUIView(_ uiView: BubbleTextSelectionOverlayView, coordinator: ()) {
-        uiView.prepareForDismissal()
-    }
-}
-
-@MainActor
-fileprivate final class SelectableBubbleTextView: UITextView, @MainActor UIEditMenuInteractionDelegate {
-    var onDidCopy: (() -> Void)?
-    private var initialEditMenu: UIEditMenuInteraction?
-    private var targetSelectionRect: CGRect = .null
-
-    func setupEditMenu() {
-        guard initialEditMenu == nil else { return }
-        let interaction = UIEditMenuInteraction(delegate: self)
-        addInteraction(interaction)
-        initialEditMenu = interaction
-    }
-
-    func presentMenu(at rect: CGRect) {
-        setupEditMenu()
-        targetSelectionRect = rect
-        let config = UIEditMenuConfiguration(identifier: nil, sourcePoint: CGPoint(x: rect.midX, y: rect.minY))
-        initialEditMenu?.presentEditMenu(with: config)
-    }
-
-    func dismissInitialMenu() {
-        initialEditMenu?.dismissMenu()
-    }
-
-    func editMenuInteraction(_ interaction: UIEditMenuInteraction, targetRectFor configuration: UIEditMenuConfiguration) -> CGRect {
-        targetSelectionRect.isNull ? bounds : targetSelectionRect
-    }
-
-    override func copy(_ sender: Any?) {
-        super.copy(sender)
-        DispatchQueue.main.async { [weak self] in
-            self?.onDidCopy?()
+        var candidateIndices: [Int] = []
+        for idx in lines.indices {
+            let lineRect = lines[idx].rect
+            if point.y >= lineRect.minY - 4 && point.y <= lineRect.maxY + 4 {
+                candidateIndices.append(idx)
+            }
         }
+
+        let chosenLineIndex: Int
+        if candidateIndices.count == 1 {
+            chosenLineIndex = candidateIndices[0]
+        } else if candidateIndices.count > 1 {
+            chosenLineIndex = candidateIndices.min { a, b in
+                horizontalDistance(to: lines[a].rect, x: point.x) < horizontalDistance(to: lines[b].rect, x: point.x)
+            } ?? candidateIndices[0]
+        } else {
+            chosenLineIndex = lines.indices.min { a, b in
+                verticalDistance(to: lines[a].rect, y: point.y) < verticalDistance(to: lines[b].rect, y: point.y)
+            } ?? 0
+        }
+
+        let line = lines[chosenLineIndex]
+        guard let firstGlyph = line.glyphs.first, let lastGlyph = line.glyphs.last else { return 0 }
+        if point.x <= firstGlyph.rect.minX {
+            return firstGlyph.startUTF16
+        }
+        if point.x >= lastGlyph.rect.maxX {
+            return lastGlyph.endUTF16
+        }
+        for glyph in line.glyphs {
+            if point.x <= glyph.rect.maxX {
+                let count = glyph.endUTF16 - glyph.startUTF16
+                if count > 1, glyph.rect.width > 1 {
+                    let frac = min(1, max(0, (point.x - glyph.rect.minX) / glyph.rect.width))
+                    let offset = Int(round(frac * CGFloat(count)))
+                    return min(glyph.endUTF16, max(glyph.startUTF16, glyph.startUTF16 + offset))
+                }
+                return point.x < glyph.rect.midX ? glyph.startUTF16 : glyph.endUTF16
+            }
+        }
+        return lastGlyph.endUTF16
+    }
+
+    private func horizontalDistance(to rect: CGRect, x: CGFloat) -> CGFloat {
+        if x < rect.minX { return rect.minX - x }
+        if x > rect.maxX { return x - rect.maxX }
+        return 0
+    }
+
+    private func verticalDistance(to rect: CGRect, y: CGFloat) -> CGFloat {
+        if y < rect.minY { return rect.minY - y }
+        if y > rect.maxY { return y - rect.maxY }
+        return 0
     }
 }
 
 @MainActor
-fileprivate final class BubbleTextSelectionOverlayView: UIView, UIGestureRecognizerDelegate {
-    private let target: PendingBubbleSelectionTarget
-    private let dark: Bool
-    private let scale: CGFloat
-    private let headerInset: CGFloat
-    var onDismiss: () -> Void
-    private let backdropView = UIView()
-    private let bubbleCardView = UIView()
-    private let textView = SelectableBubbleTextView()
-    private let doneButton = UIButton(type: .system)
-    private var needsScroll = false
-    private var lastLayoutKey: CGRect = .zero
-    private var didActivateSelection = false
-    private let grabberBleed: CGFloat = 28
+fileprivate final class SelectionDisplayLinkTarget: NSObject {
+    weak var owner: TelegramBubbleSelectionView?
+    @objc func step(_ link: CADisplayLink) {
+        owner?.handleAutoScrollStep(link)
+    }
+}
 
-    init(frame: CGRect, target: PendingBubbleSelectionTarget, dark: Bool, scale: CGFloat, headerInset: CGFloat, onDismiss: @escaping () -> Void) {
-        self.target = target
-        self.dark = dark
-        self.scale = scale
-        self.headerInset = headerInset
-        self.onDismiss = onDismiss
-        super.init(frame: frame)
-        overrideUserInterfaceStyle = dark ? .dark : .light
-        accessibilityIdentifier = "assistant.bubbleSelectionOverlay"
-        setupViews()
+@MainActor
+fileprivate final class SelectionKnobView: UIView {
+    let isLeading: Bool
+    private let stemLayer = CALayer()
+    private let dotLayer = CALayer()
+
+    init(isLeading: Bool) {
+        self.isLeading = isLeading
+        super.init(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+        isAccessibilityElement = true
+        accessibilityTraits = .adjustable
+        accessibilityIdentifier = isLeading ? "assistant.selectionKnob.leading" : "assistant.selectionKnob.trailing"
+
+        let blue = UIColor.systemBlue.cgColor
+        stemLayer.backgroundColor = blue
+        stemLayer.cornerRadius = 1.0
+
+        dotLayer.backgroundColor = blue
+        dotLayer.cornerRadius = 5.25
+        dotLayer.shadowColor = UIColor.black.cgColor
+        dotLayer.shadowOpacity = 0.20
+        dotLayer.shadowRadius = 2.0
+        dotLayer.shadowOffset = CGSize(width: 0, height: 1)
+
+        layer.addSublayer(stemLayer)
+        layer.addSublayer(dotLayer)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    private func setupViews() {
-        backdropView.frame = bounds
-        backdropView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        backdropView.backgroundColor = UIColor.black.withAlphaComponent(dark ? 0.42 : 0.16)
-        let tap = UITapGestureRecognizer(target: self, action: #selector(handleBackdropTap(_:)))
-        tap.cancelsTouchesInView = false
-        tap.delegate = self
-        backdropView.addGestureRecognizer(tap)
-        addSubview(backdropView)
-
-        let bubbleBg: UIColor
-        let bubbleFg: UIColor
-        let ringColor: UIColor
-        if target.isUser {
-            bubbleBg = dark
-                ? UIColor(red: 239 / 255.0, green: 239 / 255.0, blue: 237 / 255.0, alpha: 1)
-                : UIColor(red: 28 / 255.0, green: 28 / 255.0, blue: 28 / 255.0, alpha: 1)
-            bubbleFg = dark
-                ? UIColor(red: 22 / 255.0, green: 22 / 255.0, blue: 22 / 255.0, alpha: 1)
-                : UIColor(red: 250 / 255.0, green: 250 / 255.0, blue: 248 / 255.0, alpha: 1)
-            ringColor = UIColor.white.withAlphaComponent(dark ? 0.12 : 0.08)
-        } else {
-            bubbleBg = dark
-                ? UIColor(red: 35 / 255.0, green: 35 / 255.0, blue: 35 / 255.0, alpha: 1)
-                : UIColor(red: 240 / 255.0, green: 240 / 255.0, blue: 238 / 255.0, alpha: 1)
-            bubbleFg = dark
-                ? UIColor(red: 239 / 255.0, green: 239 / 255.0, blue: 237 / 255.0, alpha: 1)
-                : UIColor(red: 28 / 255.0, green: 28 / 255.0, blue: 28 / 255.0, alpha: 1)
-            ringColor = UIColor.label.withAlphaComponent(0.08)
-        }
-
-        bubbleCardView.backgroundColor = bubbleBg
-        bubbleCardView.layer.cornerRadius = 18
-        bubbleCardView.layer.cornerCurve = .continuous
-        bubbleCardView.layer.borderWidth = 0.5
-        bubbleCardView.layer.borderColor = ringColor.cgColor
-        bubbleCardView.layer.shadowColor = UIColor.black.cgColor
-        bubbleCardView.layer.shadowOpacity = dark ? 0.34 : 0.12
-        bubbleCardView.layer.shadowRadius = 18
-        bubbleCardView.layer.shadowOffset = CGSize(width: 0, height: 6)
-        bubbleCardView.isUserInteractionEnabled = false
-        addSubview(bubbleCardView)
-
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.dataDetectorTypes = []
-        textView.autocorrectionType = .no
-        textView.spellCheckingType = .no
-        textView.backgroundColor = .clear
-        textView.tintColor = .systemBlue
-        textView.textContainer.lineFragmentPadding = 0
-        textView.accessibilityIdentifier = "assistant.bubbleSelectionTextView"
-        textView.attributedText = BubbleSelectionMarkdownFormatter.format(
-            text: target.copyText,
-            isUser: target.isUser,
-            scale: scale,
-            textColor: bubbleFg,
-            dark: dark
-        )
-        textView.onDidCopy = { [weak self] in
-            self?.onDismiss()
-        }
-        addSubview(textView)
-
-        var config = UIButton.Configuration.filled()
-        config.title = String(localized: "完成", bundle: AppLanguage.resourceBundle)
-        config.cornerStyle = .capsule
-        config.baseBackgroundColor = dark ? UIColor(white: 0.22, alpha: 0.92) : UIColor(white: 0.98, alpha: 0.94)
-        config.baseForegroundColor = dark ? .white : .black
-        config.contentInsets = NSDirectionalEdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14)
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-            var out = incoming
-            out.font = UIFont.systemFont(ofSize: 14, weight: .semibold)
-            return out
-        }
-        doneButton.configuration = config
-        doneButton.layer.shadowColor = UIColor.black.cgColor
-        doneButton.layer.shadowOpacity = 0.12
-        doneButton.layer.shadowRadius = 8
-        doneButton.layer.shadowOffset = CGSize(width: 0, height: 2)
-        doneButton.accessibilityIdentifier = "assistant.bubbleSelectionDone"
-        doneButton.addTarget(self, action: #selector(handleDoneTap), for: .touchUpInside)
-        addSubview(doneButton)
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let w = bounds.width
-        let h = bounds.height
-        guard w > 40, h > 80 else { return }
-        let key = CGRect(x: safeAreaInsets.top, y: safeAreaInsets.bottom, width: w, height: h)
-        if key != lastLayoutKey {
-            lastLayoutKey = key
-            layoutBubble()
-        }
-        if !didActivateSelection, window != nil {
-            didActivateSelection = true
-            DispatchQueue.main.async { [weak self] in
-                self?.activateInitialSelection()
-            }
-        }
-    }
-
-    private func layoutBubble() {
-        let w = bounds.width
-        let h = bounds.height
-        backdropView.frame = bounds
-
-        let safeTop = max(safeAreaInsets.top, headerInset) + 8
-        let safeBottom = h - max(safeAreaInsets.bottom, 12) - 12
-        let doneSize = doneButton.sizeThatFits(CGSize(width: 140, height: 44))
-        doneButton.frame = CGRect(
-            x: w - doneSize.width - 16,
-            y: max(safeAreaInsets.top + 8, safeTop - 4),
-            width: doneSize.width,
-            height: max(32, doneSize.height)
+    func updatePlacement(stemX: CGFloat, topY: CGFloat, bottomY: CGFloat) {
+        let stemH = max(14, bottomY - topY)
+        let dotDiameter: CGFloat = 10.5
+        let dotRadius = dotDiameter * 0.5
+        let viewW: CGFloat = 44
+        let viewH = max(44, stemH + 28)
+        let centerY: CGFloat = isLeading
+            ? (topY - dotRadius + bottomY) * 0.5 - 2
+            : (topY + bottomY + dotRadius) * 0.5 + 2
+        frame = CGRect(
+            x: round((stemX - viewW * 0.5) * 2) / 2,
+            y: round((centerY - viewH * 0.5) * 2) / 2,
+            width: viewW,
+            height: viewH
         )
 
-        let maxBubbleWidth = min(620, w - 32)
-        let desiredWidth = min(maxBubbleWidth, max(target.rectInWebView.width, min(maxBubbleWidth, 120)))
-        let attributed = textView.attributedText ?? NSAttributedString()
-        let attrLength = attributed.length
-        let unclippedAvailableHeight = max(120, safeBottom - safeTop)
-
-        var measuredTextSize: CGSize = .zero
-        if attrLength > 900 {
-            needsScroll = true
-        } else {
-            let maxCardWidth = target.isUser ? maxBubbleWidth : max(desiredWidth, min(maxBubbleWidth, target.rectInWebView.width + 8))
-            let maxContentWidth = max(40, maxCardWidth - 30)
-            let rect = attributed.boundingRect(
-                with: CGSize(width: maxContentWidth, height: unclippedAvailableHeight + 120),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                context: nil
+        let localX = stemX - frame.minX
+        let localTop = topY - frame.minY
+        let localBottom = localTop + stemH
+        stemLayer.frame = CGRect(x: localX - 1.0, y: localTop, width: 2.0, height: stemH)
+        if isLeading {
+            dotLayer.frame = CGRect(
+                x: localX - dotRadius,
+                y: localTop - dotDiameter + 1.5,
+                width: dotDiameter,
+                height: dotDiameter
             )
-            measuredTextSize = CGSize(width: ceil(rect.width), height: ceil(rect.height))
-            needsScroll = (measuredTextSize.height + 20) > unclippedAvailableHeight
-        }
-
-        doneButton.isHidden = !needsScroll
-        backdropView.backgroundColor = needsScroll
-            ? UIColor.black.withAlphaComponent(dark ? 0.42 : 0.16)
-            : UIColor.black.withAlphaComponent(0.002)
-        bubbleCardView.layer.shadowOpacity = needsScroll ? (dark ? 0.34 : 0.12) : 0
-
-        if needsScroll {
-            let topLimit = max(safeTop, doneButton.frame.maxY + 10)
-            let maxAvailableHeight = max(120, safeBottom - topLimit)
-            let cardWidth = maxBubbleWidth
-            let cardX = (w - cardWidth) * 0.5
-            let cardFrame = CGRect(x: cardX, y: topLimit, width: cardWidth, height: maxAvailableHeight)
-            bubbleCardView.frame = cardFrame
-            textView.isScrollEnabled = true
-            textView.alwaysBounceVertical = true
-            textView.showsVerticalScrollIndicator = true
-            textView.clipsToBounds = true
-            textView.layer.cornerRadius = 18
-            textView.layer.cornerCurve = .continuous
-            textView.textContainerInset = UIEdgeInsets(top: 22, left: 16, bottom: 26, right: 16)
-            textView.frame = cardFrame
         } else {
-            let cardWidth = min(maxBubbleWidth, max(target.rectInWebView.width, measuredTextSize.width + 30))
-            let cardHeight = min(unclippedAvailableHeight, max(max(36, target.rectInWebView.height), measuredTextSize.height + 18))
-
-            let cardX: CGFloat
-            if target.isUser {
-                let rightEdge = min(w - 16, max(target.rectInWebView.maxX, cardWidth + 16))
-                cardX = max(16, rightEdge - cardWidth)
-            } else {
-                cardX = max(16, min(target.rectInWebView.minX, w - cardWidth - 16))
-            }
-
-            let cardY = min(max(safeTop, target.rectInWebView.minY), max(safeTop, safeBottom - cardHeight))
-            let cardFrame = CGRect(x: cardX, y: cardY, width: cardWidth, height: cardHeight)
-            bubbleCardView.frame = cardFrame
-            textView.isScrollEnabled = false
-            textView.showsVerticalScrollIndicator = false
-            textView.clipsToBounds = false
-            textView.layer.cornerRadius = 0
-            textView.textContainerInset = UIEdgeInsets(
-                top: 9 + grabberBleed,
-                left: 15 + grabberBleed,
-                bottom: 9 + grabberBleed,
-                right: 15 + grabberBleed
+            dotLayer.frame = CGRect(
+                x: localX - dotRadius,
+                y: localBottom - 1.5,
+                width: dotDiameter,
+                height: dotDiameter
             )
-            textView.frame = cardFrame.insetBy(dx: -grabberBleed, dy: -grabberBleed)
         }
+        let color = UIColor.systemBlue.resolvedColor(with: traitCollection).cgColor
+        stemLayer.backgroundColor = color
+        dotLayer.backgroundColor = color
+    }
+}
+
+@MainActor
+fileprivate final class TelegramKnobGestureRecognizer: UIGestureRecognizer {
+    var hitTestKnob: ((CGPoint) -> Bool)?
+    var onBegin: ((CGPoint) -> Void)?
+    var onMove: ((CGPoint) -> Void)?
+    var onEnd: (() -> Void)?
+    private weak var trackedTouch: UITouch?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        guard trackedTouch == nil, let touch = touches.first, let view else {
+            if trackedTouch == nil { state = .failed }
+            return
+        }
+        let pt = touch.location(in: view)
+        guard hitTestKnob?(pt) == true else {
+            state = .failed
+            return
+        }
+        trackedTouch = touch
+        state = .began
+        onBegin?(pt)
     }
 
-    func activateInitialSelection() {
-        let nsText = (textView.attributedText?.string ?? "") as NSString
-        let totalLength = nsText.length
-        guard totalLength > 0, let window else { return }
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesMoved(touches, with: event)
+        guard let trackedTouch, touches.contains(trackedTouch), let view else { return }
+        state = .changed
+        onMove?(trackedTouch.location(in: view))
+    }
 
-        window.endEditing(true)
-        let range: NSRange
-        if totalLength <= 220 && !needsScroll {
-            range = NSRange(location: 0, length: totalLength)
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesEnded(touches, with: event)
+        guard let trackedTouch, touches.contains(trackedTouch) else { return }
+        self.trackedTouch = nil
+        state = .ended
+        onEnd?()
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesCancelled(touches, with: event)
+        guard let trackedTouch, touches.contains(trackedTouch) else { return }
+        self.trackedTouch = nil
+        state = .cancelled
+        onEnd?()
+    }
+
+    override func reset() {
+        super.reset()
+        trackedTouch = nil
+    }
+}
+
+/// Telegram-iOS `TextSelectionNode` inspired in-place bubble text selection overlay.
+/// Keeps the rendered HTML/CSS bubble 100% untouched (zero typography/spacing reflow) and draws
+/// unified selection highlights + zero-hysteresis draggable lollipop grabber knobs directly in `webView.scrollView`.
+@MainActor
+fileprivate final class TelegramBubbleSelectionView: UIView, @MainActor UIEditMenuInteractionDelegate, UIGestureRecognizerDelegate {
+    private enum DraggedKnob { case leading, trailing }
+
+    private weak var webView: WKWebView?
+    private let layout: ExtractedBubbleSelectionLayout
+    private let dark: Bool
+    private let headerInset: CGFloat
+    private let reduceMotion: Bool
+    private let onDismiss: (Bool) -> Void
+
+    private let highlightLayer = CAShapeLayer()
+    private let bubbleTargetView = UIView()
+    private let leadingKnob = SelectionKnobView(isLeading: true)
+    private let trailingKnob = SelectionKnobView(isLeading: false)
+
+    private var editMenuInteraction: UIEditMenuInteraction?
+    private var knobGesture: TelegramKnobGestureRecognizer?
+    private var doubleTapGesture: UITapGestureRecognizer?
+    private var singleTapGesture: UITapGestureRecognizer?
+
+    private(set) var selectedRange: NSRange = NSRange(location: 0, length: 0)
+    private var selectionMenuRect: CGRect = .zero
+    private var leadingAnchorTextPoint: CGPoint = .zero
+    private var trailingAnchorTextPoint: CGPoint = .zero
+
+    private var activeDraggedKnob: DraggedKnob?
+    private var fixedAnchorIndex: Int = 0
+    private var dragTouchOffset: CGPoint = .zero
+    private var lastTouchInWebView: CGPoint = .zero
+    private var autoScrollSpeed: CGFloat = 0
+    private var displayLink: CADisplayLink?
+    private var isDismissing = false
+
+    init(
+        frame: CGRect,
+        webView: WKWebView,
+        layout: ExtractedBubbleSelectionLayout,
+        pressLocationInScroll: CGPoint,
+        dark: Bool,
+        headerInset: CGFloat,
+        reduceMotion: Bool,
+        onDismiss: @escaping (Bool) -> Void
+    ) {
+        self.webView = webView
+        self.layout = layout
+        self.dark = dark
+        self.headerInset = headerInset
+        self.reduceMotion = reduceMotion
+        self.onDismiss = onDismiss
+        super.init(frame: frame)
+
+        overrideUserInterfaceStyle = dark ? .dark : .light
+        backgroundColor = .clear
+        isOpaque = false
+        isAccessibilityElement = false
+        accessibilityIdentifier = "assistant.bubbleSelectionOverlay"
+
+        let isDarkSurface = dark || layout.isUser
+        let baseTint = isDarkSurface
+            ? UIColor(red: 0.24, green: 0.60, blue: 1.0, alpha: 1.0)
+            : UIColor(red: 0.0, green: 0.478, blue: 1.0, alpha: 1.0)
+        highlightLayer.fillColor = baseTint.cgColor
+        highlightLayer.opacity = isDarkSurface ? 0.36 : 0.22
+        layer.addSublayer(highlightLayer)
+
+        bubbleTargetView.frame = layout.bubbleRect
+        bubbleTargetView.backgroundColor = .clear
+        bubbleTargetView.isUserInteractionEnabled = false
+        bubbleTargetView.isAccessibilityElement = true
+        bubbleTargetView.accessibilityIdentifier = "assistant.bubbleSelectionTargetRect"
+        addSubview(bubbleTargetView)
+
+        addSubview(leadingKnob)
+        addSubview(trailingKnob)
+
+        let editMenu = UIEditMenuInteraction(delegate: self)
+        addInteraction(editMenu)
+        self.editMenuInteraction = editMenu
+
+        setupGestures()
+        selectedRange = Self.computeInitialRange(layout: layout, pressPoint: pressLocationInScroll)
+        updateSelectionVisuals()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        guard !isDismissing else { return false }
+        if leadingKnob.frame.insetBy(dx: -12, dy: -12).contains(point) ||
+           trailingKnob.frame.insetBy(dx: -12, dy: -12).contains(point) {
+            return true
+        }
+        if let webView {
+            let inWeb = convert(point, to: webView)
+            return webView.bounds.contains(inWeb)
+        }
+        return super.point(inside: point, with: event)
+    }
+
+    private func setupGestures() {
+        let knob = TelegramKnobGestureRecognizer()
+        knob.cancelsTouchesInView = true
+        knob.delaysTouchesBegan = false
+        knob.delaysTouchesEnded = false
+        knob.hitTestKnob = { [weak self] pt in
+            self?.knobSide(at: pt) != nil
+        }
+        knob.onBegin = { [weak self] pt in
+            self?.beginKnobDrag(at: pt)
+        }
+        knob.onMove = { [weak self] pt in
+            self?.continueKnobDrag(at: pt)
+        }
+        knob.onEnd = { [weak self] in
+            self?.endKnobDrag()
+        }
+        addGestureRecognizer(knob)
+        self.knobGesture = knob
+
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        doubleTap.cancelsTouchesInView = true
+        doubleTap.delegate = self
+        addGestureRecognizer(doubleTap)
+        self.doubleTapGesture = doubleTap
+
+        let singleTap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(_:)))
+        singleTap.numberOfTapsRequired = 1
+        singleTap.cancelsTouchesInView = false
+        singleTap.delegate = self
+        singleTap.require(toFail: doubleTap)
+        addGestureRecognizer(singleTap)
+        self.singleTapGesture = singleTap
+    }
+
+    func presentSelectionInPlace() {
+        if !reduceMotion {
+            highlightLayer.opacity = 0
+            leadingKnob.transform = CGAffineTransform(scaleX: 0.45, y: 0.45)
+            trailingKnob.transform = CGAffineTransform(scaleX: 0.45, y: 0.45)
+            leadingKnob.alpha = 0
+            trailingKnob.alpha = 0
+
+            let targetOpacity: Float = (dark || layout.isUser) ? 0.36 : 0.22
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0.0
+            fade.toValue = targetOpacity
+            fade.duration = 0.14
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            highlightLayer.opacity = targetOpacity
+            highlightLayer.add(fade, forKey: "appear")
+
+            UIView.animate(
+                withDuration: 0.24,
+                delay: 0,
+                usingSpringWithDamping: 0.68,
+                initialSpringVelocity: 0.4,
+                options: [.beginFromCurrentState, .allowUserInteraction]
+            ) {
+                self.leadingKnob.transform = .identity
+                self.trailingKnob.transform = .identity
+                self.leadingKnob.alpha = 1
+                self.trailingKnob.alpha = 1
+            }
+        }
+        presentEditMenu()
+    }
+
+    func ensureEditMenuPresented() {
+        guard !isDismissing, activeDraggedKnob == nil, window != nil else { return }
+        presentEditMenu()
+    }
+
+    func presentEditMenu() {
+        guard !isDismissing, window != nil, selectedRange.length > 0 else { return }
+        let target = clampedVisibleMenuRect()
+        let config = UIEditMenuConfiguration(
+            identifier: nil,
+            sourcePoint: CGPoint(x: target.midX, y: target.minY)
+        )
+        editMenuInteraction?.presentEditMenu(with: config)
+    }
+
+    func dismissSelection(animated: Bool) {
+        guard !isDismissing else { return }
+        isDismissing = true
+        stopAutoScroll()
+        editMenuInteraction?.dismissMenu()
+        isUserInteractionEnabled = false
+        if animated && !reduceMotion && window != nil {
+            UIView.animate(withDuration: 0.14, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
+                self.alpha = 0
+                self.leadingKnob.transform = CGAffineTransform(scaleX: 0.6, y: 0.6)
+                self.trailingKnob.transform = CGAffineTransform(scaleX: 0.6, y: 0.6)
+            } completion: { _ in
+                self.removeFromSuperview()
+            }
         } else {
-            let fraction: CGFloat = if target.rectInWebView.height > 1 {
-                min(1, max(0, (target.pressLocationInWebView.y - target.rectInWebView.minY) / target.rectInWebView.height))
+            removeFromSuperview()
+        }
+    }
+
+    override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        if newWindow == nil {
+            stopAutoScroll()
+        }
+    }
+
+    // MARK: - Knob Hit-Testing & 120Hz Dragging
+
+    private func knobSide(at point: CGPoint) -> DraggedKnob? {
+        let leadRect = leadingKnob.frame.insetBy(dx: -8, dy: -6)
+        let trailRect = trailingKnob.frame.insetBy(dx: -8, dy: -6)
+        let hitLead = leadRect.contains(point)
+        let hitTrail = trailRect.contains(point)
+        if hitLead && hitTrail {
+            let dLead = hypot(point.x - leadingKnob.frame.midX, point.y - leadingKnob.frame.midY)
+            let dTrail = hypot(point.x - trailingKnob.frame.midX, point.y - trailingKnob.frame.midY)
+            return dLead <= dTrail ? .leading : .trailing
+        }
+        if hitLead { return .leading }
+        if hitTrail { return .trailing }
+        return nil
+    }
+
+    private func beginKnobDrag(at point: CGPoint) {
+        guard let side = knobSide(at: point) else { return }
+        activeDraggedKnob = side
+        editMenuInteraction?.dismissMenu()
+
+        if let pan = webView?.scrollView.panGestureRecognizer, pan.isEnabled {
+            pan.isEnabled = false
+            pan.isEnabled = true
+        }
+
+        switch side {
+        case .leading:
+            fixedAnchorIndex = NSMaxRange(selectedRange)
+            dragTouchOffset = CGPoint(
+                x: leadingAnchorTextPoint.x - point.x,
+                y: leadingAnchorTextPoint.y - point.y
+            )
+        case .trailing:
+            fixedAnchorIndex = selectedRange.location
+            dragTouchOffset = CGPoint(
+                x: trailingAnchorTextPoint.x - point.x,
+                y: trailingAnchorTextPoint.y - point.y
+            )
+        }
+        if let webView {
+            lastTouchInWebView = convert(point, to: webView)
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.55)
+    }
+
+    private func continueKnobDrag(at point: CGPoint) {
+        guard activeDraggedKnob != nil else { return }
+        if let webView {
+            lastTouchInWebView = convert(point, to: webView)
+            updateAutoScroll(touchInWebView: lastTouchInWebView, webView: webView)
+        }
+        applyDraggedPoint(point)
+    }
+
+    private func applyDraggedPoint(_ pointInSelf: CGPoint) {
+        let targetPoint = CGPoint(
+            x: pointInSelf.x + dragTouchOffset.x,
+            y: pointInSelf.y + dragTouchOffset.y
+        )
+        let movingIndex = layout.characterIndex(at: targetPoint)
+        let newRange = Self.normalizedNonEmptyRange(
+            in: layout.nsText,
+            anchor: fixedAnchorIndex,
+            moving: movingIndex
+        )
+        activeDraggedKnob = movingIndex <= fixedAnchorIndex ? .leading : .trailing
+        if newRange != selectedRange {
+            selectedRange = newRange
+            updateSelectionVisuals()
+        }
+    }
+
+    private func endKnobDrag() {
+        stopAutoScroll()
+        guard activeDraggedKnob != nil else { return }
+        activeDraggedKnob = nil
+        presentEditMenu()
+    }
+
+    private func updateAutoScroll(touchInWebView: CGPoint, webView: WKWebView) {
+        let topZone = max(webView.safeAreaInsets.top, headerInset) + 46
+        let bottomZone = webView.bounds.height - max(webView.safeAreaInsets.bottom, 12) - 46
+        let maxSpeed: CGFloat = 520
+
+        if touchInWebView.y < topZone {
+            let ratio = min(1, max(0, (topZone - touchInWebView.y) / 48))
+            autoScrollSpeed = -maxSpeed * ratio
+        } else if touchInWebView.y > bottomZone {
+            let ratio = min(1, max(0, (touchInWebView.y - bottomZone) / 48))
+            autoScrollSpeed = maxSpeed * ratio
+        } else {
+            autoScrollSpeed = 0
+        }
+
+        if abs(autoScrollSpeed) > 1 {
+            if displayLink == nil {
+                let target = SelectionDisplayLinkTarget()
+                target.owner = self
+                let link = CADisplayLink(target: target, selector: #selector(SelectionDisplayLinkTarget.step(_:)))
+                if #available(iOS 15.0, *) {
+                    link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+                }
+                link.add(to: .main, forMode: .common)
+                displayLink = link
+            }
+        } else {
+            stopAutoScroll()
+        }
+    }
+
+    fileprivate func handleAutoScrollStep(_ link: CADisplayLink) {
+        guard let webView, activeDraggedKnob != nil, abs(autoScrollSpeed) > 1 else {
+            stopAutoScroll()
+            return
+        }
+        let scrollView = webView.scrollView
+        let dt = max(1.0 / 120.0, min(1.0 / 30.0, CGFloat(link.targetTimestamp - link.timestamp)))
+        let minY = -scrollView.adjustedContentInset.top
+        let maxY = max(minY, scrollView.contentSize.height + scrollView.adjustedContentInset.bottom - scrollView.bounds.height)
+        let nextY = min(maxY, max(minY, scrollView.contentOffset.y + autoScrollSpeed * dt))
+        guard abs(nextY - scrollView.contentOffset.y) > 0.2 else { return }
+        scrollView.contentOffset = CGPoint(x: scrollView.contentOffset.x, y: nextY)
+        let currentPointInSelf = convert(lastTouchInWebView, from: webView)
+        applyDraggedPoint(currentPointInSelf)
+    }
+
+    private func stopAutoScroll() {
+        autoScrollSpeed = 0
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    // MARK: - Double-Tap Word Selection & Single-Tap Dismiss
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        let pt = touch.location(in: self)
+        if knobSide(at: pt) != nil {
+            return false
+        }
+        if gestureRecognizer === doubleTapGesture {
+            return layout.bubbleRect.insetBy(dx: -8, dy: -8).contains(pt)
+        }
+        return true
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === singleTapGesture || gestureRecognizer === doubleTapGesture {
+            if otherGestureRecognizer === webView?.scrollView.panGestureRecognizer {
+                return true
+            }
+        }
+        return false
+    }
+
+    @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        let pt = gesture.location(in: self)
+        let index = layout.characterIndex(at: pt)
+        let word = Self.wordRange(in: layout.nsText, at: index)
+        guard word.length > 0 else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.7)
+        selectedRange = word
+        updateSelectionVisuals()
+        presentEditMenu()
+    }
+
+    @objc private func handleSingleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        onDismiss(true)
+    }
+
+    // MARK: - Selection Geometry Rendering
+
+    private func updateSelectionVisuals() {
+        var selectedGlyphRects: [CGRect] = []
+        selectedGlyphRects.reserveCapacity(min(layout.glyphs.count, max(8, selectedRange.length)))
+
+        for glyph in layout.glyphs {
+            if glyph.endUTF16 <= selectedRange.location { continue }
+            if glyph.startUTF16 >= NSMaxRange(selectedRange) { continue }
+            if let r = glyph.slicedRect(for: selectedRange) {
+                selectedGlyphRects.append(r)
+            }
+        }
+
+        guard let firstGlyphRect = selectedGlyphRects.first,
+              let lastGlyphRect = selectedGlyphRects.last else { return }
+
+        var bands: [CGRect] = []
+        for r in selectedGlyphRects {
+            if let lastIdx = bands.indices.last,
+               abs(r.midY - bands[lastIdx].midY) <= max(r.height, bands[lastIdx].height) * 0.45 {
+                bands[lastIdx] = bands[lastIdx].union(r)
             } else {
-                0
+                bands.append(r)
             }
-            let approxIndex = min(max(0, Int(CGFloat(totalLength) * fraction)), totalLength - 1)
-            range = Self.initialSelectionRange(in: nsText, around: approxIndex)
+        }
+        bands = bands.map { $0.insetBy(dx: -1.5, dy: -1.0) }
+        bands.sort { $0.minY < $1.minY }
+
+        let scale = max(1.0, traitCollection.displayScale)
+        if bands.count > 1 {
+            for i in 0..<(bands.count - 1) {
+                let gap = bands[i + 1].minY - bands[i].maxY
+                if gap > -3.0 && gap <= 8.5 {
+                    let mid = round(((bands[i].maxY + bands[i + 1].minY) * 0.5) * scale) / scale
+                    bands[i].size.height = max(2, mid - bands[i].minY)
+                    let nextMaxY = bands[i + 1].maxY
+                    bands[i + 1].origin.y = mid
+                    bands[i + 1].size.height = max(2, nextMaxY - mid)
+                }
+            }
         }
 
-        _ = textView.becomeFirstResponder()
-        if needsScroll {
-            textView.scrollRangeToVisible(range)
+        let path = UIBezierPath()
+        var unionRect = CGRect.null
+        for band in bands {
+            unionRect = unionRect.union(band)
+            path.append(UIBezierPath(roundedRect: band, cornerRadius: 3.5))
         }
-        textView.selectedRange = range
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            guard let self, self.window != nil else { return }
-            if !self.textView.isFirstResponder {
-                _ = self.textView.becomeFirstResponder()
-                self.textView.selectedRange = range
-            }
-            self.presentEditMenuForRange(range)
-        }
+        selectionMenuRect = unionRect.isNull ? layout.bubbleRect : unionRect
+
+        let firstBand = bands.first { $0.intersects(firstGlyphRect.insetBy(dx: -2, dy: -2)) } ?? firstGlyphRect
+        let lastBand = bands.last { $0.intersects(lastGlyphRect.insetBy(dx: -2, dy: -2)) } ?? lastGlyphRect
+
+        leadingAnchorTextPoint = CGPoint(x: firstGlyphRect.minX, y: firstGlyphRect.midY)
+        trailingAnchorTextPoint = CGPoint(x: lastGlyphRect.maxX, y: lastGlyphRect.midY)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        highlightLayer.path = path.cgPath
+        leadingKnob.updatePlacement(
+            stemX: firstGlyphRect.minX,
+            topY: firstBand.minY,
+            bottomY: firstBand.maxY
+        )
+        trailingKnob.updatePlacement(
+            stemX: lastGlyphRect.maxX,
+            topY: lastBand.minY,
+            bottomY: lastBand.maxY
+        )
+        CATransaction.commit()
     }
 
-    private func presentEditMenuForRange(_ range: NSRange) {
-        guard let start = textView.position(from: textView.beginningOfDocument, offset: range.location),
-              let end = textView.position(from: textView.beginningOfDocument, offset: NSMaxRange(range)),
-              let textRange = textView.textRange(from: start, to: end) else { return }
-        var rect = textView.firstRect(for: textRange)
-        if rect.isNull || rect.isInfinite || rect.height <= 0 {
-            rect = textView.convert(bubbleCardView.frame, from: self)
+    // MARK: - UIEditMenuInteractionDelegate
+
+    private func clampedVisibleMenuRect() -> CGRect {
+        let base = selectionMenuRect.isNull || selectionMenuRect.isEmpty ? layout.bubbleRect : selectionMenuRect
+        guard let webView else { return base }
+        let safeTop = max(webView.safeAreaInsets.top, headerInset) + 46
+        let safeBottom = max(safeTop + 44, webView.bounds.height - max(webView.safeAreaInsets.bottom, 12) - 46)
+        let visibleInWeb = CGRect(
+            x: 16,
+            y: safeTop,
+            width: max(40, webView.bounds.width - 32),
+            height: safeBottom - safeTop
+        )
+        let visibleInSelf = convert(visibleInWeb, from: webView)
+        let intersected = base.intersection(visibleInSelf)
+        if !intersected.isNull && intersected.height >= 4 && intersected.width >= 4 {
+            return intersected
         }
-        textView.presentMenu(at: rect)
+        let clampedY = min(max(base.minY, visibleInSelf.minY), visibleInSelf.maxY - 20)
+        return CGRect(
+            x: min(max(base.minX, visibleInSelf.minX), visibleInSelf.maxX - 20),
+            y: clampedY,
+            width: min(max(24, base.width), visibleInSelf.width),
+            height: 20
+        )
     }
 
-    private static func initialSelectionRange(in text: NSString, around index: Int) -> NSRange {
-        let len = text.length
-        guard len > 0 else { return NSRange(location: 0, length: 0) }
-        var probe = min(max(0, index), len - 1)
-        while probe < len, CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(text.character(at: probe)) ?? UnicodeScalar(32)) {
+    func editMenuInteraction(_ interaction: UIEditMenuInteraction, targetRectFor configuration: UIEditMenuConfiguration) -> CGRect {
+        clampedVisibleMenuRect()
+    }
+
+    func editMenuInteraction(
+        _ interaction: UIEditMenuInteraction,
+        menuFor configuration: UIEditMenuConfiguration,
+        suggestedActions: [UIMenuElement]
+    ) -> UIMenu? {
+        let fullRange = NSRange(location: 0, length: layout.nsText.length)
+        var items: [UIMenuElement] = [
+            UIAction(title: String(localized: "拷贝", bundle: AppLanguage.resourceBundle)) { [weak self] _ in
+                guard let self else { return }
+                let str = self.selectedText()
+                if !str.isEmpty {
+                    ChatWebCoordinator.copyTextToPasteboard(str)
+                }
+                self.onDismiss(true)
+            }
+        ]
+        if selectedRange != fullRange && fullRange.length > 0 {
+            items.append(
+                UIAction(title: String(localized: "全选", bundle: AppLanguage.resourceBundle)) { [weak self] _ in
+                    guard let self else { return }
+                    self.selectedRange = fullRange
+                    self.updateSelectionVisuals()
+                    DispatchQueue.main.async { [weak self] in
+                        self?.presentEditMenu()
+                    }
+                }
+            )
+        }
+        items.append(
+            UIAction(title: String(localized: "共享…", bundle: AppLanguage.resourceBundle)) { [weak self] _ in
+                guard let self else { return }
+                let str = self.selectedText()
+                let anchorRect = self.clampedVisibleMenuRect()
+                let hostWebView = self.webView
+                let anchorInWeb = hostWebView.map { self.convert(anchorRect, to: $0) } ?? .zero
+                self.onDismiss(true)
+                guard !str.isEmpty, let presenter = Self.topViewController(from: hostWebView) else { return }
+                let activity = UIActivityViewController(activityItems: [str], applicationActivities: nil)
+                if let pop = activity.popoverPresentationController, let hostWebView {
+                    pop.sourceView = hostWebView
+                    pop.sourceRect = anchorInWeb
+                }
+                presenter.present(activity, animated: true)
+            }
+        )
+        return UIMenu(title: "", children: items)
+    }
+
+    private func selectedText() -> String {
+        let len = layout.nsText.length
+        let s = max(0, min(len, selectedRange.location))
+        let e = max(s, min(len, NSMaxRange(selectedRange)))
+        guard e > s else { return "" }
+        return layout.nsText.substring(with: NSRange(location: s, length: e - s))
+    }
+
+    private static func topViewController(from view: UIView?) -> UIViewController? {
+        var responder: UIResponder? = view
+        while let next = responder?.next {
+            if let vc = next as? UIViewController {
+                var top = vc
+                while let presented = top.presentedViewController, !presented.isBeingDismissed {
+                    top = presented
+                }
+                return top
+            }
+            responder = next
+        }
+        return nil
+    }
+
+    // MARK: - Text Tokenization & Initial Range
+
+    private static func normalizedNonEmptyRange(in nsText: NSString, anchor: Int, moving: Int) -> NSRange {
+        let total = nsText.length
+        guard total > 0 else { return NSRange(location: 0, length: 0) }
+        var low = max(0, min(total, min(anchor, moving)))
+        var high = max(0, min(total, max(anchor, moving)))
+        if low == high {
+            if low < total {
+                let seq = nsText.rangeOfComposedCharacterSequence(at: low)
+                low = seq.location
+                high = NSMaxRange(seq)
+            } else {
+                let seq = nsText.rangeOfComposedCharacterSequence(at: total - 1)
+                low = seq.location
+                high = NSMaxRange(seq)
+            }
+        }
+        return nsText.rangeOfComposedCharacterSequences(for: NSRange(location: low, length: max(1, high - low)))
+    }
+
+    private static func computeInitialRange(layout: ExtractedBubbleSelectionLayout, pressPoint: CGPoint) -> NSRange {
+        let nsText = layout.nsText
+        let total = nsText.length
+        guard total > 0 else { return NSRange(location: 0, length: 0) }
+        if layout.lines.count <= 12 && total <= 280 {
+            return NSRange(location: 0, length: total)
+        }
+        let approx = min(max(0, layout.characterIndex(at: pressPoint)), total - 1)
+        var probe = approx
+        while probe < total, CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(nsText.character(at: probe)) ?? UnicodeScalar(32)) {
             probe += 1
         }
-        if probe >= len {
-            probe = min(max(0, index), len - 1)
-            while probe > 0, CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(text.character(at: probe)) ?? UnicodeScalar(32)) {
+        if probe >= total {
+            probe = approx
+            while probe > 0, CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(nsText.character(at: probe)) ?? UnicodeScalar(32)) {
                 probe -= 1
             }
         }
-        var para = text.paragraphRange(for: NSRange(location: probe, length: 0))
+        var para = nsText.paragraphRange(for: NSRange(location: probe, length: 0))
         while para.length > 0 {
-            let lastChar = text.character(at: NSMaxRange(para) - 1)
+            let lastChar = nsText.character(at: NSMaxRange(para) - 1)
             if lastChar == 10 || lastChar == 13 {
                 para.length -= 1
             } else {
@@ -1575,232 +2232,39 @@ fileprivate final class BubbleTextSelectionOverlayView: UIView, UIGestureRecogni
             }
         }
         if para.length == 0 {
-            return NSRange(location: 0, length: min(len, 120))
+            return nsText.rangeOfComposedCharacterSequences(for: NSRange(location: 0, length: min(total, 140)))
         }
-        if para.length <= 160 {
-            return para
+        if para.length <= 180 {
+            return nsText.rangeOfComposedCharacterSequences(for: para)
         }
-        let start = min(max(para.location, probe - 40), max(para.location, NSMaxRange(para) - 120))
-        let cappedLen = min(120, NSMaxRange(para) - start)
-        return NSRange(location: start, length: max(1, cappedLen))
+        let start = min(max(para.location, probe - 50), max(para.location, NSMaxRange(para) - 140))
+        let cappedLen = min(140, NSMaxRange(para) - start)
+        return nsText.rangeOfComposedCharacterSequences(for: NSRange(location: start, length: max(1, cappedLen)))
     }
 
-    func prepareForDismissal() {
-        textView.dismissInitialMenu()
-        _ = textView.resignFirstResponder()
-    }
-
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        let point = touch.location(in: self)
-        if !doneButton.isHidden, doneButton.frame.insetBy(dx: -8, dy: -8).contains(point) {
-            return false
-        }
-        if bubbleCardView.frame.insetBy(dx: -28, dy: -34).contains(point) {
-            return false
-        }
-        return true
-    }
-
-    @objc private func handleBackdropTap(_ gesture: UITapGestureRecognizer) {
-        onDismiss()
-    }
-
-    @objc private func handleDoneTap() {
-        onDismiss()
-    }
-}
-
-fileprivate enum BubbleSelectionMarkdownFormatter {
-    static func format(text: String, isUser: Bool, scale: CGFloat, textColor: UIColor, dark: Bool) -> NSAttributedString {
-        let baseSize = round(16.0 * scale * 2.0) / 2.0
-        let bodyFont = UIFont.systemFont(ofSize: baseSize, weight: .regular)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = (isUser ? 4.5 : 5.0) * scale
-
-        if isUser {
-            return NSAttributedString(string: text, attributes: [
-                .font: bodyFont,
-                .foregroundColor: textColor,
-                .paragraphStyle: paragraph
-            ])
-        }
-
-        let boldFont = UIFont.systemFont(ofSize: baseSize, weight: .semibold)
-        let codeSize = round(13.5 * scale * 2.0) / 2.0
-        let codeFont = UIFont.monospacedSystemFont(ofSize: codeSize, weight: .regular)
-        let codeBg = dark ? UIColor(white: 1.0, alpha: 0.08) : UIColor(white: 0.0, alpha: 0.06)
-        let mutedColor = textColor.withAlphaComponent(0.76)
-
-        let result = NSMutableAttributedString()
-        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
-        let lines = normalized.components(separatedBy: "\n")
-        var inCodeBlock = false
-        var consecutiveBlank = 0
-        var firstEmitted = true
-
-        func appendNewlineIfNeeded() {
-            if !firstEmitted {
-                result.append(NSAttributedString(string: "\n", attributes: [
-                    .font: bodyFont,
-                    .foregroundColor: textColor,
-                    .paragraphStyle: paragraph
-                ]))
-            }
-            firstEmitted = false
-        }
-
-        for rawLine in lines {
-            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("```") {
-                inCodeBlock.toggle()
-                continue
-            }
-            if inCodeBlock {
-                consecutiveBlank = 0
-                appendNewlineIfNeeded()
-                let codePara = NSMutableParagraphStyle()
-                codePara.lineSpacing = 3.0 * scale
-                result.append(NSAttributedString(string: rawLine, attributes: [
-                    .font: codeFont,
-                    .foregroundColor: textColor,
-                    .backgroundColor: codeBg,
-                    .paragraphStyle: codePara
-                ]))
-                continue
-            }
-            if trimmed.isEmpty {
-                consecutiveBlank += 1
-                if consecutiveBlank <= 1 && !firstEmitted {
-                    result.append(NSAttributedString(string: "\n", attributes: [
-                        .font: bodyFont,
-                        .foregroundColor: textColor,
-                        .paragraphStyle: paragraph
-                    ]))
-                }
-                continue
-            }
-            consecutiveBlank = 0
-            appendNewlineIfNeeded()
-
-            var line = rawLine
-            var lineFont = bodyFont
-            var lineBoldFont = boldFont
-            var lineColor = textColor
-
-            if line.hasPrefix("# ") {
-                line = String(line.dropFirst(2))
-                let hFont = UIFont.systemFont(ofSize: round(19.0 * scale * 2) / 2, weight: .semibold)
-                lineFont = hFont; lineBoldFont = hFont
-            } else if line.hasPrefix("## ") {
-                line = String(line.dropFirst(3))
-                let hFont = UIFont.systemFont(ofSize: round(17.5 * scale * 2) / 2, weight: .semibold)
-                lineFont = hFont; lineBoldFont = hFont
-            } else if line.hasPrefix("### ") {
-                line = String(line.dropFirst(4))
-                let hFont = UIFont.systemFont(ofSize: round(16.5 * scale * 2) / 2, weight: .semibold)
-                lineFont = hFont; lineBoldFont = hFont
-            } else if line.hasPrefix("#### ") {
-                line = String(line.dropFirst(5))
-                lineFont = boldFont; lineBoldFont = boldFont
-            } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
-                line = "• " + line.dropFirst(2)
-            } else if line.hasPrefix("  - ") || line.hasPrefix("  * ") {
-                line = "  ◦ " + line.dropFirst(4)
-            } else if line.hasPrefix("> ") {
-                line = String(line.dropFirst(2))
-                lineColor = mutedColor
-            }
-
-            appendInlineMarkdown(
-                line,
-                into: result,
-                regularFont: lineFont,
-                boldFont: lineBoldFont,
-                codeFont: codeFont,
-                codeBg: codeBg,
-                color: lineColor,
-                paragraph: paragraph
-            )
-        }
-
-        if result.length == 0 {
-            return NSAttributedString(string: text, attributes: [
-                .font: bodyFont,
-                .foregroundColor: textColor,
-                .paragraphStyle: paragraph
-            ])
-        }
-        return result
-    }
-
-    private static func appendInlineMarkdown(
-        _ line: String,
-        into output: NSMutableAttributedString,
-        regularFont: UIFont,
-        boldFont: UIFont,
-        codeFont: UIFont,
-        codeBg: UIColor,
-        color: UIColor,
-        paragraph: NSParagraphStyle
-    ) {
-        let chars = Array(line)
-        let n = chars.count
-        var i = 0
-        var plainBuffer = ""
-
-        func flushPlain() {
-            guard !plainBuffer.isEmpty else { return }
-            output.append(NSAttributedString(string: plainBuffer, attributes: [
-                .font: regularFont,
-                .foregroundColor: color,
-                .paragraphStyle: paragraph
-            ]))
-            plainBuffer.removeAll(keepingCapacity: true)
-        }
-
-        while i < n {
-            if chars[i] == "`" {
-                var close = i + 1
-                while close < n && chars[close] != "`" { close += 1 }
-                if close < n && close > i + 1 {
-                    flushPlain()
-                    let codeText = String(chars[(i + 1)..<close])
-                    output.append(NSAttributedString(string: codeText, attributes: [
-                        .font: codeFont,
-                        .foregroundColor: color,
-                        .backgroundColor: codeBg,
-                        .paragraphStyle: paragraph
-                    ]))
-                    i = close + 1
-                    continue
-                }
-            }
-            if i + 1 < n && chars[i] == "*" && chars[i + 1] == "*" {
-                var close = i + 2
-                var found = false
-                while close + 1 < n {
-                    if chars[close] == "*" && chars[close + 1] == "*" {
-                        found = true
-                        break
+    private static func wordRange(in nsText: NSString, at index: Int) -> NSRange {
+        let length = nsText.length
+        guard length > 0 else { return NSRange(location: 0, length: 0) }
+        let clamped = min(max(0, index), length - 1)
+        if let tokenizer = CFStringTokenizerCreate(
+            kCFAllocatorDefault,
+            nsText as CFString,
+            CFRange(location: 0, length: length),
+            UInt(kCFStringTokenizerUnitWord),
+            CFLocaleCopyCurrent()
+        ) {
+            let tokenType = CFStringTokenizerGoToTokenAtIndex(tokenizer, clamped)
+            if tokenType != [] {
+                let cfRange = CFStringTokenizerGetCurrentTokenRange(tokenizer)
+                if cfRange.location != kCFNotFound && cfRange.length > 0 {
+                    let candidate = NSRange(location: cfRange.location, length: cfRange.length)
+                    if !nsText.substring(with: candidate).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        return nsText.rangeOfComposedCharacterSequences(for: candidate)
                     }
-                    close += 1
-                }
-                if found && close > i + 2 {
-                    flushPlain()
-                    let boldText = String(chars[(i + 2)..<close])
-                    output.append(NSAttributedString(string: boldText, attributes: [
-                        .font: boldFont,
-                        .foregroundColor: color,
-                        .paragraphStyle: paragraph
-                    ]))
-                    i = close + 2
-                    continue
                 }
             }
-            plainBuffer.append(chars[i])
-            i += 1
         }
-        flushPlain()
+        return nsText.rangeOfComposedCharacterSequence(at: clamped)
     }
 }
 #endif
