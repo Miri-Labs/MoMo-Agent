@@ -11,6 +11,7 @@ import threading
 ROOT = Path(__file__).resolve().parents[2]
 SDK = r'''
 import Foundation
+import Network
 public let kDefaultControlURL = "https://fixture.invalid"
 public struct Configuration: Sendable {
     public init(hostName: String, path: String, authKey: String?, controlURL: String, ephemeral: Bool) {}
@@ -30,11 +31,18 @@ public enum Probe {
     nonisolated(unsafe) private static var resumeRunningOnUp = false
     nonisolated(unsafe) private static var mappedPeers: [String] = []
     nonisolated(unsafe) private static var protocolOverride: AnyClass?
+    nonisolated(unsafe) private static var socksEndpoint: NWEndpoint?
     public static func setProtocolOverride(_ cls: AnyClass?) {
         lock.withLock { protocolOverride = cls }
     }
     public static var currentProtocolOverride: AnyClass? {
         lock.withLock { protocolOverride }
+    }
+    public static func setSOCKSEndpoint(_ endpoint: NWEndpoint?) {
+        lock.withLock { socksEndpoint = endpoint }
+    }
+    public static var currentSOCKSEndpoint: NWEndpoint? {
+        lock.withLock { socksEndpoint }
     }
     public static func configureLogin(state: String = "NeedsLogin", delay: Duration? = nil) {
         lock.withLock { loginState = state; loginDelay = delay; loginStarted = nil; loginRequests = 0 }
@@ -99,7 +107,10 @@ public struct Loopback: Sendable {
 public extension URLSessionConfiguration {
     static func tailscaleSession(_ node: TailscaleNode) async throws -> (URLSessionConfiguration, Loopback) {
         try await Task.sleep(for: .milliseconds(20))
-        let config = URLSessionConfiguration.ephemeral
+        let config = URLSessionConfiguration.default
+        if let socks = Probe.currentSOCKSEndpoint {
+            config.proxyConfigurations = [ProxyConfiguration(socksv5Proxy: socks)]
+        }
         if let cls = Probe.currentProtocolOverride {
             config.protocolClasses = [cls]
         }
@@ -109,6 +120,7 @@ public extension URLSessionConfiguration {
 '''
 HARNESS = r'''
 import Foundation
+import Network
 import TailscaleKit
 import MoMoAgentClient
 final class PolicyFailureProtocol: URLProtocol, @unchecked Sendable {
@@ -505,11 +517,13 @@ final class PolicyFailureProtocol: URLProtocol, @unchecked Sendable {
 
         // Regression 7: System VPN/PAC proxy-bypass (-1022 ATS) on a Tailnet session must invalidate
         // the poisoned URLSession pool (preserving the TailscaleNode), transparently retry /context/v1/memories,
-        // clear connectionProxyDictionary, and remap persistent -1022 to transient TailnetError.unavailable.
+        // keep connectionProxyDictionary == nil (never [:], which bypasses ProxyConfiguration in CFNetwork!),
+        // route real CFNetwork HTTP 100.64.0.0/10 traffic through the SOCKS5 ProxyConfiguration,
+        // and remap persistent -1022 to transient TailnetError.unavailable.
         let nodesBeforeATS = Probe.counts.0
         let poisonedCandidate = try await zombieNet.connectedSession(peer: "100.118.16.18")
-        precondition(poisonedCandidate.configuration.connectionProxyDictionary?.isEmpty == true,
-                     "Tailnet URLSession must clear system connectionProxyDictionary")
+        precondition(poisonedCandidate.configuration.connectionProxyDictionary == nil,
+                     "Tailnet URLSession must leave connectionProxyDictionary nil so CFNetwork honors proxyConfigurations")
         TransientPeerProtocol.reset(failures: 1, code: .appTransportSecurityRequiresSecureConnection)
         var memReq = URLRequest(url: endpoint.appendingPathComponent("context/v1/memories"))
         memReq.httpMethod = "GET"
@@ -521,6 +535,58 @@ final class PolicyFailureProtocol: URLProtocol, @unchecked Sendable {
                      "Memories GET must transparently recover from a single -1022 proxy bypass")
         precondition(renewedAfterATS !== poisonedCandidate && Probe.counts.0 == nodesBeforeATS,
                      "-1022 must renew the poisoned URLSession pool without rebuilding the TailscaleNode")
+
+        // Verify live CFNetwork routing: connectedSession with ProxyConfiguration(socksv5Proxy:) must actually
+        // dial the loopback SOCKS5 listener (never bypass to DIRECT with ATS -1022!).
+        let socksListener = try NWListener(using: .tcp, on: .any)
+        final class SOCKSCounter: @unchecked Sendable {
+            let lock = NSLock()
+            var accepted = 0
+        }
+        let socksCounter = SOCKSCounter()
+        socksListener.newConnectionHandler = { conn in
+            socksCounter.lock.withLock { socksCounter.accepted += 1 }
+            conn.cancel()
+        }
+        await withCheckedContinuation { (ready: CheckedContinuation<Void, Never>) in
+            final class ReadyGate: @unchecked Sendable {
+                let lock = NSLock()
+                var resumed = false
+            }
+            let gate = ReadyGate()
+            socksListener.stateUpdateHandler = { st in
+                if case .ready = st {
+                    let shouldResume = gate.lock.withLock {
+                        defer { gate.resumed = true }
+                        return !gate.resumed
+                    }
+                    if shouldResume { ready.resume() }
+                }
+            }
+            socksListener.start(queue: DispatchQueue(label: "test.socks"))
+        }
+        let socksPort = socksListener.port!
+        Probe.setProtocolOverride(nil)
+        Probe.setSOCKSEndpoint(.hostPort(host: "127.0.0.1", port: socksPort))
+        zombieNet.failedRequest(URLError(.networkConnectionLost), session: renewedAfterATS)
+        let realSOCKSSession = try await zombieNet.connectedSession(peer: "100.118.16.18")
+        precondition(realSOCKSSession.configuration.connectionProxyDictionary == nil)
+        precondition(realSOCKSSession.configuration.proxyConfigurations.first?.allowFailover == false)
+        var liveProbeReq = URLRequest(url: endpoint.appendingPathComponent("healthz"))
+        liveProbeReq.timeoutInterval = 1.5
+        do {
+            _ = try await realSOCKSSession.data(for: liveProbeReq)
+        } catch {
+            let nsErr = error as NSError
+            precondition(nsErr.code != URLError.appTransportSecurityRequiresSecureConnection.rawValue,
+                         "Real CFNetwork Tailnet session must never fail with ATS -1022 when ProxyConfiguration is set")
+        }
+        socksListener.cancel()
+        precondition(socksCounter.lock.withLock { socksCounter.accepted } > 0,
+                     "Real CFNetwork Tailnet session must route 100.64.0.0/10 HTTP through loopback SOCKS5 ProxyConfiguration")
+        Probe.setSOCKSEndpoint(nil)
+        Probe.setProtocolOverride(TransientPeerProtocol.self)
+        zombieNet.failedRequest(URLError(.networkConnectionLost), session: realSOCKSSession)
 
         TransientPeerProtocol.reset(failures: 5, code: .appTransportSecurityRequiresSecureConnection)
         do {

@@ -576,11 +576,16 @@ public actor TranscriptionCoordinator {
         if let execution = managed?.handle, execution.batchExecution != nil, managed?.stopping == nil {
             managed?.interleavePriorityWork = true
         }
-        if batchAnalysisPrefetch != nil {
-            try? await releaseBatchAnalysisPrefetch()
-        }
         if let prefetch = analysisPrefetch, !prefetch.isHotLive {
-            try? await releaseAnalysisPrefetch()
+            if prefetch.hasCommittedPage {
+                // At least one bounded page is already durably committed in SQLite; releasing the
+                // paused stream frees analysisQueue and epoch attempt_id with zero lost progress.
+                try? await releaseAnalysisPrefetch()
+            } else {
+                // Guarantee forward progress under continuous Watch chunk arrival: finish and commit
+                // the single in-flight page (<0.5 s) before yielding to hot live analysis.
+                prefetch.requestYieldAfterFirstCommit()
+            }
         }
         if activeWorkIsHistorical, nativeInFlight, phase == .transcribing,
            analysisPrefetch == nil, analysisPrefetchEnabled, retryScope == nil {
@@ -1367,7 +1372,12 @@ public actor TranscriptionCoordinator {
                                                   checkpoint: result.checkpoint.map(archiveCheckpoint), waitingForMoreAudio: result.waitingForMoreAudio,
                                                   continuing: continuing)
             completedPreparations += 1
-            if !continuing, pipeline != nil { analysisPrefetch = nil }
+            pipeline?.markPageCommitted()
+            if !continuing, pipeline != nil {
+                analysisPrefetch = nil
+            } else if let pipeline, pipeline.shouldYieldAfterCommit {
+                try? await releaseAnalysisPrefetch()
+            }
             activeSessionID = nil
             lastAttemptedSessionID = nil
             attempt = nil
@@ -1810,6 +1820,10 @@ private final class AnalysisPrefetch: Sendable {
     }
 
     func activeTicket() async throws -> EpochAnalysisTicket? { try await claim.value }
+    var hasCommittedPage: Bool { control.hasCommittedPage }
+    var shouldYieldAfterCommit: Bool { control.shouldYieldAfterCommit }
+    func markPageCommitted() { control.markPageCommitted() }
+    func requestYieldAfterFirstCommit() { control.requestYieldAfterFirstCommit() }
     func setReadAheadAllowed(_ allowed: Bool) { control.setReadAheadAllowed(allowed) }
     func cancel() { attempt.cancel(); control.cancel(); result.cancel() }
 
@@ -1911,8 +1925,20 @@ private final class AnalysisStreamControl: @unchecked Sendable {
     private var stream: SpeechAnalysisStream?
     private var cancelled = false
     private var readAheadAllowed: Bool
+    private var committedPage = false
+    private var yieldAfterCommit = false
 
     init(readAheadAllowed: Bool) { self.readAheadAllowed = readAheadAllowed }
+    var hasCommittedPage: Bool { lock.withLock { committedPage } }
+    var shouldYieldAfterCommit: Bool { lock.withLock { yieldAfterCommit } }
+    func markPageCommitted() { lock.withLock { committedPage = true } }
+    func requestYieldAfterFirstCommit() {
+        lock.withLock {
+            yieldAfterCommit = true
+            readAheadAllowed = false
+            stream?.setReadAheadAllowed(false)
+        }
+    }
     func install(_ stream: SpeechAnalysisStream) {
         lock.withLock {
             self.stream = stream

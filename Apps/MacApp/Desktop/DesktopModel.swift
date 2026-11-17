@@ -927,13 +927,25 @@ final class DesktopModel {
                 }
             }
         } catch let error where probe != nil && AgentTransportFailure.isConfigurationFailure(error) {
-            // A local policy rejection supplies no evidence about the serving node.
+            // Retire any poisoned probe session immediately so a transient SOCKS5 bypass never sticks.
             tailnet.diagnostics.recordLink("identityProbe", "configuration-rejected", error: error)
+            if let probeSession { tailnet.failedRequest(error, session: probeSession) }
             guard let probe, probe.generation == tailnet.generation,
                   servedEmbeddedNode?.generation == probe.generation else { return }
             let url = probe.endpoint
             if embeddedHealth.recentlyVerified(url) {
                 body = ["state": "connected", "endpoint": url.absoluteString]
+            } else if let knownEndpoint, !["NeedsLogin", "NeedsMachineAuth"].contains(tailnet.state) {
+                servedEmbeddedNode = nil
+                embeddedProbeFailures += 1
+                if embeddedProbeFailures >= 3 {
+                    embeddedProbeFailures = 0
+                    await tailnet.restartForRecovery()
+                } else {
+                    tailnet.prepareForForeground()
+                }
+                if tailnetAccessError != nil { tailnetAccessError = nil }
+                body = ["state": "reconnecting", "endpoint": knownEndpoint, "error": String(localized: "正在恢复连接…")]
             } else {
                 tailnetAccessError = error.localizedDescription
                 body = ["state": "needs_setup", "error": error.localizedDescription]

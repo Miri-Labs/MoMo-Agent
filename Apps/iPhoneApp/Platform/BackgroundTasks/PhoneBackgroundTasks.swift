@@ -41,10 +41,13 @@ extension ReceivedAudioTranscription {
             await reconcilePendingBatch()
             let excluded = await MainActor.run { excludingBatchID() }
             let priorityFirst = await coordinator.hasUnreservedPriorityWork()
-            if !priorityFirst,
-               let resumedID = try await coordinator.resumeSystemEndedBatchForBackgroundProcessing(excludingBatchID: excluded) {
+            if let resumedID = try await coordinator.resumeSystemEndedBatchForBackgroundProcessing(excludingBatchID: excluded) {
                 await stageTracker.recordStartedBatchFirst()
-                return try await coordinator.startBatch(id: resumedID, origin: .backgroundProcessing, finiteBudget: true, onFinished: finish)
+                let handle = try await coordinator.startBatch(id: resumedID, origin: .backgroundProcessing, finiteBudget: true, onFinished: finish)
+                if priorityFirst {
+                    await coordinator.requestPriorityInterleaving(execution: handle)
+                }
+                return handle
             }
             await stageTracker.recordStartedAutomaticFirst()
             return try await coordinator.startBackgroundAutomatic(finiteBudget: true, onFinished: finish)
@@ -413,9 +416,12 @@ final class PhoneBackgroundTasks {
             if let batchID { return try await coordinator.startBatch(id: batchID, origin: origin, onFinished: finish) }
             let excluded = await pendingExcludedBatch()
             let priorityFirst = await coordinator.hasUnreservedPriorityWork()
-            if !priorityFirst,
-               let resumedID = try await coordinator.resumeSystemEndedBatchForBackgroundProcessing(excludingBatchID: excluded) {
-                return try await coordinator.startBatch(id: resumedID, origin: .backgroundProcessing, onFinished: finish)
+            if let resumedID = try await coordinator.resumeSystemEndedBatchForBackgroundProcessing(excludingBatchID: excluded) {
+                let handle = try await coordinator.startBatch(id: resumedID, origin: .backgroundProcessing, onFinished: finish)
+                if priorityFirst {
+                    await coordinator.requestPriorityInterleaving(execution: handle)
+                }
+                return handle
             }
             await holder.markRanAutomaticFirst()
             return try await coordinator.startBackgroundAutomatic(onFinished: finish)

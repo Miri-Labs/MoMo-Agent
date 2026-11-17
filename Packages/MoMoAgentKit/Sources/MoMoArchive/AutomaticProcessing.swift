@@ -114,7 +114,7 @@ extension ArchiveStore {
                     }
                 }
             }
-            guard row.string(4) == nil, try !batchReservesAnalysis(epochID: epochID) else { continue }
+            guard try !batchReservesAnalysis(epochID: epochID) else { continue }
             let pendingRanges = try pendingAnalysisRanges(epochID: epochID, fingerprint: configurationFingerprint, retainedOnly: true)
             let receivedEnd = try receivedAnalysisRanges(epochID: epochID, retainedOnly: false).last?.end
             let closedFrame = try analysisClosedFrame(epochID: epochID)
@@ -296,7 +296,7 @@ extension ArchiveStore {
                     inputLease: inputLease, isolateLocalFailures: true, selectedWindowID: windowID, now: now) else { continue }
                 work = .transcription(ticket)
             } else {
-                let analysisStepSeconds: Double = candidate.tier == 0 ? 120 : 300
+                let analysisStepSeconds: Double = 120
                 guard let ticket = try claimEpochAnalysis(configurationFingerprint: configurationFingerprint,
                     sessionID: candidate.sessionID, expectedGeneration: candidate.generation,
                     finalizeAvailablePrefixBefore: now.addingTimeInterval(-1_800), isolateLocalFailures: true,
