@@ -309,11 +309,8 @@ final class EmbeddedTailnet {
         guard attempt == generation, sessionAttempt == sessionGeneration else { throw CancellationError() }
         // History and uploads must not occupy the chat connection pool.
         if let cached = cached() { return cached }
-        configuration.urlCache = nil; configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        Self.isolateTailnetProxyConfiguration(configuration)
         configuration.timeoutIntervalForRequest = 45
-        var proxies = configuration.proxyConfigurations
-        for i in proxies.indices { proxies[i].allowFailover = false }
-        configuration.proxyConfigurations = proxies
         let created = URLSession(configuration: configuration, delegate: TailnetNoRedirects(diagnostics: diagnostics), delegateQueue: nil)
         if media { desktopMediaSession = created }
         else if desktopControl { desktopControlSession = created }
@@ -442,6 +439,19 @@ final class EmbeddedTailnet {
         return pool.dataTask(with: request)
     }
 
+    private static func isolateTailnetProxyConfiguration(_ configuration: URLSessionConfiguration) {
+        // Clear system HTTP/PAC proxy dictionaries (e.g., VPN/Clash/Surge DIRECT rules for 100.64.0.0/10)
+        // so CFNetwork never bypasses Tailscale's loopback SOCKS5 ProxyConfiguration into an ATS -1022 failure.
+        configuration.connectionProxyDictionary = [:]
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        var proxies = configuration.proxyConfigurations
+        for i in proxies.indices { proxies[i].allowFailover = false }
+        configuration.proxyConfigurations = proxies
+    }
+
     func failedRequest(_ error: Error, session failedSession: URLSession) {
         guard owns(failedSession) else { return }
         guard !AgentTransportFailure.isCancelled(error) else { return }
@@ -449,7 +459,10 @@ final class EmbeddedTailnet {
         let shouldInvalidate: Bool
         if nsError.domain == NSURLErrorDomain {
             let code = URLError.Code(rawValue: nsError.code)
-            shouldInvalidate = [.badURL, .timedOut, .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet].contains(code)
+            shouldInvalidate = [
+                .badURL, .timedOut, .cannotConnectToHost, .networkConnectionLost,
+                .notConnectedToInternet, .appTransportSecurityRequiresSecureConnection
+            ].contains(code)
         } else {
             shouldInvalidate = AgentTransportFailure.isSocketOrLinkFailure(error)
         }
@@ -488,10 +501,7 @@ final class EmbeddedTailnet {
             do {
                 try Task.checkCancellation()
                 let (configuration, loopback) = try await URLSessionConfiguration.tailscaleSession(node)
-                var proxies = configuration.proxyConfigurations
-                for i in proxies.indices { proxies[i].allowFailover = false }
-                configuration.proxyConfigurations = proxies
-                configuration.urlCache = nil
+                Self.isolateTailnetProxyConfiguration(configuration)
                 let probe = URLSession(configuration: configuration, delegate: TailnetNoRedirects(), delegateQueue: nil)
                 defer { probe.invalidateAndCancel() }
                 let loopbackAddress = loopback.address
@@ -579,10 +589,7 @@ final class EmbeddedTailnet {
         let task = Task { [weak self] in
             do {
                 let (configuration, loopback) = try await URLSessionConfiguration.tailscaleSession(node)
-                var proxies = configuration.proxyConfigurations
-                for i in proxies.indices { proxies[i].allowFailover = false }
-                configuration.proxyConfigurations = proxies
-                configuration.urlCache = nil
+                Self.isolateTailnetProxyConfiguration(configuration)
                 let probe = URLSession(configuration: configuration, delegate: TailnetNoRedirects(), delegateQueue: nil)
                 defer { probe.invalidateAndCancel() }
                 var request = URLRequest(url: URL(string: "http://\(loopback.address)/localapi/v0/status")!)

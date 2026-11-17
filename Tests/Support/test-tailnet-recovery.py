@@ -503,6 +503,34 @@ final class PolicyFailureProtocol: URLProtocol, @unchecked Sendable {
         } catch let error as URLError where error.code == .badURL {}
         precondition(TransientPeerProtocol.attempts == 1, "Non-idempotent POST attempted only once")
 
+        // Regression 7: System VPN/PAC proxy-bypass (-1022 ATS) on a Tailnet session must invalidate
+        // the poisoned URLSession pool (preserving the TailscaleNode), transparently retry /context/v1/memories,
+        // clear connectionProxyDictionary, and remap persistent -1022 to transient TailnetError.unavailable.
+        let nodesBeforeATS = Probe.counts.0
+        let poisonedCandidate = try await zombieNet.connectedSession(peer: "100.118.16.18")
+        precondition(poisonedCandidate.configuration.connectionProxyDictionary?.isEmpty == true,
+                     "Tailnet URLSession must clear system connectionProxyDictionary")
+        TransientPeerProtocol.reset(failures: 1, code: .appTransportSecurityRequiresSecureConnection)
+        var memReq = URLRequest(url: endpoint.appendingPathComponent("context/v1/memories"))
+        memReq.httpMethod = "GET"
+        let memStream = try await transport.open(memReq)!
+        var memBody = Data()
+        for try await chunk in memStream.chunks { memBody.append(chunk) }
+        let renewedAfterATS = try await zombieNet.connectedSession(peer: "100.118.16.18")
+        precondition(memStream.status == 200 && TransientPeerProtocol.attempts == 2,
+                     "Memories GET must transparently recover from a single -1022 proxy bypass")
+        precondition(renewedAfterATS !== poisonedCandidate && Probe.counts.0 == nodesBeforeATS,
+                     "-1022 must renew the poisoned URLSession pool without rebuilding the TailscaleNode")
+
+        TransientPeerProtocol.reset(failures: 5, code: .appTransportSecurityRequiresSecureConnection)
+        do {
+            _ = try await transport.open(memReq)
+            preconditionFailure("Expected persistent -1022 to fail with TailnetError.unavailable")
+        } catch TailnetError.unavailable {
+            precondition(AgentTransportFailure.isTransient(TailnetError.unavailable),
+                         "Remapped TailnetError.unavailable must be treated as transient")
+        }
+
         await zombieNet.close()
         print("PASS: zombie Stopped recovery, wedged node recycle, missing-peer recovery, repeated remote timeouts, peer warmup and pre-header retry")
     }
@@ -512,8 +540,9 @@ final class TransientPeerProtocol: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var remainingFailures = 0
     nonisolated(unsafe) private static var seenAttempts = 0
-    static func reset(failures: Int) {
-        lock.withLock { remainingFailures = failures; seenAttempts = 0 }
+    nonisolated(unsafe) private static var failureCode: URLError.Code = .badURL
+    static func reset(failures: Int, code: URLError.Code = .badURL) {
+        lock.withLock { remainingFailures = failures; seenAttempts = 0; failureCode = code }
     }
     static var attempts: Int { lock.withLock { seenAttempts } }
     override class func canInit(with request: URLRequest) -> Bool {
@@ -521,16 +550,16 @@ final class TransientPeerProtocol: URLProtocol, @unchecked Sendable {
     }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        let shouldFail = Self.lock.withLock { () -> Bool in
+        let failureToEmit = Self.lock.withLock { () -> URLError.Code? in
             Self.seenAttempts += 1
             if Self.remainingFailures > 0 {
                 Self.remainingFailures -= 1
-                return true
+                return Self.failureCode
             }
-            return false
+            return nil
         }
-        if shouldFail {
-            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+        if let code = failureToEmit {
+            client?.urlProtocol(self, didFailWithError: URLError(code))
             return
         }
         let data = Data("{\"ok\":true}".utf8)
