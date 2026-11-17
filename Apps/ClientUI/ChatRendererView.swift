@@ -9,6 +9,11 @@ struct ChatScrollRequest: Equatable {
     let id = UUID()
 }
 
+private struct SelectableMessageSheetItem: Identifiable {
+    let id = UUID()
+    let text: String
+}
+
 /// Offline presentation surface. It cannot execute agent tools or access provider configuration.
 struct ChatRendererView: View {
     let snapshot: ChatRenderSnapshot
@@ -31,6 +36,7 @@ struct ChatRendererView: View {
     @State private var rendererReady = ChatWebSurface.hasWarmRenderedView
     @State private var nativeFocusedRequest: String?
     @State private var nativeEntryPlaced = false
+    @State private var selectableMessageItem: SelectableMessageSheetItem?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,7 +55,8 @@ struct ChatRendererView: View {
                         failed: { renderingFailed = true }, rendered: { rendererReady = true },
                         recovering: { rendererReady = false },
                         open: { openURL($0) }, regenerate: onRegenerate,
-                        readingPosition: onReadingPosition, systemAction: onSystemAction, attachment: onAttachment, retryMessage: onRetryMessage)
+                        readingPosition: onReadingPosition, systemAction: onSystemAction, attachment: onAttachment, retryMessage: onRetryMessage,
+                        selectText: { selectableMessageItem = SelectableMessageSheetItem(text: $0) })
                         .opacity(rendererReady ? 1 : 0)
                         .accessibilityHidden(!rendererReady)
                         .accessibilityIdentifier("assistant.transcript")
@@ -67,6 +74,11 @@ struct ChatRendererView: View {
         .onChange(of: scenePhase) {
             if scenePhase == .active, renderingFailed { rendererReady = false; renderingFailed = false }
         }
+        #if os(iOS)
+        .sheet(item: $selectableMessageItem) { item in
+            MessageTextSelectionSheet(text: item.text)
+        }
+        #endif
     }
 
     private func typingOpacity(at date: Date, index: Int) -> Double {
@@ -234,9 +246,18 @@ struct ChatRendererView: View {
 #if os(macOS)
 private typealias ChatWebRepresentable = NSViewRepresentable
 
+@MainActor fileprivate final class ChatWKWebView: WKWebView {
+    weak var chatCoordinator: ChatWebCoordinator?
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        chatCoordinator?.configureMacContextMenu(menu, with: event, in: self)
+    }
+}
+
 @MainActor fileprivate enum WarmChatWebPool {
     struct Entry {
-        let web: WKWebView
+        let web: ChatWKWebView
         let resourceDirectory: URL
         let documentID: UUID
         let sent: ChatRenderPayload?
@@ -251,7 +272,42 @@ private typealias ChatWebRepresentable = NSViewRepresentable
 }
 #else
 private typealias ChatWebRepresentable = UIViewRepresentable
+
+@MainActor fileprivate final class ChatWKWebView: WKWebView {}
 #endif
+
+struct ChatBubbleRegion: Sendable {
+    struct CodeBlock: Sendable {
+        let docRect: CGRect
+        let viewportRect: CGRect
+        let text: String
+    }
+    let id: String
+    let messageID: String
+    let isUser: Bool
+    let docRect: CGRect
+    let viewportRect: CGRect
+    let copyText: String
+    let codeBlocks: [CodeBlock]
+    let interactiveDocRects: [CGRect]
+    let interactiveViewportRects: [CGRect]
+}
+
+fileprivate struct PressedBubbleState: Sendable {
+    let hit: Bool
+    let id: String
+    let messageID: String
+    let isUser: Bool
+    let isLink: Bool
+    let dx: CGFloat
+    let dy: CGFloat
+    let width: CGFloat
+    let height: CGFloat
+    let copyText: String
+    let codeText: String
+    let selectedText: String
+    let timestamp: ContinuousClock.Instant
+}
 
 private struct ChatWebSurface: ChatWebRepresentable {
     static var hasWarmRenderedView: Bool {
@@ -278,6 +334,7 @@ private struct ChatWebSurface: ChatWebRepresentable {
     let systemAction: (UUID) -> Void
     let attachment: (UUID) -> Void
     let retryMessage: (UUID) -> Void
+    var selectText: (String) -> Void = { _ in }
 
     func makeCoordinator() -> ChatWebCoordinator {
         let coordinator = ChatWebCoordinator(failed: failed, open: open, regenerate: regenerate, readingPosition: readingPosition, systemAction: systemAction)
@@ -286,6 +343,7 @@ private struct ChatWebSurface: ChatWebRepresentable {
         coordinator.setActive(active)
         coordinator.attachment = attachment
         coordinator.retryMessage = retryMessage
+        coordinator.selectText = selectText
         return coordinator
     }
 
@@ -303,6 +361,7 @@ private struct ChatWebSurface: ChatWebRepresentable {
         if let warm = WarmChatWebPool.take() {
             warm.web.configuration.userContentController.removeScriptMessageHandler(forName: "chat")
             warm.web.configuration.userContentController.add(context.coordinator, name: "chat")
+            warm.web.chatCoordinator = context.coordinator
             configureBackground(warm.web)
             warm.web.navigationDelegate = context.coordinator
             context.coordinator.adoptWarm(warm)
@@ -313,7 +372,7 @@ private struct ChatWebSurface: ChatWebRepresentable {
         configuration.websiteDataStore = .nonPersistent()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.userContentController.add(context.coordinator, name: "chat")
-        let web = WKWebView(frame: .zero, configuration: configuration)
+        let web = ChatWKWebView(frame: .zero, configuration: configuration)
         #if os(iOS)
         web.isOpaque = false
         if #available(iOS 26, *) {
@@ -328,7 +387,12 @@ private struct ChatWebSurface: ChatWebRepresentable {
         dismissKeyboard.delegate = context.coordinator
         dismissKeyboard.cancelsTouchesInView = false
         web.addGestureRecognizer(dismissKeyboard)
+        web.uiDelegate = context.coordinator
+        let contextMenu = UIContextMenuInteraction(delegate: context.coordinator)
+        web.addInteraction(contextMenu)
+        context.coordinator.contextMenuInteraction = contextMenu
         #else
+        web.chatCoordinator = context.coordinator
         web.setValue(false, forKey: "drawsBackground")
         #endif
         configureBackground(web)
@@ -354,6 +418,7 @@ private struct ChatWebSurface: ChatWebRepresentable {
         context.coordinator.systemAction = systemAction
         context.coordinator.attachment = attachment
         context.coordinator.retryMessage = retryMessage
+        context.coordinator.selectText = selectText
         if !active { context.coordinator.setActive(false) }
         context.coordinator.update(.init(snapshot: snapshot, appearance: .init(dark: dark, reduceMotion: reduceMotion, scale: scale, headerInset: headerInset)), scrollRequest: scrollRequest)
         if active { context.coordinator.setActive(true) }
@@ -377,13 +442,20 @@ private struct ChatWebSurface: ChatWebRepresentable {
     private static func dismantleWebView(_ web: WKWebView, coordinator: ChatWebCoordinator) {
         coordinator.setActive(false)
         #if os(macOS)
-        if WarmChatWebPool.entry == nil, let warm = coordinator.exportWarmState(for: web) {
+        if WarmChatWebPool.entry == nil, let chatWeb = web as? ChatWKWebView, let warm = coordinator.exportWarmState(for: chatWeb) {
+            chatWeb.chatCoordinator = nil
             coordinator.webView = nil
             web.navigationDelegate = nil
             web.configuration.userContentController.removeScriptMessageHandler(forName: "chat")
             WarmChatWebPool.entry = warm
             return
         }
+        #else
+        if let interaction = coordinator.contextMenuInteraction {
+            web.removeInteraction(interaction)
+            coordinator.contextMenuInteraction = nil
+        }
+        web.uiDelegate = nil
         #endif
         coordinator.webView = nil
         web.navigationDelegate = nil
@@ -433,7 +505,7 @@ struct ChatRenderPayload: Encodable, Equatable, Sendable {
 }
 
 @MainActor
-final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
     weak var webView: WKWebView?
     var resourceDirectory: URL?
     var failed: () -> Void
@@ -443,8 +515,20 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
     var systemAction: (UUID) -> Void
     var attachment: (UUID) -> Void = { _ in }
     var retryMessage: (UUID) -> Void = { _ in }
+    var selectText: (String) -> Void = { _ in }
     var rendered: () -> Void = {}
     var recovering: () -> Void = {}
+    var bubbleRegions: [ChatBubbleRegion] = []
+    fileprivate var pressedBubble: PressedBubbleState?
+    #if os(iOS)
+    weak var contextMenuInteraction: UIContextMenuInteraction?
+    fileprivate weak var activePreviewHost: UIView?
+    fileprivate var activeContextBubbleID: String?
+    fileprivate var activeContextBubbleRect: CGRect?
+    #else
+    fileprivate var pendingMacCopyText: String?
+    fileprivate var pendingMacCodeText: String?
+    #endif
     private var active = true
     private var needsReload = false
     private var reloads = 0
@@ -488,7 +572,7 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
         }
     }
 
-    fileprivate func exportWarmState(for web: WKWebView) -> WarmChatWebPool.Entry? {
+    fileprivate func exportWarmState(for web: ChatWKWebView) -> WarmChatWebPool.Entry? {
         guard ready, !needsReload, !sending, let resourceDirectory else { return nil }
         return WarmChatWebPool.Entry(
             web: web,
@@ -707,18 +791,13 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
                }) { systemAction(id) }
         case "readingPosition":
             if let value = body["value"] as? [String: Any] { receiveReadingPosition(value) }
+        case "bubbleRegions":
+            if let list = body["value"] as? [[String: Any]] { receiveBubbleRegions(list) }
+        case "pressedBubble":
+            if let dict = body["value"] as? [String: Any] { receivePressedBubble(dict) }
         case "copy": if let text = body["value"] as? String {
-            #if os(macOS)
-            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
-            #else
-            UIPasteboard.general.string = text
-            #endif
+            Self.copyTextToPasteboard(text)
         }
-        case "haptic":
-            #if os(iOS)
-            let style: UIImpactFeedbackGenerator.FeedbackStyle = (body["value"] as? String) == "light" ? .light : .medium
-            UIImpactFeedbackGenerator(style: style).impactOccurred()
-            #endif
         case "link":
             if let text = body["value"] as? String, let url = URL(string: text) {
                 // Source/version authorization is still performed by RecordingSourceLinks.
@@ -781,4 +860,335 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
             if error != nil || value as? Bool != true { recover(from: error ?? WKError(.javaScriptExceptionOccurred)) }
         })
     }
+
+    static func copyTextToPasteboard(_ text: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #else
+        UIPasteboard.general.string = text
+        #endif
+    }
+
+    private func receiveBubbleRegions(_ raw: [[String: Any]]) {
+        func rect(_ dict: [String: Any], xKey: String, yKey: String) -> CGRect? {
+            guard let x = dict[xKey] as? Double, let y = dict[yKey] as? Double,
+                  let w = dict["width"] as? Double, let h = dict["height"] as? Double,
+                  w > 0, h > 0 else { return nil }
+            return CGRect(x: x, y: y, width: w, height: h)
+        }
+        bubbleRegions = raw.compactMap { item in
+            guard let id = item["id"] as? String, !id.isEmpty,
+                  let copyText = item["copyText"] as? String, !copyText.isEmpty,
+                  let docRect = rect(item, xKey: "x", yKey: "y"),
+                  let vpRect = rect(item, xKey: "vpX", yKey: "vpY") else { return nil }
+            let codeBlocks: [ChatBubbleRegion.CodeBlock] = ((item["codeBlocks"] as? [[String: Any]]) ?? []).compactMap { cb in
+                guard let text = cb["text"] as? String, !text.isEmpty,
+                      let cDoc = rect(cb, xKey: "x", yKey: "y"),
+                      let cVp = rect(cb, xKey: "vpX", yKey: "vpY") else { return nil }
+                return .init(docRect: cDoc, viewportRect: cVp, text: text)
+            }
+            let linksRaw = (item["links"] as? [[String: Any]]) ?? []
+            return ChatBubbleRegion(
+                id: id,
+                messageID: (item["messageID"] as? String) ?? "",
+                isUser: (item["isUser"] as? Bool) ?? false,
+                docRect: docRect,
+                viewportRect: vpRect,
+                copyText: copyText,
+                codeBlocks: codeBlocks,
+                interactiveDocRects: linksRaw.compactMap { rect($0, xKey: "x", yKey: "y") },
+                interactiveViewportRects: linksRaw.compactMap { rect($0, xKey: "vpX", yKey: "vpY") }
+            )
+        }
+    }
+
+    private func receivePressedBubble(_ dict: [String: Any]) {
+        let hit = (dict["hit"] as? Bool) ?? false
+        pressedBubble = PressedBubbleState(
+            hit: hit,
+            id: (dict["id"] as? String) ?? "",
+            messageID: (dict["messageID"] as? String) ?? "",
+            isUser: (dict["isUser"] as? Bool) ?? false,
+            isLink: (dict["isLink"] as? Bool) ?? false,
+            dx: CGFloat((dict["dx"] as? Double) ?? 0),
+            dy: CGFloat((dict["dy"] as? Double) ?? 0),
+            width: CGFloat((dict["width"] as? Double) ?? 0),
+            height: CGFloat((dict["height"] as? Double) ?? 0),
+            copyText: (dict["copyText"] as? String) ?? "",
+            codeText: (dict["codeText"] as? String) ?? "",
+            selectedText: (dict["selectedText"] as? String) ?? "",
+            timestamp: .now
+        )
+    }
+
+    #if os(iOS)
+    func webView(_ webView: WKWebView, contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo,
+                 completionHandler: @escaping (UIContextMenuConfiguration?) -> Void) {
+        // Suppress WebKit's raw URL link preview inside chat bubbles so our native iMessage bubble context menu handles the turn cleanly.
+        completionHandler(nil)
+    }
+
+    func resolveBubbleHit(at location: CGPoint, in webView: WKWebView) -> (id: String, messageID: String, isUser: Bool, rectInWebView: CGRect, copyText: String, codeText: String?)? {
+        if let pressed = pressedBubble, pressed.timestamp.duration(to: .now) < .milliseconds(700) {
+            if pressed.hit {
+                if pressed.isLink { return nil }
+                let rect = CGRect(x: location.x + pressed.dx, y: location.y + pressed.dy, width: pressed.width, height: pressed.height)
+                if rect.width > 0, rect.height > 0, !pressed.copyText.isEmpty {
+                    return (pressed.id, pressed.messageID, pressed.isUser, rect, pressed.copyText, pressed.codeText.isEmpty ? nil : pressed.codeText)
+                }
+            }
+        }
+        let contentView = webView.scrollView.subviews.first { String(describing: type(of: $0)).contains("WKContentView") } ?? webView.scrollView.subviews.first
+        for region in bubbleRegions {
+            let rectInWeb: CGRect = if let contentView {
+                webView.convert(region.docRect, from: contentView)
+            } else {
+                region.viewportRect
+            }
+            guard rectInWeb.insetBy(dx: -4, dy: -4).contains(location) else { continue }
+            for linkDoc in region.interactiveDocRects {
+                let linkRect = contentView.map { webView.convert(linkDoc, from: $0) } ?? linkDoc
+                if linkRect.insetBy(dx: -2, dy: -2).contains(location) { return nil }
+            }
+            var hitCode: String? = nil
+            for cb in region.codeBlocks {
+                let cbRect = contentView.map { webView.convert(cb.docRect, from: $0) } ?? cb.viewportRect
+                if cbRect.contains(location) { hitCode = cb.text; break }
+            }
+            return (region.id, region.messageID, region.isUser, rectInWeb, region.copyText, hitCode)
+        }
+        return nil
+    }
+
+    fileprivate func setDOMBubbleHidden(_ id: String, hidden: Bool, completion: (@MainActor () -> Void)? = nil) {
+        guard let webView,
+              let idData = try? JSONEncoder().encode(id),
+              let idJSON = String(data: idData, encoding: .utf8) else {
+            completion?()
+            return
+        }
+        let flag = hidden ? "true" : "false"
+        webView.evaluateJavaScript("if (window.MoMoChat?.setBubbleHidden) window.MoMoChat.setBubbleHidden(\(idJSON), \(flag));") { _, _ in
+            Task { @MainActor in completion?() }
+        }
+    }
+    #else
+    fileprivate func configureMacContextMenu(_ menu: NSMenu, with event: NSEvent, in webView: WKWebView) {
+        menu.items.removeAll { item in
+            guard let raw = item.identifier?.rawValue else { return false }
+            return raw.contains("Reload") || raw.contains("GoBack") || raw.contains("GoForward") || raw.contains("OpenLink") || raw.contains("Download")
+        }
+        let hasNativeSelectionCopy = menu.items.contains { $0.identifier?.rawValue == "WKMenuItemIdentifierCopy" }
+        let local = webView.convert(event.locationInWindow, from: nil)
+        let vpPoint = CGPoint(x: local.x, y: webView.isFlipped ? local.y : webView.bounds.height - local.y)
+
+        var copyText: String? = nil
+        var codeText: String? = nil
+        if let pressed = pressedBubble, pressed.timestamp.duration(to: .now) < .milliseconds(700), pressed.hit, !pressed.copyText.isEmpty {
+            copyText = pressed.copyText
+            codeText = pressed.codeText.isEmpty ? nil : pressed.codeText
+        } else if let region = bubbleRegions.first(where: { $0.viewportRect.insetBy(dx: -4, dy: -4).contains(vpPoint) }) {
+            copyText = region.copyText
+            codeText = region.codeBlocks.first(where: { $0.viewportRect.contains(vpPoint) })?.text
+        }
+
+        if hasNativeSelectionCopy {
+            if let copyText {
+                pendingMacCopyText = copyText
+                menu.addItem(.separator())
+                let fullItem = NSMenuItem(title: String(localized: "拷贝整条消息", bundle: AppLanguage.resourceBundle),
+                                          action: #selector(copyMacFullMessage(_:)), keyEquivalent: "")
+                fullItem.target = self
+                fullItem.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
+                menu.addItem(fullItem)
+            }
+            return
+        }
+
+        menu.removeAllItems()
+        guard let copyText else { return }
+        pendingMacCopyText = copyText
+        let copyItem = NSMenuItem(title: String(localized: "拷贝", bundle: AppLanguage.resourceBundle),
+                                  action: #selector(copyMacFullMessage(_:)), keyEquivalent: "")
+        copyItem.target = self
+        copyItem.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
+        menu.addItem(copyItem)
+
+        if let codeText {
+            pendingMacCodeText = codeText
+            let codeItem = NSMenuItem(title: String(localized: "拷贝代码", bundle: AppLanguage.resourceBundle),
+                                      action: #selector(copyMacCodeBlock(_:)), keyEquivalent: "")
+            codeItem.target = self
+            codeItem.image = NSImage(systemSymbolName: "chevron.left.forwardslash.chevron.right", accessibilityDescription: nil)
+            menu.addItem(codeItem)
+        }
+    }
+
+    @objc private func copyMacFullMessage(_ sender: Any?) {
+        if let text = pendingMacCopyText { Self.copyTextToPasteboard(text) }
+    }
+
+    @objc private func copyMacCodeBlock(_ sender: Any?) {
+        if let code = pendingMacCodeText { Self.copyTextToPasteboard(code) }
+    }
+    #endif
 }
+
+#if os(iOS)
+extension ChatWebCoordinator: UIContextMenuInteractionDelegate {
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+        guard let webView, let hit = resolveBubbleHit(at: location, in: webView) else { return nil }
+        activePreviewHost?.removeFromSuperview()
+        activePreviewHost = nil
+        activeContextBubbleID = hit.id
+        activeContextBubbleRect = hit.rectInWebView
+
+        let copyText = hit.copyText
+        let codeText = hit.codeText
+        let messageID = hit.messageID
+        let canRegenerate = (pending?.snapshot.canRegenerate == true) && (pending?.snapshot.busy == false) && !hit.isUser && !messageID.isEmpty
+
+        return UIContextMenuConfiguration(identifier: hit.id as NSString, previewProvider: nil) { [weak self] _ in
+            var actions: [UIMenuElement] = [
+                UIAction(title: String(localized: "拷贝", bundle: AppLanguage.resourceBundle),
+                         image: UIImage(systemName: "doc.on.doc")) { _ in
+                    ChatWebCoordinator.copyTextToPasteboard(copyText)
+                }
+            ]
+            if let codeText, !codeText.isEmpty {
+                actions.append(
+                    UIAction(title: String(localized: "拷贝代码", bundle: AppLanguage.resourceBundle),
+                             image: UIImage(systemName: "chevron.left.forwardslash.chevron.right")) { _ in
+                        ChatWebCoordinator.copyTextToPasteboard(codeText)
+                    }
+                )
+            }
+            actions.append(
+                UIAction(title: String(localized: "选择文本", bundle: AppLanguage.resourceBundle),
+                         image: UIImage(systemName: "selection.pin.in.out")) { [weak self] _ in
+                    self?.selectText(copyText)
+                }
+            )
+            if canRegenerate {
+                actions.append(
+                    UIAction(title: String(localized: "重新生成回复", bundle: AppLanguage.resourceBundle),
+                             image: UIImage(systemName: "arrow.clockwise")) { [weak self] _ in
+                        guard let self, let sessionID = self.pending?.snapshot.sessionID else { return }
+                        self.requestRegeneration(["sessionID": sessionID, "messageID": messageID])
+                    }
+                )
+            }
+            return UIMenu(title: "", children: actions)
+        }
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        guard let webView,
+              let bubbleRect = activeContextBubbleRect,
+              let bubbleID = activeContextBubbleID else { return nil }
+        let visibleRect = bubbleRect.intersection(webView.bounds)
+        guard visibleRect.width >= 16, visibleRect.height >= 16,
+              let snapshot = webView.resizableSnapshotView(from: visibleRect, afterScreenUpdates: false, withCapInsets: .zero) else {
+            return nil
+        }
+        let host = UIView(frame: visibleRect)
+        host.backgroundColor = .clear
+        host.isUserInteractionEnabled = false
+        snapshot.frame = host.bounds
+        host.addSubview(snapshot)
+        webView.addSubview(host)
+        activePreviewHost = host
+        setDOMBubbleHidden(bubbleID, hidden: true)
+
+        let parameters = UIPreviewParameters()
+        parameters.backgroundColor = .clear
+        let path = UIBezierPath(roundedRect: host.bounds, cornerRadius: 18)
+        parameters.visiblePath = path
+        parameters.shadowPath = path
+        return UITargetedPreview(view: host, parameters: parameters)
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                previewForDismissingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        guard let host = activePreviewHost, host.superview != nil else { return nil }
+        let parameters = UIPreviewParameters()
+        parameters.backgroundColor = .clear
+        let path = UIBezierPath(roundedRect: host.bounds, cornerRadius: 18)
+        parameters.visiblePath = path
+        parameters.shadowPath = path
+        return UITargetedPreview(view: host, parameters: parameters)
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                willEndFor configuration: UIContextMenuConfiguration,
+                                animator: (any UIContextMenuInteractionAnimating)?) {
+        let host = activePreviewHost
+        let bubbleID = activeContextBubbleID
+        activePreviewHost = nil
+        activeContextBubbleID = nil
+        activeContextBubbleRect = nil
+
+        let cleanup: @MainActor () -> Void = { [weak self] in
+            if let bubbleID, let self {
+                self.setDOMBubbleHidden(bubbleID, hidden: false) {
+                    host?.removeFromSuperview()
+                }
+            } else {
+                host?.removeFromSuperview()
+            }
+        }
+        if let animator {
+            animator.addCompletion { MainActor.assumeIsolated { cleanup() } }
+        } else {
+            cleanup()
+        }
+    }
+}
+
+private struct MessageTextSelectionSheet: View {
+    let text: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SelectableNativeTextView(text: text)
+                .ignoresSafeArea(edges: .bottom)
+                .navigationTitle(String(localized: "选择文本", bundle: AppLanguage.resourceBundle))
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(String(localized: "完成", bundle: AppLanguage.resourceBundle)) {
+                            dismiss()
+                        }
+                    }
+                }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+}
+
+private struct SelectableNativeTextView: UIViewRepresentable {
+    let text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.backgroundColor = .clear
+        view.font = .preferredFont(forTextStyle: .body)
+        view.textColor = .label
+        view.textContainerInset = UIEdgeInsets(top: 16, left: 18, bottom: 28, right: 18)
+        view.alwaysBounceVertical = true
+        view.text = text
+        return view
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        if uiView.text != text { uiView.text = text }
+    }
+}
+#endif

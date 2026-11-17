@@ -245,6 +245,41 @@ import UIKit
         capture(app, "Human control explicitly returned to agent")
         app.buttons["关闭"].firstMatch.tap()
     }
+
+    func testLongPressingBubblePresentsNativeIMessageContextMenu() async throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["MOMO_UI_TEST_RUN_ID"] = "5F12C378-A804-4E20-A46D-213FE37495AB"
+        app.launchEnvironment["MOMO_UI_TEST_TIMELINE_FIXTURE"] = "chat"
+        app.launchEnvironment["MOMO_UI_TEST_AVATAR_UNAVAILABLE"] = "1"
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        defer { app.terminate() }
+        if app.buttons["welcome.skip"].waitForExistence(timeout: 8) {
+            app.buttons["welcome.skip"].tap()
+            if app.buttons["welcome.start"].waitForExistence(timeout: 8) { app.buttons["welcome.start"].tap() }
+        }
+        if app.buttons["onboarding.finish"].waitForExistence(timeout: 8) { app.buttons["onboarding.finish"].tap() }
+        let input = app.textFields["remote.input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 20), app.debugDescription)
+        input.tap()
+        input.typeText("测试原生气泡长按")
+        app.buttons["remote.send"].tap()
+
+        let userBubble = app.webViews.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "测试原生气泡长按")).firstMatch
+        XCTAssertTrue(userBubble.waitForExistence(timeout: 10), app.debugDescription)
+
+        let transcript = app.descendants(matching: .any)["assistant.transcript"].firstMatch
+        if app.keyboards.firstMatch.exists { transcript.swipeDown() }
+        try await Task.sleep(for: .milliseconds(500))
+
+        userBubble.press(forDuration: 1.0)
+        let copyAction = app.buttons["拷贝"]
+        let appeared = copyAction.waitForExistence(timeout: 5)
+        capture(app, "Native iMessage UIContextMenu on User Bubble")
+        XCTAssertTrue(appeared, "Expected native iOS UIContextMenu '拷贝' button on long-press. Hierarchy:\n\(app.debugDescription)")
+        copyAction.tap()
+    }
     private func darkFraction(_ image: UIImage) throws -> Double {
         let cg = try XCTUnwrap(image.cgImage), width = cg.width, height = cg.height
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
