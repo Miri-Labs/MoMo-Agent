@@ -59,7 +59,7 @@ def permitted_route(method, path):
                 query.get('offset', ['0'])[0].isdigit()):
             return path, False, False
         return None
-    if not context and parts.path in ('/momo/v1/proactive', '/momo/v1/proactive/ingest') and not parts.query:
+    if not context and parts.path in ('/momo/v1/proactive', '/momo/v1/proactive/ingest', '/momo/v1/briefing/regenerate') and not parts.query:
         if method in ('GET', 'POST') and (method == 'POST' or parts.path == '/momo/v1/proactive'):
             return parts.path, False, False
         return None

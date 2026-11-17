@@ -738,7 +738,7 @@ class LifePulseAndGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                         "id": "t-pulse-1",
                         "title": "会前提醒",
                         "state": "ended",
-                        "ended": {"outcome": "completed", "at": "2026-11-16T06:10:00Z"},
+                        "ended": {"outcome": "completed", "at": dt.datetime.now(dt.timezone.utc).isoformat()},
                         "threads": ["momo:pulse:2026-11-16"],
                         "strength": "inferred",
                     }
