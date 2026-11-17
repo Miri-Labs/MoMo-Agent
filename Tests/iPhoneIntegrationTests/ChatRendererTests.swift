@@ -1124,11 +1124,51 @@ final class ChatRendererTests: XCTestCase {
         try await renderer.check("window.stableChunk === document.querySelector('.md-chunk')")
         try await renderer.check("document.querySelector('#announcer').textContent === '回复已完成'")
         try await renderer.check("!document.querySelector('[data-action=copy-reply]') && !document.querySelector('[data-action=copy-code]')")
-        try await renderer.check("document.querySelector('.assistant .prose').dataset.copyText.includes('第一段已完成。') && document.querySelector('#bubble-menu').hidden")
+        try await renderer.check("document.querySelector('.assistant .prose').dataset.copyText.includes('第一段已完成。') && document.querySelector('.assistant .prose').dataset.bubbleId.length > 0")
         try await renderer.check("getComputedStyle(document.querySelector('.user-bubble')).backgroundColor !== getComputedStyle(document.querySelector('.assistant .prose')).backgroundColor")
         try await renderer.check("getComputedStyle(document.querySelector('.assistant .prose')).borderTopLeftRadius === '18px' && getComputedStyle(document.querySelector('.assistant .prose')).backgroundColor !== 'rgba(0, 0, 0, 0)'")
         try await renderer.check("getComputedStyle(document.querySelector('.prose')).fontFamily.includes('system') && getComputedStyle(document.querySelector('.prose')).fontSize === '16px' && parseFloat(getComputedStyle(document.querySelector('.prose')).lineHeight) >= 24")
         await renderer.attach(to:self,name:"streaming-completed-with-stable-blocks")
+    }
+
+    func testNativeIMessageContextMenuResolvesExactBubbleGeometryAndPreview() async throws {
+        let renderer = try RendererHarness()
+        defer { renderer.close() }
+        try await renderer.ready()
+        let codeBlock = "let style = \"iMessage\""
+        let replyBody = "已整理完成：\n\n1. 对齐原生菜单\n\n```swift\n\(codeBlock)\n```"
+        renderer.render([user("测试长按气泡"), assistant([.init(id: "body", content: .text(replyBody))])],
+                        reduceMotion: false, canRegenerate: false)
+        try await renderer.wait("document.querySelectorAll('.user-bubble, .assistant .prose').length === 2")
+        // Wait for rAF bubbleRegions sync to reach coordinator
+        for _ in 0..<40 {
+            if renderer.coordinator.bubbleRegions.count == 2 { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertEqual(renderer.coordinator.bubbleRegions.count, 2)
+
+        let interaction = UIContextMenuInteraction(delegate: renderer.coordinator)
+        renderer.web.addInteraction(interaction)
+
+        let userRegion = try XCTUnwrap(renderer.coordinator.bubbleRegions.first(where: \.isUser))
+        let userCenter = CGPoint(x: userRegion.viewportRect.midX, y: userRegion.viewportRect.midY)
+        let userConfig = try XCTUnwrap(renderer.coordinator.contextMenuInteraction(interaction, configurationForMenuAtLocation: userCenter))
+        let userPreview = try XCTUnwrap(renderer.coordinator.contextMenuInteraction(interaction, previewForHighlightingMenuWithConfiguration: userConfig))
+        XCTAssertEqual(userPreview.view.frame.width, userRegion.viewportRect.width, accuracy: 1.5)
+        XCTAssertEqual(userPreview.view.frame.height, userRegion.viewportRect.height, accuracy: 1.5)
+        renderer.coordinator.contextMenuInteraction(interaction, willEndFor: userConfig, animator: nil)
+
+        let assistantRegion = try XCTUnwrap(renderer.coordinator.bubbleRegions.first(where: { !$0.isUser }))
+        let codeBlockRegion = try XCTUnwrap(assistantRegion.codeBlocks.first)
+        let codeCenter = CGPoint(x: codeBlockRegion.viewportRect.midX, y: codeBlockRegion.viewportRect.midY)
+        let assistantHit = try XCTUnwrap(renderer.coordinator.resolveBubbleHit(at: codeCenter, in: renderer.web))
+        XCTAssertEqual(assistantHit.copyText, replyBody)
+        XCTAssertEqual(assistantHit.codeText?.trimmingCharacters(in: .whitespacesAndNewlines), codeBlock)
+
+        let assistantConfig = try XCTUnwrap(renderer.coordinator.contextMenuInteraction(interaction, configurationForMenuAtLocation: codeCenter))
+        let assistantPreview = try XCTUnwrap(renderer.coordinator.contextMenuInteraction(interaction, previewForHighlightingMenuWithConfiguration: assistantConfig))
+        XCTAssertEqual(assistantPreview.view.frame.width, assistantRegion.viewportRect.width, accuracy: 1.5)
+        renderer.coordinator.contextMenuInteraction(interaction, willEndFor: assistantConfig, animator: nil)
     }
 
     func testReadingAnchorRestoresBelowCustomHeader() async throws {

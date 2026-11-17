@@ -16,9 +16,7 @@
   let focusedRequest = null, openingChat = false, newMessageBelow = null;
   let jumpMotion = null;
   const jump = document.querySelector('#jump');
-  const bubbleBackdrop = document.querySelector('#bubble-backdrop');
-  const bubbleMenu = document.querySelector('#bubble-menu');
-  let activeBubble = null, longPressTimer = null, longPressStart = null, longPressFired = false, bubbleMenuOpenedAt = 0, bubbleMenuScrollY = 0;
+  let bubbleSyncFrame = null, lastBubbleRegionsSig = null;
   let referenceNowMs = Date.now(), previousTurnCount = -1;
   const post = (type, value) => window.webkit?.messageHandlers?.chat?.postMessage({ type, value });
   const escape = text => text.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -397,6 +395,7 @@
             nodes.push(attachments);
           }
           const bubble = element('div','user-bubble',turn.text);
+          bubble.dataset.bubbleId = `${turn.id}:user`;
           bubble.dataset.copyText = turn.text;
           if (!hydrated && firstBubble && !replacingOutgoing) bubble.classList.add('user-enter');
           if (turn.text) {
@@ -468,6 +467,8 @@
       if (part.type === 'text') {
         piece.target = part.text; piece.streaming = part.streaming;
         piece.shown = piece.target;
+        piece.node.dataset.bubbleId = `${turn.id}:${part.id}`;
+        piece.node.dataset.messageId = turn.messageID || '';
         piece.node.dataset.copyText = part.text;
         patchMarkdown(piece,piece.shown,piece.streaming,!hydrated);
       } else {
@@ -612,6 +613,7 @@
       }
       updateJump();
       scheduleReadingPosition();
+      syncBubbleRegions();
     });
   }
   function headerInset() { return latest?.appearance?.headerInset || 0; }
@@ -738,8 +740,8 @@
       previousTurnCount = -1; referenceNowMs = Date.now();
     }
     if (snapshot.sessionID !== session) {
-      closeBubbleMenu();
       jumpMotion = null;
+      lastBubbleRegionsSig = null;
       saveReadingPosition();
       newMessageBelow = null; openingChat = false;
       session = snapshot.sessionID; views.clear(); root.replaceChildren(); pin.reset(); first = true; focusedRequest = null;
@@ -772,142 +774,101 @@
     renderTurns(first); first = false;
     if (snapshot.focus) focusNotification(snapshot.focus); else applyChatEntry();
   }
-  const MENU_ICONS = {
-    copy: '<svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><rect x="7" y="7" width="9" height="9" rx="2" stroke="currentColor" stroke-width="1.45"/><path d="M4 13V5a2 2 0 0 1 2-2h8" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></svg>',
-    code: '<svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="m6.5 7-3 3 3 3m7-6 3 3-3 3m-2-7.5-3 9" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    select: '<svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M7.5 4h5M10 4v12m-2.5 0h5" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></svg>'
-  };
-  function cancelLongPress() {
-    if (longPressTimer !== null) { clearTimeout(longPressTimer); longPressTimer = null; }
-    longPressStart = null;
-  }
-  function closeBubbleMenu() {
-    cancelLongPress();
-    longPressFired = false;
-    if (activeBubble) {
-      activeBubble.classList.remove('bubble-lifted');
-      activeBubble.closest('.turn')?.classList.remove('bubble-active-turn');
-      activeBubble = null;
+  function collectBubbleRegions() {
+    if (!latest) return [];
+    const vh = window.innerHeight;
+    const docRect = document.documentElement.getBoundingClientRect();
+    const ox = docRect.left, oy = docRect.top;
+    const regions = [];
+    for (const node of root.querySelectorAll('.user-bubble[data-copy-text], .assistant .prose[data-copy-text]')) {
+      const r = node.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0 || r.bottom < -300 || r.top > vh + 300) continue;
+      const copyText = node.dataset.copyText || '';
+      if (!copyText) continue;
+      const codeBlocks = [];
+      for (const wrap of node.querySelectorAll('.code-wrap')) {
+        const cr = wrap.getBoundingClientRect();
+        const code = wrap.querySelector('code')?.textContent || '';
+        if (cr.width > 0 && cr.height > 0 && code) {
+          codeBlocks.push({ x: cr.left - ox, y: cr.top - oy, vpX: cr.left, vpY: cr.top, width: cr.width, height: cr.height, text: code });
+        }
+      }
+      const links = [];
+      for (const el of node.querySelectorAll('a, button, summary')) {
+        const lr = el.getBoundingClientRect();
+        if (lr.width > 0 && lr.height > 0) {
+          links.push({ x: lr.left - ox, y: lr.top - oy, vpX: lr.left, vpY: lr.top, width: lr.width, height: lr.height });
+        }
+      }
+      regions.push({
+        id: node.dataset.bubbleId || '',
+        messageID: node.dataset.messageId || '',
+        isUser: node.classList.contains('user-bubble'),
+        x: r.left - ox,
+        y: r.top - oy,
+        vpX: r.left,
+        vpY: r.top,
+        width: r.width,
+        height: r.height,
+        copyText,
+        codeBlocks,
+        links
+      });
     }
-    bubbleBackdrop.hidden = true;
-    bubbleMenu.hidden = true;
-    bubbleMenu.replaceChildren();
+    return regions;
   }
-  function menuItem(label, iconSvg, onSelect) {
-    const item = element('button');
-    item.type = 'button';
-    item.setAttribute('role','menuitem');
-    const text = element('span','',label);
-    const icon = element('span');
-    icon.innerHTML = iconSvg;
-    item.append(text, icon.firstElementChild);
-    item.addEventListener('click', event => {
-      event.stopPropagation();
-      onSelect();
+  function flushBubbleRegions() {
+    if (!latest) return;
+    const regions = collectBubbleRegions();
+    const sig = JSON.stringify(regions.map(item => [item.id, Math.round(item.vpX), Math.round(item.vpY), Math.round(item.width), Math.round(item.height), item.copyText.length]));
+    if (sig !== lastBubbleRegionsSig) {
+      lastBubbleRegionsSig = sig;
+      post('bubbleRegions', regions);
+    }
+  }
+  function syncBubbleRegions() {
+    if (bubbleSyncFrame !== null) return;
+    bubbleSyncFrame = requestAnimationFrame(() => {
+      bubbleSyncFrame = null;
+      flushBubbleRegions();
     });
-    return item;
   }
-  function openBubbleMenu(bubble, { mode, codeText = '', selectedText = '', clientX = 0, clientY = 0 }) {
-    closeBubbleMenu();
-    const copyText = bubble?.dataset.copyText || '';
-    const items = [];
-    if (selectedText) {
-      items.push(menuItem(t("拷贝"), MENU_ICONS.copy, () => {
-        post('copy', selectedText);
-        post('haptic', 'light');
-        closeBubbleMenu();
-      }));
-      if (copyText && copyText.trim() !== selectedText) {
-        items.push(menuItem(t("拷贝整条"), MENU_ICONS.copy, () => {
-          post('copy', copyText);
-          post('haptic', 'light');
-          closeBubbleMenu();
-        }));
-      }
-    } else if (copyText) {
-      items.push(menuItem(t("拷贝"), MENU_ICONS.copy, () => {
-        post('copy', copyText);
-        post('haptic', 'light');
-        closeBubbleMenu();
-      }));
-      if (codeText) {
-        items.push(menuItem(t("拷贝代码"), MENU_ICONS.code, () => {
-          post('copy', codeText);
-          post('haptic', 'light');
-          closeBubbleMenu();
-        }));
-      }
-      if (mode === 'touch' && bubble) {
-        items.push(menuItem(t("选择文本"), MENU_ICONS.select, () => {
-          const target = bubble;
-          closeBubbleMenu();
-          target.classList.add('selecting-text');
-          const range = document.createRange();
-          range.selectNodeContents(target);
-          const sel = window.getSelection();
-          sel?.removeAllRanges();
-          sel?.addRange(range);
-        }));
+  function setBubbleHidden(id, hidden) {
+    for (const node of root.querySelectorAll('[data-bubble-id]')) {
+      if (node.dataset.bubbleId === id) {
+        if (hidden) node.setAttribute('data-context-hidden', 'true');
+        else node.removeAttribute('data-context-hidden');
       }
     }
-    if (!items.length) return;
-    bubbleMenuOpenedAt = performance.now();
-    bubbleMenuScrollY = window.scrollY;
-    bubbleMenu.replaceChildren(...items);
-    if (mode === 'touch' && bubble) {
-      activeBubble = bubble;
-      bubble.closest('.turn')?.classList.add('bubble-active-turn');
-      bubble.classList.add('bubble-lifted');
-      bubbleBackdrop.hidden = false;
-    }
-    bubbleMenu.hidden = false;
-    const menuRect = bubbleMenu.getBoundingClientRect();
-    const minTop = Math.max(12, headerInset() + 8);
-    const maxTop = Math.max(minTop, window.innerHeight - menuRect.height - 14);
-    let left, top, originY = 'bottom', originX = 'left';
-    if (mode === 'pointer') {
-      left = Math.max(12, Math.min(window.innerWidth - menuRect.width - 12, clientX));
-      top = Math.max(minTop, Math.min(maxTop, clientY));
-      originY = top < clientY ? 'bottom' : 'top';
-    } else {
-      const rect = bubble.getBoundingClientRect();
-      const isUser = bubble.classList.contains('user-bubble');
-      originX = isUser ? 'right' : 'left';
-      left = isUser ? rect.right - menuRect.width : rect.left;
-      left = Math.max(14, Math.min(window.innerWidth - menuRect.width - 14, left));
-      if (rect.top - menuRect.height - 10 >= minTop) {
-        top = rect.top - menuRect.height - 10;
-        originY = 'bottom';
-      } else if (rect.bottom + 10 + menuRect.height <= window.innerHeight - 14) {
-        top = rect.bottom + 10;
-        originY = 'top';
-      } else {
-        top = Math.max(minTop, Math.min(maxTop, rect.top + 12));
-        originY = 'top';
-      }
-    }
-    bubbleMenu.style.transformOrigin = `${originY} ${originX}`;
-    bubbleMenu.style.left = `${Math.round(left)}px`;
-    bubbleMenu.style.top = `${Math.round(top)}px`;
   }
-  bubbleBackdrop.addEventListener('click', () => {
-    if (performance.now() - bubbleMenuOpenedAt < 360) return;
-    closeBubbleMenu();
-  });
-  document.addEventListener('contextmenu', event => {
-    event.preventDefault();
-    if (longPressFired) return;
-    const bubble = event.target.closest('.user-bubble, .assistant .prose');
-    const selectedText = (window.getSelection()?.toString() || '').trim();
-    if (!bubble && !selectedText) { closeBubbleMenu(); return; }
-    const codeText = event.target.closest('.code-wrap')?.querySelector('code')?.textContent || '';
-    openBubbleMenu(bubble, { mode: 'pointer', codeText, selectedText, clientX: event.clientX, clientY: event.clientY });
-  });
-  document.addEventListener('click',event => {
-    if (!bubbleMenu.hidden && !event.target.closest('#bubble-menu')) {
-      if (performance.now() - bubbleMenuOpenedAt >= 360) closeBubbleMenu();
+  document.addEventListener('pointerdown', event => {
+    flushBubbleRegions();
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const bubble = target.closest('.user-bubble[data-copy-text], .assistant .prose[data-copy-text]');
+    if (!bubble) {
+      post('pressedBubble', { hit: false, selectedText: (window.getSelection()?.toString() || '').trim() });
       return;
     }
+    const r = bubble.getBoundingClientRect();
+    post('pressedBubble', {
+      hit: true,
+      id: bubble.dataset.bubbleId || '',
+      messageID: bubble.dataset.messageId || '',
+      isUser: bubble.classList.contains('user-bubble'),
+      isLink: Boolean(target.closest('a,button,summary')),
+      dx: r.left - event.clientX,
+      dy: r.top - event.clientY,
+      vpX: r.left,
+      vpY: r.top,
+      width: r.width,
+      height: r.height,
+      copyText: bubble.dataset.copyText || '',
+      codeText: target.closest('.code-wrap')?.querySelector('code')?.textContent || '',
+      selectedText: (window.getSelection()?.toString() || '').trim()
+    });
+  }, { passive: true });
+  document.addEventListener('click',event => {
     const anchor = event.target.closest('a');
     if (anchor) { event.preventDefault(); post('link',anchor.getAttribute('href')); return; }
     const action = event.target.closest('button[data-action]');
@@ -929,7 +890,6 @@
   }
   jump.addEventListener('click',() => scrollToBottom(true));
   window.addEventListener('scroll',() => {
-    if (!bubbleMenu.hidden && Math.abs(window.scrollY - bubbleMenuScrollY) > 4) closeBubbleMenu();
     if (restoring || jumpMotion) return;
     // Native scroll updates can return to an older offset before settling at the
     // requested bottom. Observe both directions so reaching that bottom restores
@@ -937,58 +897,24 @@
     pin.observe(window.scrollY,window.innerHeight,document.documentElement.scrollHeight);
     updateJump();
     scheduleReadingPosition();
+    syncBubbleRegions();
   },{ passive:true });
   window.addEventListener('scrollend',saveReadingPosition,{ passive:true });
-  window.addEventListener('wheel',() => { if (!bubbleMenu.hidden) closeBubbleMenu(); openingChat = false; cancelScrollIntent(); wheelScrolling = true; clearTimeout(wheelTimer); wheelTimer = setTimeout(() => { wheelScrolling = false; },300); },{ passive:true });
-  window.addEventListener('touchstart',event => {
-    openingChat = false; cancelScrollIntent(); userScrolling = true;
-    cancelLongPress(); longPressFired = false;
-    if (!bubbleMenu.hidden || event.touches.length !== 1) return;
-    const target = event.target;
-    if (!(target instanceof Element) || target.closest('a,button,summary,#bubble-menu')) return;
-    const bubble = target.closest('.user-bubble, .assistant .prose');
-    if (!bubble || !bubble.dataset.copyText || bubble.classList.contains('selecting-text')) return;
-    const touch = event.touches[0];
-    longPressStart = { x: touch.clientX, y: touch.clientY };
-    const codeText = target.closest('.code-wrap')?.querySelector('code')?.textContent || '';
-    longPressTimer = setTimeout(() => {
-      longPressTimer = null;
-      longPressFired = true;
-      post('haptic', 'medium');
-      openBubbleMenu(bubble, { mode: 'touch', codeText });
-    }, 380);
-  },{ passive:true });
-  window.addEventListener('touchmove',event => {
-    if (!longPressStart || !event.touches.length) return;
-    const touch = event.touches[0];
-    if (Math.hypot(touch.clientX - longPressStart.x, touch.clientY - longPressStart.y) > 8) cancelLongPress();
-  },{ passive:true });
-  window.addEventListener('keydown',event => {
-    if (event.key === 'Escape' && !bubbleMenu.hidden) { closeBubbleMenu(); return; }
-    openingChat = false; cancelScrollIntent();
-  });
-  const finishTouch = event => {
-    userScrolling = false;
-    cancelLongPress();
-    if (longPressFired) {
-      if (event?.cancelable) event.preventDefault();
-      longPressFired = false;
-    }
-  };
-  window.addEventListener('touchend',finishTouch,{ passive:false });
+  window.addEventListener('wheel',() => { openingChat = false; cancelScrollIntent(); wheelScrolling = true; clearTimeout(wheelTimer); wheelTimer = setTimeout(() => { wheelScrolling = false; },300); },{ passive:true });
+  window.addEventListener('touchstart',() => { openingChat = false; cancelScrollIntent(); userScrolling = true; flushBubbleRegions(); },{ passive:true });
+  window.addEventListener('keydown',() => { openingChat = false; cancelScrollIntent(); });
+  const finishTouch = () => { userScrolling = false; };
+  window.addEventListener('touchend',finishTouch,{ passive:true });
   window.addEventListener('touchcancel',finishTouch,{ passive:true });
   document.addEventListener('selectionchange',() => {
-    if (window.getSelection()?.isCollapsed) {
-      document.querySelectorAll('.selecting-text').forEach(node => node.classList.remove('selecting-text'));
-      if (latest) renderTurns(false);
-    }
+    if (window.getSelection()?.isCollapsed && latest) renderTurns(false);
   });
   new ResizeObserver(follow).observe(document.body);
   // A growing native composer/keyboard resizes the viewport, not necessarily the body.
-  window.addEventListener('resize',() => { if (!bubbleMenu.hidden) closeBubbleMenu(); follow(); });
+  window.addEventListener('resize',follow);
   window.visualViewport?.addEventListener('resize',follow);
   document.addEventListener('visibilitychange',() => {
-    if (document.hidden) { closeBubbleMenu(); jumpMotion = null; saveReadingPosition(); }
+    if (document.hidden) { jumpMotion = null; saveReadingPosition(); }
     syncActivityMotion();
     if (!document.hidden && latest) {
       for (const view of views.values()) for (const piece of view.pieces.values()) {
@@ -999,7 +925,6 @@
   });
   motionPreference.addEventListener('change',syncActivityMotion);
   function suspend() {
-    closeBubbleMenu();
     pageSuspended = true;
     jumpMotion = null;
     brandMotion.suspend();
@@ -1023,6 +948,6 @@
     pageSuspended = false; brandMotion.resume();
     if (latest) renderTurns(false); else syncActivityMotion();
   });
-  window.MoMoChat = { render, patchTailMessage, openChat, scrollToBottom, saveReadingPosition, suspend, setSuspended };
+  window.MoMoChat = { render, patchTailMessage, openChat, scrollToBottom, saveReadingPosition, suspend, setSuspended, setBubbleHidden };
   post('ready',true);
 })();
