@@ -101,7 +101,8 @@ body { margin: 0; padding: calc(18px + var(--header-inset, 0px)) 28px 0; font-fa
   pointer-events: none;
   background: linear-gradient(to bottom, var(--paper) 0%, var(--paper) 30%, transparent 100%);
 }
-::selection { background: rgba(30, 134, 252, 0.22); color: var(--ink); }
+::selection { background: rgba(30, 134, 252, 0.24); }
+.user-bubble::selection, .user-bubble *::selection { background: rgba(64, 156, 255, 0.48); color: #ffffff; }
 button, summary { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent; }
 button, summary { cursor: pointer; }
 button:focus-visible, summary:focus-visible, a:focus-visible {
@@ -478,15 +479,19 @@ input[type=checkbox] { accent-color: var(--ink); }
 .actions button:active { background: var(--surface-hover); transform: scale(.94); }
 .actions button svg { width: 16px; height: 16px; display: block; margin: auto; }
 @media (pointer: coarse) {
-  .actions button { min-width: 44px; min-height: 44px; }
-  .process-disclosure > summary, .process > summary, .step > summary { min-height: 44px; }
-  .actions { opacity: 1; }
-  .user-bubble,
-  .assistant .prose {
+  body {
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
   }
+  [data-selecting="true"],
+  [data-selecting="true"] *:not(.code-head):not(.code-head *) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .actions button { min-width: 44px; min-height: 44px; }
+  .process-disclosure > summary, .process > summary, .step > summary { min-height: 44px; }
+  .actions { opacity: 1; }
 }
 [data-context-hidden="true"] { opacity: 0 !important; }
 .end-status { font: .75rem/1.5 var(--ui); color: var(--muted); }
