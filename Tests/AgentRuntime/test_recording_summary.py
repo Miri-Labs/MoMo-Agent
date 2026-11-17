@@ -165,5 +165,58 @@ class RecordingSummaryTests(unittest.TestCase):
         finally:
             service.server.shutdown(); service.server.server_close(); thread.join()
 
+    def test_auto_background_debounce_and_recompute_cooldown_coalesce_streaming_revisions(self):
+        now = 1_795_000_000.0
+        # 1. Live active window (ended 10s ago) waits for settle window unless explicitly requested.
+        live = summary.enqueue(
+            self.store,
+            {**self.body, 'revision': digest('live-1'), 'text': '正在开会讨论第一句。'},
+            auto_background=True,
+            window_end_at=now - 10.0,
+        )
+        self.assertIsNone(summary.next_job(self.store, now=now))
+        self.assertIsNotNone(summary.next_job(self.store, now=now + summary.LIVE_WINDOW_SETTLE_SECONDS))
+
+        # Run initial settled summary to completion.
+        summary.advance(self.store, summary.next_job(self.store, now=now + summary.LIVE_WINDOW_SETTLE_SECONDS), self.native)
+        self.assertEqual('done', summary.read(self.store, live['id'])['state'])
+        self.assertEqual(1, len(self.native.runs))
+
+        # Adjust finished timestamp deterministically to `now + 100`.
+        with self.store.write():
+            self.store.db.execute('UPDATE recording_summaries SET finished=? WHERE id=?', (now + 100.0, live['id']))
+
+        # 2. Rapid streaming backfill revisions arrive every few seconds on the same window_id;
+        # intermediate revisions coalesce via `superseded` and hold until RECOMPUTE_COOLDOWN_SECONDS.
+        rev2 = summary.enqueue(
+            self.store,
+            {**self.body, 'revision': digest('live-2'), 'text': '正在开会讨论第一句。补充第二句。'},
+            auto_background=True,
+            window_end_at=now - 300.0,
+        )
+        rev3 = summary.enqueue(
+            self.store,
+            {**self.body, 'revision': digest('live-3'), 'text': '正在开会讨论第一句。补充第二句。补充第三句定稿。'},
+            auto_background=True,
+            window_end_at=now - 300.0,
+        )
+        self.assertEqual('superseded', summary.read(self.store, rev2['id'])['state'])
+        self.assertIsNone(summary.next_job(self.store, now=now + 200.0))
+
+        # After cooldown elapses, only the single latest revision executes.
+        due = summary.next_job(self.store, now=now + 100.0 + summary.RECOMPUTE_COOLDOWN_SECONDS + 1.0)
+        self.assertIsNotNone(due)
+        self.assertEqual(rev3['id'], due['id'])
+
+        # 3. Explicit UI request (`auto_background=False`) bypasses cooldown immediately.
+        rev4 = summary.enqueue(
+            self.store,
+            {**self.body, 'revision': digest('live-4'), 'text': '用户手动点开详情页立即生成最新总结。'},
+            auto_background=False,
+        )
+        immediate = summary.next_job(self.store, now=now + 105.0)
+        self.assertIsNotNone(immediate)
+        self.assertEqual(rev4['id'], immediate['id'])
+
 
 if __name__ == '__main__': unittest.main()

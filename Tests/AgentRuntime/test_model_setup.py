@@ -506,6 +506,138 @@ class ModelSetupTests(unittest.TestCase):
         self.assertIn('FINAL_TURN_FINISH_AND_REPORT', prompt)
         self.assertIn('历史工具步骤已自动折叠', prompt)
 
+    def test_antigravity_acp_daemon_reuses_session_kv_cache_and_eliminates_subprocess_churn(self):
+        import antigravity_bridge as ab
+        import stat
+
+        ab.shutdown_antigravity_daemon()
+        ab.clear_antigravity_caches()
+        self.addCleanup(ab.shutdown_antigravity_daemon)
+        self.addCleanup(ab.clear_antigravity_caches)
+
+        state_file = self.data / 'fake-acp-metrics.json'
+        fake_cli = self.data / 'fake-agy'
+        fake_cli.write_text(
+            '#!/usr/bin/env python3\n'
+            'import json, os, sys\n'
+            f'METRICS = {str(state_file)!r}\n'
+            'def bump(key, extra=None):\n'
+            '    data = json.loads(open(METRICS).read()) if os.path.exists(METRICS) else {"acp_starts": 0, "models_cli": 0, "session_new": 0, "prompts": [], "closed": [], "perm_cancelled": 0}\n'
+            '    if isinstance(data.get(key), int):\n'
+            '        data[key] += 1\n'
+            '    elif isinstance(data.get(key), list) and extra is not None:\n'
+            '        data[key].append(extra)\n'
+            '    open(METRICS, "w").write(json.dumps(data))\n'
+            'if len(sys.argv) > 1 and sys.argv[1] == "models":\n'
+            '    bump("models_cli")\n'
+            '    print("gemini-4-carbon-medium\\tGemini 4 Carbon (Medium)")\n'
+            '    sys.exit(0)\n'
+            'assert len(sys.argv) > 1 and sys.argv[1] == "acp", sys.argv\n'
+            'bump("acp_starts")\n'
+            'turn = 0\n'
+            'for raw in sys.stdin:\n'
+            '    msg = json.loads(raw)\n'
+            '    if "result" in msg and msg.get("id") == 999:\n'
+            '        if msg["result"].get("outcome", {}).get("outcome") == "cancelled":\n'
+            '            bump("perm_cancelled")\n'
+            '        continue\n'
+            '    mid, rid, params = msg.get("method"), msg.get("id"), msg.get("params") or {}\n'
+            '    if mid == "initialize":\n'
+            '        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": 1}}) + "\\n")\n'
+            '    elif mid == "session/new":\n'
+            '        bump("session_new")\n'
+            '        sid = f"sess-{rid}"\n'
+            '        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "models": {"currentModelId": "gemini-4-carbon-medium", "availableModels": [{"modelId": "gemini-4-carbon-high"}, {"modelId": "gemini-4-carbon-medium"}]}}}) + "\\n")\n'
+            '    elif mid == "session/set_model":\n'
+            '        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {}}) + "\\n")\n'
+            '    elif mid == "session/prompt":\n'
+            '        turn += 1\n'
+            '        sid = params["sessionId"]\n'
+            '        ptext = params["prompt"][0]["text"]\n'
+            '        bump("prompts", {"sid": sid, "text": ptext})\n'
+            '        if turn == 1:\n'
+            '            # Simulate accidental host tool permission request; bridge must reject without hanging.\n'
+            '            sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": 999, "method": "session/request_permission", "params": {"sessionId": sid}}) + "\\n")\n'
+            '            sys.stdout.flush()\n'
+            '            out = \'```json\\n{"content": "", "tool_calls": [{"name": "read_memory_notebook", "arguments_json": "{\\\\\\"path\\\\\\":\\\\\\"USER.md\\\\\\"}"}]}\\n```\'\n'
+            '            cached = 0\n'
+            '        else:\n'
+            '            out = \'{"content": "已完成核对。", "tool_calls": []}\'\n'
+            '            cached = 8192\n'
+            '        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": sid, "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": out}}}}) + "\\n")\n'
+            '        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn", "usage": {"inputTokens": 200, "outputTokens": 30, "cachedReadTokens": cached, "totalTokens": 230 + cached}}}) + "\\n")\n'
+            '    elif mid == "session/close":\n'
+            '        bump("closed", params["sessionId"])\n'
+            '        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {}}) + "\\n")\n'
+            '    sys.stdout.flush()\n',
+            encoding='utf-8',
+        )
+        fake_cli.chmod(fake_cli.stat().st_mode | stat.S_IXUSR)
+
+        tools = [{
+            'type': 'function',
+            'function': {
+                'name': 'read_memory_notebook',
+                'description': 'Read notebook',
+                'parameters': {'type': 'object', 'properties': {'path': {'type': 'string'}}},
+            },
+        }]
+        with patch.dict(os.environ, {'MOMO_ANTIGRAVITY_CLI': str(fake_cli)}):
+            messages = [
+                {'role': 'system', 'content': 'Always verify USER.md first.'},
+                {'role': 'user', 'content': 'INITIAL_UNIQUE_USER_TURN_PAYLOAD'},
+            ]
+            r1 = ab.run_antigravity_completion(
+                model='gemini-4-carbon-high',
+                messages=messages,
+                tools=tools,
+                data_dir=self.data,
+            )
+            msg1 = r1['choices'][0]['message']
+            self.assertEqual(len(msg1['tool_calls']), 1)
+            self.assertEqual(msg1['tool_calls'][0]['function']['name'], 'read_memory_notebook')
+
+            # Turn 2 appends assistant tool_call + tool result; must reuse same ACP session and send ONLY delta.
+            messages.append(msg1)
+            messages.append({
+                'role': 'tool',
+                'tool_call_id': msg1['tool_calls'][0]['id'],
+                'name': 'read_memory_notebook',
+                'content': 'USER_PROFILE_CONTENT_OK',
+            })
+            r2 = ab.run_antigravity_completion(
+                model='gemini-4-carbon-high',
+                messages=messages,
+                tools=tools,
+                data_dir=self.data,
+            )
+            self.assertEqual(r2['choices'][0]['message']['content'], '已完成核对。')
+            self.assertEqual(r2['usage']['prompt_tokens_details']['cached_tokens'], 8192)
+
+            # Repeated model catalog checks must hit cache without spawning `agy models`.
+            for _ in range(5):
+                connected, catalog_ids = ab.list_antigravity_models()
+                self.assertTrue(connected)
+                self.assertEqual(catalog_ids[0], 'gemini-4-carbon-high')
+
+            # Oneshot call reuses the same ACP daemon process and immediately closes its session.
+            ab.run_antigravity_completion(
+                model='gemini-4-carbon-medium',
+                messages=[{'role': 'user', 'content': 'Summarize briefly.'}],
+                data_dir=self.data,
+                oneshot=True,
+            )
+
+        metrics = json.loads(state_file.read_text(encoding='utf-8'))
+        self.assertEqual(metrics['acp_starts'], 1)
+        self.assertEqual(metrics['models_cli'], 0)
+        self.assertEqual(metrics['session_new'], 2)  # 1 multi-turn session + 1 oneshot session
+        self.assertEqual(metrics['perm_cancelled'], 1)
+        self.assertIn('INITIAL_UNIQUE_USER_TURN_PAYLOAD', metrics['prompts'][0]['text'])
+        self.assertNotIn('INITIAL_UNIQUE_USER_TURN_PAYLOAD', metrics['prompts'][1]['text'])
+        self.assertIn('USER_PROFILE_CONTENT_OK', metrics['prompts'][1]['text'])
+        self.assertEqual(metrics['prompts'][0]['sid'], metrics['prompts'][1]['sid'])
+
 
 if __name__ == '__main__':
     unittest.main()

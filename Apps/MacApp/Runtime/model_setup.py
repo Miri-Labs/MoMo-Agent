@@ -179,6 +179,7 @@ def probe(provider: str, model: str, credentials: dict) -> None:
                 model=model,
                 messages=[{"role": "user", "content": "Connection test. Reply OK."}],
                 timeout=45,
+                oneshot=True,
             )
         except Exception as err:
             notice = classify_provider_issue(err, provider="antigravity")

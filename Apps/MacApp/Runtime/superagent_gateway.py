@@ -375,7 +375,7 @@ class BridgeStore:
                 items.append(event)
         return items, str(int(rows[-1]["seq"])), polled_runs
 
-    def coalesce_unpolled_transcripts(self, *, max_chars: int = 2400) -> int:
+    def coalesce_unpolled_transcripts(self, *, max_chars: int = 2400, min_group_size: int = 2) -> int:
         """Merge backlogged micro-chunk transcript triggers for the same (source_id, thread_id) while preserving monotonic seq."""
         rows = self.db.execute(
             """SELECT seq, thread_id, source_id, actor_id, title, text
@@ -383,7 +383,7 @@ class BridgeStore:
                WHERE polled_at IS NULL AND kind='transcripts' AND source_id IS NOT NULL
                ORDER BY seq ASC"""
         ).fetchall()
-        if len(rows) <= 1:
+        if len(rows) < min_group_size:
             return 0
         by_group: dict[tuple[str, str, str], list[sqlite3.Row]] = {}
         for row in rows:
@@ -414,7 +414,7 @@ class BridgeStore:
         to_delete: list[int] = []
         to_update: list[tuple[str, int]] = []
         for (sid, _, _), group in by_group.items():
-            if len(group) <= 1:
+            if len(group) < min_group_size:
                 continue
             bucket_rows: list[sqlite3.Row] = []
             bucket_lines: list[str] = []
@@ -700,6 +700,10 @@ class SuperAgentGateway:
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
         await asyncio.to_thread(self._stop_dsh_process)
+        with suppress(Exception):
+            from antigravity_bridge import shutdown_antigravity_daemon
+
+            await asyncio.to_thread(shutdown_antigravity_daemon)
         self.bridge.close()
         self.store.db.close()
 
@@ -2973,6 +2977,7 @@ class SuperAgentGateway:
                 data_dir=self.data,
                 timeout=90.0,
                 background=True,
+                oneshot=True,
             )
             msg = ((resp.get("choices") or [{}])[0]).get("message") or {}
             return str(msg.get("content") or "").strip()
@@ -4473,6 +4478,7 @@ class SuperAgentGateway:
         # A newly started watcher can poll before recorder policy and prompts have been seeded.
         if self.manage_dsh and not self.dsh_ready:
             return web.json_response({"events": [], "next_cursor": str(after)})
+        self.bridge.coalesce_unpolled_transcripts(min_group_size=4)
         items, cursor, polled_runs = self.bridge.list_triggers(after)
         if not items and wait_ms > 0:
             self._trigger_wakeup.clear()
@@ -4480,6 +4486,7 @@ class SuperAgentGateway:
             if not items:
                 with suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(self._trigger_wakeup.wait(), timeout=wait_ms / 1000.0)
+                self.bridge.coalesce_unpolled_transcripts(min_group_size=4)
                 items, cursor, polled_runs = self.bridge.list_triggers(after)
 
         if polled_runs:
