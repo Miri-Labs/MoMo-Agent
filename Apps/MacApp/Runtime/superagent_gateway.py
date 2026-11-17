@@ -752,7 +752,7 @@ class SuperAgentGateway:
                         cstore.close()
             with self.bridge.db:
                 self.bridge.db.execute("INSERT OR REPLACE INTO meta VALUES('proactive_baseline', '1')")
-                self.bridge.db.execute("INSERT OR REPLACE INTO meta VALUES('recording_observations_v1', '1')")
+                self.bridge.db.execute("INSERT OR REPLACE INTO meta VALUES('recording_observations_v2', '1')")
             if not self.store.db.execute("SELECT 1 FROM push_meta WHERE key='baseline'").fetchone():
                 with self.store.db:
                     self.store.db.execute("INSERT INTO push_meta VALUES('baseline', '1')")
@@ -1811,7 +1811,7 @@ class SuperAgentGateway:
             now = time.time()
             day_start_hour = read_day_start_hour(self.data)
             today_day = logical_local_date(now, day_start_hour)
-            upgrading = not self.bridge.db.execute("SELECT 1 FROM meta WHERE key='recording_observations_v1'").fetchone()
+            upgrading = not self.bridge.db.execute("SELECT 1 FROM meta WHERE key='recording_observations_v2'").fetchone()
             for src in sources:
                 sid = src["id"]
                 rev = src["revision"]
@@ -1925,7 +1925,7 @@ class SuperAgentGateway:
                     context_prefix = ""
                     if seg_first_idx > 0:
                         prior_lines = []
-                        for pidx in range(max(0, seg_first_idx - 6), seg_first_idx):
+                        for pidx in range(max(0, seg_first_idx - 18), seg_first_idx):
                             if seg_by_idx[pidx] != seg_idx:
                                 continue
                             pspan = spans[pidx]
@@ -1935,7 +1935,7 @@ class SuperAgentGateway:
                             if pline:
                                 prior_lines.append(pline)
                         if prior_lines:
-                            prior_joined = "\n".join(prior_lines)[-520:]
+                            prior_joined = "\n".join(prior_lines)[-1400:]
                             context_prefix = f"[近期前文参考]\n{prior_joined}\n[本次新增转写]\n"
 
                     earliest_new_ts = min((float(s.get("recorded_at") or now) for s in seg_spans), default=now)
@@ -1969,7 +1969,7 @@ class SuperAgentGateway:
                         else f"transcript:{sid}:{rev[:24]}:s{seg_idx}"
                     )
                     if catch_up:
-                        event_id = f"transcript:{sid}:review:{today_day}:s{seg_idx}"
+                        event_id = f"transcript:{sid}:review2:{today_day}:s{seg_idx}"
                     trigger_id = f"momo:{event_id}"
                     text = (
                         f"[MoMo 同步录音转写 | source_id={sid} | 标题={title} | 录音时间={rec_time_label} | 当前时间={now_str} | 同步状态={sync_status}]\n"
@@ -1995,7 +1995,7 @@ class SuperAgentGateway:
 
             if upgrading and source_id is None:
                 with self.bridge.db:
-                    self.bridge.db.execute("INSERT OR REPLACE INTO meta VALUES('recording_observations_v1', '1')")
+                    self.bridge.db.execute("INSERT OR REPLACE INTO meta VALUES('recording_observations_v2', '1')")
         finally:
             cstore.close()
         return emitted

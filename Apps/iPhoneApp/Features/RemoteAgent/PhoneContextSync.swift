@@ -460,7 +460,8 @@ final class PhoneContextSync {
         let spans = try document.spans.map { span -> SourceEnvelope.Span in
             guard let location = snapshot.locations[span.id] else { throw SyncError.missingSourceTime }
             let text = span.speaker.map { "[\($0)] \(span.text)" } ?? span.text
-            return .init(id: span.id, text: text, recordedAt: location.recordedAt, isOwner: span.attribution?.isUser,
+            let resolvedOwner = span.attribution.flatMap { $0.personID != nil ? $0.isUser : nil }
+            return .init(id: span.id, text: text, recordedAt: location.recordedAt, isOwner: resolvedOwner,
                 timezoneOffset: location.timezoneOffset, endAt: location.audioSource.map {
                     $0.wallClockAnchor.addingTimeInterval(Double($0.frames.end) / $0.timebaseHz)
                 })

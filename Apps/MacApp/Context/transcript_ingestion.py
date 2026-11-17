@@ -4,6 +4,7 @@ import time
 import uuid
 from context_store import canonical, digest
 from memory_review import AUTOMATIC_INTERVAL, POLICY, RECEIPT
+from transcript_speakers import classify_transcript_span
 
 MAX_PART_BYTES = 4096
 MAX_BATCH_BYTES = 32_000
@@ -26,10 +27,7 @@ def parts(row, store=None):
         spans = store._apply_speaker_overrides(row["id"], spans)
     for span in spans:
         text = span["text"]
-        is_owner = span.get("is_owner")
-        speaker = span.get("speaker")
-        if not speaker and text.startswith("[") and "]" in text:
-            speaker = text[1:text.index("]")].strip() or None
+        speaker, is_owner, _ = classify_transcript_span(span)
         speaker_role = "owner" if is_owner is True else ("other" if is_owner is False else "unattributed")
         offset = 0
         while offset < len(text):

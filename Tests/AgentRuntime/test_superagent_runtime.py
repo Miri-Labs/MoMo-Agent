@@ -1314,7 +1314,7 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                 gateway._ensure_proactive_baseline()
                 self.assertEqual(gateway.ingest_context_sources(), [])
                 with gateway.bridge.db:
-                    gateway.bridge.db.execute("DELETE FROM meta WHERE key='recording_observations_v1'")
+                    gateway.bridge.db.execute("DELETE FROM meta WHERE key='recording_observations_v2'")
                 self.assertEqual(len(gateway.ingest_context_sources()), 1)
                 event = gateway.bridge.list_triggers(0)[0][0]
                 self.assertIn("[他人:同事] 方案的两个报价互相矛盾", event["text"])
@@ -1334,7 +1334,11 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
 
         for rule in DEFAULT_PROACTIVE_RULES:
             self.assertLessEqual(len(rule["instruction"]), 2000)
+        self.assertIn("绝不仅限用户本人亲口发言或显式承诺", DEFAULT_PROACTIVE_RULES[0]["instruction"])
+        self.assertIn("绝不退回“仅限本人发言/承诺”", MOMO_PROMPT_CONFIG["scope"])
         self.assertIn("orchestrator_eval_read", MOMO_PROMPT_CONFIG["overrides"]["runtime/admission"]["text"])
+        self.assertIn("任务的题材、发起人和交付形式不限", MOMO_PROMPT_CONFIG["overrides"]["runtime/admission"]["text"])
+        self.assertIn("[未确认说话人:...]", MOMO_PROMPT_CONFIG["overrides"]["runtime/admission"]["text"])
         self.assertIn("speaker_role", MOMO_PROMPT_CONFIG["overrides"]["runtime/work"]["text"])
 
         self.assertEqual(classify_transcript_span({"text": "[我] 我去整理一下文档"}), ("我", True, "我去整理一下文档"))
@@ -1348,7 +1352,11 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             classify_transcript_span({"text": "[说话人 3] 我这边做了一个小型实验"}),
-            ("说话人 3", False, "我这边做了一个小型实验"),
+            ("说话人 3", None, "我这边做了一个小型实验"),
+        )
+        self.assertEqual(
+            classify_transcript_span({"text": "[说话人 1] 刚才那个评测口径我们再对一下", "is_owner": False}),
+            ("说话人 1", None, "刚才那个评测口径我们再对一下"),
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1435,7 +1443,7 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(ev1["actor_id"], "recorder")
                 self.assertIn("[我（用户本人）] 那我今晚去把我们这边的 API 鉴权方案和灰度清单整理一版出来。", ev1["text"])
                 self.assertIn("[近期前文参考]", ev1["text"])
-                self.assertIn("[他人:说话人 3]", ev1["text"])
+                self.assertIn("[未确认说话人:说话人 3]", ev1["text"])
 
                 ctx_1 = await (
                     await client.get(
@@ -1542,7 +1550,7 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                 roles = [ (s.get("speaker"), s.get("speaker_role")) for s in rec_out["spans"] ]
                 self.assertEqual(
                     roles,
-                    [("盛立", "other"), ("说话人 3", "other"), ("我", "owner"), ("我", "owner"), ("盛立", "other")],
+                    [("盛立", "other"), ("说话人 3", "unattributed"), ("我", "owner"), ("我", "owner"), ("盛立", "other")],
                 )
                 search_out = json.loads(
                     subprocess.check_output(
@@ -1551,7 +1559,7 @@ class SuperAgentGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
                     )
                 )
                 self.assertEqual(search_out["matches"][0]["speaker"], "说话人 3")
-                self.assertEqual(search_out["matches"][0]["speaker_role"], "other")
+                self.assertEqual(search_out["matches"][0]["speaker_role"], "unattributed")
             finally:
                 await client.close()
 
