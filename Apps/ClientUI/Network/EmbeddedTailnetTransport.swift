@@ -11,17 +11,18 @@ struct EmbeddedTailnetTransport: AgentTransport {
               url.host == endpoint.host, url.port == endpoint.port else { throw TailnetError.invalidEndpoint }
         let desktop = url.path.hasPrefix("/desktop/")
         let media = desktop && ["frame", "frames"].contains(url.lastPathComponent)
-        do {
-            return try await openOnce(request, url: url, desktop: desktop, media: media)
-        } catch {
-            guard Self.canRetryBeforeResponse(request, after: error) else {
-                throw Self.remapResidualPolicyBypass(error)
-            }
-            try await Task.sleep(for: .milliseconds(250))
+        let retryBackoffs: [Duration] = [.milliseconds(250), .milliseconds(750)]
+        var attempt = 0
+        while true {
             do {
                 return try await openOnce(request, url: url, desktop: desktop, media: media)
             } catch {
-                throw Self.remapResidualPolicyBypass(error)
+                guard attempt < retryBackoffs.count, Self.canRetryBeforeResponse(request, after: error) else {
+                    throw Self.remapResidualPolicyBypass(error)
+                }
+                let delay = retryBackoffs[attempt]
+                attempt += 1
+                try await Task.sleep(for: delay)
             }
         }
     }

@@ -99,7 +99,7 @@ class TunnelLifecycle:
                 if self.provider.state['state'] == 'stopped': await self.provider.start()
                 return
             if isinstance(self.provider, EmbeddedTailscale):
-                if self.now() - self.provider.reported_at > 15:
+                if self.now() - self.provider.reported_at > 45:
                     self.provider.state.update(state='needs_setup', endpoint=None, error='请在 App 中连接 Tailscale。')
                 return
             try:

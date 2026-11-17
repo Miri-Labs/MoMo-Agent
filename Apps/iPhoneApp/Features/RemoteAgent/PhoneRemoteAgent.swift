@@ -55,6 +55,8 @@ final class PhoneRemoteAgent {
     @ObservationIgnored private var active = false
     @ObservationIgnored private var backgroundInboxReads = 0
     @ObservationIgnored private var recoveryTask: Task<Void, Never>?
+    @ObservationIgnored private var autoReconnectTask: Task<Void, Never>?
+    @ObservationIgnored private var autoReconnectAttempt = 0
     @ObservationIgnored private var sceneGeneration = UUID()
     @ObservationIgnored private var recoveryID = UUID()
     @ObservationIgnored private var ancillaryStarted = false
@@ -224,9 +226,27 @@ final class PhoneRemoteAgent {
         }
         sceneGeneration = UUID(); recoveryID = UUID()
         recoveryTask?.cancel(); recoveryTask = nil
+        autoReconnectTask?.cancel(); autoReconnectTask = nil
+        autoReconnectAttempt = 0
         queuedRecovery = nil
         ancillaryStarted = false
         recovering = false
+    }
+
+    private func scheduleAutoReconnect() {
+        guard active, autoReconnectTask == nil, let store, store.canContactServer else { return }
+        let scene = sceneGeneration
+        let step = min(autoReconnectAttempt, 4)
+        autoReconnectAttempt += 1
+        let delaySeconds = min(15.0, 1.5 * pow(2.0, Double(step)))
+        autoReconnectTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(delaySeconds)) } catch { return }
+            guard let self, !Task.isCancelled, self.active, self.sceneGeneration == scene else { return }
+            self.autoReconnectTask = nil
+            guard self.store?.canContactServer == true,
+                  (self.failure != nil || !self.ancillaryStarted || self.store?.connectionState != .ready) else { return }
+            self.beginRecovery(trigger: "auto-retry")
+        }
     }
 
     private func beginRecovery(userInitiated: Bool = false, trigger: String = "foreground") {
@@ -237,6 +257,8 @@ final class PhoneRemoteAgent {
         }
         guard !connecting else { return }
         guard store.canContactServer || userInitiated else { return }
+        autoReconnectTask?.cancel(); autoReconnectTask = nil
+        if userInitiated { autoReconnectAttempt = 0 }
         ancillaryStarted = false
         if connection.network == "tailscale" { tailnet.prepareForForeground(peer: connection.baseURL.host) }
         else { network?.resume() }
@@ -282,7 +304,10 @@ final class PhoneRemoteAgent {
                 self.tailnet.diagnostics.recordLink("recovery", "failed", details: ["attempt": owner.uuidString], error: error)
                 store.recordConnectionFailure(error)
                 self.failure = AgentTransportFailure.isTransient(error)
-                    ? String(localized: "暂时无法连接 Mac，请稍后重试。") : error.localizedDescription
+                    ? String(localized: "暂时无法连接 Mac，正在自动重连…") : error.localizedDescription
+                if AgentTransportFailure.isTransient(error) {
+                    self.scheduleAutoReconnect()
+                }
             }
         }
     }
@@ -290,6 +315,8 @@ final class PhoneRemoteAgent {
     private func connectionConfirmed(_ confirmedStore: RemoteTaskStore) {
         guard store === confirmedStore, active, confirmedStore.canContactServer else { return }
         connectionConfirmation &+= 1
+        autoReconnectTask?.cancel(); autoReconnectTask = nil
+        autoReconnectAttempt = 0
         failure = nil
         guard !ancillaryStarted else { return }
         ancillaryStarted = true

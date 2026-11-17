@@ -105,16 +105,21 @@ public struct Loopback: Sendable {
     public let localAPIKey = "fixture"
 }
 public extension URLSessionConfiguration {
-    static func tailscaleSession(_ node: TailscaleNode) async throws -> (URLSessionConfiguration, Loopback) {
+    @discardableResult
+    func proxyVia(_ node: TailscaleNode) async throws -> Loopback {
         try await Task.sleep(for: .milliseconds(20))
-        let config = URLSessionConfiguration.default
         if let socks = Probe.currentSOCKSEndpoint {
-            config.proxyConfigurations = [ProxyConfiguration(socksv5Proxy: socks)]
+            self.proxyConfigurations = [ProxyConfiguration(socksv5Proxy: socks)]
         }
         if let cls = Probe.currentProtocolOverride {
-            config.protocolClasses = [cls]
+            self.protocolClasses = [cls]
         }
-        return (config, Loopback())
+        return Loopback()
+    }
+    static func tailscaleSession(_ node: TailscaleNode) async throws -> (URLSessionConfiguration, Loopback) {
+        let config = URLSessionConfiguration.default
+        let loopback = try await config.proxyVia(node)
+        return (config, loopback)
     }
 }
 '''
@@ -596,6 +601,29 @@ final class PolicyFailureProtocol: URLProtocol, @unchecked Sendable {
             precondition(AgentTransportFailure.isTransient(TailnetError.unavailable),
                          "Remapped TailnetError.unavailable must be treated as transient")
         }
+
+        // Regression 8: Two cold pre-response failures recover transparently on attempt 3, and a transient
+        // needsRestart within the 60s rebuild cooldown recovers in-place once the node returns to Running
+        // instead of bricking start() with TailnetError.unavailable for 60 seconds!
+        TransientPeerProtocol.reset(failures: 2, code: .cannotConnectToHost)
+        let twoRetryStream = try await transport.open(memReq)!
+        for try await _ in twoRetryStream.chunks {}
+        precondition(twoRetryStream.status == 200 && TransientPeerProtocol.attempts == 3,
+                     "Cold tunnel wakeup must survive 2 transient pre-response failures via bounded retry")
+
+        await zombieNet.restartForRecovery()
+        _ = try await zombieNet.connectedSession(peer: "100.118.16.18")
+        Probe.configureState("Stopped", resumeOnUp: false, peers: ["100.118.16.18"])
+        zombieNet.prepareForForeground()
+        do {
+            _ = try await zombieNet.connectedSession(peer: "100.118.16.18")
+            preconditionFailure("Expected startup timeout while Stopped inside cooldown")
+        } catch let error as URLError where error.code == .notConnectedToInternet {}
+        // Node now recovers to Running within the 60s rebuild cooldown: connectedSession MUST succeed immediately!
+        Probe.configureState("Running", resumeOnUp: true, peers: ["100.118.16.18"])
+        let recoveredWithinCooldown = try await zombieNet.connectedSession(peer: "100.118.16.18")
+        precondition(zombieNet.state == "Running", "Node recovering within 60s cooldown must not stay bricked by needsRestart")
+        _ = recoveredWithinCooldown
 
         await zombieNet.close()
         print("PASS: zombie Stopped recovery, wedged node recycle, missing-peer recovery, repeated remote timeouts, peer warmup and pre-header retry")
