@@ -584,18 +584,21 @@ private struct DesktopNoteTopBar: View {
                         .momoElevatedCard(cornerRadius: 999, shadowStrength: 0.4)
                     }
 
+                    let crumb = MemoryVaultTree.breadcrumbText(for: memory)
                     HStack(spacing: 5) {
                         Image(systemName: DreamMemoryCategory.folderSymbol(for: memory.kind))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(colors.secondaryInk)
-                        Text(MemoryVaultTree.breadcrumbText(for: memory))
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(colors.secondaryInk)
-                            .lineLimit(1)
-                            .truncationMode(.head)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 8.5, weight: .semibold))
-                            .foregroundStyle(colors.secondaryInk.opacity(0.5))
+                        if crumb != digest.title && !crumb.hasSuffix(digest.title) {
+                            Text(crumb)
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundStyle(colors.secondaryInk)
+                                .lineLimit(1)
+                                .truncationMode(.head)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 8.5, weight: .semibold))
+                                .foregroundStyle(colors.secondaryInk.opacity(0.5))
+                        }
                         Text(digest.title)
                             .font(.system(size: 12.5, weight: .medium))
                             .foregroundStyle(colors.ink)

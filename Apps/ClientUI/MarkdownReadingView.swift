@@ -290,9 +290,6 @@ enum MacMarkdownRenderer {
                         attrs[.cursor] = NSCursor.pointingHand
                         attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
                         attrs[.underlineColor] = dynamicLinkUnderlineColor
-                        if url.scheme?.lowercased() == "momoagent" {
-                            attrs[.backgroundColor] = dynamicLinkPillBackground
-                        }
                     }
                     out.append(NSAttributedString(string: slice, attributes: attrs))
                 }

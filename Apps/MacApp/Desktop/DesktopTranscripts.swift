@@ -683,28 +683,29 @@ private enum MacTranscriptListEntry: Equatable {
         let lines = cleaned
             .split(separator: "\n", omittingEmptySubsequences: true)
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && $0 != "总结" && $0 != "主要要点" }
+            .filter { !$0.isEmpty && $0 != "总结" && $0 != "主要要点" && $0 != "主要内容要点" }
         guard let first = lines.first else {
             return (String(localized: "录音片段"), "")
         }
-        if lines.count >= 2 {
-            let head = first.count > 44 ? String(first.prefix(44)) + "…" : first
+        // Only split into separate headline + excerpt when the first line is a genuine short topic title
+        if lines.count >= 2 && first.count <= 32 {
             let rest = lines.dropFirst().joined(separator: " · ")
-            return (head, rest)
+            return (first, rest)
         }
-        if let punctIdx = first.firstIndex(where: { "。！？；.!?;".contains($0) }) {
-            let prefixLen = first.distance(from: first.startIndex, to: punctIdx)
-            if prefixLen >= 4 && prefixLen <= 38 {
-                let head = String(first[..<punctIdx])
-                let afterStart = first.index(after: punctIdx)
-                let tail = String(first[afterStart...]).trimmingCharacters(in: .whitespaces)
+        let joined = lines.joined(separator: " ")
+        if let punctIdx = joined.firstIndex(where: { "。！？；.!?;".contains($0) }) {
+            let prefixLen = joined.distance(from: joined.startIndex, to: punctIdx)
+            if prefixLen >= 4 && prefixLen <= 30 {
+                let head = String(joined[..<punctIdx])
+                let afterStart = joined.index(after: punctIdx)
+                let tail = String(joined[afterStart...])
+                    .replacingOccurrences(of: "主要内容要点 ", with: "")
+                    .trimmingCharacters(in: .whitespaces)
                 return (head, tail)
             }
         }
-        if first.count <= 38 {
-            return (first, "")
-        }
-        return (String(first.prefix(36)) + "…", first)
+        // Long single-sentence digest: never duplicate the prefix! Render cleanly as a 2-line primary preview.
+        return ("", joined.replacingOccurrences(of: "主要内容要点 ", with: ""))
     }
 }
 
@@ -866,8 +867,10 @@ private final class MacTranscriptRowCellView: NSTableCellView {
                 .withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
             timeBadgeLabel.stringValue = timeLabel
             headlineLabel.stringValue = headline
+            headlineLabel.isHidden = headline.isEmpty
             headlineLabel.font = NSFont.systemFont(ofSize: 13.8, weight: .medium)
             excerptLabel.stringValue = excerpt
+            excerptLabel.font = NSFont.systemFont(ofSize: headline.isEmpty ? 13.5 : 12.5, weight: .regular)
             excerptLabel.isHidden = excerpt.isEmpty
             actionHintLabel.isHidden = false
             setAccessibilityIdentifier("desktop.source.\(item.id)")
@@ -895,11 +898,12 @@ private final class MacTranscriptRowCellView: NSTableCellView {
                 : ink.withAlphaComponent(dark ? 0.03 : 0.024)).cgColor
             cardLayerView.layer?.borderWidth = 0.5
             cardLayerView.layer?.borderColor = ink.withAlphaComponent(0.065).cgColor
+            headlineLabel.isHidden = false
             headlineLabel.textColor = muted
             timeBadgeLabel.textColor = muted.withAlphaComponent(0.85)
             chevronView.contentTintColor = muted
 
-        case .window, .none:
+        case let .window(_, _, headline, _):
             cardLayerView.layer?.backgroundColor = (isHoveredState
                 ? ink.withAlphaComponent(dark ? 0.058 : 0.04)
                 : NSColor.clear).cgColor
@@ -907,10 +911,13 @@ private final class MacTranscriptRowCellView: NSTableCellView {
             cardLayerView.layer?.borderColor = ink.withAlphaComponent(dark ? 0.10 : 0.08).cgColor
             timeBadgeLabel.textColor = isHoveredState ? ink.withAlphaComponent(0.85) : muted
             headlineLabel.textColor = ink
-            excerptLabel.textColor = muted
+            excerptLabel.textColor = headline.isEmpty ? ink.withAlphaComponent(0.88) : muted
             actionHintLabel.textColor = ink.withAlphaComponent(0.75)
             actionHintLabel.alphaValue = isHoveredState ? 1.0 : 0.0
             chevronView.contentTintColor = isHoveredState ? ink.withAlphaComponent(0.85) : muted.withAlphaComponent(0.45)
+
+        case .none:
+            break
         }
     }
 
@@ -955,16 +962,24 @@ private final class MacTranscriptRowCellView: NSTableCellView {
             let rightActionW: CGFloat = 78
             let contentW = max(100, sideInset + maxCardW - 14 - rightActionW - contentX)
 
-            headlineLabel.sizeToFit()
-            let headH = ceil(headlineLabel.frame.height)
             timeBadgeLabel.sizeToFit()
             let timeH = ceil(timeBadgeLabel.frame.height)
 
-            if excerptLabel.isHidden {
+            if headlineLabel.isHidden {
+                let measured = excerptLabel.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: contentW, height: 44)) ?? NSSize(width: contentW, height: 20)
+                let exH = min(max(18, h - 20), ceil(measured.height))
+                let exY = floor((h - exH) * 0.5)
+                excerptLabel.frame = NSRect(x: contentX, y: exY, width: contentW, height: exH)
+                timeBadgeLabel.frame = NSRect(x: leftPad, y: exY + max(0, exH - timeH - 1), width: timeColW, height: timeH)
+            } else if excerptLabel.isHidden {
+                headlineLabel.sizeToFit()
+                let headH = ceil(headlineLabel.frame.height)
                 let rowMidY = floor((h - headH) * 0.5)
                 headlineLabel.frame = NSRect(x: contentX, y: rowMidY, width: contentW, height: headH)
                 timeBadgeLabel.frame = NSRect(x: leftPad, y: floor((h - timeH) * 0.5), width: timeColW, height: timeH)
             } else {
+                headlineLabel.sizeToFit()
+                let headH = ceil(headlineLabel.frame.height)
                 let topY = h - 13 - headH
                 headlineLabel.frame = NSRect(x: contentX, y: topY, width: contentW, height: headH)
                 timeBadgeLabel.frame = NSRect(x: leftPad, y: topY + floor((headH - timeH) * 0.5), width: timeColW, height: timeH)
@@ -1039,7 +1054,10 @@ private struct MacTranscriptTimelineListView: NSViewRepresentable {
             switch entries[row] {
             case .earlyHeader:
                 return 44
-            case let .window(_, _, _, excerpt):
+            case let .window(_, _, headline, excerpt):
+                if headline.isEmpty {
+                    return excerpt.count > 36 ? 64 : 48
+                }
                 if excerpt.isEmpty { return 48 }
                 return excerpt.count > 44 ? 82 : 66
             }
