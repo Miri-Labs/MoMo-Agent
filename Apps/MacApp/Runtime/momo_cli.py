@@ -118,8 +118,11 @@ def _cmd_recording(data: Path, args: argparse.Namespace) -> dict:
             result["recorded_start_local"] = spans[0].get("recorded_at_local")
             result["recorded_end_local"] = spans[-1].get("recorded_at_local")
         result["speaker_ownership_note"] = (
-            "Only spans with speaker_role='owner' ([我]) are spoken by the user; "
-            "spans with speaker_role='other' ([说话人 N] or other names) are spoken by other people."
+            "Spans with speaker_role='owner' ([我]) matched the user's voiceprint; "
+            "speaker_role='other' matched a known non-owner speaker; "
+            "speaker_role='unattributed' (e.g. [说话人 N] or untagged spans) has unverified voiceprint identity "
+            "(in far-field, Watch, or multi-person meetings this may be a colleague or the user) — "
+            "infer speaker and action ownership from conversational context rather than assuming [说话人 N] cannot be the user."
         )
         result["current_local_time"] = _local_dt(time.time())
         return result

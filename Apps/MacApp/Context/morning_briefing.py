@@ -188,7 +188,7 @@ def recent_recordings_digest(store: ContextStore, now: float, *, window_hours: f
                 other_turns += 1
                 tag = f"[{spk or '他人'}]"
             else:
-                tag = ""
+                tag = f"[{spk}]" if spk else ""
             formatted_lines.append(f"{tag}{body}" if tag else body)
 
         joined = " / ".join(formatted_lines)
