@@ -1124,6 +1124,7 @@ final class ChatRendererTests: XCTestCase {
         try await renderer.check("window.stableChunk === document.querySelector('.md-chunk')")
         try await renderer.check("document.querySelector('#announcer').textContent === '回复已完成'")
         try await renderer.check("!document.querySelector('[data-action=copy-reply]') && !document.querySelector('[data-action=copy-code]')")
+        try await renderer.check("document.querySelector('.assistant .prose').dataset.copyText.includes('第一段已完成。') && document.querySelector('#bubble-menu').hidden")
         try await renderer.check("getComputedStyle(document.querySelector('.user-bubble')).backgroundColor !== getComputedStyle(document.querySelector('.assistant .prose')).backgroundColor")
         try await renderer.check("getComputedStyle(document.querySelector('.assistant .prose')).borderTopLeftRadius === '18px' && getComputedStyle(document.querySelector('.assistant .prose')).backgroundColor !== 'rgba(0, 0, 0, 0)'")
         try await renderer.check("getComputedStyle(document.querySelector('.prose')).fontFamily.includes('system') && getComputedStyle(document.querySelector('.prose')).fontSize === '16px' && parseFloat(getComputedStyle(document.querySelector('.prose')).lineHeight) >= 24")
