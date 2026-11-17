@@ -249,7 +249,8 @@ import UIKit
     func testLongPressingBubblePresentsNativeIMessageContextMenu() async throws {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchEnvironment["MOMO_UI_TEST_RUN_ID"] = "5F12C378-A804-4E20-A46D-213FE37495AB"
+        let runID = ProcessInfo.processInfo.environment["MOMO_UI_TEST_CUSTOM_RUN_ID"] ?? UUID().uuidString
+        app.launchEnvironment["MOMO_UI_TEST_RUN_ID"] = runID
         app.launchEnvironment["MOMO_UI_TEST_TIMELINE_FIXTURE"] = "chat"
         app.launchEnvironment["MOMO_UI_TEST_AVATAR_UNAVAILABLE"] = "1"
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
@@ -275,8 +276,14 @@ import UIKit
         _ = assistantBubble.waitForExistence(timeout: 12)
 
         let transcript = app.descendants(matching: .any)["assistant.transcript"].firstMatch
-        if app.keyboards.firstMatch.exists { transcript.swipeDown() }
-        try await Task.sleep(for: .milliseconds(600))
+        if app.keyboards.firstMatch.exists {
+            transcript.swipeDown()
+            _ = app.keyboards.firstMatch.waitForNonExistence(timeout: 3)
+            try await Task.sleep(for: .milliseconds(600))
+        }
+
+        let userBubbleBefore = userBubble.frame
+        let assistantBubbleBefore = assistantBubble.exists ? assistantBubble.frame : .zero
 
         userBubble.press(forDuration: 1.0)
         let copyAction = app.buttons["拷贝"]
@@ -287,41 +294,65 @@ import UIKit
         XCTAssertTrue(selectTextAction.exists, "Expected '选择文本' action in UIContextMenu")
 
         selectTextAction.tap()
-        let selectionTextView = app.textViews["assistant.bubbleSelectionTextView"]
-        XCTAssertTrue(selectionTextView.waitForExistence(timeout: 3), "Expected native UITextView bubble selection overlay")
-        let editCopyItem = app.menuItems["拷贝"]
-        XCTAssertTrue(editCopyItem.waitForExistence(timeout: 5), "Expected native iOS EditMenu '拷贝' item in-place on bubble. Hierarchy:\n\(app.debugDescription)")
-        capture(app, "In-Place Text Selection on User Bubble")
-        XCTAssertFalse(app.navigationBars["选择文本"].exists, "Select Text must highlight in-place like iMessage, never open a modal sheet")
+        let selectionOverlay = app.otherElements["assistant.bubbleSelectionOverlay"]
+        let bubbleTarget = app.otherElements["assistant.bubbleSelectionTargetRect"]
+        let leadingGrabber = app.otherElements["assistant.selectionKnob.leading"].firstMatch
+        let trailingGrabber = app.otherElements["assistant.selectionKnob.trailing"].firstMatch
 
-        // Verify dragging the native iOS blue grabber handle is responsive and never hangs
-        let trailingGrabber = app.otherElements["com.apple.text.grabber.trailing"].firstMatch
-        if trailingGrabber.exists {
-            let startCoord = trailingGrabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            let dragTarget = selectionTextView.coordinate(withNormalizedOffset: CGVector(dx: 0.48, dy: 0.5))
-            startCoord.press(forDuration: 0.15, thenDragTo: dragTarget)
-        } else {
-            let wordCoord = selectionTextView.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5))
-            wordCoord.doubleTap()
+        XCTAssertTrue(leadingGrabber.waitForExistence(timeout: 1.5), "Expected instant Telegram-style leading selection knob without delay. Hierarchy:\n\(app.debugDescription)")
+        XCTAssertTrue(trailingGrabber.exists, "Expected trailing selection knob")
+        XCTAssertTrue(selectionOverlay.exists || bubbleTarget.exists, "Expected in-place bubble selection overlay")
+
+        // Verify zero spacing/typography reflow on both the selected bubble and neighboring bubbles
+        XCTAssertEqual(userBubble.frame.minY, userBubbleBefore.minY, accuracy: 0.5, "Activating text selection must never shift bubble Y spacing")
+        XCTAssertEqual(userBubble.frame.height, userBubbleBefore.height, accuracy: 0.5, "Activating text selection must never reflow bubble height")
+        if assistantBubble.exists && assistantBubbleBefore.height > 0 {
+            XCTAssertEqual(assistantBubble.frame.minY, assistantBubbleBefore.minY, accuracy: 0.5, "Activating text selection must never shift neighboring bubble spacing")
         }
-        try await Task.sleep(for: .milliseconds(500))
-        capture(app, "Responsive Handle Drag Selection in Native Bubble UITextView")
-        if editCopyItem.waitForExistence(timeout: 3) {
+
+        let editCopyPredicate = NSPredicate(format: "label == %@", "拷贝")
+        let editCopyItem = app.menuItems.matching(editCopyPredicate).firstMatch
+        let editCopyButton = app.buttons.matching(editCopyPredicate).firstMatch
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            editCopyItem.exists || editCopyButton.exists
+        }, object: nil)], timeout: 3)
+        capture(app, "In-Place Zero-Reflow Text Selection on User Bubble")
+        XCTAssertFalse(app.navigationBars["选择文本"].exists, "Select Text must highlight in-place, never open a modal sheet")
+
+        // Verify zero-hysteresis knob dragging updates selection smoothly without hanging
+        let startCoord = trailingGrabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let targetHost = bubbleTarget.exists ? bubbleTarget : userBubble
+        let dragTarget = targetHost.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.5))
+        startCoord.press(forDuration: 0.05, thenDragTo: dragTarget)
+        try await Task.sleep(for: .milliseconds(350))
+        capture(app, "Responsive Knob Drag Partial Selection on User Bubble")
+
+        // Verify double-tapping a word inside the bubble selects a word cleanly
+        targetHost.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).doubleTap()
+        try await Task.sleep(for: .milliseconds(350))
+        capture(app, "Double-Tap Word Selection on User Bubble")
+
+        if editCopyItem.exists {
             editCopyItem.tap()
+        } else if editCopyButton.exists {
+            editCopyButton.tap()
         } else {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.65)).tap()
         }
-        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !selectionTextView.exists }, object: nil)], timeout: 4)
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !leadingGrabber.exists }, object: nil)], timeout: 3)
 
         if assistantBubble.exists {
+            let assistantBeforeSelect = assistantBubble.frame
             assistantBubble.press(forDuration: 1.0)
             XCTAssertTrue(selectTextAction.waitForExistence(timeout: 5), "Long-pressing assistant bubble should open context menu")
             selectTextAction.tap()
-            XCTAssertTrue(selectionTextView.waitForExistence(timeout: 3), "Expected native UITextView selection on assistant bubble")
-            _ = editCopyItem.waitForExistence(timeout: 4)
-            capture(app, "In-Place Text Selection on Assistant Bubble")
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.68)).tap()
-            await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !selectionTextView.exists }, object: nil)], timeout: 4)
+            XCTAssertTrue(leadingGrabber.waitForExistence(timeout: 1.5), "Expected instant selection knobs on assistant bubble")
+            XCTAssertEqual(assistantBubble.frame.minY, assistantBeforeSelect.minY, accuracy: 0.5, "Assistant bubble Y must never shift on selection")
+            XCTAssertEqual(assistantBubble.frame.height, assistantBeforeSelect.height, accuracy: 0.5, "Assistant bubble height must never reflow on selection")
+            try await Task.sleep(for: .milliseconds(350))
+            capture(app, "In-Place Zero-Reflow Text Selection on Assistant Bubble")
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72)).tap()
+            await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !leadingGrabber.exists }, object: nil)], timeout: 3)
         }
     }
     private func darkFraction(_ image: UIImage) throws -> Double {

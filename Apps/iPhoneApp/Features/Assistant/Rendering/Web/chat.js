@@ -849,6 +849,92 @@
       else node.removeAttribute('data-context-hidden');
     }
   }
+  function extractBubbleSelectionLayout(id) {
+    const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id.replace(/"/g, '\\"');
+    const bubble = root.querySelector(`[data-bubble-id="${escaped}"]`);
+    if (!bubble) return null;
+    const docRect = document.documentElement.getBoundingClientRect();
+    const ox = docRect.left, oy = docRect.top;
+    const br = bubble.getBoundingClientRect();
+    const approxLen = (bubble.textContent || '').length;
+    const groupWords = approxLen > 3500;
+    const walker = document.createTreeWalker(bubble, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+      acceptNode(cur) {
+        if (cur.nodeType === 1) {
+          if (cur.matches('.code-head,[data-markdown-copy="exclude"]')) return NodeFilter.FILTER_REJECT;
+          return cur.tagName === 'BR' ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+        }
+        if (!cur.nodeValue) return NodeFilter.FILTER_REJECT;
+        if (cur.parentElement?.closest('.code-head,[data-markdown-copy="exclude"]')) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const range = document.createRange();
+    let fullText = '';
+    const boxes = [];
+    let cur;
+    let lastBlock = null;
+    const isAsciiTokenChar = code => (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95;
+    while ((cur = walker.nextNode())) {
+      if (cur.nodeType === 1) {
+        if (fullText && !fullText.endsWith('\n')) fullText += '\n';
+        continue;
+      }
+      const val = cur.nodeValue;
+      const inPre = Boolean(cur.parentElement?.closest('pre,code,.user-bubble'));
+      if (!inPre && !val.trim() && val.includes('\n')) continue;
+      const block = cur.parentElement?.closest('p,li,h1,h2,h3,h4,h5,h6,pre,blockquote,tr,div.md-chunk,div.user-bubble') || bubble;
+      if (lastBlock && block !== lastBlock && fullText && !fullText.endsWith('\n')) {
+        fullText += '\n';
+      }
+      lastBlock = block;
+      let i = 0;
+      const n = val.length;
+      while (i < n) {
+        const c0 = val.charCodeAt(i);
+        if (c0 === 10 || c0 === 13) {
+          fullText += val[i];
+          i += 1;
+          continue;
+        }
+        let step = (c0 >= 0xD800 && c0 <= 0xDBFF && i + 1 < n) ? 2 : 1;
+        if (groupWords && step === 1 && isAsciiTokenChar(c0)) {
+          while (i + step < n && step < 24 && isAsciiTokenChar(val.charCodeAt(i + step))) step += 1;
+        }
+        const startUTF16 = fullText.length;
+        fullText += val.slice(i, i + step);
+        const endUTF16 = fullText.length;
+        range.setStart(cur, i);
+        range.setEnd(cur, i + step);
+        const clientRects = range.getClientRects();
+        for (let k = 0; k < clientRects.length; k++) {
+          const r = clientRects[k];
+          if (r.width > 0 && r.height > 0) {
+            boxes.push(
+              startUTF16,
+              endUTF16,
+              Math.round((r.left - ox) * 2) / 2,
+              Math.round((r.top - oy) * 2) / 2,
+              Math.round(r.width * 2) / 2,
+              Math.round(r.height * 2) / 2
+            );
+          }
+        }
+        i += step;
+      }
+    }
+    if (!fullText || !boxes.length) return null;
+    return {
+      id,
+      isUser: bubble.classList.contains('user-bubble'),
+      docX: br.left - ox,
+      docY: br.top - oy,
+      width: br.width,
+      height: br.height,
+      text: fullText,
+      boxes
+    };
+  }
   document.addEventListener('pointerdown', event => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -966,6 +1052,6 @@
     pageSuspended = false; brandMotion.resume();
     if (latest) renderTurns(false); else syncActivityMotion();
   });
-  window.MoMoChat = { render, patchTailMessage, openChat, scrollToBottom, saveReadingPosition, suspend, setSuspended, setBubbleHidden };
+  window.MoMoChat = { render, patchTailMessage, openChat, scrollToBottom, saveReadingPosition, suspend, setSuspended, setBubbleHidden, extractBubbleSelectionLayout };
   post('ready',true);
 })();
