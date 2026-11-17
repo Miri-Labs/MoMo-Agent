@@ -18,6 +18,8 @@ PAGES_PER_RUN = 4
 
 
 def _health_and_activity_summary(store, now):
+    from morning_briefing import compute_health_rhythm_digest
+    rhythm = compute_health_rhythm_digest(store, now)
     rows = store.db.execute("SELECT payload FROM health_snapshots ORDER BY device_id LIMIT 4").fetchall()
     sleep_items = []
     workout_items = []
@@ -59,14 +61,19 @@ def _health_and_activity_summary(store, now):
                 })
     if not sleep_items and not workout_items:
         return None
-    return {
+    out = {
         "sleep_sessions": sleep_items,
         "workouts": workout_items,
         "guidance": (
-            "Completed sleep sessions and workouts in the review window for journal/rhythm understanding only. "
-            "Do NOT infer medical diagnoses, and NEVER store ephemeral device battery percentages or transient telemetry in MEMORY.md or USER.md."
+            "Sleep stages, HRV/RHR recovery baselines, steps, activity rings, and workouts in the review window "
+            "for daily journal & rhythm synthesis. Do NOT infer medical diagnoses, and NEVER store ephemeral device battery percentages or transient telemetry in MEMORY.md or USER.md."
         ),
     }
+    if rhythm:
+        out["recovery_baselines"] = rhythm.get("recovery_baselines") or {}
+        out["recent_daily_steps"] = rhythm.get("recent_daily_steps") or []
+        out["recent_activity_rings"] = rhythm.get("recent_activity_rings") or []
+    return out
 
 
 def enqueue(store, data, now, manual=False):
@@ -240,6 +247,17 @@ def prompt(store, job):
     page = store.db.execute("SELECT MIN(page) FROM daily_review_pages WHERE review_id=? AND page>?",
                             (snapshot, payload.get("resume_after", 0))).fetchone()[0]
     evidence = read_page(store, job["id"], page or 1)
+    if not evidence["has_more_batches"] and payload.get("continuation_of"):
+        import time as _time
+        from morning_briefing import compute_health_rhythm_digest, recent_recordings_digest
+        now_ts = _time.time()
+        synth_rhythm = compute_health_rhythm_digest(store, now_ts)
+        synth_recs = recent_recordings_digest(store, now_ts, window_hours=30.0, max_items=6)
+        if synth_rhythm or synth_recs:
+            evidence["final_synthesis_context"] = {
+                "health_rhythm": synth_rhythm,
+                "recent_recordings_30h": synth_recs,
+            }
     instruction = ("逐页处理本批证据。确认本页需要的写入均已成功，或确实无需写入后，再用 read_daily_evidence "
                    "传 review_id、page=next_page 和 completed_page=当前页码。最后一页用最终回执确认。")
     scope = "读完本批所有证据后，执行当天的全局整理。\n" + review.DREAM_INSTRUCTION

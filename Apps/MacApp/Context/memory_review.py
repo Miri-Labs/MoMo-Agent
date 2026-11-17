@@ -13,7 +13,7 @@ from personal_context import INSTRUCTION as PERSONAL_CONTEXT
 CHAT_IDLE_SECONDS = 10 * 60
 DREAM_INTERVAL = 24 * 60 * 60
 AUTOMATIC_INTERVAL = DREAM_INTERVAL
-CURATION_POLICY_VERSION = "v8-steward-context-engineering"
+CURATION_POLICY_VERSION = "v9-holistic-briefing-and-rhythm"
 MAX_BYTES = 32_000
 MAX_PARTS = 48
 RECEIPT = '''最后只返回 JSON：{"memory_review":{"outcome":"updated 或 no_change","reason":"本批保存、合并、清理、目录分层重整或纠正了什么（含记忆、Markdown 活页笔记重组/移动/删除或说话人修正），或为何无需改动"}}。
@@ -318,32 +318,15 @@ DREAM_INSTRUCTION = """
    - 先用 `notebook(action='list')` 审视相关目录与字数，保持知识库精悍清晰：
      a) **多级目录归档**：当同一大项目积累多篇专题或日志跨月、人物分属不同协作圈时，按合理二级/三级目录（如 `projects/AI访谈/overview.md`、`journal/2026-11/2026-11-16.md`、`people/核心团队/小林.md`）组织，并用 `move` 迁移散落旧页、同步引用路径；
      b) **合并冗余与清理陈旧**：将细碎重叠笔记的有效结论并入主活页后 `remove` 碎片文件（保留 `PROACTIVE_PREFERENCES.md`）；任何缺 `# 一级标题` 或残留裸 UUID / 内部审计套话的笔记，用 `mode='replace'` 重写为干净手记；在 `MEMORY.md` 中及时移除已办结或过期的条目。
-3. 【全天时空拼图与客观对账（`notebook` 每日日志）】
-   - 通过 `phone_context` 核对到访地点（`visits`）、出行姿态（`motion`）、日程（`calendar`）和待办（`reminders`），有 `next_cursor` 时按需续读。牢记视野谦逊：日程只代表计划，待办从快照消失或未打勾都不单独证明已完成或未完成（用户可能在线下或其他渠道办妥）；结合当天录音与聊天（`session_search`）客观更新当日日志（若该月份已有 `journal/YYYY-MM/` 子目录则统一写入 `journal/YYYY-MM/YYYY-MM-DD.md`）。常规步数、电量与瞬时心率留在资料层，不写入长期核心记忆。
-   - 包含：`# YYYY-MM-DD · <当日主线标题>`、`## 时空与事件脉络`（附 `[HH:MM 原音](momoagent://source/...)` 锚点）、`## 思考火花与决策演变`、`## 承诺与待办对账`（平实记录已知进展与待核项，不生造催办语气）。
+3. 【全天时空拼图、原音脉络与生理节律对账（`notebook` 每日日志）】
+   - 通过 `phone_context(kind='all')` 与 `phone_context(kind='health')`（及页面附带的 `health_and_activity_summary`）核对到访地点（`visits`）、出行姿态（`motion`）、日程（`calendar`）、待办（`reminders`）以及睡眠阶段、HRV/静息心率恢复趋势与运动消耗；有 `next_cursor` 时按需续读。牢记视野谦逊：日程只代表计划，待办从快照消失或未打勾都不单独证明已完成或未完成（用户可能在线下办妥）；结合当天全部录音（`list_recordings` / `read_recording`）与聊天（`session_search`）客观更新当日日志（若该月份已有 `journal/YYYY-MM/` 子目录则统一写入 `journal/YYYY-MM/YYYY-MM-DD.md`）。瞬时电量等临时数值留在资料层，不写入 `MEMORY.md` / `USER.md`。
+   - 包含：`# YYYY-MM-DD · <当日主线标题>`、`## 时空与事件脉络`（融合真实会议/对话录音要点并附 `[HH:MM 原音](momoagent://source/...)` 锚点，同时简记当日睡眠/运动/精力节律）、`## 思考火花与决策演变`、`## 承诺与待办对账`。
 4. 【在研项目盘点与边界隔离（`projects/` + `topics/`）】
    - 按业务域、核心术语与参与人区分独立项目，不将不同项目的排期、规则或人物串写混同。
    - 维护 `projects/overview.md`（`# 在研项目总览`）及各活跃项目活页 `projects/<项目短名>.md`（或项目子目录），清晰呈现项目目标、当前定案结论、核心相关人与下一步杠杆点；`topics/` 仅保留跨项目或需独立沉淀的方法论专题。
-5. 【私人管家级晨间简报与可执行卡片（`BRIEFING.md` + `memory`）】
-   - 站在多日演进脉络上直接帮用户拎出今天最关键的收口动作，不复述昨日流水账，也不写“已按要求整理完毕”之类的元叙事套话。
-   - 除底部的 `## 卡片：` 区域外，简报正文（`## 今日焦点` + `## 今日必办`）控制在 **160 字以内**，干净利落、一眼读完：
-     ```markdown
-     # 晨间简报 · YYYY-MM-DD
-
-     ## 今日焦点
-     <仅 1 句话（≤45字）：站在演进脉络上点明今天最关键的收口杠杆，附 `projects/overview.md`>
-
-     ## 今日必办
-     - **<动词+今日必办动作1>**：<一句话点明演进卡点与今日收口目标> · `projects/<slug>.md` `topics/<slug>.md`
-     - **<动词+今日必办动作2>**：<一句话点明演进卡点与今日收口目标> · `projects/<slug>.md` `people/<slug>.md`
-     - **<动词+今日必办动作3（可选，最多3条）>**：<一句话点明卡点与今日动作> · `projects/<slug>.md`
-
-     ## 卡片：<简短行动标题，不超过10字>
-     - 纹样：记忆回环 | 声音片段 | 关系交汇 | 生活流向 | 慢下来 | 片段关联
-     - 语境：<10字以内，标明所属项目>
-
-     <点击卡片后直接发给 MoMo 的具体执行请求正文（写成清晰意图而非死板工具调用参数），最多生成 2 张卡片>
-     ```
+5. 【晨间简报昼夜分工与四维全景合成（`BRIEFING.md` + `memory`）】
+   - **凌晨睡眠前不预写死次日简报**：若 `Current Local Time` 处于每日分界线之前的凌晨时段（如 `00:00–07:59`，用户尚未睡醒、当晚睡眠与晨间 HRV 尚未出炉），本轮专注把 `journal`、`projects/`、`people/`、`MEMORY.md` 与 `USER.md` 沉淀扎实，**不要提前把次日日期写入 `BRIEFING.md`**（系统会在早晨醒后结合整晚睡眠恢复、全天录音脉络与今日日程实时生成晨间简报）。
+   - **白天触发整理时（如 `08:00` 及之后手动运行 Dream）**：先回读最新 `journal`、`list_recordings`、`phone_context(kind='health')` 与 `phone_context(kind='all')`，撰写融合 **「状态与节律（睡眠/HRV/心率恢复）+ 昨日原音与推进脉络（优先真实会议录音与业务进展，主动降权在聊天框里调试 MoMo 自身的元对话）+ 今日焦点与必办（对齐日程待办）+ 底部可执行 `## 卡片：`」** 的 `# 晨间简报 · YYYY-MM-DD` 写入 `BRIEFING.md`（可见正文约 220–320 字）。
    - 最后用 `memory` 工具精炼校准 `USER.md` 与 `MEMORY.md`。若所有来源与笔记均已整洁最新且无需任何调整，返回 `no_change`。"""
 
 
@@ -397,33 +380,10 @@ def format_briefing_chat_message(markdown: str) -> str:
 
 
 def morning_briefing_evidence(data, db):
-    """A bounded digest of recent user requests and dated notebook excerpts."""
-    cutoff = time.time() - 7 * 86400
-    eligible = eligible_chat_messages(db)
-    requests = db.execute(
-        f"SELECT content,created_at FROM ({eligible}) WHERE role='user' AND created_at>=? "
-        "AND trim(content)!='' ORDER BY seq DESC LIMIT 8", (cutoff,),
-    ).fetchall()
-    evidence = [{"at": time.strftime("%F %R", time.localtime(at)), "request_excerpt": text[:500]}
-                for text, at in requests]
-    vault = Path(data) / "memories"
-    notes = (p for p in _iter_vault_markdown_files(vault)
-             if p.name != "BRIEFING.md" and not p.is_symlink() and p.stat().st_mtime >= cutoff)
-    for path in sorted(notes, key=lambda p: p.stat().st_mtime, reverse=True)[:5]:
-        with path.open(encoding="utf-8") as source:
-            evidence.append({"note": path.relative_to(vault).as_posix(), "excerpt": source.read(1500)})
-    if requests:
-        last, at = requests[0]
-        preview = " ".join(last.split())
-        if len(preview) > 100:
-            preview = preview[:99] + "…"
-        fallback = f"你在 {time.strftime('%m-%d %H:%M', time.localtime(at))} 最近提到：「{preview}」。稍后可以接着这条聊。"
-    else:
-        latest = next((entry["note"] for entry in evidence if "note" in entry), None)
-        fallback = f"最近更新的笔记是 `{latest}`，可以从这里接着看。" if latest else "过去一周没有新的聊天或笔记可供整理。"
-    if not evidence and not db.execute(f"SELECT 1 FROM ({eligible}) WHERE role='user' LIMIT 1").fetchone():
-        return "", None  # A new, unused installation has no personal briefing yet.
-    return (canonical(evidence) if evidence else ""), fallback
+    """A bounded digest of recordings, physiology, schedule, chat requests, and dated notebook excerpts."""
+    from morning_briefing import build_holistic_briefing_pack
+    bundle = build_holistic_briefing_pack(Path(data), db)
+    return bundle["evidence_json"], bundle["fallback"]
 
 
 def finish(store, job, receipt, home):

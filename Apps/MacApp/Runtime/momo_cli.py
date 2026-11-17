@@ -528,6 +528,30 @@ def _cmd_web_extract(data: Path, args: argparse.Namespace) -> dict:
     return parsed if isinstance(parsed, dict) else {"success": False, "error": "Web extract unavailable"}
 
 
+def _cmd_briefing(data: Path, args: argparse.Namespace) -> dict:
+    if args.regenerate:
+        conn = json.loads((data / "connection.json").read_text(encoding="utf-8"))
+        api_key = (data / "api-key").read_text(encoding="utf-8").strip()
+        url = f"{conn['base_url'].rstrip('/')}/momo/v1/briefing/regenerate"
+        req = urllib.request.Request(
+            url,
+            data=b"{}",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=110) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    import memory_review
+    import morning_briefing
+    conv_path = data / "runtime/conversation.sqlite"
+    if not conv_path.is_file():
+        return {"has_rich_context": False, "pack": {}}
+    with contextlib.closing(memory_review.readonly(conv_path)) as db:
+        bundle = morning_briefing.build_holistic_briefing_pack(data, db)
+    return {"has_rich_context": bundle["has_rich_context"], "pack": bundle["pack"]}
+
+
 def main() -> int:
     default_data = Path(os.environ["MOMO_DATA_DIR"]) if os.environ.get("MOMO_DATA_DIR") else None
     parser = argparse.ArgumentParser(description="MoMo personal context & memory CLI")
@@ -642,6 +666,9 @@ def main() -> int:
     pim_cmd.add_argument("op")
     pim_cmd.add_argument("--args-json", default="{}")
 
+    brief_cmd = sub.add_parser("briefing", help="Inspect holistic morning briefing evidence or trigger live regeneration")
+    brief_cmd.add_argument("--regenerate", action="store_true", help="Regenerate today's holistic Morning Briefing via gateway")
+
     args = parser.parse_args()
     data = args.data_dir.expanduser().resolve()
     handlers = {
@@ -666,6 +693,7 @@ def main() -> int:
         "web-search": _cmd_web_search,
         "web-extract": _cmd_web_extract,
         "pim": _cmd_pim,
+        "briefing": _cmd_briefing,
     }
     try:
         output = handlers[args.command](data, args)
