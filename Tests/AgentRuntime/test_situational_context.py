@@ -792,6 +792,203 @@ class LifePulseAndGatewayBridgeTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 store.close()
 
+    def test_holistic_pulse_injects_recent_recordings_chat_36h_schedule_recall_and_freshness_tags(self) -> None:
+        from context_store import digest
+        from conversation_store import ProductStore
+        from momo_memory import MoMoMemory
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "Agent"
+            conn = momo_agent.initialize(data, 19865)
+            store = ContextStore(data / "context")
+            dev = str(uuid.uuid4())
+            fixed_mac = {
+                "battery_level": 0.90,
+                "power_source": "ac",
+                "battery_state": "full",
+                "time_remaining_minutes": 0,
+                "hid_idle_seconds": 60.0,
+                "user_active_at_mac": True,
+                "free_storage_bytes": 100_000_000_000,
+                "as_of": BASE_TS,
+            }
+            emitted: list[dict] = []
+            try:
+                # Seed vault note about investor Coffee Chat & evaluation metrics
+                mem = MoMoMemory(data)
+                mem.write_notebook(
+                    category="project",
+                    path="projects/investor-coffee-chat.md",
+                    content="# 投资人 Coffee Chat 准备\n\n重点汇报深访模式留存口径、评测 benchmark 对比与商业化客单价。\n",
+                )
+
+                # Seed 4-day-old ended visit and 2-day-old sleep so staleness tags are exercised
+                sync_device_telemetry(store, make_telemetry_payload(dev, revision=1, observed_at=BASE_TS))
+                sync_phone_source(
+                    store,
+                    {
+                        "device_id": dev,
+                        "kind": "visits",
+                        "revision": 1,
+                        "state": "enabled",
+                        "observed_at": BASE_TS - 4 * 86400,
+                        "window_start": BASE_TS - 5 * 86400,
+                        "window_end": BASE_TS - 4 * 86400,
+                        "timezone": "Asia/Shanghai",
+                        "records": [
+                            {
+                                "id": "vis-stale",
+                                "title": "旧园区大厦",
+                                "source_name": "CoreLocation",
+                                "start": BASE_TS - 4 * 86400 - 3600,
+                                "end": BASE_TS - 4 * 86400,
+                                "latitude": 31.16,
+                                "longitude": 121.39,
+                                "accuracy": 12.0,
+                            }
+                        ],
+                    },
+                )
+                sync_health(
+                    store,
+                    {
+                        "device_id": dev,
+                        "revision": 1,
+                        "state": "enabled",
+                        "observed_at": BASE_TS - 60,
+                        "window_start": BASE_TS - 5 * 86400,
+                        "window_end": BASE_TS - 60,
+                        "timezone": "Asia/Shanghai",
+                        "observations": [],
+                        "sleep_sessions": [
+                            {
+                                "id": "sleep-old",
+                                "source_name": "Apple Watch",
+                                "source_bundle": "com.apple.health.watch",
+                                "start": BASE_TS - 48 * 3600 - 21600,
+                                "end": BASE_TS - 48 * 3600,
+                                "in_bed_seconds": 22000,
+                                "asleep_seconds": 20500,
+                                "deep_seconds": 3600,
+                                "core_seconds": 12600,
+                                "rem_seconds": 4300,
+                                "awake_seconds": 1500,
+                            }
+                        ],
+                        "workouts": [],
+                        "activity_summaries": [],
+                    },
+                )
+                # Calendar event 22 hours ahead (outside 12h, inside 12-36h) + reminder 20h ahead
+                sync_phone_source(
+                    store,
+                    {
+                        "device_id": dev,
+                        "kind": "calendar",
+                        "revision": 1,
+                        "state": "enabled",
+                        "observed_at": BASE_TS - 10,
+                        "window_start": BASE_TS - 3600,
+                        "window_end": BASE_TS + 48 * 3600,
+                        "timezone": "Asia/Shanghai",
+                        "records": [
+                            {
+                                "id": "ev-tomorrow-demo",
+                                "title": "客户提案终审会",
+                                "source_name": "Work Calendar",
+                                "start": BASE_TS + 22 * 3600,
+                                "end": BASE_TS + 23 * 3600,
+                                "all_day": False,
+                            }
+                        ],
+                    },
+                )
+                sync_phone_source(
+                    store,
+                    {
+                        "device_id": dev,
+                        "kind": "reminders",
+                        "revision": 1,
+                        "state": "enabled",
+                        "observed_at": BASE_TS - 10,
+                        "window_start": BASE_TS - 3600,
+                        "window_end": BASE_TS - 10,
+                        "timezone": "Asia/Shanghai",
+                        "records": [
+                            {
+                                "id": "rem-investor",
+                                "title": "与投资人 Coffee Chat",
+                                "source_name": "待办事项",
+                                "start": BASE_TS + 20 * 3600,
+                            }
+                        ],
+                    },
+                )
+
+                # Emit baseline pulse at BASE_TS
+                with patch("situational_context.probe_mac_telemetry", return_value=fixed_mac):
+                    p1 = life_pulse.maybe_emit_pulse(store, emitted.append, data_dir=data, now=BASE_TS)
+                self.assertIsNotNone(p1)
+                self.assertNotIn("旧园区大厦", p1["payload"]["title"])
+                self.assertIn("[已陈旧，非实时位置]", p1["payload"]["text"])
+                self.assertIn("[已陈旧：距今", p1["payload"]["text"])
+                self.assertIn("[未来 12–36 小时临近日程]", p1["payload"]["text"])
+                self.assertIn("客户提案终审会", p1["payload"]["text"])
+                self.assertIn("距今 20.0h", p1["payload"]["text"])
+
+                # Now add a multi-span meeting recording + user chat between BASE_TS and BASE_TS + 5400
+                spans = [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "text": "[说话人 1] 今天把深访模式的评测 benchmark 口径和 34 页提案对齐完了。",
+                        "recorded_at": BASE_TS + 1800,
+                        "is_owner": False,
+                    },
+                    {
+                        "id": str(uuid.uuid4()),
+                        "text": "[我] 明天投资人 Coffee Chat 需要把最新留存口径加进去。",
+                        "recorded_at": BASE_TS + 2400,
+                        "is_owner": True,
+                    },
+                ]
+                store.sync_source(
+                    {
+                        "library_id": str(uuid.uuid4()),
+                        "session_id": str(uuid.uuid4()),
+                        "device_id": dev,
+                        "generation": 1,
+                        "version": 1,
+                        "deleted": False,
+                        "title": "深访评测与提案复盘会",
+                        "text_sha256": digest("\n".join(s["text"] for s in spans)),
+                        "spans": spans,
+                    }
+                )
+                pstore = ProductStore(data / "runtime/conversation.sqlite", conn)
+                try:
+                    with pstore.db:
+                        pstore.db.execute(
+                            "INSERT INTO messages(id,role,content,created_at) VALUES(?,?,?,?)",
+                            ("m-u-1", "user", "明天下午见投资人前记得看一眼最新评测数据", BASE_TS + 3000),
+                        )
+                finally:
+                    pstore.db.close()
+
+                sync_device_telemetry(store, make_telemetry_payload(dev, revision=2, observed_at=BASE_TS + 5370))
+                with patch("situational_context.probe_mac_telemetry", return_value=fixed_mac):
+                    p2 = life_pulse.maybe_emit_pulse(store, emitted.append, data_dir=data, now=BASE_TS + 5400)
+                self.assertIsNotNone(p2)
+                t2 = p2["payload"]["text"]
+                self.assertIn("距上次脉搏新增录音动态：1 场会话共 2 段新转写", t2)
+                self.assertIn("[今日与近几小时录音动态]", t2)
+                self.assertIn("深访评测与提案复盘会", t2)
+                self.assertIn("[近期对话脉络]", t2)
+                self.assertIn("明天下午见投资人前记得看一眼最新评测数据", t2)
+                self.assertIn("[关联记忆活页与历史脉络]", t2)
+                self.assertIn("projects/investor-coffee-chat.md", t2)
+            finally:
+                store.close()
+
 
 class SituationalMCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_mcp_exposes_read_situational_context_only_outside_memory_only_mode(self) -> None:

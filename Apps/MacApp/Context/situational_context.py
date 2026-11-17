@@ -181,7 +181,7 @@ def _build_concise_summary(
         parts.append(step_str)
 
     visit = mobility.get("visit")
-    if isinstance(visit, dict) and visit.get("title"):
+    if isinstance(visit, dict) and visit.get("title") and not visit.get("stale"):
         v_title = str(visit["title"]).strip()[:20]
         if v_title:
             parts.append(f"位置 {v_title}")
@@ -312,6 +312,10 @@ def read_situational_context(store, data_dir=None, now: float | None = None) -> 
         latest_v = v_recs[-1]
         ongoing = "start" in latest_v and "end" not in latest_v
         v_title = (latest_v.get("title") or "").strip() or None
+        visit_ref_ts = float(latest_v.get("end", latest_v.get("start", now_ts)))
+        visit_age = round(max(0.0, now_ts - visit_ref_ts), 1)
+        visit_snap_age = round(max(0.0, now_ts - float(enabled_visits["observed_at"])), 1)
+        visit_stale = bool(not ongoing and (visit_age > 12 * 3600 or visit_snap_age > 24 * 3600))
         visit_info = {
             "id": latest_v["id"],
             **({"title": v_title} if v_title else {}),
@@ -324,7 +328,9 @@ def read_situational_context(store, data_dir=None, now: float | None = None) -> 
             "end_local": _fmt_iso(latest_v["end"], tz) if "end" in latest_v else None,
             "ongoing": ongoing,
             "source_name": latest_v["source_name"],
-            "snapshot_age_seconds": round(max(0.0, now_ts - float(enabled_visits["observed_at"])), 1),
+            "age_seconds": visit_age,
+            "snapshot_age_seconds": visit_snap_age,
+            "stale": visit_stale,
         }
     mobility_and_place = {
         "motion_state": motion_state,
@@ -367,6 +373,8 @@ def read_situational_context(store, data_dir=None, now: float | None = None) -> 
                     "awake": round(float(s0["awake_seconds"]) / 3600.0, 2),
                 },
                 "age_seconds": s_age,
+                "age_hours": round(s_age / 3600.0, 1),
+                "stale": s_age > 24 * 3600,
                 "source_name": s0["source_name"],
             }
 
@@ -433,14 +441,17 @@ def read_situational_context(store, data_dir=None, now: float | None = None) -> 
         "vitals": vitals,
     }
 
-    # 5. Schedule (next 12h calendar events + due/overdue/incomplete reminders top 10)
+    # 5. Schedule (next 12h immediate calendar events + 12-36h extended horizon + due/overdue/incomplete reminders top 10)
     enabled_cal = next((d for d in calendar_docs if d.get("state") == "enabled"), None)
     upcoming_events: list[dict] = []
+    extended_events: list[dict] = []
     if enabled_cal is not None:
-        horizon = now_ts + 12 * 3600
+        horizon_12h = now_ts + 12 * 3600
+        horizon_36h = now_ts + 36 * 3600
+        cal_records = enabled_cal.get("records") or []
         matching_events = [
-            ev for ev in (enabled_cal.get("records") or [])
-            if float(ev["end"]) >= now_ts and float(ev["start"]) <= horizon
+            ev for ev in cal_records
+            if float(ev["end"]) >= now_ts and float(ev["start"]) <= horizon_12h
         ]
         matching_events.sort(key=lambda ev: (bool(ev.get("all_day")), float(ev["start"])))
         for ev in matching_events[:20]:
@@ -459,13 +470,33 @@ def read_situational_context(store, data_dir=None, now: float | None = None) -> 
                 "ongoing": s_ts <= now_ts <= e_ts,
             })
 
+        later_events = [
+            ev for ev in cal_records
+            if horizon_12h < float(ev["start"]) <= horizon_36h
+        ]
+        later_events.sort(key=lambda ev: (bool(ev.get("all_day")), float(ev["start"])))
+        for ev in later_events[:15]:
+            s_ts = float(ev["start"])
+            e_ts = float(ev["end"])
+            extended_events.append({
+                "id": ev["id"],
+                "title": ev.get("title") or "(无标题日程)",
+                "source_name": ev["source_name"],
+                "all_day": bool(ev.get("all_day")),
+                "start": s_ts,
+                "end": e_ts,
+                "start_local": _fmt_iso(s_ts, tz) if not ev.get("all_day") else _dt.datetime.fromtimestamp(s_ts, tz).strftime("%Y-%m-%d"),
+                "end_local": _fmt_iso(e_ts, tz) if not ev.get("all_day") else _dt.datetime.fromtimestamp(e_ts, tz).strftime("%Y-%m-%d"),
+                "starts_in_hours": round((s_ts - now_ts) / 3600.0, 1),
+            })
+
     enabled_rem = next((d for d in reminder_docs if d.get("state") == "enabled"), None)
     due_reminders: list[dict] = []
     if enabled_rem is not None:
         rem_records = list(enabled_rem.get("records") or [])
         rem_records.sort(
             key=lambda r: (
-                0 if ("start" in r and float(r["start"]) <= now_ts + 12 * 3600) else (1 if "start" in r else 2),
+                0 if ("start" in r and float(r["start"]) <= now_ts + 36 * 3600) else (1 if "start" in r else 2),
                 float(r.get("start", float("inf"))),
                 str(r["id"]),
             )
@@ -478,6 +509,7 @@ def read_situational_context(store, data_dir=None, now: float | None = None) -> 
                 "source_name": rem["source_name"],
                 "due_at": due_ts,
                 "due_local": _fmt_iso(due_ts, tz) if due_ts is not None else None,
+                "due_in_hours": round((due_ts - now_ts) / 3600.0, 1) if due_ts is not None else None,
                 "overdue": bool(due_ts is not None and due_ts < now_ts),
             })
 
@@ -485,6 +517,7 @@ def read_situational_context(store, data_dir=None, now: float | None = None) -> 
         "calendar_state": enabled_cal["state"] if enabled_cal else (calendar_docs[0]["state"] if calendar_docs else "not_synced"),
         "reminders_state": enabled_rem["state"] if enabled_rem else (reminder_docs[0]["state"] if reminder_docs else "not_synced"),
         "upcoming_events": upcoming_events,
+        "extended_events": extended_events,
         "due_reminders": due_reminders,
     }
 

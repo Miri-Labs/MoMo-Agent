@@ -6,13 +6,19 @@ decides WHEN a new world-state frame is ready to deliver to SuperAgent's Orchest
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import closing
+import datetime as _dt
 import json
 from pathlib import Path
+import re
+import sqlite3
 import time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from context_store import canonical, digest
 from momo_memory import memory_home
 from situational_context import read_situational_context
+from transcript_speakers import classify_transcript_span
 
 PULSE_STATE_KEY = "life_pulse_state"
 PULSE_INTERVAL_SECONDS = 5400  # Uniform 1.5 hours (90 minutes) between emitted pulses
@@ -103,23 +109,27 @@ def compute_semantic_vector(situation: dict, now: float | None = None) -> dict:
 
     sleep = body.get("latest_sleep")
     sleep_id = sleep.get("id") if isinstance(sleep, dict) else None
+    sleep_stale = bool(sleep.get("stale")) if isinstance(sleep, dict) else False
 
     workouts = body.get("recent_workouts") or []
     workout_id = workouts[0].get("id") if workouts else None
 
     upcoming = schedule.get("upcoming_events") or []
+    extended = schedule.get("extended_events") or []
     reminders = schedule.get("due_reminders") or []
     schedule_sig = digest(
         canonical({
             "events": [(e["id"], e["title"], e["start"], e["end"]) for e in upcoming],
+            "extended": [(e["id"], e["title"], e["start"], e["end"]) for e in extended],
             "reminders": [(r["id"], r["title"], r.get("due_at")) for r in reminders],
         })
     )[:16]
-    has_schedule = bool(upcoming or reminders)
+    has_schedule = bool(upcoming or extended or reminders)
 
     return {
         "structural": {
             "sleep_id": sleep_id,
+            "sleep_stale": sleep_stale,
             "workout_id": workout_id,
             "visit": visit_vec,
             "schedule_sig": schedule_sig,
@@ -191,7 +201,7 @@ def describe_deltas(prev_vector: dict | None, curr_vector: dict) -> list[str]:
     p_quant = prev_vector.get("quantized") or {}
     c_quant = curr_vector.get("quantized") or {}
 
-    if c_struct.get("sleep_id") and c_struct.get("sleep_id") != p_struct.get("sleep_id"):
+    if c_struct.get("sleep_id") and c_struct.get("sleep_id") != p_struct.get("sleep_id") and not c_struct.get("sleep_stale"):
         deltas.append("新增已完成睡眠记录")
     if c_struct.get("workout_id") and c_struct.get("workout_id") != p_struct.get("workout_id"):
         deltas.append("新增运动锻炼记录")
@@ -257,12 +267,258 @@ def _read_proactive_preferences(data_dir) -> str:
     return ""
 
 
-def format_pulse_brief(situation: dict, deltas: list[str], *, data_dir=None) -> str:
+def _pulse_tz(clock: dict, now_ts: float) -> _dt.tzinfo:
+    zone_name = str(clock.get("timezone") or "").strip()
+    if zone_name:
+        try:
+            return ZoneInfo(zone_name)
+        except ZoneInfoNotFoundError:
+            pass
+    return _dt.datetime.fromtimestamp(now_ts).astimezone().tzinfo or _dt.timezone.utc
+
+
+def _summarize_recent_recordings(
+    store,
+    *,
+    now_ts: float,
+    tz: _dt.tzinfo,
+    since_ts: float = 0.0,
+) -> dict:
+    """Summarize active recordings from today / last 16h so Life Pulse sees real work & life conversations."""
+    empty = {
+        "session_count": 0,
+        "total_spans": 0,
+        "new_spans": 0,
+        "new_sessions": 0,
+        "active_minutes": 0,
+        "items": [],
+        "window_summaries": [],
+        "source_ids": [],
+        "query_seeds": [],
+    }
+    if store is None:
+        return empty
+    try:
+        rows = store.db.execute(
+            "SELECT id, updated, payload FROM sources WHERE deleted = 0 ORDER BY updated DESC LIMIT 20"
+        ).fetchall()
+    except Exception:
+        return empty
+
+    cutoff_ts = now_ts - 16 * 3600
+    today_str = _dt.datetime.fromtimestamp(now_ts, tz).strftime("%Y-%m-%d")
+    sessions: list[dict] = []
+    total_spans = 0
+    new_spans = 0
+    new_sessions = 0
+    active_seconds = 0.0
+    source_ids: list[str] = []
+    query_seeds: list[str] = []
+
+    for row in rows:
+        sid = str(row["id"])
+        try:
+            payload = json.loads(row["payload"])
+        except Exception:
+            continue
+        raw_spans = payload.get("spans") or []
+        if not raw_spans:
+            continue
+        try:
+            spans = store._apply_speaker_overrides(sid, raw_spans)
+        except Exception:
+            spans = raw_spans
+
+        recent_spans: list[tuple[float, dict]] = []
+        for sp in spans:
+            if not isinstance(sp, dict):
+                continue
+            ts = float(sp.get("recorded_at") or 0.0)
+            if ts <= 0:
+                continue
+            sp_day = _dt.datetime.fromtimestamp(ts, tz).strftime("%Y-%m-%d")
+            if ts >= cutoff_ts or sp_day == today_str:
+                recent_spans.append((ts, sp))
+
+        if not recent_spans:
+            continue
+
+        recent_spans.sort(key=lambda item: item[0])
+        source_ids.append(sid)
+        span_count = len(recent_spans)
+        total_spans += span_count
+        sess_new = sum(1 for ts, _ in recent_spans if since_ts > 0 and ts > since_ts)
+        new_spans += sess_new
+        if sess_new > 0:
+            new_sessions += 1
+
+        # Approximate active discussion duration by capping silence gaps at 5 minutes.
+        prev_t = recent_spans[0][0]
+        sess_secs = 20.0
+        for ts, _ in recent_spans[1:]:
+            gap = max(0.0, ts - prev_t)
+            sess_secs += min(gap, 300.0)
+            prev_t = ts
+        active_seconds += sess_secs
+
+        formatted_turns: list[str] = []
+        for _, sp in recent_spans:
+            spk, is_owner, body = classify_transcript_span(sp)
+            if not body:
+                continue
+            if is_owner is True:
+                prefix = "[我] "
+            elif is_owner is False:
+                prefix = f"[{spk or '他人'}] "
+            elif spk:
+                prefix = f"[{spk}] "
+            else:
+                prefix = ""
+            formatted_turns.append(f"{prefix}{body}")
+
+        joined = " / ".join(formatted_turns)
+        if len(joined) > 320:
+            excerpt = joined[:145] + " … " + joined[-165:]
+        else:
+            excerpt = joined
+
+        start_ts = recent_spans[0][0]
+        end_ts = recent_spans[-1][0]
+        short_sid = sid.rsplit("/", 1)[-1][:8]
+        title = str(payload.get("title") or "").strip() or f"录音 {short_sid}"
+        sessions.append({
+            "source_id": sid,
+            "title": title,
+            "start_hm": _dt.datetime.fromtimestamp(start_ts, tz).strftime("%H:%M"),
+            "end_hm": _dt.datetime.fromtimestamp(end_ts, tz).strftime("%H:%M"),
+            "end_ts": end_ts,
+            "minutes": max(1, int(round(sess_secs / 60.0))),
+            "span_count": span_count,
+            "new_spans": sess_new,
+            "ongoing_recently": (now_ts - end_ts) <= 1200,
+            "excerpt": excerpt,
+        })
+        if payload.get("title"):
+            query_seeds.append(str(payload["title"]).strip())
+        if formatted_turns:
+            query_seeds.append(" ".join(formatted_turns[-6:])[:260])
+
+    # Also pull up to 3 latest completed recording window summaries (deduplicated by window_id)
+    window_summaries: list[str] = []
+    try:
+        sum_rows = store.db.execute(
+            "SELECT input, result, window_end_at FROM recording_summaries "
+            "WHERE state='done' AND result IS NOT NULL AND window_end_at >= ? "
+            "ORDER BY window_end_at DESC LIMIT 12",
+            (cutoff_ts,),
+        ).fetchall()
+        seen_windows: set[str] = set()
+        for srow in sum_rows:
+            try:
+                inp = json.loads(srow["input"] or "{}")
+            except Exception:
+                inp = {}
+            win_id = str(inp.get("window_id") or srow["window_end_at"])
+            if win_id in seen_windows:
+                continue
+            seen_windows.add(win_id)
+            cleaned_sum = " ".join(str(srow["result"] or "").replace("### ", "").replace("**", "").split()).strip()
+            if not cleaned_sum:
+                continue
+            end_hm = _dt.datetime.fromtimestamp(float(srow["window_end_at"]), tz).strftime("%H:%M")
+            window_summaries.append(f"[截至 {end_hm} 阶段摘要] {cleaned_sum[:360]}")
+            query_seeds.insert(0, cleaned_sum[:220])
+            if len(window_summaries) >= 3:
+                break
+    except Exception:
+        pass
+
+    sessions.sort(key=lambda s: s["end_ts"], reverse=True)
+    return {
+        "session_count": len(sessions),
+        "total_spans": total_spans,
+        "new_spans": new_spans,
+        "new_sessions": new_sessions,
+        "active_minutes": int(round(active_seconds / 60.0)),
+        "items": sessions[:4],
+        "window_summaries": window_summaries,
+        "source_ids": source_ids,
+        "query_seeds": query_seeds[:6],
+    }
+
+
+def _summarize_recent_chat(
+    data_dir,
+    *,
+    now_ts: float,
+    tz: _dt.tzinfo,
+) -> tuple[list[str], list[str]]:
+    """Return (formatted_lines, user_query_seeds) from the last 18h of user/Momo chat."""
+    if data_dir is None:
+        return [], []
+    conv_db = Path(data_dir) / "runtime/conversation.sqlite"
+    if not conv_db.is_file():
+        return [], []
+    cutoff = now_ts - 18 * 3600
+    lines: list[str] = []
+    user_seeds: list[str] = []
+    try:
+        with closing(sqlite3.connect(f"{conv_db.as_uri()}?mode=ro", uri=True)) as db:
+            rows = db.execute(
+                "SELECT role, content, created_at FROM messages WHERE created_at >= ? ORDER BY created_at DESC LIMIT 6",
+                (cutoff,),
+            ).fetchall()
+    except Exception:
+        return [], []
+
+    for role, content, created_at in reversed(rows):
+        txt = " ".join(str(content or "").split()).strip()
+        if not txt or role not in ("user", "assistant"):
+            continue
+        hm = _dt.datetime.fromtimestamp(float(created_at), tz).strftime("%H:%M")
+        who = "用户" if role == "user" else "Momo"
+        clipped = txt[:160] + ("…" if len(txt) > 160 else "")
+        lines.append(f"- [{hm} {who}] {clipped}")
+        if role == "user":
+            user_seeds.append(txt[:200])
+    return lines[-5:], user_seeds[-3:]
+
+
+def format_pulse_brief(
+    situation: dict,
+    deltas: list[str],
+    *,
+    data_dir=None,
+    store=None,
+    since_ts: float = 0.0,
+) -> str:
     clock = situation["clock"]
+    now_ts = float(clock.get("timestamp") or time.time())
+    tz = _pulse_tz(clock, now_ts)
     devices = situation["devices"]
     mobility = situation["mobility_and_place"]
     body = situation["body_and_sleep"]
     schedule = situation["schedule"]
+
+    opened_store = None
+    if store is None and data_dir is not None:
+        ctx_db = Path(data_dir) / "context/context.sqlite"
+        if ctx_db.is_file():
+            try:
+                from context_store import ContextStore
+
+                opened_store = ContextStore(Path(data_dir) / "context")
+                store = opened_store
+            except Exception:
+                opened_store = None
+
+    try:
+        rec_digest = _summarize_recent_recordings(store, now_ts=now_ts, tz=tz, since_ts=since_ts)
+    finally:
+        if opened_store is not None:
+            opened_store.close()
+
+    chat_lines, chat_seeds = _summarize_recent_chat(data_dir, now_ts=now_ts, tz=tz)
 
     lines: list[str] = [
         f"[MoMo 全维生活态势脉搏 | 时间={clock['iso_local']} ({clock['weekday_zh']}) | 时区={clock['timezone']}]",
@@ -313,20 +569,26 @@ def format_pulse_brief(situation: dict, deltas: list[str], *, data_dir=None) -> 
             mp_parts.append(f"实时运动状态={motion['activity']} (距今 {int(motion['age_seconds'])}s)")
         if isinstance(visit, dict):
             v_status = "停留中" if visit.get("ongoing") else f"已离开({visit.get('end_local')})"
+            v_stale = " [已陈旧，非实时位置]" if visit.get("stale") else ""
             v_label = f"{visit['title']} " if visit.get("title") else ""
             mp_parts.append(
                 f"最近地点停留={v_label}({visit['latitude']:.4f}, {visit['longitude']:.4f}, ±{int(visit['accuracy'])}m, "
-                f"到达 {visit.get('start_local') or '未知'}, {v_status})"
+                f"到达 {visit.get('start_local') or '未知'}, {v_status}){v_stale}"
             )
         lines.append(f"- 出行与位置：{'；'.join(mp_parts)}")
 
     sleep = body.get("latest_sleep")
     if isinstance(sleep, dict):
         st = sleep["stages_hours"]
+        s_stale = (
+            f" [已陈旧：距今 {sleep.get('age_hours', round(float(sleep.get('age_seconds') or 0) / 3600.0, 1))}h，昨晚暂无新睡眠记录]"
+            if sleep.get("stale")
+            else ""
+        )
         lines.append(
             f"- 最近睡眠：{sleep['start_iso']} ~ {sleep['end_iso']}，"
             f"总入睡 {sleep['asleep_hours']:.2f}h / 卧床 {sleep['in_bed_hours']:.2f}h "
-            f"(深睡 {st['deep']:.1f}h, 核心 {st['core']:.1f}h, REM {st['rem']:.1f}h, 清醒 {st['awake']:.1f}h)"
+            f"(深睡 {st['deep']:.1f}h, 核心 {st['core']:.1f}h, REM {st['rem']:.1f}h, 清醒 {st['awake']:.1f}h){s_stale}"
         )
 
     today_act = body.get("today_activity") or {}
@@ -364,7 +626,14 @@ def format_pulse_brief(situation: dict, deltas: list[str], *, data_dir=None) -> 
 
     lines.append("")
     lines.append("[较上次巡检的变化]")
-    for d in deltas:
+    effective_deltas = list(deltas)
+    if rec_digest["new_spans"] > 0:
+        rec_delta = f"距上次脉搏新增录音动态：{rec_digest['new_sessions']} 场会话共 {rec_digest['new_spans']} 段新转写"
+        if len(effective_deltas) == 1 and "状态平稳" in effective_deltas[0]:
+            effective_deltas = [rec_delta]
+        else:
+            effective_deltas.insert(0, rec_delta)
+    for d in effective_deltas:
         lines.append(f"- {d}")
 
     lines.append("")
@@ -378,17 +647,54 @@ def format_pulse_brief(situation: dict, deltas: list[str], *, data_dir=None) -> 
     else:
         lines.append("- 未来 12 小时内暂无日历日程快照")
 
+    extended = schedule.get("extended_events") or []
+    if extended:
+        lines.append("[未来 12–36 小时临近日程]")
+        for ev in extended[:8]:
+            when = f"{ev['start_local']} (全天)" if ev["all_day"] else f"{ev['start_local']} ~ {ev['end_local']}"
+            lines.append(f"- [临近日程] {when} 《{ev['title']}》 ({ev['source_name']}, 约 {ev['starts_in_hours']}h 后开始)")
+
     reminders = schedule.get("due_reminders") or []
     if reminders:
         for rem in reminders[:10]:
-            due_note = (
-                f"已逾期({rem['due_local']})"
-                if rem["overdue"]
-                else (f"截止 {rem['due_local']}" if rem["due_local"] else "无截止时间")
-            )
+            due_h = rem.get("due_in_hours")
+            if rem["overdue"]:
+                due_note = f"已逾期({rem['due_local']})"
+            elif rem["due_local"]:
+                h_tag = f"，距今 {due_h}h" if isinstance(due_h, (int, float)) and 0 <= due_h <= 48 else ""
+                due_note = f"截止 {rem['due_local']}{h_tag}"
+            else:
+                due_note = "无截止时间"
             lines.append(f"- [待办] 《{rem['title']}》 ({rem['source_name']}, {due_note})")
     else:
         lines.append("- 暂无未完成待办提醒快照")
+
+    if rec_digest["session_count"] > 0:
+        lines.append("")
+        lines.append("[今日与近几小时录音动态]")
+        new_tag = f"，距上次脉搏新增 {rec_digest['new_spans']} 段" if rec_digest["new_spans"] > 0 else ""
+        lines.append(
+            f"- 概览：近 16 小时内共 {rec_digest['session_count']} 场录音（活跃交谈约 {rec_digest['active_minutes']} 分钟，"
+            f"共 {rec_digest['total_spans']} 段转写{new_tag}）"
+        )
+        for ws in rec_digest.get("window_summaries") or []:
+            lines.append(f"- {ws}")
+        for item in rec_digest["items"]:
+            status_tags: list[str] = []
+            if item["ongoing_recently"]:
+                status_tags.append("刚活跃/进行中")
+            if item["new_spans"] > 0:
+                status_tags.append(f"新增{item['new_spans']}段")
+            tag_s = f" [{', '.join(status_tags)}]" if status_tags else ""
+            lines.append(
+                f"- [{item['start_hm']}–{item['end_hm']} | {item['minutes']}m | source_id={item['source_id']}]{tag_s} "
+                f"《{item['title']}》：{item['excerpt']}"
+            )
+
+    if chat_lines:
+        lines.append("")
+        lines.append("[近期对话脉络]")
+        lines.extend(chat_lines)
 
     prefs = _read_proactive_preferences(data_dir)
     if prefs:
@@ -397,7 +703,40 @@ def format_pulse_brief(situation: dict, deltas: list[str], *, data_dir=None) -> 
         lines.append(prefs)
 
     if data_dir is not None:
-        from life_context import core_memory_snapshot
+        from life_context import contextual_memory_recall, core_memory_snapshot
+
+        recall_seeds: list[str] = []
+        for ev in [*upcoming[:4], *extended[:4]]:
+            if ev.get("title"):
+                recall_seeds.append(str(ev["title"]))
+        for rem in reminders[:5]:
+            if rem.get("title"):
+                recall_seeds.append(str(rem["title"]))
+        recall_seeds.extend(rec_digest["query_seeds"])
+        recall_seeds.extend(chat_seeds)
+
+        if recall_seeds:
+            recalled = contextual_memory_recall(
+                data_dir,
+                recall_seeds,
+                exclude_source_ids=rec_digest["source_ids"],
+                limit=4,
+                max_chars=1100,
+            )
+            if recalled:
+                lines.append("")
+                lines.append("[关联记忆活页与历史脉络]")
+                for hit in recalled:
+                    if hit.get("kind") == "note":
+                        loc = f"活页 {hit.get('path')}"
+                    elif hit.get("kind") == "recording":
+                        loc = f"历史录音 {hit.get('recorded_at_local') or hit.get('source_id')}"
+                    else:
+                        loc = f"历史对话 {hit.get('created_at_local') or ''}".strip()
+                    raw_snip = re.sub(r"\[([^\]]+)\]\(momoagent://[^)]+\)", r"\1", str(hit.get("snippet") or ""))
+                    raw_snip = re.sub(r"momoagent://\S+", "", raw_snip)
+                    snippet_1l = " ".join(raw_snip.split())[:240]
+                    lines.append(f"- [{loc}] {snippet_1l}")
 
         core = core_memory_snapshot(data_dir)
         if core["combined"]:
@@ -451,7 +790,7 @@ def maybe_emit_pulse(
         "id": f"pulse-{stamp}",
         "thread_id": f"momo:pulse:{day}",
         "title": f"生活态势脉搏 · {summary_tail}",
-        "text": format_pulse_brief(situation, deltas, data_dir=data_dir),
+        "text": format_pulse_brief(situation, deltas, data_dir=data_dir, store=store, since_ts=last_emitted_at),
     }
 
     if emit_fn is not None:
