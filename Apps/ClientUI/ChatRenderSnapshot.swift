@@ -3,15 +3,15 @@ import MoMoAgentClient
 import MoMoContracts
 
 /// The only translation between agent facts and the standalone renderer's wire format.
-struct ChatRenderSnapshot: Encodable, Equatable {
-    struct Focus: Encodable, Equatable {
+struct ChatRenderSnapshot: Encodable, Equatable, Sendable {
+    struct Focus: Encodable, Equatable, Sendable {
         let requestID: String
         let messageID: String
     }
     var focus: Focus? = nil
-    struct Message: Encodable, Equatable {
-        struct Block: Encodable, Equatable {
-            struct Tool: Encodable, Equatable {
+    struct Message: Encodable, Equatable, Sendable {
+        struct Block: Encodable, Equatable, Sendable {
+            struct Tool: Encodable, Equatable, Sendable {
                 let id: String
                 let name: String
                 let input: String

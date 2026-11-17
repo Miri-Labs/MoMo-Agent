@@ -2,15 +2,27 @@ import SwiftUI
 #if os(macOS)
 import AppKit
 
-// Keep the existing SwiftUI field in its own native scope; a cached FocusState can lag focus changes.
-struct ComposerReturnKeyHandler<Content: View>: NSViewControllerRepresentable {
+/// Zero-overhead Return / Shift+Return key interceptor that attaches an invisible NSView probe
+/// instead of wrapping SwiftUI's TextField inside a nested NSHostingController (eliminating double layout on every keystroke).
+struct ComposerReturnKeyHandler<Content: View>: View {
     var send: () -> Void
     @ViewBuilder var content: () -> Content
 
-    func makeNSViewController(context: Context) -> NSHostingController<Content> {
-        let host = NSHostingController(rootView: content())
-        host.sizingOptions = [.intrinsicContentSize]
-        context.coordinator.view = host.view
+    var body: some View {
+        content()
+            .background(ComposerReturnKeyProbe(send: send))
+    }
+}
+
+private struct ComposerReturnKeyProbe: NSViewRepresentable {
+    var send: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let probe = NSView(frame: .zero)
+        context.coordinator.probe = probe
+        context.coordinator.send = send
         context.coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak coordinator = context.coordinator] event in
             let handled = MainActor.assumeIsolated {
                 guard let coordinator else { return false }
@@ -18,47 +30,43 @@ struct ComposerReturnKeyHandler<Content: View>: NSViewControllerRepresentable {
             }
             return handled ? nil : event
         }
-        return host
+        return probe
     }
 
-    func updateNSViewController(_ host: NSHostingController<Content>, context: Context) {
-        host.rootView = content()
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.probe = nsView
         context.coordinator.send = send
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsViewController host: NSHostingController<Content>, context: Context) -> CGSize? {
-        host.sizeThatFits(in: CGSize(width: proposal.width ?? CGFloat.greatestFiniteMagnitude,
-                                    height: CGFloat.greatestFiniteMagnitude))
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    static func dismantleNSViewController(_ host: NSHostingController<Content>, coordinator: Coordinator) {
-        if let monitor = coordinator.monitor { NSEvent.removeMonitor(monitor) }
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        if let monitor = coordinator.monitor {
+            NSEvent.removeMonitor(monitor)
+        }
         coordinator.monitor = nil
-        coordinator.view = nil
+        coordinator.probe = nil
         coordinator.send = {}
     }
 
     @MainActor final class Coordinator {
-        weak var view: NSView?
+        weak var probe: NSView?
         var send: () -> Void = {}
         var monitor: Any?
 
         func handle(_ event: NSEvent) -> NSEvent? {
             guard event.type == .keyDown, event.keyCode == 36 || event.keyCode == 76,
-                  let view, !view.isHiddenOrHasHiddenAncestor,
-                  let window = view.window, window.isKeyWindow, event.window === window,
+                  let probe, !probe.isHiddenOrHasHiddenAncestor,
+                  let window = probe.window, window.isKeyWindow, event.window === window,
                   let editor = window.firstResponder as? NSTextView,
                   let field = editor.delegate as? NSTextField,
                   field.isEnabled, editor.isEditable,
-                  field.isDescendant(of: view), field.currentEditor() === editor else { return event }
+                  field.currentEditor() === editor else { return event }
+            let probeRect = probe.convert(probe.bounds, to: nil).insetBy(dx: -12, dy: -12)
+            let fieldRect = field.convert(field.bounds, to: nil)
+            guard probeRect.intersects(fieldRect) else { return event }
             let modifiers = event.modifierFlags.intersection([.shift, .command, .option, .control])
             if modifiers == .command {
-                // Preserve the send button shortcut, but not repeats or a still-composing draft.
                 return editor.hasMarkedText() || event.isARepeat ? nil : event
             }
-            // Check before the input method handles Return and clears its marked range.
             guard !editor.hasMarkedText() else { return event }
             if modifiers == .shift {
                 editor.insertNewlineIgnoringFieldEditor(nil)
@@ -74,10 +82,6 @@ struct ComposerReturnKeyHandler<Content: View>: NSViewControllerRepresentable {
 
 extension View {
     @ViewBuilder func composerSurface() -> some View {
-        background(MoMoPalette.canvas, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(MoMoPalette.line, lineWidth: 0.75)
-            }
+        momoElevatedCard(cornerRadius: 24, shadowStrength: 0.85)
     }
 }

@@ -15,11 +15,11 @@ struct ClientTranscriptRow<Detail: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             VStack(spacing: 0) {
-                Rectangle().fill(MoMoPalette.line).frame(width: 1, height: 17)
+                Rectangle().fill(MoMoPalette.borderDefault).frame(width: 0.75, height: 17)
                     .opacity(continuesFromPrevious ? 1 : 0)
-                Circle().strokeBorder(MoMoPalette.muted, lineWidth: 1.5)
-                    .background(isFinal ? Color.clear : MoMoPalette.ink, in: Circle()).frame(width: 8, height: 8)
-                if connected { Rectangle().fill(MoMoPalette.line).frame(width: 1) }
+                Circle().strokeBorder(MoMoPalette.muted.opacity(0.85), lineWidth: 1.25)
+                    .background(isFinal ? Color.clear : MoMoPalette.ink, in: Circle()).frame(width: 7.5, height: 7.5)
+                if connected { Rectangle().fill(MoMoPalette.borderDefault).frame(width: 0.75) }
             }.frame(width: 12).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 9) {
                 if status == nil {

@@ -1439,6 +1439,9 @@ class SuperAgentGateway:
                 elif ended_outcome in ("dropped",) or t_state in ("dropped",):
                     new_status = "completed"
                     wait_reason = None
+                elif bool(ended_info) or ended_outcome in ("completed", "merged") or t_state in ("ended", "completed", "merged"):
+                    new_status = "completed"
+                    wait_reason = None
                 elif row["status"] == "waiting_for_input":
                     # Clearing a question (including ready) ends the wait even before result delivery.
                     new_status = "started"

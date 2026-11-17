@@ -32,6 +32,17 @@ struct MoMoAgentMacApp: App {
                 Button("设置…") { openWindow(id: Self.settingsID) }
                     .keyboardShortcut(",", modifiers: .command)
             }
+            CommandGroup(after: .sidebar) {
+                Button("首页") { model.selection = "chat" }
+                    .keyboardShortcut("1", modifiers: .command)
+                    .disabled(model.setupStep != .completed)
+                Button("记忆") { model.selection = "memory" }
+                    .keyboardShortcut("2", modifiers: .command)
+                    .disabled(model.setupStep != .completed)
+                Button("转录") { model.selection = "sources" }
+                    .keyboardShortcut("3", modifiers: .command)
+                    .disabled(model.setupStep != .completed)
+            }
             CommandGroup(after: .windowArrangement) {
                 Button("显示 MoMo") { companion.show() }.keyboardShortcut("m", modifiers: [.command, .shift])
             }

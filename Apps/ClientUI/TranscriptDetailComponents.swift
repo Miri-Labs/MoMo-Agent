@@ -66,16 +66,44 @@ struct TranscriptDiscussAction: View {
     let title: String
     let enabled: Bool
     let action: () -> Void
+    #if os(macOS)
+    @State private var hovered = false
+    #endif
     var body: some View {
         VStack(spacing: 0) {
             Button(action: action) {
-                Text(LocalizedStringKey(title)).phoneText(.body).frame(maxWidth: .infinity, minHeight: 52).contentShape(Rectangle())
+                HStack(spacing: 8) {
+                    #if os(macOS)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13, weight: .medium))
+                        .accessibilityHidden(true)
+                    #endif
+                    Text(LocalizedStringKey(title)).phoneText(.body)
+                }
+                #if os(macOS)
+                .frame(maxWidth: .infinity, minHeight: 42)
+                #else
+                .frame(maxWidth: .infinity, minHeight: 52)
+                #endif
+                .contentShape(Capsule())
             }
-            .buttonStyle(.plain).foregroundStyle(MoMoPalette.canvas)
-            .background(MoMoPalette.ink, in: Capsule()).disabled(!enabled)
+            .buttonStyle(MoMoPressableButtonStyle(scale: 0.985))
+            .foregroundStyle(MoMoPalette.canvas)
+            #if os(macOS)
+            .background(MoMoPalette.ink.opacity(enabled ? (hovered ? 0.88 : 1.0) : 0.3), in: Capsule())
+            .onHover { hovered = $0 }
+            #else
+            .background(MoMoPalette.ink, in: Capsule())
+            #endif
+            .disabled(!enabled)
             .accessibilityIdentifier("transcript.discuss")
         }
-        .padding(.horizontal, 24).padding(.vertical, 12)
+        .padding(.horizontal, 24)
+        #if os(macOS)
+        .padding(.top, 8).padding(.bottom, 16)
+        #else
+        .padding(.vertical, 12)
+        #endif
         .background(MoMoPalette.canvas, ignoresSafeAreaEdges: [])
     }
 }
