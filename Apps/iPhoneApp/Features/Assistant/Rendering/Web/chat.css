@@ -484,11 +484,6 @@ input[type=checkbox] { accent-color: var(--ink); }
     user-select: none;
     -webkit-touch-callout: none;
   }
-  [data-selecting="true"],
-  [data-selecting="true"] *:not(.code-head):not(.code-head *) {
-    -webkit-user-select: text;
-    user-select: text;
-  }
   .actions button { min-width: 44px; min-height: 44px; }
   .process-disclosure > summary, .process > summary, .step > summary { min-height: 44px; }
   .actions { opacity: 1; }
