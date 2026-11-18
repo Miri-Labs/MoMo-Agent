@@ -665,7 +665,20 @@ public final class RemoteTaskStore {
         await deliverCancellations()
         await deliverReports()
         guard canContactServer else { return }
-        if conversation?.capabilities.conversationEvents == true, subscription?.isRunning == true { return }
+        if conversation?.capabilities.conversationEvents == true, let subscription, subscription.isRunning {
+            if connectionState == .retrying, nextConnectionAttempt == nil {
+                if subscription.isBackingOff {
+                    subscription.wakeIfBackingOff()
+                } else if subscription.isConnected, !isRefreshing {
+                    isRefreshing = true
+                    defer { isRefreshing = false }
+                    if let snapshot = try? await request(source: "recoveryProbe", { try await client.conversationSnapshot() }) {
+                        try? applyConversationSnapshot(snapshot)
+                    }
+                }
+            }
+            return
+        }
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
@@ -1446,7 +1459,6 @@ public final class RemoteTaskStore {
                 }
             } catch {
                 guard let self, self.observationID == owner, !AgentTransportFailure.isCancelled(error) else { return }
-                self.recordConnectionFailure(error)
                 self.failures[.synchronization] = self.connectionErrorDescription(error)
             }
         }

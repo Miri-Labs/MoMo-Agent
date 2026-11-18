@@ -82,14 +82,128 @@ TOOL_ENVELOPE_SCHEMA: dict = {
     "required": ["content", "tool_calls"],
 }
 
+MODEL_QUOTA_COOLDOWN_SECONDS = 180.0
+
+_AGY_STREAM_ERROR_RE = re.compile(
+    r"(?:\bAPI\s+error\b|\bRESOURCE_EXHAUSTED\b|\bThere\s+was\s+a\s+network\s+issue\b|"
+    r"\bUNAVAILABLE\b|\bDEADLINE_EXCEEDED\b|\bINTERNAL\b|\bUNAUTHENTICATED\b|\bPERMISSION_DENIED\b|"
+    r"\brate[_\s-]*limit\b|\bquota\b|\bexhausted\s+your\s+capacity\b|\boverloaded\b)",
+    re.IGNORECASE,
+)
+
 _MODEL_CACHE_LOCK = threading.Lock()
 _MODEL_CACHE: dict[str, tuple[float, bool, list[str]]] = {}
+_EXHAUSTED_LOCK = threading.Lock()
+_EXHAUSTED_MODELS: dict[str, float] = {}
 
 
 def clear_antigravity_caches() -> None:
-    """Clear in-memory model catalog caches (used on auth change or tests)."""
+    """Clear in-memory model catalog and quota cooldown caches (used on auth change or tests)."""
     with _MODEL_CACHE_LOCK:
         _MODEL_CACHE.clear()
+    with _EXHAUSTED_LOCK:
+        _EXHAUSTED_MODELS.clear()
+
+
+def _detect_agy_stream_error(raw_text: str) -> str | None:
+    """Detect inline `⚠ ...` failure banners emitted by `agy` on stdout/ACP chunks instead of JSON-RPC errors."""
+    stripped = ANSI_ESCAPE_RE.sub("", raw_text or "").strip()
+    if not stripped:
+        return None
+    lines = [ln.strip() for ln in stripped.splitlines() if ln.strip()]
+    if not lines or not all(ln.startswith("⚠") for ln in lines):
+        return None
+    if not _AGY_STREAM_ERROR_RE.search(stripped):
+        return None
+    last = lines[-1].lstrip("⚠").strip()
+    return (last or stripped)[:360]
+
+
+def _is_quota_or_rate_error(err: BaseException) -> bool:
+    text = str(err or "")
+    return bool(
+        re.search(
+            r"\b(?:resource[_\s-]*exhausted|code\s*429|status\s*429|http\s*429|rate[_\s-]*limit|"
+            r"too\s+many\s+requests|quota|exhausted\s+your\s+capacity|overloaded)\b",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _is_transient_network_or_daemon_error(err: BaseException) -> bool:
+    text = str(err or "")
+    return bool(
+        re.search(
+            r"(?:there\s+was\s+a\s+network\s+issue|network\s+issue\s+connecting|"
+            r"antigravity\s+acp\s+daemon\s+(?:exited|is\s+not\s+running)|"
+            r"antigravity\s+acp\s+stdin\s+closed|failed\s+writing\s+to\s+antigravity\s+acp\s+daemon|"
+            r"connection\s+reset|econnreset|socket\s+hang\s+up|broken\s+pipe)",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _mark_model_exhausted(model_id: str, cooldown: float = MODEL_QUOTA_COOLDOWN_SECONDS) -> None:
+    mid = str(model_id or "").strip()
+    if not mid:
+        return
+    with _EXHAUSTED_LOCK:
+        _EXHAUSTED_MODELS[mid] = time.monotonic() + max(5.0, cooldown)
+
+
+def _is_model_cooled_down(model_id: str) -> bool:
+    mid = str(model_id or "").strip()
+    if not mid:
+        return False
+    now = time.monotonic()
+    with _EXHAUSTED_LOCK:
+        until = _EXHAUSTED_MODELS.get(mid)
+        if until is None:
+            return False
+        if now >= until:
+            _EXHAUSTED_MODELS.pop(mid, None)
+            return False
+        return True
+
+
+def _candidate_models_for(requested: str, cli: str) -> list[str]:
+    primary = str(requested or "").strip() or DEFAULT_ANTIGRAVITY_MODELS[0]
+    if _is_mocked_subprocess():
+        return [primary]
+
+    if primary.startswith("claude-"):
+        fallbacks = [
+            "claude-sonnet-5-5-high",
+            "claude-sonnet-5-5-medium",
+            "gemini-4-carbon-medium",
+            "gemini-4-argon-medium",
+        ]
+    else:
+        fallbacks = [
+            "gemini-4-carbon-medium",
+            "gemini-4-carbon-high",
+            "gemini-4-argon-medium",
+            "gemini-4-argon-high",
+            "gemini-3.8-flash-high",
+            "gemini-3.8-flash-medium",
+        ]
+
+    cached = _read_cached_models(cli)
+    available_set = set(cached[1]) if cached and cached[0] and cached[1] else set()
+    ordered_fallbacks = [
+        m for m in fallbacks if m != primary and (not available_set or m in available_set)
+    ]
+
+    ready: list[str] = []
+    cooled: list[str] = []
+    for m in [primary, *ordered_fallbacks]:
+        if _is_model_cooled_down(m):
+            cooled.append(m)
+        else:
+            ready.append(m)
+    return [*ready, *cooled] if (ready or cooled) else [primary]
 
 
 def _cache_models(cli: str, connected: bool, models: list[str]) -> None:
@@ -1356,6 +1470,8 @@ def _run_antigravity_acp_completion(
             )
             prompt_bytes = len(turn_prompt.encode("utf-8"))
             raw_text, usage = daemon.run_prompt(session_id, turn_prompt, timeout=timeout)
+            if stream_err := _detect_agy_stream_error(raw_text):
+                raise RuntimeError(f"Antigravity CLI error: {stream_err}")
 
             # Parse tool envelope or structured JSON output; self-heal once on the warm session if required.
             if expect_tool_envelope:
@@ -1367,6 +1483,8 @@ def _run_antigravity_acp_completion(
                         '{"content": string, "tool_calls": [{"name": string, "arguments_json": string}]}.',
                         timeout=min(45.0, timeout),
                     )
+                    if repair_err := _detect_agy_stream_error(repair_text):
+                        raise RuntimeError(f"Antigravity CLI error: {repair_err}")
                     raw_text = repair_text
                     usage["prompt_tokens"] += repair_usage["prompt_tokens"]
                     usage["completion_tokens"] += repair_usage["completion_tokens"]
@@ -1385,6 +1503,8 @@ def _run_antigravity_acp_completion(
                         "Respond ONLY with a valid raw JSON object matching the required JSON schema.",
                         timeout=min(45.0, timeout),
                     )
+                    if repair_err := _detect_agy_stream_error(repair_text):
+                        raise RuntimeError(f"Antigravity CLI error: {repair_err}")
                     raw_text = repair_text
                     usage["total_tokens"] += repair_usage["total_tokens"]
                     extracted = _extract_json_dict(raw_text)
@@ -1535,6 +1655,8 @@ def _run_antigravity_legacy_print_completion(
     )
     tool_calls = parsed["tool_calls"]
     content = parsed["content"]
+    if not tool_calls and (stream_err := _detect_agy_stream_error(content)):
+        raise RuntimeError(f"Antigravity CLI error: {stream_err}")
     message_obj: dict = {
         "role": "assistant",
         "content": content if (content or not tool_calls) else None,
@@ -1590,18 +1712,57 @@ def run_antigravity_completion(
             background=background,
         )
 
-    return _run_antigravity_acp_completion(
-        cli=cli,
-        model=model,
-        messages=messages,
-        tools=tools,
-        tool_choice=tool_choice,
-        response_format=response_format,
-        sandbox_dir=sandbox_dir,
-        timeout=timeout,
-        background=background,
-        oneshot=oneshot,
-    )
+    candidates = _candidate_models_for(model, cli)
+    last_error: Exception | None = None
+    for idx, candidate in enumerate(candidates):
+        use_oneshot = oneshot or (candidate != model)
+        try:
+            try:
+                completion = _run_antigravity_acp_completion(
+                    cli=cli,
+                    model=candidate,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    response_format=response_format,
+                    sandbox_dir=sandbox_dir,
+                    timeout=timeout,
+                    background=background,
+                    oneshot=use_oneshot,
+                )
+            except Exception as net_err:
+                if not _is_transient_network_or_daemon_error(net_err):
+                    raise
+                log.warning("Antigravity transient network/daemon error on %s (%s); recycling ACP daemon and retrying once", candidate, net_err)
+                shutdown_antigravity_daemon()
+                time.sleep(0.6)
+                completion = _run_antigravity_acp_completion(
+                    cli=cli,
+                    model=candidate,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    response_format=response_format,
+                    sandbox_dir=sandbox_dir,
+                    timeout=timeout,
+                    background=background,
+                    oneshot=True,
+                )
+            if candidate != model:
+                log.info("Antigravity fulfilled %s using fallback model %s", model, candidate)
+                completion["model"] = model
+            return completion
+        except Exception as err:
+            last_error = err
+            if _is_quota_or_rate_error(err):
+                _mark_model_exhausted(candidate)
+                if idx + 1 < len(candidates):
+                    log.warning("Antigravity model %s hit quota/rate limit (%s); falling back to %s", candidate, err, candidates[idx + 1])
+                    continue
+            raise
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Antigravity completion failed without candidate models")
 
 
 def format_sse_chunks_from_completion(completion: dict) -> bytes:

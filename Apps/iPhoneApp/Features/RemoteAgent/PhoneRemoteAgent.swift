@@ -282,7 +282,9 @@ final class PhoneRemoteAgent {
                 }
             }
             do {
-                try await Self.probeCapabilities(client, timeout: .seconds(12))
+                let probeTimeout: Duration = (connection.network == "tailscale" && self.tailnet.state != "Running")
+                    ? .seconds(25) : .seconds(12)
+                try await Self.probeCapabilities(client, timeout: probeTimeout)
                 try Task.checkCancellation()
                 guard self.sceneGeneration == scene, self.recoveryID == owner, self.store === store else { return }
                 if !store.canContactServer {

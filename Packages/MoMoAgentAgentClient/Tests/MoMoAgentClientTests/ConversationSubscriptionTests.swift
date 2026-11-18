@@ -510,6 +510,44 @@ import XCTest
         await wire.pushProviderNotice(nil)
         try await eventually { store.providerNotice == nil }
     }
+
+    func testSideFailureDuringLiveStreamClearsRetryingViaSnapshotWithoutWaitingForHeartbeat() async throws {
+        var clock = Date(timeIntervalSince1970: 1_762_070_400)
+        let (wire, store, _, _) = try fixture(now: { clock })
+        store.foreground(); defer { store.background() }
+        try await eventually { await wire.streams.count == 1 && store.connectionState == .ready }
+        await wire.appendMessage("initial live message")
+        try await eventually { store.messages.count == 1 }
+
+        // Simulate an external/side probe (e.g. cold-launch capability check) recording a transient timeout
+        // while the SSE stream remains open between 15s heartbeats.
+        store.recordConnectionFailure(URLError(.timedOut))
+        XCTAssertEqual(store.connectionState, .retrying)
+        let snapshotsBefore = await wire.snapshots
+
+        clock = (store.nextConnectionAttempt ?? clock).addingTimeInterval(0.05)
+        await store.refresh()
+        XCTAssertEqual(store.connectionState, .ready)
+        let snapshotsAfter = await wire.snapshots
+        XCTAssertEqual(snapshotsAfter, snapshotsBefore + 1)
+    }
+
+    func testRefreshWakesBackingOffSubscriptionImmediatelyOnceRetryWindowOpens() async throws {
+        var clock = Date(timeIntervalSince1970: 1_762_070_400)
+        let (wire, store, _, _) = try fixture(now: { clock })
+        await wire.throttleOnce(retryAfter: "20")
+        store.foreground(); defer { store.background() }
+        try await eventually { store.connectionState == .retrying }
+        let initialSubs = await wire.subscriptions.count
+        XCTAssertEqual(initialSubs, 1)
+
+        // Advance past the store's retry window and verify refresh() wakes the 20s sleeping subscription immediately.
+        clock = clock.addingTimeInterval(21)
+        await store.refresh()
+        try await eventually { store.connectionState == .ready }
+        let recoveredSubs = await wire.subscriptions.count
+        XCTAssertGreaterThanOrEqual(recoveredSubs, 2)
+    }
 }
 
 private actor LiveWire: AgentTransport {
@@ -522,7 +560,7 @@ private actor LiveWire: AgentTransport {
     var runs: [[String: Any]] = []
     var streams: [UUID: AsyncThrowingStream<Data, Error>.Continuation] = [:]
     var snapshots = 0, detached = 0
-    var betweenSnapshot = false, rejection: Int?, throttle = false
+    var betweenSnapshot = false, rejection: Int?, throttle: String?
     var lostReceipt = false, postError: URLError.Code?
     var postRejection: Int?
     var delayedHandshake = false
@@ -555,7 +593,7 @@ private actor LiveWire: AgentTransport {
     init(_ connection: AgentConnection) { self.connection = connection }
     func commitDuringSnapshot() { betweenSnapshot = true }
     func rejectSubscription(_ code: Int?) { rejection = code }
-    func throttleOnce() { throttle = true }
+    func throttleOnce(retryAfter: String = "0.3") { throttle = retryAfter }
     func losePostReceipt() { lostReceipt = true }
     func failPostOnce(_ code: URLError.Code = .networkConnectionLost) { postError = code }
     func rejectPostOnce() { postRejection = 503 }
@@ -613,9 +651,9 @@ private actor LiveWire: AgentTransport {
                 let html = Data("<html>splash</html>".utf8)
                 return AgentByteStream(status: 200, contentType: "text/html", chunks: AsyncThrowingStream { $0.yield(html); $0.finish() })
             }
-            if throttle {
-                throttle = false
-                return AgentByteStream(status:429,contentType:"application/json",retryAfter:"0.3",chunks:AsyncThrowingStream { $0.finish() })
+            if let retryAfter = throttle {
+                throttle = nil
+                return AgentByteStream(status:429,contentType:"application/json",retryAfter:retryAfter,chunks:AsyncThrowingStream { $0.finish() })
             }
             if let rejection { return try json([:], status: rejection) }
             let id = UUID(), (stream, c) = AsyncThrowingStream<Data, Error>.makeStream()

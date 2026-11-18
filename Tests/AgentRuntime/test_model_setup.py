@@ -638,6 +638,111 @@ class ModelSetupTests(unittest.TestCase):
         self.assertIn('USER_PROFILE_CONTENT_OK', metrics['prompts'][1]['text'])
         self.assertEqual(metrics['prompts'][0]['sid'], metrics['prompts'][1]['sid'])
 
+    def test_antigravity_swallowed_stream_errors_fallback_and_daemon_recycle(self):
+        import antigravity_bridge as ab
+
+        self.assertIsNotNone(ab._detect_agy_stream_error(
+            "⚠ API error (attempt 1): RESOURCE_EXHAUSTED (code 429): Resource has been exhausted.\n\n"
+            "⚠ RESOURCE_EXHAUSTED (code 429): Resource has been exhausted."
+        ))
+        self.assertIsNotNone(ab._detect_agy_stream_error(
+            "⚠ There was a network issue connecting to the server, please try again."
+        ))
+        self.assertIsNone(ab._detect_agy_stream_error(
+            "⚠ 注意：以下为正常回答内容\n第一条结论：一切正常。"
+        ))
+
+        ab.clear_antigravity_caches()
+        state_file = self.data / 'acp-fallback-state.json'
+        state_file.write_text(json.dumps({
+            'acp_starts': 0,
+            'attempted_models': [],
+            'fail_network_once': True,
+        }), encoding='utf-8')
+        fake_agy = self.data / 'fake-agy-fallback'
+        fake_agy.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            f"STATE = Path({str(state_file)!r})\n"
+            "def bump(fn):\n"
+            "    d = json.loads(STATE.read_text(encoding='utf-8'))\n"
+            "    fn(d)\n"
+            "    STATE.write_text(json.dumps(d), encoding='utf-8')\n"
+            "    return d\n"
+            "bump(lambda d: d.__setitem__('acp_starts', d['acp_starts'] + 1))\n"
+            "models_by_sid = {}\n"
+            "seq = 0\n"
+            "for line in sys.stdin:\n"
+            "    msg = json.loads(line)\n"
+            "    mid = msg.get('id')\n"
+            "    method = msg.get('method')\n"
+            "    params = msg.get('params') or {}\n"
+            "    if method == 'initialize':\n"
+            "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {'protocolVersion': 1}}), flush=True)\n"
+            "    elif method == 'session/new':\n"
+            "        seq += 1\n"
+            "        sid = f'sid-{seq}'\n"
+            "        models_by_sid[sid] = 'gemini-4-carbon-high'\n"
+            "        avail = [{'modelId': m} for m in ('gemini-4-hydrogen-medium', 'gemini-4-carbon-medium', 'gemini-4-carbon-high')]\n"
+            "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {'sessionId': sid, 'models': {'currentModelId': 'gemini-4-carbon-high', 'availableModels': avail}}}), flush=True)\n"
+            "    elif method == 'session/set_model':\n"
+            "        models_by_sid[params['sessionId']] = params['modelId']\n"
+            "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {}}), flush=True)\n"
+            "    elif method == 'session/close':\n"
+            "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {}}), flush=True)\n"
+            "    elif method == 'session/prompt':\n"
+            "        sid = params['sessionId']\n"
+            "        cur = models_by_sid.get(sid, '')\n"
+            "        state = bump(lambda d: d['attempted_models'].append(cur))\n"
+            "        if cur == 'gemini-4-hydrogen-medium':\n"
+            "            txt = '⚠ API error (attempt 1): RESOURCE_EXHAUSTED (code 429): Resource has been exhausted.'\n"
+            "        elif state.get('fail_network_once'):\n"
+            "            bump(lambda d: d.__setitem__('fail_network_once', False))\n"
+            "            txt = '⚠ There was a network issue connecting to the server, please try again.'\n"
+            "        else:\n"
+            "            txt = f'FALLBACK_OK_FROM_{cur}'\n"
+            "        print(json.dumps({'jsonrpc': '2.0', 'method': 'session/update', 'params': {'sessionId': sid, 'update': {'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': txt}}}}), flush=True)\n"
+            "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {'stopReason': 'end_turn', 'usage': {'inputTokens': 10, 'outputTokens': 0 if txt.startswith('⚠') else 5, 'totalTokens': 15}}}), flush=True)\n",
+            encoding='utf-8',
+        )
+        fake_agy.chmod(0o755)
+
+        old_cli = os.environ.get('MOMO_ANTIGRAVITY_CLI')
+        os.environ['MOMO_ANTIGRAVITY_CLI'] = str(fake_agy)
+        try:
+            res = ab.run_antigravity_completion(
+                model='gemini-4-hydrogen-medium',
+                messages=[{'role': 'user', 'content': 'Ping'}],
+                data_dir=self.data,
+            )
+            self.assertEqual(res['model'], 'gemini-4-hydrogen-medium')
+            self.assertEqual(res['choices'][0]['message']['content'], 'FALLBACK_OK_FROM_gemini-4-carbon-medium')
+
+            # Second turn within cooldown skips exhausted hydrogen directly and uses carbon-medium immediately.
+            res2 = ab.run_antigravity_completion(
+                model='gemini-4-hydrogen-medium',
+                messages=[{'role': 'user', 'content': 'Ping 2'}],
+                data_dir=self.data,
+            )
+            self.assertEqual(res2['choices'][0]['message']['content'], 'FALLBACK_OK_FROM_gemini-4-carbon-medium')
+        finally:
+            ab.shutdown_antigravity_daemon()
+            ab.clear_antigravity_caches()
+            if old_cli is None:
+                os.environ.pop('MOMO_ANTIGRAVITY_CLI', None)
+            else:
+                os.environ['MOMO_ANTIGRAVITY_CLI'] = old_cli
+
+        final_state = json.loads(state_file.read_text(encoding='utf-8'))
+        self.assertEqual(final_state['attempted_models'], [
+            'gemini-4-hydrogen-medium',
+            'gemini-4-carbon-medium',
+            'gemini-4-carbon-medium',
+            'gemini-4-carbon-medium',
+        ])
+        self.assertGreaterEqual(final_state['acp_starts'], 2)
+
 
 if __name__ == '__main__':
     unittest.main()

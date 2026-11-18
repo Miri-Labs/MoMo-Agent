@@ -36,6 +36,7 @@ final class EmbeddedTailnet {
     @ObservationIgnored private var needsPeerWarmup = true
     @ObservationIgnored private var lastPeerWarmupAt: ContinuousClock.Instant?
     @ObservationIgnored private var peerWarmup: Task<Void, Never>?
+    @ObservationIgnored private var peerWarmupWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     @ObservationIgnored private var signingOut = false
     @ObservationIgnored private var signedOut = false
     @ObservationIgnored private var pathMonitor: NWPathMonitor?
@@ -319,6 +320,8 @@ final class EmbeddedTailnet {
         if let peer {
             diagnostics.recordLink("peerMap", "mapped")
             startPeerWarmupIfNeeded(peer, node: node)
+            try await awaitPeerWarmupIfRunning(maxWait: .milliseconds(1200))
+            guard attempt == generation, sessionAttempt == sessionGeneration else { throw CancellationError() }
         }
         func cached() -> URLSession? { media ? desktopMediaSession : desktopControl ? desktopControlSession : interactive ? interactiveSession : session }
         if let cached = cached() { return cached }
@@ -397,10 +400,51 @@ final class EmbeddedTailnet {
         }
     }
 
+    private func resumeAllPeerWarmupWaiters() {
+        guard !peerWarmupWaiters.isEmpty else { return }
+        let waiters = Array(peerWarmupWaiters.values)
+        peerWarmupWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
+
+    private func cancelPeerWarmupWaiter(_ id: UUID) {
+        if let waiter = peerWarmupWaiters.removeValue(forKey: id) {
+            waiter.resume()
+        }
+    }
+
+    private func awaitPeerWarmupIfRunning(maxWait: Duration) async throws {
+        guard peerWarmup != nil else { return }
+        let budget = min(peerWarmupTimeout, maxWait)
+        guard budget > .zero else { return }
+        try Task.checkCancellation()
+        let waiterID = UUID()
+        let deadlineTimer = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: budget)
+            self?.cancelPeerWarmupWaiter(waiterID)
+        }
+        defer { deadlineTimer.cancel() }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if self.peerWarmup == nil || Task.isCancelled {
+                    continuation.resume()
+                } else {
+                    self.peerWarmupWaiters[waiterID] = continuation
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelPeerWarmupWaiter(waiterID)
+            }
+        }
+        try Task.checkCancellation()
+    }
+
     func suspendSessions() {
         diagnostics.recordLink("activity", "suspended")
         watch?.cancel(); watch = nil
         peerWarmup?.cancel(); peerWarmup = nil
+        resumeAllPeerWarmupWaiters()
         invalidateCachedSessions(finishTasks: false)
         if node != nil {
             needsProxyCheck = true
@@ -531,6 +575,7 @@ final class EmbeddedTailnet {
             defer {
                 // Suspension can replace this task without replacing the node.
                 if !Task.isCancelled { self?.peerWarmup = nil }
+                self?.resumeAllPeerWarmupWaiters()
             }
             do {
                 try Task.checkCancellation()
@@ -669,6 +714,7 @@ final class EmbeddedTailnet {
         pathMonitor?.cancel(); pathMonitor = nil; lastPathSignature = nil
         needsRestart = false; needsProxyCheck = false
         peerWarmup?.cancel(); peerWarmup = nil; needsPeerWarmup = true; lastPeerWarmupAt = nil
+        resumeAllPeerWarmupWaiters()
         invalidateCachedSessions(finishTasks: false)
         let pending = startup
         let old = node; node = nil; startup = nil
