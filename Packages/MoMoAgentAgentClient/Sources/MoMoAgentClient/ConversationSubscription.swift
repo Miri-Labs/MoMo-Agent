@@ -44,18 +44,26 @@ extension AgentClient {
 /// One foreground subscription for the conversation, regardless of its number of runs.
 @MainActor final class ConversationSubscription {
     private var worker: Task<Void, Never>?
+    private var backoffSleep: Task<Void, Never>?
     private(set) var isRunning = true
     private(set) var isBackingOff = false
+    private(set) var isConnected = false
     init(client: AgentClient, cursor: @escaping @MainActor () -> Int?,
          snapshot: @escaping @MainActor (ConversationSnapshot) throws -> Void,
          event: @escaping @MainActor (ConversationEvent) throws -> Void,
          failed: @escaping @MainActor (Error) -> Void) {
         worker = Task { [weak self] in
-            defer { self?.isRunning = false }
+            defer {
+                self?.isRunning = false
+                self?.isBackingOff = false
+                self?.isConnected = false
+                self?.backoffSleep = nil
+            }
             var backoff: TimeInterval = 0.25
             var needsSnapshot = cursor() == nil
             while !Task.isCancelled {
                 self?.isBackingOff = false
+                self?.isConnected = false
                 var failure: Error?
                 var attemptedStream = false
                 do {
@@ -67,10 +75,12 @@ extension AgentClient {
                     attemptedStream = true
                     for try await value in try client.conversationEvents(after: after) {
                         try Task.checkCancellation(); try event(value)
+                        self?.isConnected = true
                         if value.kind != "ready" { backoff = 0.25 }
                     }
                     failure = URLError(.networkConnectionLost)
                 } catch { failure = error }
+                self?.isConnected = false
                 guard !Task.isCancelled, var failure else { return }
                 var snapshotRecovered = false
                 if attemptedStream && Self.canUseSnapshot(after: failure) {
@@ -97,10 +107,23 @@ extension AgentClient {
                     // Transient proxy/tunnel HTML responses retry with backoff instead of locking out SSE.
                 } else if !AgentTransportFailure.isTransient(failure) { return }
                 self?.isBackingOff = true
-                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+                let sleepSeconds = delay
+                let sleeper = Task<Void, Never> {
+                    try? await Task.sleep(for: .seconds(sleepSeconds))
+                }
+                self?.backoffSleep = sleeper
+                await sleeper.value
+                self?.backoffSleep = nil
+                guard !Task.isCancelled else { return }
                 backoff = min(30, backoff * 2)
             }
         }
+    }
+
+    func wakeIfBackingOff() {
+        guard isRunning, isBackingOff else { return }
+        backoffSleep?.cancel()
+        backoffSleep = nil
     }
     private static func canUseSnapshot(after error: Error) -> Bool {
         if case AgentClientError.http(let status, _, _, let retryAfter) = error {

@@ -1102,14 +1102,74 @@ class SuperAgentGateway:
             text.strip(), re.IGNORECASE | re.MULTILINE,
         ))
 
+    @staticmethod
+    def _is_swallowed_agy_error_summary(text: str | None) -> bool:
+        stripped = str(text or "").strip()
+        if not stripped or not stripped.startswith("⚠"):
+            return False
+        lines = [ln.strip() for ln in stripped.splitlines() if ln.strip()]
+        if not lines or not all(ln.startswith("⚠") for ln in lines):
+            return False
+        return bool(
+            re.search(
+                r"(?:\bAPI\s+error\b|\bRESOURCE_EXHAUSTED\b|\bThere\s+was\s+a\s+network\s+issue\b|"
+                r"\bUNAVAILABLE\b|\bDEADLINE_EXCEEDED\b|\brate[_\s-]*limit\b|\bquota\b|\boverloaded\b)",
+                stripped,
+                re.IGNORECASE,
+            )
+        )
+
     def _recover_interrupted_tickets(self, state: dict, tickets: list[dict]) -> None:
         if not self.dsh_ready or state.get("paused"):
             return
         for ticket in tickets:
-            if (ticket.get("state") != "open" or ticket.get("ended") or ticket.get("attention")
-                    or ticket.get("action") not in ("failed", "blocked") or not (ticket.get("actions") or {}).get("retry")):
+            if ticket.get("state") != "open" or ticket.get("ended") or ticket.get("attention"):
                 continue
-            tid = ticket["id"]
+            tid = str(ticket.get("id") or "").strip()
+            if not tid:
+                continue
+            if ticket.get("stage") == "idle" and ticket.get("action") is None and self._is_swallowed_agy_error_summary(ticket.get("summary")):
+                nudge_key = f"swallowed:{tid}:{ticket.get('updatedAt')}"
+                if nudge_key in self._seen_dsh_failure_keys:
+                    continue
+                detail = ticket
+                if not ticket.get("threads"):
+                    with suppress(Exception):
+                        fetched = dsh_api_request(
+                            self.dsh_port,
+                            "GET",
+                            f"/orchestrator/api/tickets/{quote(tid, safe='')}",
+                            timeout=3.0,
+                        )
+                        if isinstance(fetched, dict):
+                            detail = fetched
+                thread_keys = self._thread_keys(detail.get("threads"))
+                target_thread = next((k.removeprefix("momo:") for k in thread_keys if k.startswith("momo:")), None)
+                if target_thread:
+                    self._seen_dsh_failure_keys.add(nudge_key)
+                    thread_bucket_key = f"swallowed-thread:{target_thread}:{int(time.time() // 60)}"
+                    if thread_bucket_key in self._seen_dsh_failure_keys:
+                        continue
+                    self._seen_dsh_failure_keys.add(thread_bucket_key)
+                    is_tr = target_thread.startswith("transcript:")
+                    rec_id = f"momo:recovery-{tid[:12]}-{int(time.time() * 1000)}"
+                    self.bridge.enqueue_trigger(
+                        trigger_id=rec_id,
+                        kind="transcripts" if is_tr else "chat",
+                        thread_id=target_thread,
+                        message_id=rec_id.removeprefix("momo:"),
+                        actor_id="recorder" if is_tr else "momo_recovery",
+                        actor_name="MoMo Runtime",
+                        addressed=not is_tr,
+                        human=False,
+                        observed=is_tr,
+                        text="[MoMo 系统恢复通知] 先前的临时网络波动或单模型限流已恢复，请继续执行未完成的工单步骤并提交汇报。",
+                    )
+                    self._trigger_wakeup.set()
+                    log.info("Queued automatic recovery trigger for stalled idle ticket %s on thread %s", tid, target_thread)
+                continue
+            if ticket.get("action") not in ("failed", "blocked") or not (ticket.get("actions") or {}).get("retry"):
+                continue
             try:
                 result = dsh_api_request(self.dsh_port, "POST",
                     f"/orchestrator/api/tickets/{quote(tid, safe='')}/settle-failure",
@@ -3546,6 +3606,8 @@ class SuperAgentGateway:
                         break
         if not raw_summary and isinstance(ended_info, dict) and ended_info.get("reason"):
             raw_summary = str(ended_info["reason"]).strip()[:240] or None
+        if not is_ended and self._is_swallowed_agy_error_summary(raw_summary):
+            raw_summary = "先前遇到临时网络或模型限流波动，正在自动恢复执行…"
 
         return {
             "id": f"superagent:{tid}",

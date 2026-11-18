@@ -495,7 +495,9 @@ final class DesktopModel {
             }
             let client = try baseClient(for: connection)
             taskStore = try Self.openTaskStore(file: localTaskFile, connection: connection, client: client)
-            taskStore?.foreground()
+            if isLivePreviewClient || status?.agentOnline == true {
+                taskStore?.foreground()
+            }
         }
     }
 
@@ -617,6 +619,7 @@ final class DesktopModel {
 
     func stopAgent() {
         UserDefaults.standard.set(false, forKey: resumeKey)
+        taskStore?.background()
         agentProcess?.terminate()
         // Keep ownership until termination. A second start must not race shutdown and the runtime lease.
     }
@@ -636,7 +639,6 @@ final class DesktopModel {
                 await self.refresh()
             }
         }
-        taskStore?.foreground()
     }
 
     private struct RecordedProcess: Codable {
@@ -787,6 +789,7 @@ final class DesktopModel {
         guard connection != nil, !refreshing else { return }
         refreshing = true; defer { refreshing = false }
         lastStatusRefreshAt = Date()
+        let wasAgentOnline = status?.agentOnline == true
         do {
             updateStatus(try await controlRequest("status"))
             if !isLivePreviewClient {
@@ -807,10 +810,15 @@ final class DesktopModel {
                     }
                 }
             }
-            if status?.agentOnline == true, taskStore == nil, let connection {
-                let client = try baseClient(for: connection)
-                taskStore = try Self.openTaskStore(file: dataDirectory.appendingPathComponent("desktop-tasks.json"), connection: connection, client: client)
+            if status?.agentOnline == true, let connection {
+                if taskStore == nil {
+                    let client = try baseClient(for: connection)
+                    taskStore = try Self.openTaskStore(file: dataDirectory.appendingPathComponent("desktop-tasks.json"), connection: connection, client: client)
+                }
                 taskStore?.foreground()
+                if !wasAgentOnline || taskStore?.connectionState == .retrying {
+                    Task { [weak self] in await self?.taskStore?.retryConnection(ifNeeded: true) }
+                }
             }
             let bgInterval: TimeInterval = NSApplication.shared.isActive ? 15 : 45
             if status?.agentOnline == true, !fetchingContext, Date().timeIntervalSince(lastContextRefreshAt) >= bgInterval {
