@@ -1012,6 +1012,15 @@ private final class MacVaultNSTableView: NSTableView {
         setHoveredRow(-1)
     }
 
+    func refreshHoverFromWindowMouse() {
+        guard !isLiveScrollingNow, let window else {
+            setHoveredRow(-1)
+            return
+        }
+        let pt = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        setHoveredRow(visibleRect.contains(pt) ? row(at: pt) : -1)
+    }
+
     override func mouseDown(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
         let clicked = row(at: pt)
@@ -1080,6 +1089,7 @@ private struct MacVaultSidebarListView: NSViewRepresentable {
                 nc.addObserver(forName: NSScrollView.didEndLiveScrollNotification, object: scrollView, queue: .main) { [weak tableView] _ in
                     MainActor.assumeIsolated {
                         tableView?.isLiveScrollingNow = false
+                        tableView?.refreshHoverFromWindowMouse()
                     }
                 }
             )
@@ -1649,11 +1659,15 @@ private final class MacNoteDocumentTextView: NSTextView {
         guard let lm = layoutManager, let tc = textContainer, let ts = textStorage else { return }
         let origin = textContainerOrigin
         let totalLen = ts.length
+        let containerDirty = dirtyRect.offsetBy(dx: -origin.x, dy: -origin.y)
+        let visibleGlyphs = lm.glyphRange(forBoundingRectWithoutAdditionalLayout: containerDirty, in: tc)
+        guard visibleGlyphs.length > 0 else { return }
+        let visibleChars = lm.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
         let ink = MacVaultPalette.ink
 
         if !ruleCharIndices.isEmpty {
             ink.withAlphaComponent(0.085).setFill()
-            for charIdx in ruleCharIndices where charIdx >= 0 && charIdx < totalLen {
+            for charIdx in ruleCharIndices where charIdx >= visibleChars.location && charIdx < min(totalLen, NSMaxRange(visibleChars)) {
                 let gIdx = lm.glyphIndexForCharacter(at: charIdx)
                 let lineRect = lm.lineFragmentRect(forGlyphAt: gIdx, effectiveRange: nil)
                 let y = origin.y + floor(lineRect.midY)
@@ -1667,6 +1681,7 @@ private final class MacNoteDocumentTextView: NSTextView {
         if !quoteCharRanges.isEmpty {
             ink.withAlphaComponent(0.18).setFill()
             for charRange in quoteCharRanges where charRange.location >= 0 && NSMaxRange(charRange) <= totalLen {
+                guard NSIntersectionRange(charRange, visibleChars).length > 0 else { continue }
                 let glyphRange = lm.glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
                 let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
                 guard rect.height > 1 else { continue }

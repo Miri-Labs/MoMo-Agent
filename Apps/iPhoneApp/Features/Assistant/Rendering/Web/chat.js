@@ -16,6 +16,8 @@
   let focusedRequest = null, openingChat = false, newMessageBelow = null;
   let jumpMotion = null;
   const jump = document.querySelector('#jump');
+  let lastJumpHidden = jump.hidden, lastJumpText = jump.textContent, lastJumpHasNew = false, lastJumpAria = jump.getAttribute('aria-label') || '';
+  let cachedScrollHeight = 0;
   let bubbleSyncFrame = null, lastBubbleRegionsSig = null;
   let referenceNowMs = Date.now(), previousTurnCount = -1;
   const post = (type, value) => window.webkit?.messageHandlers?.chat?.postMessage({ type, value });
@@ -448,6 +450,7 @@
       if (root.children[index] !== view.node) root.insertBefore(view.node,root.children[index] || null);
     });
     for (const [id,view] of views) if (!kept.has(id)) { view.node.remove(); views.delete(id); }
+    cachedScrollHeight = 0;
     if (collapsed && anchor?.isConnected) {
       const top = scrollY + anchor.getBoundingClientRect().top - anchorTop;
       window.scrollTo({top:Math.max(0,Math.min(maximumScrollTop(),top)),behavior:'auto'});
@@ -579,6 +582,7 @@
     const currentBusy = latest.busy;
     const completed = core.replyFinished(turn, currentBusy);
     patchAssistantTurn(view, turn, currentBusy && !completed, completed, false);
+    cachedScrollHeight = 0;
     syncResponseFooter(turn, core.responseActivity([turn], latest.busy && !latest.stopped, latest.stopped ? 'idle' : latest.contextState));
     return true;
   }
@@ -594,6 +598,7 @@
     if (frame !== null) return;
     frame = requestAnimationFrame(now => {
       frame = null;
+      cachedScrollHeight = document.documentElement.scrollHeight;
       if (restoring && !userScrolling && !wheelScrolling) {
         restoreReadingPosition();
       } else if (pin.pinned && !userScrolling) {
@@ -617,13 +622,18 @@
     });
   }
   function headerInset() { return latest?.appearance?.headerInset || 0; }
-  function maximumScrollTop() {
-    return Math.max(0,document.documentElement.scrollHeight - window.innerHeight);
+  function currentScrollHeight() {
+    if (cachedScrollHeight <= 0) cachedScrollHeight = document.documentElement.scrollHeight;
+    return cachedScrollHeight;
+  }
+  function maximumScrollTop(fresh = false) {
+    if (fresh) cachedScrollHeight = document.documentElement.scrollHeight;
+    return Math.max(0, currentScrollHeight() - window.innerHeight);
   }
   function restoreReadingPosition() {
     if (!restoring) return;
     const anchor = restoring.anchorID && [...root.children].find(node => node.dataset.message === restoring.anchorID);
-    const maximum = maximumScrollTop();
+    const maximum = maximumScrollTop(true);
     const top = restoring.following ? maximum :
       anchor ? scrollY + anchor.getBoundingClientRect().top - headerInset() - restoring.anchorOffset : restoring.top;
     // WebKit's native scroll update can apply the requested value after the DOM
@@ -679,12 +689,28 @@
     }
   }
   function updateJump() {
-    jump.hidden = pin.pinned || maximumScrollTop() - scrollY <= 8;
-    if (jump.hidden || (newMessageBelow && messageAnchor(newMessageBelow)?.getBoundingClientRect().bottom <= innerHeight)) newMessageBelow = null;
-    const label = newMessageBelow ? t('新消息') : '';
-    jump.textContent = label ? label + ' ↓' : '↓';
-    jump.classList.toggle('has-new', Boolean(label));
-    jump.setAttribute('aria-label',label || t('回到最新消息'));
+    const nextHidden = pin.pinned || maximumScrollTop() - scrollY <= 8;
+    if (nextHidden !== lastJumpHidden) {
+      jump.hidden = nextHidden;
+      lastJumpHidden = nextHidden;
+    }
+    if (nextHidden || (newMessageBelow && messageAnchor(newMessageBelow)?.getBoundingClientRect().bottom <= innerHeight)) newMessageBelow = null;
+    const hasNew = Boolean(newMessageBelow);
+    const label = hasNew ? t('新消息') : '';
+    const nextText = label ? label + ' ↓' : '↓';
+    if (nextText !== lastJumpText) {
+      jump.textContent = nextText;
+      lastJumpText = nextText;
+    }
+    if (hasNew !== lastJumpHasNew) {
+      jump.classList.toggle('has-new', hasNew);
+      lastJumpHasNew = hasNew;
+    }
+    const nextAria = label || t('回到最新消息');
+    if (nextAria !== lastJumpAria) {
+      jump.setAttribute('aria-label', nextAria);
+      lastJumpAria = nextAria;
+    }
   }
   function firstVisibleTurnIndex(children, minBottom) {
     let lo = 0, hi = children.length;
@@ -727,7 +753,8 @@
     if (encoded !== lastReading) { lastReading = encoded; post('readingPosition',value); }
   }
   function scheduleReadingPosition() {
-    if (readingTimer === null) readingTimer = setTimeout(saveReadingPosition,150);
+    if (readingTimer !== null) clearTimeout(readingTimer);
+    readingTimer = setTimeout(saveReadingPosition, 180);
   }
   function render(snapshot) {
     if (snapshot.locale && snapshot.locale !== latest?.locale) {
@@ -735,8 +762,10 @@
       document.documentElement.lang = snapshot.locale;
       document.title = t('聊天');
       root.setAttribute('aria-label', t('聊天记录'));
-      document.querySelector('#jump').setAttribute('aria-label', t('回到最新消息'));
+      lastJumpAria = t('回到最新消息');
+      jump.setAttribute('aria-label', lastJumpAria);
       views.clear(); root.replaceChildren();
+      cachedScrollHeight = 0;
       previousTurnCount = -1; referenceNowMs = Date.now();
     }
     if (snapshot.sessionID !== session) {
@@ -990,11 +1019,11 @@
     // Native scroll updates can return to an older offset before settling at the
     // requested bottom. Observe both directions so reaching that bottom restores
     // following; upward movement away from it still releases the reading position.
-    pin.observe(window.scrollY,window.innerHeight,document.documentElement.scrollHeight);
+    pin.observe(window.scrollY,window.innerHeight,currentScrollHeight());
     updateJump();
     scheduleReadingPosition();
   },{ passive:true });
-  window.addEventListener('scrollend',() => { saveReadingPosition(); syncBubbleRegions(); },{ passive:true });
+  window.addEventListener('scrollend',() => { cachedScrollHeight = document.documentElement.scrollHeight; saveReadingPosition(); syncBubbleRegions(); },{ passive:true });
   window.addEventListener('wheel',() => { openingChat = false; cancelScrollIntent(); wheelScrolling = true; clearTimeout(wheelTimer); wheelTimer = setTimeout(() => { wheelScrolling = false; },300); },{ passive:true });
   window.addEventListener('touchstart',() => { openingChat = false; cancelScrollIntent(); userScrolling = true; },{ passive:true });
   window.addEventListener('keydown',() => { openingChat = false; cancelScrollIntent(); });
@@ -1013,10 +1042,10 @@
       renderTurns(false);
     }
   });
-  new ResizeObserver(follow).observe(document.body);
+  new ResizeObserver(() => { cachedScrollHeight = 0; follow(); }).observe(document.body);
   // A growing native composer/keyboard resizes the viewport, not necessarily the body.
-  window.addEventListener('resize',follow);
-  window.visualViewport?.addEventListener('resize',follow);
+  window.addEventListener('resize', () => { cachedScrollHeight = 0; follow(); });
+  window.visualViewport?.addEventListener('resize', () => { cachedScrollHeight = 0; follow(); });
   document.addEventListener('visibilitychange',() => {
     if (document.hidden) { jumpMotion = null; saveReadingPosition(); }
     syncActivityMotion();
