@@ -82,23 +82,26 @@ TOOL_ENVELOPE_SCHEMA: dict = {
     "required": ["content", "tool_calls"],
 }
 
-MODEL_QUOTA_COOLDOWN_SECONDS = 180.0
-
 _AGY_STREAM_ERROR_RE = re.compile(
     r"(?:\bAPI\s+error\b|\bRESOURCE_EXHAUSTED\b|\bThere\s+was\s+a\s+network\s+issue\b|"
     r"\bUNAVAILABLE\b|\bDEADLINE_EXCEEDED\b|\bINTERNAL\b|\bUNAUTHENTICATED\b|\bPERMISSION_DENIED\b|"
     r"\brate[_\s-]*limit\b|\bquota\b|\bexhausted\s+your\s+capacity\b|\boverloaded\b)",
     re.IGNORECASE,
 )
+_RETRY_HINT_SECONDS_RE = re.compile(
+    r"(?:retry(?:\s+in|\s+after)?|reset(?:s|\s+in|\s+after)?|wait)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(ms|s|sec|seconds|m|min|minutes)?\b",
+    re.IGNORECASE,
+)
+_KNOWN_TIERS = frozenset({"low", "medium", "high", "xhigh"})
 
 _MODEL_CACHE_LOCK = threading.Lock()
 _MODEL_CACHE: dict[str, tuple[float, bool, list[str]]] = {}
 _EXHAUSTED_LOCK = threading.Lock()
-_EXHAUSTED_MODELS: dict[str, float] = {}
+_EXHAUSTED_MODELS: dict[str, tuple[float, int]] = {}
 
 
 def clear_antigravity_caches() -> None:
-    """Clear in-memory model catalog and quota cooldown caches (used on auth change or tests)."""
+    """Clear in-memory model catalog and adaptive rate-limit state (used on auth change or tests)."""
     with _MODEL_CACHE_LOCK:
         _MODEL_CACHE.clear()
     with _EXHAUSTED_LOCK:
@@ -145,12 +148,38 @@ def _is_transient_network_or_daemon_error(err: BaseException) -> bool:
     )
 
 
-def _mark_model_exhausted(model_id: str, cooldown: float = MODEL_QUOTA_COOLDOWN_SECONDS) -> None:
+def _extract_retry_hint_seconds(err: BaseException) -> float | None:
+    match = _RETRY_HINT_SECONDS_RE.search(str(err or ""))
+    if not match:
+        return None
+    value = float(match.group(1))
+    unit = (match.group(2) or "s").lower()
+    if unit == "ms":
+        value /= 1000.0
+    elif unit in {"m", "min", "minutes"}:
+        value *= 60.0
+    return min(300.0, max(5.0, value))
+
+
+def _record_model_rate_limited(model_id: str, err: BaseException) -> None:
+    mid = str(model_id or "").strip()
+    if not mid:
+        return
+    hinted = _extract_retry_hint_seconds(err)
+    now = time.monotonic()
+    with _EXHAUSTED_LOCK:
+        prev = _EXHAUSTED_MODELS.get(mid)
+        strikes = (prev[1] + 1) if prev is not None else 1
+        adaptive = hinted if hinted is not None else min(120.0, 15.0 * (2 ** min(strikes - 1, 3)))
+        _EXHAUSTED_MODELS[mid] = (now + adaptive, strikes)
+
+
+def _clear_model_rate_limited(model_id: str) -> None:
     mid = str(model_id or "").strip()
     if not mid:
         return
     with _EXHAUSTED_LOCK:
-        _EXHAUSTED_MODELS[mid] = time.monotonic() + max(5.0, cooldown)
+        _EXHAUSTED_MODELS.pop(mid, None)
 
 
 def _is_model_cooled_down(model_id: str) -> bool:
@@ -159,51 +188,70 @@ def _is_model_cooled_down(model_id: str) -> bool:
         return False
     now = time.monotonic()
     with _EXHAUSTED_LOCK:
-        until = _EXHAUSTED_MODELS.get(mid)
-        if until is None:
+        entry = _EXHAUSTED_MODELS.get(mid)
+        if entry is None:
             return False
-        if now >= until:
+        if now >= entry[0]:
             _EXHAUSTED_MODELS.pop(mid, None)
             return False
         return True
 
 
-def _candidate_models_for(requested: str, cli: str) -> list[str]:
-    primary = str(requested or "").strip() or DEFAULT_ANTIGRAVITY_MODELS[0]
-    if _is_mocked_subprocess():
-        return [primary]
+def _model_traits(model_id: str) -> tuple[str, str, str]:
+    parts = [p for p in str(model_id or "").strip().lower().split("-") if p]
+    if not parts:
+        return "", "", ""
+    vendor = parts[0]
+    tier = parts[-1] if len(parts) > 1 and parts[-1] in _KNOWN_TIERS else ""
+    series = "-".join(parts[:-1]) if tier else "-".join(parts)
+    return vendor, series, tier
 
-    if primary.startswith("claude-"):
-        fallbacks = [
-            "claude-sonnet-5-5-high",
-            "claude-sonnet-5-5-medium",
-            "gemini-4-carbon-medium",
-            "gemini-4-argon-medium",
-        ]
-    else:
-        fallbacks = [
-            "gemini-4-carbon-medium",
-            "gemini-4-carbon-high",
-            "gemini-4-argon-medium",
-            "gemini-4-argon-high",
-            "gemini-3.8-flash-high",
-            "gemini-3.8-flash-medium",
-        ]
 
-    cached = _read_cached_models(cli)
-    available_set = set(cached[1]) if cached and cached[0] and cached[1] else set()
-    ordered_fallbacks = [
-        m for m in fallbacks if m != primary and (not available_set or m in available_set)
-    ]
+def _rank_dynamic_fallbacks(requested: str, catalog: list[str]) -> list[str]:
+    req_vendor, req_series, req_tier = _model_traits(requested)
+    req_is_orchestrator = "orchestrator" in requested.lower()
 
-    ready: list[str] = []
-    cooled: list[str] = []
-    for m in [primary, *ordered_fallbacks]:
-        if _is_model_cooled_down(m):
-            cooled.append(m)
+    def sort_key(idx_and_model: tuple[int, str]) -> tuple[int, int, int, int]:
+        idx, cand = idx_and_model
+        c_vendor, c_series, c_tier = _model_traits(cand)
+        vendor_penalty = 0 if (req_vendor and c_vendor == req_vendor) else 1
+        # Prefer a distinct series bucket first when a model bucket hits 429.
+        same_series_penalty = 1 if (req_series and c_series == req_series) else 0
+        if req_tier and c_tier == req_tier:
+            tier_penalty = 0
+        elif c_tier in {"medium", "high", ""}:
+            tier_penalty = 1
         else:
-            ready.append(m)
-    return [*ready, *cooled] if (ready or cooled) else [primary]
+            tier_penalty = 2
+        return (vendor_penalty, same_series_penalty, tier_penalty, idx)
+
+    eligible = [
+        (idx, m)
+        for idx, m in enumerate(catalog)
+        if m and m != requested and (req_is_orchestrator or "orchestrator" not in m.lower())
+    ]
+    eligible.sort(key=sort_key)
+    return [m for _, m in eligible]
+
+
+def _next_dynamic_candidate(requested: str, cli: str, *, tried: set[str]) -> str | None:
+    if _is_mocked_subprocess():
+        return None
+    cached = _read_cached_models(cli)
+    if cached is not None and cached[0] and cached[1]:
+        catalog = cached[1]
+    else:
+        connected, catalog = list_antigravity_models(cli, timeout=8.0)
+        if not connected:
+            catalog = []
+    ranked = _rank_dynamic_fallbacks(requested, catalog)
+    for m in ranked:
+        if m not in tried and not _is_model_cooled_down(m):
+            return m
+    for m in ranked:
+        if m not in tried:
+            return m
+    return None
 
 
 def _cache_models(cli: str, connected: bool, models: list[str]) -> None:
@@ -1712,10 +1760,19 @@ def run_antigravity_completion(
             background=background,
         )
 
-    candidates = _candidate_models_for(model, cli)
+    primary = str(model or "").strip()
+    tried: set[str] = set()
+    candidate: str | None = primary
+    if _is_model_cooled_down(primary):
+        alt = _next_dynamic_candidate(primary, cli, tried=set())
+        if alt:
+            candidate = alt
+
     last_error: Exception | None = None
-    for idx, candidate in enumerate(candidates):
-        use_oneshot = oneshot or (candidate != model)
+    max_attempts = 4
+    while candidate and len(tried) < max_attempts:
+        tried.add(candidate)
+        use_oneshot = oneshot or (candidate != primary)
         try:
             try:
                 completion = _run_antigravity_acp_completion(
@@ -1748,21 +1805,24 @@ def run_antigravity_completion(
                     background=background,
                     oneshot=True,
                 )
-            if candidate != model:
-                log.info("Antigravity fulfilled %s using fallback model %s", model, candidate)
-                completion["model"] = model
+            _clear_model_rate_limited(candidate)
+            if candidate != primary:
+                log.info("Antigravity fulfilled %s using dynamically discovered model %s", primary, candidate)
+                completion["model"] = primary
             return completion
         except Exception as err:
             last_error = err
             if _is_quota_or_rate_error(err):
-                _mark_model_exhausted(candidate)
-                if idx + 1 < len(candidates):
-                    log.warning("Antigravity model %s hit quota/rate limit (%s); falling back to %s", candidate, err, candidates[idx + 1])
+                _record_model_rate_limited(candidate, err)
+                nxt = _next_dynamic_candidate(primary, cli, tried=tried)
+                if nxt and len(tried) < max_attempts:
+                    log.warning("Antigravity model %s hit quota/rate limit (%s); falling back to discovered model %s", candidate, err, nxt)
+                    candidate = nxt
                     continue
             raise
     if last_error is not None:
         raise last_error
-    raise RuntimeError("Antigravity completion failed without candidate models")
+    raise RuntimeError("Antigravity completion failed without available candidate models")
 
 
 def format_sse_chunks_from_completion(completion: dict) -> bytes:

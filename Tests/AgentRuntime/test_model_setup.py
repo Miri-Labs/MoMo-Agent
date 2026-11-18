@@ -683,9 +683,9 @@ class ModelSetupTests(unittest.TestCase):
             "    elif method == 'session/new':\n"
             "        seq += 1\n"
             "        sid = f'sid-{seq}'\n"
-            "        models_by_sid[sid] = 'gemini-4-carbon-high'\n"
-            "        avail = [{'modelId': m} for m in ('gemini-4-hydrogen-medium', 'gemini-4-carbon-medium', 'gemini-4-carbon-high')]\n"
-            "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {'sessionId': sid, 'models': {'currentModelId': 'gemini-4-carbon-high', 'availableModels': avail}}}), flush=True)\n"
+            "        models_by_sid[sid] = 'vendorx-9-beta-high'\n"
+            "        avail = [{'modelId': m} for m in ('vendorx-9-alpha-medium', 'vendorx-9-alpha-high', 'vendorx-9-beta-medium', 'vendory-2-pro-medium')]\n"
+            "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {'sessionId': sid, 'models': {'currentModelId': 'vendorx-9-beta-high', 'availableModels': avail}}}), flush=True)\n"
             "    elif method == 'session/set_model':\n"
             "        models_by_sid[params['sessionId']] = params['modelId']\n"
             "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {}}), flush=True)\n"
@@ -695,8 +695,8 @@ class ModelSetupTests(unittest.TestCase):
             "        sid = params['sessionId']\n"
             "        cur = models_by_sid.get(sid, '')\n"
             "        state = bump(lambda d: d['attempted_models'].append(cur))\n"
-            "        if cur == 'gemini-4-hydrogen-medium':\n"
-            "            txt = '⚠ API error (attempt 1): RESOURCE_EXHAUSTED (code 429): Resource has been exhausted.'\n"
+            "        if cur == 'vendorx-9-alpha-medium':\n"
+            "            txt = '⚠ API error (attempt 1): RESOURCE_EXHAUSTED (code 429): retry in 30s.'\n"
             "        elif state.get('fail_network_once'):\n"
             "            bump(lambda d: d.__setitem__('fail_network_once', False))\n"
             "            txt = '⚠ There was a network issue connecting to the server, please try again.'\n"
@@ -712,20 +712,20 @@ class ModelSetupTests(unittest.TestCase):
         os.environ['MOMO_ANTIGRAVITY_CLI'] = str(fake_agy)
         try:
             res = ab.run_antigravity_completion(
-                model='gemini-4-hydrogen-medium',
+                model='vendorx-9-alpha-medium',
                 messages=[{'role': 'user', 'content': 'Ping'}],
                 data_dir=self.data,
             )
-            self.assertEqual(res['model'], 'gemini-4-hydrogen-medium')
-            self.assertEqual(res['choices'][0]['message']['content'], 'FALLBACK_OK_FROM_gemini-4-carbon-medium')
+            self.assertEqual(res['model'], 'vendorx-9-alpha-medium')
+            self.assertEqual(res['choices'][0]['message']['content'], 'FALLBACK_OK_FROM_vendorx-9-beta-medium')
 
-            # Second turn within cooldown skips exhausted hydrogen directly and uses carbon-medium immediately.
+            # Second turn within dynamic retry-after window skips exhausted alpha-medium and uses discovered beta-medium.
             res2 = ab.run_antigravity_completion(
-                model='gemini-4-hydrogen-medium',
+                model='vendorx-9-alpha-medium',
                 messages=[{'role': 'user', 'content': 'Ping 2'}],
                 data_dir=self.data,
             )
-            self.assertEqual(res2['choices'][0]['message']['content'], 'FALLBACK_OK_FROM_gemini-4-carbon-medium')
+            self.assertEqual(res2['choices'][0]['message']['content'], 'FALLBACK_OK_FROM_vendorx-9-beta-medium')
         finally:
             ab.shutdown_antigravity_daemon()
             ab.clear_antigravity_caches()
@@ -736,10 +736,10 @@ class ModelSetupTests(unittest.TestCase):
 
         final_state = json.loads(state_file.read_text(encoding='utf-8'))
         self.assertEqual(final_state['attempted_models'], [
-            'gemini-4-hydrogen-medium',
-            'gemini-4-carbon-medium',
-            'gemini-4-carbon-medium',
-            'gemini-4-carbon-medium',
+            'vendorx-9-alpha-medium',
+            'vendorx-9-beta-medium',
+            'vendorx-9-beta-medium',
+            'vendorx-9-beta-medium',
         ])
         self.assertGreaterEqual(final_state['acp_starts'], 2)
 
