@@ -462,7 +462,7 @@ extension ArchiveStore {
         }
         let previous = try knownPrevious ?? currentTranscriptOrNil(sessionID: document.sessionID)
         removeTranscriptReadCache(document.sessionID)
-        if appendingSpans == nil {
+        if appendingSpans == nil, trustedPreviousBlockPrefix == nil {
             transcriptBlockPrefixCache.removeValue(forKey: document.sessionID)
         }
         if verifiedRecordingFilesCache[document.sessionID]?.independentOfTranscriptVersion != true {
@@ -472,11 +472,11 @@ extension ArchiveStore {
         if let previous {
             let previousCompacted = try compactTranscriptVersion(
                 previous,
-                trustedPrefix: appendingSpans != nil ? trustedPreviousBlockPrefix : nil
+                trustedPrefix: trustedPreviousBlockPrefix
             )
-            if appendingSpans != nil {
-                // Out-of-order chunks can insert spans before the tail via orderedSpans; only
-                // full 16-span blocks within the unchanged leading prefix may carry forward.
+            if appendingSpans != nil || trustedPreviousBlockPrefix != nil {
+                // Out-of-order chunks or tail speaker relabeling can modify spans after a shared
+                // leading prefix; carry forward all full 16-span blocks within the unchanged prefix.
                 let commonPrefixCount = zip(previous.spans, document.spans).prefix(while: { $0 == $1 }).count
                 let reusableBlocks = min(previousCompacted.blockIDs.count, commonPrefixCount / 16)
                 compactedPrefix = (
@@ -512,7 +512,7 @@ extension ArchiveStore {
             try database.execute("UPDATE plans SET state='invalidated',document=X'',files_cleaned=0 WHERE id IN (SELECT plan_id FROM plan_sources WHERE session_id=?)", [.text(document.sessionID.uuidString)])
             hasPendingFileDeletions = true
         }
-        return (encoded.count, appendingSpans != nil ? (compactedPrefix ?? (0, [])) : nil)
+        return (encoded.count, (appendingSpans != nil || trustedPreviousBlockPrefix != nil) ? (compactedPrefix ?? (0, [])) : nil)
     }
 
     func invalidateAgentSources(sessionID: UUID) throws {

@@ -102,21 +102,27 @@ extension ArchiveStore {
            prefix.fullSpanCount % 16 == 0,
            prefix.fullSpanCount <= document.spans.count,
            prefix.blockIDs.count == prefix.fullSpanCount / 16 {
-            var allMatched = true
-            for (blockIndex, blockID) in prefix.blockIDs.enumerated() {
-                let sliceStart = blockIndex * 16
-                let sliceBytes = try WireJSON.encode(Array(document.spans[sliceStart..<(sliceStart + 16)]))
-                let expectedHash = ContentHash.sha256(sliceBytes)
-                let storedHash = try database.rows(
-                    "SELECT hash FROM transcript_blocks WHERE id=? AND session_id=?",
-                    [.integer(blockID), .text(document.sessionID.uuidString)]
-                ).first?.string(0)
-                if storedHash != expectedHash {
-                    allMatched = false
+            // `transcript_blocks` rows are immutable content-addressed blobs and external database
+            // mutations clear `transcriptBlockPrefixCache` via `PRAGMA data_version`. Verify block
+            // presence in batched SQL queries instead of re-encoding and SHA-256 hashing thousands
+            // of spans on every window commit of multi-hour sessions.
+            var allPresent = true
+            let sessionParam = SQLValue.text(document.sessionID.uuidString)
+            for chunkStart in stride(from: 0, to: prefix.blockIDs.count, by: 256) {
+                let chunkEnd = min(prefix.blockIDs.count, chunkStart + 256)
+                let uniqueIDs = Array(Set(prefix.blockIDs[chunkStart..<chunkEnd]))
+                let placeholders = Array(repeating: "?", count: uniqueIDs.count).joined(separator: ",")
+                let params = [sessionParam] + uniqueIDs.map(SQLValue.integer)
+                let found = try database.rows(
+                    "SELECT COUNT(*) FROM transcript_blocks WHERE session_id=? AND id IN (\(placeholders))",
+                    params
+                ).first?.integer(0) ?? 0
+                if found != Int64(uniqueIDs.count) {
+                    allPresent = false
                     break
                 }
             }
-            if allMatched {
+            if allPresent {
                 ids = prefix.blockIDs
                 scanStart = prefix.fullSpanCount
             }

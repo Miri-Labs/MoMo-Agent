@@ -115,10 +115,10 @@ public final class SpeechEngine: @unchecked Sendable {
         case .funASRNano, .xASR: 1
         }
     }
-    /// Matches native encoder batch size so static `batch=1` CoreML models (`FunASR-Nano`, `X-ASR`)
-    /// commit every recognized window immediately instead of holding 4 sequential windows (~18–22s) uncommitted.
+    /// Bounds window-level coordinator claims and SQLite commits independently of native encoder batch size;
+    /// `TranscriptionCoordinator` claims 1 window on first step / hot-live / finite background tasks and up to 4 on sustained drains.
     public var coordinatorWindowBatchSize: Int {
-        max(1, archiveBatchSize)
+        continuousArchive ? 4 : max(1, archiveBatchSize)
     }
 
     public func archiveText(_ result: SpeechRecognition, window: SpeechWindow,

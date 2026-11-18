@@ -1063,7 +1063,9 @@ extension ArchiveStore {
             centroid = best.1
         }
         let updatedSampleCount = count + (canLearn ? 1 : 0)
-        if best == nil || !excluding.isEmpty || count < 2
+        // Adding a cannot-link edge (`excluding`) between already-existing clusters only prevents
+        // merges and cannot create a new AHC merge unless a new cluster was minted or a centroid shifted.
+        if best == nil || count < 2
             || updatedSampleCount == 8 || updatedSampleCount == 16 || updatedSampleCount == 32
             || (best != nil && canLearn && SpeakerEvidence.similarity(best!.1, centroid) < 0.9985) {
             didShiftCluster = true

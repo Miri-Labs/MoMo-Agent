@@ -1094,7 +1094,7 @@ public actor TranscriptionCoordinator {
                     #endif
                     let stepStart = monotonicUptimeSeconds()
                     let isInterleavedPriority = source == .interleavedLivePriority
-                    switch try await transcribe(ticket, interleavedPriority: isInterleavedPriority) {
+                    switch try await transcribe(ticket, interleavedPriority: isInterleavedPriority, preferSingleWindow: transcribed == 0) {
                     case .committed:
                         transcribed += lastTranscribedWindowCount
                         publish()
@@ -1332,7 +1332,8 @@ public actor TranscriptionCoordinator {
         }
     }
 
-    private func transcribe(_ ticket: TranscriptionWindowTicket, interleavedPriority: Bool = false) async throws -> WorkOutcome {
+    private func transcribe(_ ticket: TranscriptionWindowTicket, interleavedPriority: Bool = false,
+                            preferSingleWindow: Bool = false) async throws -> WorkOutcome {
         let token = SpeechAttempt(id: ticket.attemptID)
         var resultCommitted = false
         var tickets = [ticket]
@@ -1375,7 +1376,7 @@ public actor TranscriptionCoordinator {
             }
             try Task.checkCancellation()
             guard let sequence = readingSequences.first else { throw SpeechError.incompatibleWindow }
-            let allowCompanionBatching = computeLease.allowsCompanionBatching(
+            let allowCompanionBatching = !preferSingleWindow && computeLease.allowsCompanionBatching(
                 isHotLive: isHotLive,
                 backgroundBudget: speech.backgroundBudget
             )
