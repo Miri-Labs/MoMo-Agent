@@ -57,17 +57,17 @@ extension ArchiveStore {
             values += [.double(position.recordedAt), .double(position.recordedAt), .text(position.sessionID.uuidString)]
         }
         values.append(.integer(Int64(limit + 1)))
-        let rows = try database.rows("SELECT s.id,s.recorded_at,COUNT(c.id),s.transcript_version,s.generation,s.source_kind,s.keep_audio FROM sessions s LEFT JOIN chunks c ON c.session_id=s.id WHERE \(Self.pageFilter)\(condition) GROUP BY s.id ORDER BY s.recorded_at DESC,s.id LIMIT ?", values)
+        let rows = try database.rows("SELECT s.id,s.recorded_at,s.transcript_version,s.generation,s.source_kind,s.keep_audio FROM sessions s WHERE \(Self.pageFilter)\(condition) ORDER BY s.recorded_at DESC,s.id LIMIT ?", values)
         let pageRows = Array(rows.prefix(limit))
         let sessionIDs = try pageRows.map { try $0.requireUUID(0) }
         let states = try batchSessionStates(sessionIDs: sessionIDs)
         let items = try pageRows.map { row -> RecordingSummary in
-            guard let date = row.double(1), let kind = SourceKind(rawValue: try row.requireString(5)) else { throw ArchiveError.database(11) }
+            guard let date = row.double(1), let kind = SourceKind(rawValue: try row.requireString(4)) else { throw ArchiveError.database(11) }
             let id = try row.requireUUID(0)
             return RecordingSummary(sessionID: id, recordedAt: Date(timeIntervalSince1970: date),
-                chunkCount: Int(try row.requireInt(2)), transcriptVersion: try row.requireInt(3),
-                generation: try row.requireInt(4), sourceKind: kind,
-                transcriptionState: states.transcription[id] ?? .pending, keepAudio: try row.requireInt(6) == 1,
+                chunkCount: states.chunkCounts[id] ?? 0, transcriptVersion: try row.requireInt(2),
+                generation: try row.requireInt(3), sourceKind: kind,
+                transcriptionState: states.transcription[id] ?? .pending, keepAudio: try row.requireInt(5) == 1,
                 audioState: states.audio[id] ?? .unavailable)
         }
         let next: String?
@@ -138,14 +138,23 @@ extension ArchiveStore {
         return [.integer(ceiling), lower, lower, upper, upper]
     }
 
-    private func batchSessionStates(sessionIDs: [UUID]) throws -> (audio: [UUID: RecordingAudioState], transcription: [UUID: RecordingTranscriptionState]) {
-        guard !sessionIDs.isEmpty else { return ([:], [:]) }
+    private func batchSessionStates(sessionIDs: [UUID]) throws -> (
+        chunkCounts: [UUID: Int],
+        audio: [UUID: RecordingAudioState],
+        transcription: [UUID: RecordingTranscriptionState]
+    ) {
+        guard !sessionIDs.isEmpty else { return ([:], [:], [:]) }
         let placeholders = Array(repeating: "?", count: sessionIDs.count).joined(separator: ",")
         let idValues = sessionIDs.map { SQLValue.text($0.uuidString) }
 
+        var chunkCounts: [UUID: Int] = [:]
         var retentionsBySession: [UUID: Set<String>] = [:]
-        for row in try database.rows("SELECT session_id, retention FROM chunks WHERE session_id IN (\(placeholders)) GROUP BY session_id, retention", idValues) {
-            retentionsBySession[try row.requireUUID(0), default: []].insert(try row.requireString(1))
+        for row in try database.rows("SELECT session_id, retention, COUNT(*) FROM chunks WHERE session_id IN (\(placeholders)) GROUP BY session_id, retention", idValues) {
+            let sid = try row.requireUUID(0)
+            let retention = try row.requireString(1)
+            let count = Int(row.integer(2) ?? 0)
+            chunkCounts[sid, default: 0] += count
+            retentionsBySession[sid, default: []].insert(retention)
         }
         let validRetentions: Set<String> = ["present", "expired", "expiry_pending", "missing_unexpected"]
         var audioStates: [UUID: RecordingAudioState] = [:]
@@ -163,28 +172,44 @@ extension ArchiveStore {
         }
 
         struct JobFlags {
-            var count = 0
+            var hasAny = false
             var failed = false
             var running = false
             var pending = false
         }
         var jobFlags: [UUID: JobFlags] = [:]
         for row in try database.rows("""
-            SELECT c.session_id, j.state, c.retention, COUNT(*)
+            SELECT DISTINCT c.session_id, j.state
             FROM transcription_jobs j JOIN chunks c ON c.id=j.chunk_id
-            WHERE c.session_id IN (\(placeholders))
-            GROUP BY c.session_id, j.state, c.retention
+            WHERE j.state IN ('failed','running','pending') AND c.session_id IN (\(placeholders))
             """, idValues) {
             let sid = try row.requireUUID(0)
             let state = row.string(1) ?? ""
-            let retention = row.string(2) ?? ""
-            let n = Int(row.integer(3) ?? 0)
             var flags = jobFlags[sid, default: JobFlags()]
-            flags.count += n
-            if state == "failed" || retention == "missing_unexpected" { flags.failed = true }
+            flags.hasAny = true
+            if state == "failed" { flags.failed = true }
             if state == "running" { flags.running = true }
             if state == "pending" { flags.pending = true }
             jobFlags[sid] = flags
+        }
+        for id in sessionIDs {
+            var flags = jobFlags[id, default: JobFlags()]
+            if !flags.failed, retentionsBySession[id]?.contains("missing_unexpected") == true {
+                if try !database.rows(
+                    "SELECT 1 FROM chunks c JOIN transcription_jobs j ON j.chunk_id=c.id WHERE c.session_id=? AND c.retention='missing_unexpected' LIMIT 1",
+                    [.text(id.uuidString)]
+                ).isEmpty {
+                    flags.hasAny = true
+                    flags.failed = true
+                }
+            }
+            if !flags.hasAny, (chunkCounts[id] ?? 0) > 0 {
+                flags.hasAny = try !database.rows(
+                    "SELECT 1 FROM chunks c JOIN transcription_jobs j ON j.chunk_id=c.id WHERE c.session_id=? LIMIT 1",
+                    [.text(id.uuidString)]
+                ).isEmpty
+            }
+            jobFlags[id] = flags
         }
 
         var activeAnalysis: Set<UUID> = []
@@ -209,7 +234,7 @@ extension ArchiveStore {
                 transcriptionStates[id] = .failed
             } else if activeAnalysis.contains(id) || jobs.running || wStates.contains("running") {
                 transcriptionStates[id] = .processing
-            } else if jobs.count == 0 || jobs.pending || wStates.contains("pending") {
+            } else if !jobs.hasAny || jobs.pending || wStates.contains("pending") {
                 transcriptionStates[id] = .pending
             } else {
                 unresolved.append(id)
@@ -217,20 +242,13 @@ extension ArchiveStore {
         }
 
         if !unresolved.isEmpty {
-            let subPlaceholders = Array(repeating: "?", count: unresolved.count).joined(separator: ",")
-            let subValues = unresolved.map { SQLValue.text($0.uuidString) }
-            var withText: Set<UUID> = []
-            for row in try database.rows("SELECT DISTINCT session_id FROM transcript_search WHERE session_id IN (\(subPlaceholders))", subValues) {
-                withText.insert(try row.requireUUID(0))
-            }
-            var withVersion: Set<UUID> = []
-            for row in try database.rows("SELECT DISTINCT session_id FROM transcript_versions WHERE session_id IN (\(subPlaceholders))", subValues) {
-                withVersion.insert(try row.requireUUID(0))
-            }
             for id in unresolved {
-                if withText.contains(id) {
+                let idParam: [SQLValue] = [.text(id.uuidString)]
+                let hasSearchText = try !database.rows("SELECT 1 FROM transcript_search WHERE session_id=? LIMIT 1", idParam).isEmpty
+                if hasSearchText {
                     transcriptionStates[id] = .transcribed
-                } else if withVersion.contains(id) || (windowStatesBySession[id]?.contains("complete") == true) {
+                } else if try (windowStatesBySession[id]?.contains("complete") == true)
+                            || !database.rows("SELECT 1 FROM transcript_versions WHERE session_id=? LIMIT 1", idParam).isEmpty {
                     transcriptionStates[id] = .completedWithoutText
                 } else {
                     transcriptionStates[id] = try receivedAudioHasExplicitNoSpeech(sessionID: id) ? .noSpeech : .completedWithoutText
@@ -238,7 +256,7 @@ extension ArchiveStore {
             }
         }
 
-        return (audioStates, transcriptionStates)
+        return (chunkCounts, audioStates, transcriptionStates)
     }
 }
 

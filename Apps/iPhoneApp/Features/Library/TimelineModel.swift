@@ -322,6 +322,25 @@ final class TimelineModel {
 
     func load(_ day: TimelineDay) async {
         guard !Task.isCancelled else { return }
+        if dayLoads[day] == nil,
+           let loaded = loadedRevisions[day],
+           loaded.reads == readRevision,
+           hasLoadedDateRange,
+           snapshots[day] != nil,
+           failures[day] == nil,
+           days.last == max(TimelineDay(Date()), latestDay ?? TimelineDay(Date())),
+           let revision = try? await archive.timelineReadRevision(),
+           loaded.archive == revision {
+            guard !Task.isCancelled else { return }
+            let currentWindows = snapshots[day, default: []]
+            hydrateCachedSummaries(for: currentWindows)
+            if day == selectedDay {
+                preparePlayback?(currentWindows)
+                queueSummaries(currentWindows)
+                requestSummaries?(day)
+            }
+            return
+        }
         loadCounts[day, default: 0] += 1
         loading.insert(day)
         defer {
@@ -361,8 +380,9 @@ final class TimelineModel {
                 var cursor = min(earliestDay ?? today, day)
                 while cursor <= last { dates.append(cursor); cursor = cursor.adding(days: 1) }
                 if days != dates { days = dates }
-                if snapshots.count > 7 {
-                    let oldest = snapshots.keys.filter { $0 != selectedDay && $0 != day }
+                if snapshots.count > 10 {
+                    // Never evict today's snapshot while browsing historical days so tapping "今天" renders in 0ms.
+                    let oldest = snapshots.keys.filter { $0 != selectedDay && $0 != day && $0 != today }
                         .max { abs($0.date().timeIntervalSince(selectedDay.date())) < abs($1.date().timeIntervalSince(selectedDay.date())) }
                     if let oldest {
                         snapshots.removeValue(forKey: oldest); processingProgress.removeValue(forKey: oldest)

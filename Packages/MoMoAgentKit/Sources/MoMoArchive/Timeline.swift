@@ -281,7 +281,7 @@ extension ArchiveStore {
             let discardedWindows = try CoverageRanges.union(
                 database.rows("""
                     SELECT core_start,core_end FROM analysis_windows
-                    WHERE epoch_id=? AND state='complete' AND core_end > ? AND core_start < ? AND raw_result=?
+                    WHERE epoch_id=? AND state='complete' AND length(raw_result) <= 64 AND core_end > ? AND core_start < ? AND raw_result=?
                     """, [.text(epochIDText), .integer(firstFrame), .integer(throughFrame), .blob(TranscriptText.discardedPunctuation)])
                     .map { try FrameRange(start: $0.requireInt(0), count: $0.requireInt(1) - $0.requireInt(0)) }
             )
