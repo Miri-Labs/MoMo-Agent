@@ -663,6 +663,52 @@ struct AutomaticProcessingTests {
         try await store.cancelEpochAnalysis(ticket: backlogTicket)
     }
 
+    @Test func openTrailingUtteranceSchedulesThreeMinuteSilenceFinalizationAndSealsSnapshot() async throws {
+        let watch = try Fixture()
+        defer { watch.remove() }
+        let store = try watch.store()
+        let anchor = now.addingTimeInterval(-60)
+        let envelope = try await ingest(watch, into: store, anchor: anchor, start: 0, sequence: 0)
+
+        let openTicket = try await nextAnalysis(store)
+        #expect(!openTicket.epochClosed)
+        try await store.commitAnalysisBatch(
+            ticket: openTicket,
+            windows: [],
+            analyzedCoverage: [],
+            noSpeechCoverage: [],
+            checkpoint: nil,
+            waitingForMoreAudio: true
+        )
+
+        // Within the 3-minute inactivity window, automatic claim waits and exposes the exact finalization deadline.
+        #expect(try await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: now, calendar: calendar) == nil)
+        let finalizeAt = try #require(await store.nextOpenTailFinalizationDate(
+            configurationFingerprint: fingerprint,
+            now: now,
+            calendar: calendar
+        ))
+        #expect(abs(finalizeAt.timeIntervalSince(envelope.manifest.sealedAt.addingTimeInterval(180))) < 0.001)
+
+        // At the exact `finalizeAt` instant (`sealedAt + 180`), the complementary `<=` / `>` partition seals `.receivedSnapshot` with zero fudge offset.
+        let sealedWork = try #require(await store.claimAutomaticWork(
+            configurationFingerprint: fingerprint,
+            now: finalizeAt,
+            calendar: calendar
+        ))
+        guard case .analysis(let snapshotTicket) = sealedWork else {
+            Issue.record("Expected receivedSnapshot analysis at exact finalizeAt deadline")
+            return
+        }
+        #expect(snapshotTicket.epochClosed)
+        try await completeSilence(snapshotTicket, store: store)
+        #expect(try await store.nextOpenTailFinalizationDate(
+            configurationFingerprint: fingerprint,
+            now: finalizeAt,
+            calendar: calendar
+        ) == nil)
+    }
+
     private func nextAnalysis(_ store: ArchiveStore, at time: Date? = nil) async throws -> EpochAnalysisTicket {
         let work = try #require(await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: time ?? now, calendar: calendar))
         guard case .analysis(let ticket) = work else { throw ArchiveError.invalidTranscript }

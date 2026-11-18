@@ -114,8 +114,12 @@ extension ArchiveStore {
                     }
                 }
             }
-            guard try !batchReservesAnalysis(epochID: epochID) else { continue }
-            let pendingRanges = try pendingAnalysisRanges(epochID: epochID, fingerprint: configurationFingerprint, retainedOnly: true)
+            guard try !batchReservesAnalysisByNonRunningBatch(epochID: epochID) else { continue }
+            let reservedUnprepared = try allActiveBatchUnpreparedRanges(epochID: epochID)
+            let pendingRanges = try CoverageRanges.subtract(
+                pendingAnalysisRanges(epochID: epochID, fingerprint: configurationFingerprint, retainedOnly: true),
+                reservedUnprepared
+            )
             let receivedEnd = try receivedAnalysisRanges(epochID: epochID, retainedOnly: false).last?.end
             let closedFrame = try analysisClosedFrame(epochID: epochID)
             for range in pendingRanges {
@@ -134,7 +138,7 @@ extension ArchiveStore {
                         boundary = .processingRange(frames.end)
                     } else if let closedFrame, closedFrame == last.envelope.manifest.frames.end {
                         boundary = .captureEnd(closedFrame)
-                    } else if last.envelope.manifest.sealedAt < now.addingTimeInterval(-1_800),
+                    } else if last.envelope.manifest.sealedAt <= now.addingTimeInterval(-ProcessingDatePolicy.staleOpenTailSeconds),
                               last.envelope.manifest.frames.end >= frames.end {
                         boundary = .receivedSnapshot(min(frames.end, last.envelope.manifest.frames.end))
                     } else {
@@ -213,7 +217,7 @@ extension ArchiveStore {
         var batches: [Int: Set<String>] = [:]
         var activeTier = 3
         for row in try database.rows("""
-            SELECT e.id,e.session_id,s.generation,c.manifest,COALESCE(t.last_turn,0),a.attempt_id,e.rowid
+            SELECT e.id,e.session_id,s.generation,c.manifest,COALESCE(t.last_turn,0),a.attempt_id,e.rowid,e.max_received_end_frame
             FROM epochs e JOIN sessions s ON s.id=e.session_id
             JOIN chunks c ON c.rowid=COALESCE(e.min_chunk_rowid, (SELECT rowid FROM chunks WHERE epoch_id=e.id ORDER BY start_frame LIMIT 1))
             LEFT JOIN processing_turns t ON t.epoch_id=e.id AND t.configuration_hash=?
@@ -226,6 +230,17 @@ extension ArchiveStore {
             let manifest = try WireJSON.decode(ChunkManifest.self, from: row.requireData(3))
             let turn = try row.requireInt(4)
             let epochRowID = try row.requireInt(6)
+            if activeWindow?.epochID != epochID, (hotOnly || !allowHistorical) {
+                let maxEnd = max(0, row.integer(7) ?? 0)
+                if maxEnd > 0, let epochSpan = try? FrameRange(start: 0, count: maxEnd) {
+                    if hotOnly && !policy.isHotLive(epochSpan, manifest: manifest) { continue }
+                    if !allowHistorical && policy.priority(epochSpan, manifest: manifest) != 0 {
+                        let focused = (focusedSessionID != nil && sessionID == focusedSessionID)
+                            || (focusedDay != nil && focusedDay != policy.today && policy.overlapsDay(focusedDay!, frames: epochSpan, manifest: manifest))
+                        if !focused { continue }
+                    }
+                }
+            }
             if let activeWindow, activeWindow.epochID == epochID {
                 activeTier = policy.freshnessTier(activeWindow.coreFrames, manifest: manifest,
                     sessionID: activeWindow.sessionID, focusedDay: focusedDay, focusedSessionID: focusedSessionID)
@@ -299,7 +314,7 @@ extension ArchiveStore {
                 let analysisStepSeconds: Double = 120
                 guard let ticket = try claimEpochAnalysis(configurationFingerprint: configurationFingerprint,
                     sessionID: candidate.sessionID, expectedGeneration: candidate.generation,
-                    finalizeAvailablePrefixBefore: now.addingTimeInterval(-1_800), isolateLocalFailures: true,
+                    finalizeAvailablePrefixBefore: now.addingTimeInterval(-ProcessingDatePolicy.staleOpenTailSeconds), isolateLocalFailures: true,
                     selectedEpochID: candidate.epochID, processingRange: candidate.frames,
                     maxStepSeconds: analysisStepSeconds, now: now) else { continue }
                 // Preempting an in-flight analysis must strictly improve the bounded step's own tier,
@@ -349,6 +364,61 @@ extension ArchiveStore {
         try CoverageRanges.subtract(receivedAnalysisRanges(epochID: epochID, retainedOnly: retainedOnly),
             analyzedRanges(epochID: epochID, fingerprint: fingerprint))
     }
+
+    /// Returns the next wall-clock timestamp when an examined open utterance tail reaches the
+    /// silence/inactivity conversation boundary (`staleOpenTailSeconds`), allowing the coordinator
+    /// to wake and finalize trailing sentences without waiting for another wearable WAL chunk.
+    public func nextOpenTailFinalizationDate(configurationFingerprint: String,
+                                             sessionID: UUID? = nil,
+                                             allowHistorical: Bool = true,
+                                             now: Date = Date(),
+                                             calendar: Calendar = .current) throws -> Date? {
+        guard ContentHash.isValid(configurationFingerprint), now.timeIntervalSince1970.isFinite else { return nil }
+        let filter = sessionID.map { SQLValue.text($0.uuidString) } ?? .null
+        let policy = ProcessingDatePolicy(now: now, calendar: calendar)
+        var earliest: Date?
+        for row in try database.rows("""
+            SELECT e.id,s.generation,c.manifest,a.attempt_id
+            FROM epochs e JOIN sessions s ON s.id=e.session_id
+            JOIN chunks c ON c.rowid=COALESCE(e.min_chunk_rowid, (SELECT rowid FROM chunks WHERE epoch_id=e.id ORDER BY start_frame LIMIT 1))
+            LEFT JOIN analysis_epochs a ON a.epoch_id=e.id AND a.configuration_hash=?
+            WHERE s.deleted=0 AND s.projection_blocked=0 AND (a.epoch_id IS NULL OR a.has_pending!=0)
+              AND a.attempt_id IS NULL
+              AND (? IS NULL OR s.id=?)
+            """, [.text(configurationFingerprint), filter, filter]) {
+            let epochID = try row.requireUUID(0)
+            let generation = try row.requireInt(1)
+            let manifest = try WireJSON.decode(ChunkManifest.self, from: row.requireData(2))
+            guard row.string(3) == nil,
+                  try analysisClosedFrame(epochID: epochID) == nil,
+                  try !batchReservesAnalysis(epochID: epochID) else { continue }
+            let unavailableRanges = try database.rows("""
+                SELECT start_frame,end_frame FROM processing_failures
+                WHERE epoch_id=? AND generation=? AND configuration_hash=? AND stage='analysis' AND error_code='audio_unavailable'
+                """, [.text(epochID.uuidString), .integer(generation), .text(configurationFingerprint)]).map {
+                    try FrameRange(start: $0.requireInt(0), count: $0.requireInt(1) - $0.requireInt(0))
+                }
+            for range in try pendingAnalysisRanges(epochID: epochID, fingerprint: configurationFingerprint, retainedOnly: true) {
+                if !allowHistorical && policy.priority(range, manifest: manifest) != 0 { continue }
+                if unavailableRanges.contains(where: { $0.start < range.end && $0.end > range.start }) { continue }
+                let examined = try database.rows("""
+                    SELECT 1 FROM analysis_range_inputs
+                    WHERE epoch_id=? AND configuration_hash=? AND generation=? AND start_frame>=? AND start_frame<?
+                    LIMIT 1
+                    """, [.text(epochID.uuidString), .text(configurationFingerprint), .integer(generation),
+                          .integer(range.start), .integer(range.end)])
+                guard !examined.isEmpty else { continue }
+                let inputs = try contiguousInputs(epochID: epochID, from: range.start, through: range.end)
+                guard let last = inputs.last, last.envelope.manifest.frames.end >= range.end else { continue }
+                let finalizeAt = last.envelope.manifest.sealedAt.addingTimeInterval(ProcessingDatePolicy.staleOpenTailSeconds)
+                guard finalizeAt > now else { continue }
+                if earliest == nil || finalizeAt < earliest! {
+                    earliest = finalizeAt
+                }
+            }
+        }
+        return earliest
+    }
 }
 
 private struct AutomaticCandidate {
@@ -369,6 +439,8 @@ struct ProcessingDatePolicy {
     static let hotWindowSeconds: TimeInterval = 1_800
     static let hotCutQuantumSeconds: TimeInterval = 120
     static let ultraHotWindowSeconds: TimeInterval = 180
+    /// Omi-style inactivity boundary: finalize an open trailing utterance if no new WAL chunk arrives for 3 minutes.
+    static let staleOpenTailSeconds: TimeInterval = 180
 
     let now: Date
     let today: TimelineDay

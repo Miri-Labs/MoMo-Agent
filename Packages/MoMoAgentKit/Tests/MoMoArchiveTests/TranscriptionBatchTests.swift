@@ -477,6 +477,66 @@ struct TranscriptionBatchTests {
         #expect(completed.removedDuration > 0.1)
     }
 
+    @Test func continuousWatchEpochUnblocksLiveTailImmediatelyAfterBatchPrefixPreparation() async throws {
+        let watch = try Fixture()
+        defer { watch.remove() }
+        let store = try watch.store()
+        let liveNow = Date(timeIntervalSince1970: 1_790_000_060)
+
+        // Prefix [0..1600] is frozen as raw unprepared audio in an active batch.
+        let prefix = try await receive(watch, store: store, sequence: 0)
+        let batch = try #require(await store.freezeTranscriptionBatch(configurationFingerprint: fingerprint, includingUnpreparedAudio: true))
+        let execution = try await store.beginTranscriptionBatch(id: batch.id, origin: .foreground)
+
+        // New hot live chunk [1600..3200] arrives on the SAME continuous Watch epoch.
+        let liveTail = try await receive(watch, store: store, sequence: 1)
+        // Even before [0..1600] is prepared, `livePriorityWorkSummary` detects the unreserved hot tail while `batch` is running!
+        let preUnblockSummary = try await store.livePriorityWorkSummary(configurationFingerprint: fingerprint, now: liveNow)
+        #expect(preUnblockSummary.hasHotLiveWork)
+        #expect(try await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: liveNow) == nil,
+                "Causal VAD order holds until the unanalyzed batch prefix [0..1600] is prepared.")
+
+        // `claimBatchPrefixBlockingLiveTail` prepares [0..1600] immediately and registers its window to `batch`.
+        let unblockPrep = try #require(await store.claimBatchPrefixBlockingLiveTail(
+            execution: execution,
+            configurationFingerprint: fingerprint,
+            now: liveNow
+        ))
+        let batchWindow = try await prepare(prefix, store: store, claimed: unblockPrep)
+
+        // Even BEFORE `batch` transcribes `batchWindow`, the live tail [1600..3200] is immediately unblocked!
+        let summary = try await store.livePriorityWorkSummary(configurationFingerprint: fingerprint, now: liveNow)
+        #expect(summary.hasHotLiveWork)
+
+        let liveWork1 = try #require(await store.claimAutomaticWork(configurationFingerprint: fingerprint, now: liveNow))
+        guard case .analysis(let liveAnalysis) = liveWork1 else {
+            Issue.record("Expected live tail analysis to unblock immediately after batch prefix VAD")
+            return
+        }
+        #expect(liveAnalysis.checkpoint?.sourceFrame == 1600)
+
+        // Ending/pausing the batch while live tail analysis is in flight must NEVER wipe liveAnalysis's attempt_id!
+        _ = try await store.finishTranscriptionBatch(execution: execution, reason: .interrupted)
+        let liveWindow = try await prepare(liveTail, store: store, claimed: liveAnalysis)
+
+        // Automatic work transcribes ONLY the live tail window; `batchWindow` stays owned by `batch`!
+        let liveWork2 = try #require(await store.claimAutomaticWork(configurationFingerprint: fingerprint))
+        guard case .transcription(let liveRecognition) = liveWork2 else {
+            Issue.record("Expected live tail window to be claimable while batch window stays reserved")
+            return
+        }
+        #expect(liveRecognition.window.id == liveWindow.id)
+        _ = try await store.commitWindowTranscript(ticket: liveRecognition, text: "实时手表语音秒出。", rawResult: Data("{}".utf8))
+        #expect(try await store.claimAutomaticWork(configurationFingerprint: fingerprint) == nil)
+
+        // Resuming `batch` finishes `batchWindow` cleanly.
+        let resumed = try await store.beginTranscriptionBatch(id: batch.id, origin: .foreground)
+        let reservedTicket = try #require(await store.claimTranscriptionWindow(configurationFingerprint: fingerprint, batchExecution: resumed))
+        #expect(reservedTicket.window.id == batchWindow.id)
+        _ = try await store.commitWindowTranscript(ticket: reservedTicket, text: "历史批次后续完成。", rawResult: Data("{}".utf8))
+        #expect(try await store.finishTranscriptionBatch(execution: resumed, reason: .completed).state == .completed)
+    }
+
     private func receive(_ fixture: Fixture, store: ArchiveStore, sequence: Int64 = 0) async throws -> ManifestEnvelope {
         let envelope = try fixture.envelope(startFrame: sequence * 1600, sequence: sequence)
         _ = try await store.commitReceivedChunk(fixture.deliver(envelope, to: store))

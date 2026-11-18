@@ -288,34 +288,19 @@ struct PipelineTests {
         let first = try await TranscriptionIntegrationScenario.ingest(chunks, archive: archive, wallClockAnchor: recordedAt)
         let incoming = OSAllocatedUnfairLock<TranscriptionIntegrationScenario.IngestedAudio?>(initialState: nil)
         let gate = RecognitionGate()
-        let decodeEntered = DispatchSemaphore(value: 0)
         let released = DispatchSemaphore(value: 0)
-        // Core ML's first ANE specialization happens before nativeDecodeStarted.
-        let modelEntryTimeout: TimeInterval = backend == .sherpaCoreML ? 180 : 10
-        let state = OSAllocatedUnfairLock(initialState: (claimedWindow: false, prefetched: false, decodes: 0, timedOut: false, inDecode: false, preparesDuringDecode: 0))
+        let state = OSAllocatedUnfairLock(initialState: (claimedWindow: false, decodes: 0, timedOut: false, inDecode: false, preparesDuringDecode: 0))
         let engine = try SpeechEngine(bundle: SpeechModelBundle.load(from: model), configuration: SpeechConfiguration(), recognitionBackend: backend, onDiagnostics: { value in
             if value.operation == .prepare { state.withLock { if $0.inDecode { $0.preparesDuringDecode += 1 } } }
-            if !interrupt, value.operation == .prepare, state.withLock({ $0.prefetched }) { released.signal() }
         }, onEvent: { event in
-            if case .analysisPageReady(let count) = event {
-                let firstPage = state.withLock { value in
-                    guard count > 0, !value.prefetched, mode != .serial else { return false }
-                    value.prefetched = true
-                    return true
-                }
-                if firstPage, decodeEntered.wait(timeout: .now() + modelEntryTimeout) != .success { state.withLock { $0.timedOut = true } }
-                return
-            }
             if case .nativeDecodeReturned = event { state.withLock { $0.inDecode = false }; return }
             guard case .nativeDecodeStarted = event else { return }
             let firstDecode = state.withLock { $0.inDecode = true; $0.decodes += 1; return $0.decodes == 1 }
             guard firstDecode, mode != .serial else { return }
-            decodeEntered.signal()
             Task { await gate.open() }
             if released.wait(timeout: .now() + 10) != .success { state.withLock { $0.timedOut = true } }
         })
         let coordinator = try TranscriptionCoordinator(archive: archive, speech: engine, startSuspended: mode == .backgroundExpiry)
-        await coordinator.setAnalysisPrefetchEnabled(mode != .serial)
         await coordinator.observeClaims { [weak coordinator] kind, _ in
             guard let coordinator else { return }
             if kind == .transcription {
@@ -325,7 +310,7 @@ struct PipelineTests {
                 }
                 if firstWindow {
                     do {
-                        // New input arrives after selection, so same-priority prefetch has useful work.
+                        // New input arrives while recognition is active; stateless 120 s VAD prepares it cleanly after decode.
                         let received = try await TranscriptionIntegrationScenario.ingest(chunks, archive: archive, wallClockAnchor: recordedAt)
                         incoming.withLock { $0 = received }
                     } catch { Issue.record(error) }
@@ -341,6 +326,12 @@ struct PipelineTests {
                             } catch { Issue.record(error) }
                             released.signal()
                         }
+                    } else if mode != .serial {
+                        Task {
+                            await gate.wait()
+                            await coordinator.onHotLiveWorkArrived(foreground: true, ultraHot: true)
+                            released.signal()
+                        }
                     }
                 }
                 return
@@ -348,11 +339,9 @@ struct PipelineTests {
         }
         if mode == .backgroundExpiry { _ = try await coordinator.startBackgroundAutomatic { _ in } }
         var report = await coordinator.runUntilIdle()
-        #expect(state.withLock { $0.prefetched } == (mode != .serial))
         #expect(!state.withLock { $0.timedOut })
         #expect(!report.snapshot.nativeInFlight)
-        if mode == .overlap { #expect(state.withLock { $0.preparesDuringDecode } > 0) }
-        if mode == .serial { #expect(state.withLock { $0.preparesDuringDecode } == 0) }
+        #expect(state.withLock { $0.preparesDuringDecode } == 0)
         if interrupt {
             #expect(report.snapshot.phase == (mode == .backgroundExpiry ? .systemSuspended : .paused))
             do {
@@ -361,7 +350,6 @@ struct PipelineTests {
             } catch let error as ArchiveError {
                 #expect(error == .missingTranscript(first.sessionID))
             }
-            await coordinator.setAnalysisPrefetchEnabled(false)
             if mode == .backgroundExpiry { await coordinator.resumeAfterSystemSuspension() }
             else { try await coordinator.resumeByUser() }
             report = await coordinator.runUntilIdle()
