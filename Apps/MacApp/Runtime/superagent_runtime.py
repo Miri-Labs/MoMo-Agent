@@ -890,6 +890,12 @@ def seed_superagent_orchestrator(
     if desired_role_model and exec_val.get("model") != desired_role_model:
         exec_val["model"] = desired_role_model
         exec_dirty = True
+    if dsh_provider == "antigravity" and exec_val.get("maxWorkers") != 1:
+        exec_val["maxWorkers"] = 1
+        exec_dirty = True
+    elif dsh_provider and dsh_provider != "antigravity" and exec_val.get("maxWorkers") == 1:
+        exec_val["maxWorkers"] = 3
+        exec_dirty = True
     if exec_dirty:
         dsh_api_request(
             dsh_port,
