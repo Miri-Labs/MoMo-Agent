@@ -1258,7 +1258,7 @@ public final class RemoteTaskStore {
                 guard let self, self.observationID == owner else { return }
                 self.flushPendingPersistence()
                 if !self.confirmedInCurrentForeground, !self.absorbedInitialStreamSocketFailure,
-                   self.connectionState == .ready, AgentTransportFailure.isSocketOrLinkFailure(error) {
+                   self.connectionState == .ready, AgentTransportFailure.isTransient(error) {
                     self.absorbedInitialStreamSocketFailure = true
                     self.onConnectionDiagnostic?("conversationSubscription", .ready, error, nil)
                     self.failures[.synchronization] = self.connectionErrorDescription(error)
@@ -1443,13 +1443,14 @@ public final class RemoteTaskStore {
 
     private func loadOlderMessages() {
         guard loadingOlderMessages == nil, olderMessagesBefore != nil, let owner = observationID else { return }
+        let generation = lifetime
         loadingOlderMessages = Task { [weak self, client] in
             defer { if self?.observationID == owner { self?.loadingOlderMessages = nil } }
             do {
                 while let before = self?.olderMessagesBefore {
-                    guard let self, self.observationID == owner else { return }
-                    let page = try await self.request { try await client.conversationMessages(before: before) }
-                    guard self.observationID == owner else { return }
+                    guard let self, self.observationID == owner, self.lifetime == generation, self.canContactServer else { return }
+                    let page = try await client.conversationMessages(before: before)
+                    guard self.observationID == owner, self.lifetime == generation else { return }
                     try Task.checkCancellation()
                     guard page.data.allSatisfy({ $0.seq < before }),
                           !page.hasMore || page.nextCursor < before && !page.data.isEmpty else { throw StoreError.invalidResponse }
@@ -1458,7 +1459,12 @@ public final class RemoteTaskStore {
                     try self.persist(tasks: self.tasks, draft: self.draft)
                 }
             } catch {
-                guard let self, self.observationID == owner, !AgentTransportFailure.isCancelled(error) else { return }
+                guard let self, self.observationID == owner, self.lifetime == generation, !AgentTransportFailure.isCancelled(error) else { return }
+                if case AgentClientError.http(401, _, _, _) = error {
+                    self.recordConnectionFailure(error, operation: "loadOlderMessages")
+                } else if !AgentTransportFailure.isTransient(error) {
+                    self.recordConnectionFailure(error, operation: "loadOlderMessages")
+                }
                 self.failures[.synchronization] = self.connectionErrorDescription(error)
             }
         }

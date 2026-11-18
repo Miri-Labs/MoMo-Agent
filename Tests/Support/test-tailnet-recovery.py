@@ -625,6 +625,20 @@ final class PolicyFailureProtocol: URLProtocol, @unchecked Sendable {
         precondition(zombieNet.state == "Running", "Node recovering within 60s cooldown must not stay bricked by needsRestart")
         _ = recoveredWithinCooldown
 
+        // Regression 9: If iOS kernel reclaims the loopback SOCKS5 listener during lock/suspension
+        // (ECONNREFUSED on 127.0.0.1 while C-FFI statusJSON() STILL reports "Running") INSIDE the
+        // 60-second recoveryRestartInterval window, ensureForegroundReady / connectedSession MUST
+        // immediately rebuild the dead node instead of wiping needsRestart or waiting 60s!
+        let nodesBeforeDeadLoopback = Probe.counts.0
+        let oldNodeObj = zombieNet.node
+        zombieNet.localProxyRebuildInterval = .milliseconds(50)
+        Probe.setProtocolOverride(nil)
+        Probe.useHealthyProxy(false) // 127.0.0.1:9 -> ECONNREFUSED even though statusJSON() == "Running"
+        await zombieNet.ensureForegroundReady(peer: "100.118.16.18")
+        precondition(Probe.counts.0 == nodesBeforeDeadLoopback + 1 && zombieNet.node !== oldNodeObj,
+                     "Dead loopback listener must rebuild node immediately even inside 60s recoveryRestartInterval cooldown")
+        Probe.useHealthyProxy(true)
+
         await zombieNet.close()
         print("PASS: zombie Stopped recovery, wedged node recycle, missing-peer recovery, repeated remote timeouts, peer warmup and pre-header retry")
     }
