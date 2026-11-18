@@ -713,6 +713,7 @@ private final class MacTranscriptNSTableView: NSTableView {
     var onPrimaryClickRow: ((Int) -> Void)?
     private var trackingAreaRef: NSTrackingArea?
     private(set) var hoveredRow: Int = -1
+    var isLiveScrollingNow: Bool = false
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -722,7 +723,7 @@ private final class MacTranscriptNSTableView: NSTableView {
             removeTrackingArea(existing)
         }
         let area = NSTrackingArea(
-            rect: bounds,
+            rect: .zero,
             options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
             owner: self,
             userInfo: nil
@@ -732,6 +733,7 @@ private final class MacTranscriptNSTableView: NSTableView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        guard !isLiveScrollingNow else { return }
         let pt = convert(event.locationInWindow, from: nil)
         updateHover(at: pt)
     }
@@ -740,8 +742,12 @@ private final class MacTranscriptNSTableView: NSTableView {
         setHoveredRow(-1)
     }
 
+    func clearHoverForLiveScroll() {
+        setHoveredRow(-1)
+    }
+
     func refreshHoverFromWindowMouse() {
-        guard let window else {
+        guard !isLiveScrollingNow, let window else {
             setHoveredRow(-1)
             return
         }
@@ -801,10 +807,12 @@ private final class MacTranscriptRowCellView: NSTableCellView {
 
     private var currentEntry: MacTranscriptListEntry?
     private var isHoveredState = false
+    private var cachedHintSize: NSSize = .zero
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
         layer?.masksToBounds = false
 
         cardLayerView.wantsLayer = true
@@ -992,9 +1000,12 @@ private final class MacTranscriptRowCellView: NSTableCellView {
 
             let chevY = floor((h - 13) * 0.5)
             chevronView.frame = NSRect(x: sideInset + maxCardW - 27, y: chevY, width: 13, height: 13)
-            actionHintLabel.sizeToFit()
-            let hintW = ceil(actionHintLabel.frame.width)
-            let hintH = ceil(actionHintLabel.frame.height)
+            if cachedHintSize == .zero {
+                actionHintLabel.sizeToFit()
+                cachedHintSize = NSSize(width: ceil(actionHintLabel.frame.width), height: ceil(actionHintLabel.frame.height))
+            }
+            let hintW = cachedHintSize.width
+            let hintH = cachedHintSize.height
             actionHintLabel.frame = NSRect(
                 x: chevronView.frame.minX - 5 - hintW,
                 y: floor((h - hintH) * 0.5),
@@ -1015,7 +1026,7 @@ private struct MacTranscriptTimelineListView: NSViewRepresentable {
         var onToggleEarly: () -> Void
         var onSelectWindow: (DesktopTranscriptWindow) -> Void
         weak var tableView: MacTranscriptNSTableView?
-        private var boundsObserver: NSObjectProtocol?
+        private var scrollObservers: [NSObjectProtocol] = []
 
         init(
             onToggleEarly: @escaping () -> Void,
@@ -1026,23 +1037,38 @@ private struct MacTranscriptTimelineListView: NSViewRepresentable {
         }
 
         deinit {
-            if let obs = boundsObserver {
+            for obs in scrollObservers {
                 NotificationCenter.default.removeObserver(obs)
             }
         }
 
         @MainActor
         func bindScroll(scrollView: NSScrollView, tableView: MacTranscriptNSTableView) {
-            scrollView.contentView.postsBoundsChangedNotifications = true
-            boundsObserver = NotificationCenter.default.addObserver(
-                forName: NSView.boundsDidChangeNotification,
-                object: scrollView.contentView,
-                queue: .main
-            ) { [weak tableView] _ in
-                MainActor.assumeIsolated {
-                    tableView?.refreshHoverFromWindowMouse()
+            let nc = NotificationCenter.default
+            scrollObservers.append(
+                nc.addObserver(
+                    forName: NSScrollView.willStartLiveScrollNotification,
+                    object: scrollView,
+                    queue: .main
+                ) { [weak tableView] _ in
+                    MainActor.assumeIsolated {
+                        tableView?.isLiveScrollingNow = true
+                        tableView?.clearHoverForLiveScroll()
+                    }
                 }
-            }
+            )
+            scrollObservers.append(
+                nc.addObserver(
+                    forName: NSScrollView.didEndLiveScrollNotification,
+                    object: scrollView,
+                    queue: .main
+                ) { [weak tableView] _ in
+                    MainActor.assumeIsolated {
+                        tableView?.isLiveScrollingNow = false
+                        tableView?.refreshHoverFromWindowMouse()
+                    }
+                }
+            )
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int {
@@ -1872,8 +1898,13 @@ private final class MacSourceDocumentTextView: NSTextView {
            let lm = layoutManager, let tc = textContainer, let ts = textStorage {
             let origin = textContainerOrigin
             let totalLen = ts.length
+            let containerDirty = dirtyRect.offsetBy(dx: -origin.x, dy: -origin.y)
+            let visibleGlyphs = lm.glyphRange(forBoundingRectWithoutAdditionalLayout: containerDirty, in: tc)
+            guard visibleGlyphs.length > 0 else { return }
+            let visibleChars = lm.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
             (NSColor(named: "PhoneLine") ?? .separatorColor).setFill()
             for charRange in summaryQuoteRanges where charRange.location >= 0 && NSMaxRange(charRange) <= totalLen {
+                guard NSIntersectionRange(charRange, visibleChars).length > 0 else { continue }
                 let glyphRange = lm.glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
                 let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
                 guard rect.height > 1 else { continue }

@@ -60,6 +60,7 @@ final class DesktopModel {
     var localAccessURL: String { connection?.baseURL.port.map { "http://127.0.0.1:\($0 + 2)" } ?? String(localized: "准备 Mac 后显示") }
     var ownsAgent: Bool { agentProcess?.isRunning == true }
     @ObservationIgnored var readingPosition: ChatReadingPosition?
+    private(set) var isAgentOnline = false
     var status: AccessStatus?
     var busy: String?
     var preparationPhase: DesktopPreparationPhase?
@@ -774,15 +775,54 @@ final class DesktopModel {
         guard busy == nil else { return false }
         busy = String(localized: "正在更新连接…"); defer { busy = nil }
         do {
-            status = try await controlRequest(path, body: body); failure = nil; return true
+            let next = try await controlRequest(path, body: body)
+            status = next
+            let nextOnline = next.agentOnline
+            if isAgentOnline != nextOnline { isAgentOnline = nextOnline }
+            failure = nil
+            return true
         } catch {
             if !Task.isCancelled { failure = error.localizedDescription }
             return false
         }
     }
 
+    private static func isStatusEquivalentIgnoringMinorHeartbeat(_ lhs: AccessStatus?, _ rhs: AccessStatus?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): return true
+        case let (a?, b?):
+            guard a.agentOnline == b.agentOnline,
+                  a.tunnel == b.tunnel,
+                  a.invitation == b.invitation,
+                  a.pairedDeviceID == b.pairedDeviceID,
+                  a.devices.count == b.devices.count else { return false }
+            for (d1, d2) in zip(a.devices, b.devices) {
+                guard d1.id == d2.id,
+                      d1.name == d2.name,
+                      d1.code == d2.code,
+                      d1.state == d2.state,
+                      d1.expires == d2.expires,
+                      d1.endpoint == d2.endpoint else { return false }
+                switch (d1.lastSeen, d2.lastSeen) {
+                case (nil, nil): continue
+                case let (s1?, s2?):
+                    if Int(s1 / 30) != Int(s2 / 30) { return false }
+                default: return false
+                }
+            }
+            return true
+        default: return false
+        }
+    }
+
     private func updateStatus(_ next: AccessStatus?) {
-        if status != next { status = next }
+        let nextOnline = next?.agentOnline == true
+        if isAgentOnline != nextOnline {
+            isAgentOnline = nextOnline
+        }
+        if !Self.isStatusEquivalentIgnoringMinorHeartbeat(status, next) {
+            status = next
+        }
     }
 
     func refresh() async {
@@ -1120,10 +1160,12 @@ final class DesktopModel {
 
                 if let collected = fetchedMemories {
                     lastMemoriesWatermark = memWatermark
-                    if memories != collected {
-                        let builtVault = await Task.detached(priority: .userInitiated) {
-                            MemoryVaultSnapshot.build(from: collected)
-                        }.value
+                    let prevMemories = memories
+                    let builtVault: MemoryVaultSnapshot? = await Task.detached(priority: .userInitiated) {
+                        guard prevMemories != collected else { return nil }
+                        return MemoryVaultSnapshot.build(from: collected)
+                    }.value
+                    if let builtVault {
                         memories = collected
                         vaultSnapshot = builtVault
                     }
@@ -1131,12 +1173,15 @@ final class DesktopModel {
                 if let recordings = fetchedSources {
                     lastSourcesWatermark = srcWatermark
                     lastSourcesDayStartHour = currentStartHour
-                    if sources != recordings || transcriptSnapshotDayHour != currentStartHour {
-                        transcriptVersionCounter &+= 1
-                        let nextVer = transcriptVersionCounter
-                        let builtTranscripts = await Task.detached(priority: .userInitiated) {
-                            DesktopTranscriptSnapshot.build(sources: recordings, dayStartHour: currentStartHour, version: nextVer)
-                        }.value
+                    let prevSources = sources
+                    let hourChanged = transcriptSnapshotDayHour != currentStartHour
+                    let candidateVer = transcriptVersionCounter &+ 1
+                    let builtTranscripts: DesktopTranscriptSnapshot? = await Task.detached(priority: .userInitiated) {
+                        guard hourChanged || prevSources != recordings else { return nil }
+                        return DesktopTranscriptSnapshot.build(sources: recordings, dayStartHour: currentStartHour, version: candidateVer)
+                    }.value
+                    if let builtTranscripts {
+                        transcriptVersionCounter = candidateVer
                         sources = recordings
                         transcriptSnapshot = builtTranscripts
                         transcriptSnapshotDayHour = currentStartHour

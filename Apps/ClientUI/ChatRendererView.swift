@@ -384,7 +384,6 @@ private struct ChatWebSurface: ChatWebRepresentable {
         context.coordinator.contextMenuInteraction = contextMenu
         #else
         web.chatCoordinator = context.coordinator
-        web.setValue(false, forKey: "drawsBackground")
         #endif
         configureBackground(web)
         web.navigationDelegate = context.coordinator

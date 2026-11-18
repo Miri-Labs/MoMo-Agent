@@ -18,7 +18,7 @@ struct DesktopRoot: View {
         HStack(spacing: 0) {
             DesktopSidebarRail(
                 selection: model.selection,
-                online: model.status?.agentOnline == true,
+                online: model.isAgentOnline,
                 busy: model.taskStore?.hasActiveTask == true,
                 memoryCount: model.vaultSnapshot.activeMemories.count,
                 sidebarVisible: $sidebarVisible,
