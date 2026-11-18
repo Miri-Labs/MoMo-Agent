@@ -116,7 +116,7 @@ final class PhoneRuntime {
         remoteAgent.transcriptionFingerprint = speech?.configurationFingerprint
         speechSettings.onVADThresholdChanged = { [weak self] in
             guard let self else { return }
-            Task { await self.transcription?.invalidateAnalysisPrefetch() }
+            Task { await self.transcription?.requestWork() }
         }
         speechSettings.onDayStartHourChanged = { [weak self] in
             guard let self else { return }
@@ -264,7 +264,6 @@ final class PhoneRuntime {
             self.transcriptionContinuation?.finish()
             await self.transcription?.clearForegroundContinuation()
             let allowed = PhoneBackgroundTasks.resourcesAllowProcessing(foreground: self.isForeground)
-            await self.transcription?.setAnalysisPrefetchEnabled(allowed)
             await self.transcription?.setHistoricalWorkAllowed(allowed,
                 constraint: PhoneBackgroundTasks.currentProcessingConstraint(foreground: self.isForeground))
             self.syncSpeechExecutionMode()
@@ -304,7 +303,6 @@ final class PhoneRuntime {
                     await self.transcription?.suspendForSystem()
                     self.transcriptionContinuation?.finish()
                 }
-                await self.transcription?.setAnalysisPrefetchEnabled(sceneAllowed)
                 await self.transcription?.setHistoricalWorkAllowed(sceneAllowed, constraint: sceneConstraint ?? effectiveConstraint)
                 if sceneAllowed, !self.isForeground, !self.activeSystemTaskRunning,
                    self.backgroundTasks?.hasActiveContinuedGrant != true,
@@ -551,7 +549,6 @@ final class PhoneRuntime {
         }
         requestSpeechWarmup()
         let foregroundAllowed = PhoneBackgroundTasks.resourcesAllowProcessing(foreground: true)
-        await transcription?.setAnalysisPrefetchEnabled(foregroundAllowed)
         await transcription?.setHistoricalWorkAllowed(foregroundAllowed,
             constraint: PhoneBackgroundTasks.currentProcessingConstraint(foreground: true))
         let startedCold = !ready
@@ -610,7 +607,6 @@ final class PhoneRuntime {
         Task { [transcription] in
             await transcription?.setFocusedDay(nil)
             await transcription?.setFocusedSessionID(nil)
-            await transcription?.setAnalysisPrefetchEnabled(bgAllowed)
             await transcription?.setHistoricalWorkAllowed(bgAllowed, constraint: bgConstraint)
         }
         remoteAgent.leavingForeground()

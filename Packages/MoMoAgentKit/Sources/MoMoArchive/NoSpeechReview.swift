@@ -29,6 +29,8 @@ extension ArchiveStore {
                 """, [.text(configurationFingerprint)])
             for row in epochs {
                 let epochID = try row.requireUUID(0)
+                let sessionID = try row.requireUUID(1)
+                guard try !batchReservesSession(sessionID) else { continue }
                 let manifest = try WireJSON.decode(ChunkManifest.self, from: row.requireData(3))
                 let retained = try receivedAnalysisRanges(epochID: epochID, retainedOnly: true)
                 guard let first = retained.first, let last = retained.last else { continue }

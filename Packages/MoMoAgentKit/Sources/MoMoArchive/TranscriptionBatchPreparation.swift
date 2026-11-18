@@ -33,13 +33,139 @@ extension ArchiveStore {
         return sources
     }
 
-    // A paused batch owns preparation too; another scheduler must not analyze beyond its snapshot.
+    // A batch reserves epoch analysis only while its frozen unprepared slices remain unanalyzed;
+    // once VAD finishes those slices and registers their windows, newer WAL chunks on the same
+    // continuous wearable epoch proceed without waiting for historical batch ASR to finish.
     func batchReservesAnalysis(epochID: UUID, except batchID: UUID? = nil) throws -> Bool {
-        try database.rows("""
+        for row in try database.rows("""
+            SELECT DISTINCT r.batch_id, b.configuration_hash FROM transcription_batch_ranges r
+            JOIN transcription_batches b ON b.id=r.batch_id
+            WHERE r.epoch_id=? AND r.kind='unprepared' AND b.state!='completed'
+            """, [.text(epochID.uuidString)]) {
+            let ownerID = try row.requireUUID(0)
+            if ownerID == batchID { continue }
+            let ownerFingerprint = try row.requireString(1)
+            let unprepared = try batchPreparationRanges(id: ownerID, epochID: epochID)
+            let analyzed = try analyzedRanges(epochID: epochID, fingerprint: ownerFingerprint)
+            if try !CoverageRanges.subtract(unprepared, analyzed).isEmpty {
+                return true
+            }
+        }
+        return false
+    }
+
+    func batchReservesUnpreparedInterval(_ frames: FrameRange, epochID: UUID, except batchID: UUID? = nil) throws -> Bool {
+        for row in try database.rows("""
             SELECT DISTINCT r.batch_id FROM transcription_batch_ranges r
             JOIN transcription_batches b ON b.id=r.batch_id
             WHERE r.epoch_id=? AND r.kind='unprepared' AND b.state!='completed'
-            """, [.text(epochID.uuidString)]).contains { try $0.requireUUID(0) != batchID }
+              AND r.start_frame<? AND r.end_frame>?
+            """, [.text(epochID.uuidString), .integer(frames.end), .integer(frames.start)]) {
+            if try row.requireUUID(0) != batchID { return true }
+        }
+        return false
+    }
+
+    func batchReservesAnalysisByNonRunningBatch(epochID: UUID) throws -> Bool {
+        for row in try database.rows("""
+            SELECT DISTINCT r.batch_id, b.configuration_hash FROM transcription_batch_ranges r
+            JOIN transcription_batches b ON b.id=r.batch_id
+            WHERE r.epoch_id=? AND r.kind='unprepared' AND b.state NOT IN ('running','completed')
+            """, [.text(epochID.uuidString)]) {
+            let ownerID = try row.requireUUID(0)
+            let ownerFingerprint = try row.requireString(1)
+            let unprepared = try batchPreparationRanges(id: ownerID, epochID: epochID)
+            let analyzed = try analyzedRanges(epochID: epochID, fingerprint: ownerFingerprint)
+            if try !CoverageRanges.subtract(unprepared, analyzed).isEmpty {
+                return true
+            }
+        }
+        return false
+    }
+
+    func allActiveBatchUnpreparedRanges(epochID: UUID) throws -> [FrameRange] {
+        try CoverageRanges.union(database.rows("""
+            SELECT r.start_frame, r.end_frame - r.start_frame FROM transcription_batch_ranges r
+            JOIN transcription_batches b ON b.id=r.batch_id
+            WHERE r.epoch_id=? AND r.kind='unprepared' AND b.state!='completed'
+            """, [.text(epochID.uuidString)]).map {
+                try FrameRange(start: $0.requireInt(0), count: $0.requireInt(1))
+            })
+    }
+
+    /// Prepares an unanalyzed batch prefix on any continuous epoch that has hot-live (or requested same-day)
+    /// WAL chunks waiting behind it, unblocking live tail analysis in one fast stateless VAD step (~0.15 s)
+    /// instead of stranding live speech behind already-prepared historical batch ASR windows.
+    public func claimBatchPrefixBlockingLiveTail(execution: TranscriptionBatchExecution,
+                                                 configurationFingerprint: String,
+                                                 maxStepSeconds: Double = 120,
+                                                 includeSameDayToday: Bool = false,
+                                                 now: Date = Date(),
+                                                 calendar: Calendar = .current) throws -> EpochAnalysisTicket? {
+        try validateBatchExecution(execution, fingerprint: configurationFingerprint)
+        let policy = ProcessingDatePolicy(now: now, calendar: calendar)
+        let rows = try database.rows("""
+            SELECT DISTINCT r.epoch_id,r.session_id,s.generation,e.max_received_end_frame,c.manifest
+            FROM transcription_batch_ranges r
+            JOIN sessions s ON s.id=r.session_id
+            JOIN epochs e ON e.id=r.epoch_id
+            JOIN chunks c ON c.rowid=COALESCE(e.min_chunk_rowid, (SELECT rowid FROM chunks WHERE epoch_id=e.id ORDER BY start_frame LIMIT 1))
+            WHERE r.batch_id=? AND r.kind='unprepared' AND s.deleted=0 AND s.projection_blocked=0
+            ORDER BY r.rowid
+            """, [.text(execution.batchID.uuidString)])
+        for row in rows {
+            let epochID = try row.requireUUID(0)
+            let sessionID = try row.requireUUID(1)
+            let generation = try row.requireInt(2)
+            let maxEnd = max(0, row.integer(3) ?? 0)
+            guard maxEnd > 0,
+                  let manifestData = row.data(4),
+                  let manifest = try? WireJSON.decode(ChunkManifest.self, from: manifestData),
+                  let epochSpan = try? FrameRange(start: 0, count: maxEnd) else { continue }
+            let mayHavePriorityTail = policy.isHotLive(epochSpan, manifest: manifest)
+                || (includeSameDayToday && policy.priority(epochSpan, manifest: manifest) == 0)
+            guard mayHavePriorityTail else { continue }
+            let batchPending = try CoverageRanges.subtract(
+                batchPreparationRanges(id: execution.batchID, epochID: epochID),
+                analyzedRanges(epochID: epochID, fingerprint: configurationFingerprint)
+            )
+            guard let nextPrefix = batchPending.first else { continue }
+            let allPending = try pendingAnalysisRanges(epochID: epochID, fingerprint: configurationFingerprint, retainedOnly: true)
+            let hasBlockingTail = allPending.contains {
+                policy.isHotLive($0, manifest: manifest)
+                    || (includeSameDayToday && policy.priority($0, manifest: manifest) == 0)
+            }
+            guard hasBlockingTail else { continue }
+            if let ticket = try claimEpochAnalysis(
+                configurationFingerprint: configurationFingerprint,
+                sessionID: sessionID,
+                expectedGeneration: generation,
+                finalizeAvailablePrefixBefore: .distantFuture,
+                isolateLocalFailures: true,
+                selectedEpochID: epochID,
+                processingRange: nextPrefix,
+                batchExecution: execution,
+                maxStepSeconds: maxStepSeconds,
+                now: now
+            ) {
+                return ticket
+            }
+            let stillPending = try CoverageRanges.subtract(
+                batchPreparationRanges(id: execution.batchID, epochID: epochID),
+                analyzedRanges(epochID: epochID, fingerprint: configurationFingerprint)
+            )
+            if try !CoverageRanges.intersection([nextPrefix], stillPending).isEmpty {
+                let activeAttempt = try database.rows(
+                    "SELECT attempt_id FROM analysis_epochs WHERE epoch_id=? AND configuration_hash=?",
+                    [.text(epochID.uuidString), .text(configurationFingerprint)]
+                ).first?.string(0)
+                if activeAttempt == nil,
+                   try !batchReservesAnalysis(epochID: epochID, except: execution.batchID) {
+                    try deferBatchSlice(batchID: execution.batchID, sessionID: sessionID, epochID: epochID, frames: nextPrefix)
+                }
+            }
+        }
+        return nil
     }
 
     /// Registers windows produced after admission, preserving the original progress denominator.
@@ -156,7 +282,8 @@ extension ArchiveStore {
                     "SELECT attempt_id FROM analysis_epochs WHERE epoch_id=? AND configuration_hash=?",
                     [.text(epochID.uuidString), .text(configurationFingerprint)]
                 ).first?.string(0)
-                if activeAttempt == nil {
+                if activeAttempt == nil,
+                   try !batchReservesAnalysis(epochID: epochID, except: execution.batchID) {
                     try deferBatchSlice(batchID: execution.batchID, sessionID: sessionID, epochID: epochID, frames: range)
                 }
             }

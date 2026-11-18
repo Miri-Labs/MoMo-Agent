@@ -1231,7 +1231,7 @@ public final class SpeechEngine: @unchecked Sendable {
                         try cacheArchiveWindows(windows, owner: archiveStream.owner)
                     })
             } else if stream == nil && continuousArchive {
-                try cacheArchiveWindows(result.windows, owner: sequenceOwner, limit: preparedAudio.capacity)
+                try cacheArchiveWindows(result.windows, owner: attempt.id, limit: preparedAudio.capacity)
             }
             return result
         }

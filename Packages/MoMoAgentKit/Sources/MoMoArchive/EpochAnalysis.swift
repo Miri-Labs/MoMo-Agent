@@ -113,7 +113,7 @@ extension ArchiveStore {
                     boundary = .processingRange(rangeEnd)
                 } else if let closedFrame, closedFrame == last.envelope.manifest.frames.end {
                     boundary = .captureEnd(closedFrame)
-                } else if finalizeAvailablePrefixBefore.map({ last.envelope.manifest.sealedAt < $0 }) == true,
+                } else if finalizeAvailablePrefixBefore.map({ last.envelope.manifest.sealedAt <= $0 }) == true,
                           last.envelope.manifest.frames.end >= (rangeEnd ?? .max) {
                     boundary = .receivedSnapshot(min(rangeEnd ?? .max, last.envelope.manifest.frames.end))
                 } else { boundary = .open }
@@ -309,6 +309,13 @@ extension ArchiveStore {
             // A resumed checkpoint has a new start; clear earlier failures once their entire range is analyzed.
             try database.execute("DELETE FROM processing_failures WHERE epoch_id=? AND generation=? AND configuration_hash=? AND stage='analysis' AND (start_frame=? OR end_frame<=?)",
                 [.text(ticket.epochID.uuidString), .integer(ticket.expectedGeneration), .text(ticket.configurationFingerprint), .integer(lower), .integer(floor)])
+            for row in try database.rows("""
+                SELECT DISTINCT r.batch_id FROM transcription_batch_ranges r
+                JOIN transcription_batches b ON b.id=r.batch_id
+                WHERE r.epoch_id=? AND r.kind='unprepared' AND b.state!='completed' AND b.configuration_hash=?
+                """, [.text(ticket.epochID.uuidString), .text(ticket.configurationFingerprint)]) {
+                try registerOverlappingBatchWindows(batchID: try row.requireUUID(0), fingerprint: ticket.configurationFingerprint)
+            }
             try updateCompletedChunks(epochID: ticket.epochID, configurationFingerprint: ticket.configurationFingerprint)
         }
         if !continuing { for lease in ticket.leaseIDs { audioLeases.removeValue(forKey: lease) } }

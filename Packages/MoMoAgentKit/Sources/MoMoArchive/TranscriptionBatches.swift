@@ -198,7 +198,7 @@ extension ArchiveStore {
     func batchReserves(_ window: ArchiveAnalysisWindow, except batchID: UUID? = nil) throws -> Bool {
         let rows = try database.rows("SELECT m.batch_id FROM transcription_batch_windows m JOIN transcription_batches b ON b.id=m.batch_id WHERE m.epoch_id=? AND m.start_frame<? AND m.end_frame>? AND b.state!='completed'", [.text(window.epochID.uuidString), .integer(window.coreFrames.end), .integer(window.coreFrames.start)])
         return try rows.contains { try $0.requireUUID(0) != batchID }
-            || batchReservesAnalysis(epochID: window.epochID, except: batchID)
+            || batchReservesUnpreparedInterval(window.coreFrames, epochID: window.epochID, except: batchID)
     }
 
     func batchReservesSession(_ sessionID: UUID) throws -> Bool {
@@ -446,8 +446,22 @@ extension ArchiveStore {
         try database.execute("UPDATE transcription_batches SET state=?,end_reason=?,current_execution=NULL WHERE id=?", [.text(state.rawValue), .text(reason.rawValue), .text(execution.batchID.uuidString)])
         // Invalidate writes immediately; the worker releases its own audio leases only after native returns.
         try database.execute("UPDATE analysis_windows SET state='pending',attempt_id=NULL WHERE state='running' AND id IN (SELECT window_id FROM transcription_batch_windows WHERE batch_id=?)", [.text(execution.batchID.uuidString)])
-        try database.execute("UPDATE analysis_epochs SET attempt_id=NULL WHERE epoch_id IN (SELECT epoch_id FROM transcription_batch_ranges WHERE batch_id=? AND kind='unprepared')",
-            [.text(execution.batchID.uuidString)])
+        for row in try database.rows("""
+            SELECT DISTINCT r.epoch_id, b.configuration_hash FROM transcription_batch_ranges r
+            JOIN transcription_batches b ON b.id=r.batch_id
+            WHERE r.batch_id=? AND r.kind='unprepared'
+            """, [.text(execution.batchID.uuidString)]) {
+            let epochID = try row.requireUUID(0)
+            let configHash = try row.requireString(1)
+            let remaining = try CoverageRanges.subtract(
+                batchPreparationRanges(id: execution.batchID, epochID: epochID),
+                analyzedRanges(epochID: epochID, fingerprint: configHash)
+            )
+            if !remaining.isEmpty {
+                try database.execute("UPDATE analysis_epochs SET attempt_id=NULL WHERE epoch_id=? AND configuration_hash=?",
+                    [.text(epochID.uuidString), .text(configHash)])
+            }
+        }
     }
 }
 

@@ -72,8 +72,16 @@ struct TranscriptionRefreshGate {
     }
 }
 
-/// Owned by PhoneRuntime, shared by foreground and background entry points.
+/// Stateless WAL-driven continuous transcription coordinator:
+/// - Stage 1 (`prepare`): bounded 120 s stateless Silero VAD + causal P98 gain warmup + Cut & Merge,
+///   marking silent intervals (`no_speech`) complete in ~0.15 s and publishing speech windows to SQLite
+///   without holding suspended VAD streams or long-lived epoch locks.
+/// - Stage 2 (`transcribe`): CoreML/ONNX ASR + speaker diarization over discrete SQLite speech windows.
+/// - Single unified scheduler (`claimNextWALStep`): live wearable WAL audio (`Tier 0`) and user-focused
+///   views (`Tier 1`) automatically interleave ahead of offline/batch backfills via `WALBackfillPacer`.
 public actor TranscriptionCoordinator {
+    private static let walVADStepSeconds: Double = 120
+
     private let archive: ArchiveStore
     private let speech: SpeechEngine
     private let preferencesURL: URL
@@ -116,17 +124,12 @@ public actor TranscriptionCoordinator {
     private var readingSequences: [ReadingSequenceEntry] = []
     private var stopBarrier: (executionID: UUID, task: Task<Void, Error>)?
     private var retryWakeTask: Task<Void, Never>?
-    private var analysisPrefetch: AnalysisPrefetch?
-    private var batchAnalysisPrefetch: BatchAnalysisPrefetch?
-    private var analysisPrefetchEnabled = true
     private var historicalWorkAllowed = true
     private var historicalResourceConstraint: TranscriptionResourceConstraint?
     private var focusedDay: TimelineDay?
     private var focusedSessionID: UUID?
     private var preservedHistoryFingerprint: String?
-    private var activeWorkIsHistorical = false
-    private var activeStepStartedUptime: Double = 0
-    private var lastLivePreemptionUptime: Double = 0
+    private var hotArrivalCreditBoostPending = false
     private let performanceLogger = Logger(subsystem: "com.momoagent.ios", category: "TranscriptionPerformance")
     #if DEBUG
     private var onClaimReturned: (@Sendable (TranscriptionClaimKind, UUID) async -> Void)?
@@ -163,11 +166,31 @@ public actor TranscriptionCoordinator {
         phase = userPaused ? .paused : (startSuspended ? .systemSuspended : .idle)
     }
 
+    private var computeLease: TranscriptionComputeLease {
+        TranscriptionComputeLease(
+            userPaused: userPaused,
+            systemSuspended: systemSuspended,
+            foregroundContinuationAllowed: foregroundContinuationAllowed,
+            startingManagedWithoutHandle: startingManaged,
+            managedHandle: managed?.handle,
+            managedStopping: managed?.stopping != nil,
+            finiteBackgroundExecutionID: finiteBackgroundExecutionID,
+            historicalWorkAllowed: historicalWorkAllowed,
+            historicalResourceConstraint: historicalResourceConstraint,
+            focusedDay: focusedDay,
+            focusedSessionID: focusedSessionID
+        )
+    }
+
+    private var canRun: Bool {
+        computeLease.canRun
+    }
+
     public func snapshot() -> TranscriptionSnapshot {
         TranscriptionSnapshot(phase: phase, userPaused: userPaused, activeSessionID: activeSessionID,
                               completedWindows: completedWindows, failureCode: failureCode,
                               execution: managed?.handle, batch: batchSnapshot,
-                              nativeInFlight: nativeInFlight || analysisPrefetch != nil || batchAnalysisPrefetch != nil,
+                              nativeInFlight: nativeInFlight,
                               failedSessionID: failedSessionID, failureScope: failureScope,
                               historicalResourceConstraint: historicalResourceConstraint,
                               completedPreparations: completedPreparations)
@@ -199,40 +222,12 @@ public actor TranscriptionCoordinator {
         }
     }
 
-    public func setAnalysisPrefetchEnabled(_ enabled: Bool) {
-        analysisPrefetchEnabled = enabled
-        analysisPrefetch?.setReadAheadAllowed(enabled)
-        if !enabled, let batchPrefetch = batchAnalysisPrefetch {
-            restartAfterCancellation = worker != nil
-            batchPrefetch.cancel()
-        }
-    }
-
-    public func invalidateAnalysisPrefetch() async {
-        let hadPrefetch = analysisPrefetch != nil || batchAnalysisPrefetch != nil
-        guard hadPrefetch else { return }
-        if let prefetch = analysisPrefetch {
-            analysisPrefetch = nil
-            try? await prefetch.release()
-        }
-        if let batchPrefetch = batchAnalysisPrefetch {
-            batchAnalysisPrefetch = nil
-            try? await batchPrefetch.release()
-        }
-        if worker != nil { restartAfterCancellation = true }
-        else { requestWork() }
-    }
-
     public func setHistoricalWorkAllowed(_ allowed: Bool, constraint: TranscriptionResourceConstraint? = nil) {
         let reason = allowed ? nil : constraint
         guard historicalWorkAllowed != allowed || historicalResourceConstraint != reason else { return }
         historicalResourceConstraint = reason
         historicalWorkAllowed = allowed
         if allowed { requestWork() }
-        else if let prefetch = analysisPrefetch {
-            restartAfterCancellation = true
-            prefetch.cancel()
-        }
         publish()
     }
 
@@ -559,8 +554,8 @@ public actor TranscriptionCoordinator {
         return handle
     }
 
-    /// Schedules unreserved priority-0 live work at the next clean step boundary without cancelling in-flight inference
-    /// or tearing down the active batch execution, sequential audio reader, or prepared-audio cache.
+    /// Expands priority interleaving on an active batch to include same-day (`Tier 2`) unreserved WAL work
+    /// in addition to always-automatic `Tier 0` live speech and `Tier 1` focused recordings.
     public func requestPriorityInterleaving(execution: TranscriptionExecutionHandle) {
         guard managed?.handle == execution, managed?.stopping == nil else { return }
         guard execution.batchExecution != nil else { return }
@@ -568,53 +563,13 @@ public actor TranscriptionCoordinator {
         requestWork()
     }
 
-    /// Elevates newly arrived hot live speech onto a dedicated low-latency fast lane:
-    /// - Releases any queued historical/batch VAD prefetch and starts hot-live VAD concurrently on
-    ///   `SpeechEngine.analysisQueue` while `queue` finishes its current bounded step (<1 s),
-    ///   never aborting `drain()` or discarding warm `EpochAudioReader` / `preparedAudio` caches.
+    /// Signals newly arrived hot live wearable audio so the unified WAL scheduler drains it at the next
+    /// bounded step boundary (<0.2 s VAD / <0.8 s ASR) without cancelling in-flight inference.
     public func onHotLiveWorkArrived(foreground _: Bool, ultraHot _: Bool) async {
         if let execution = managed?.handle, execution.batchExecution != nil, managed?.stopping == nil {
             managed?.interleavePriorityWork = true
         }
-        if let prefetch = analysisPrefetch, !prefetch.isHotLive {
-            if prefetch.hasCommittedPage {
-                // At least one bounded page is already durably committed in SQLite; releasing the
-                // paused stream frees analysisQueue and epoch attempt_id with zero lost progress.
-                try? await releaseAnalysisPrefetch()
-            } else {
-                // Guarantee forward progress under continuous Watch chunk arrival: finish and commit
-                // the single in-flight page (<0.5 s) before yielding to hot live analysis.
-                prefetch.requestYieldAfterFirstCommit()
-            }
-        }
-        if activeWorkIsHistorical, nativeInFlight, phase == .transcribing,
-           analysisPrefetch == nil, analysisPrefetchEnabled, retryScope == nil {
-            let activeWindow: ArchiveAnalysisWindow?
-            switch activeWork {
-            case .window(let single): activeWindow = single.window
-            case .windows(let batch): activeWindow = batch.first?.window
-            default: activeWindow = nil
-            }
-            if let activeWindow {
-                #if DEBUG
-                let onClaim: @Sendable (UUID) async -> Void = { [observer = onClaimReturned] id in
-                    await observer?(.analysis, id)
-                }
-                #else
-                let onClaim: @Sendable (UUID) async -> Void = { _ in }
-                #endif
-                analysisPrefetch = AnalysisPrefetch(
-                    archive: archive,
-                    speech: speech,
-                    activeWindow: activeWindow,
-                    allowHistorical: false,
-                    hotOnly: true,
-                    focusedDay: nil,
-                    lowLatency: true,
-                    onClaim: onClaim
-                )
-            }
-        }
+        hotArrivalCreditBoostPending = true
         requestWork()
     }
 
@@ -673,13 +628,6 @@ public actor TranscriptionCoordinator {
         requestWork()
     }
 
-    private var canRun: Bool {
-        guard !userPaused else { return false }
-        if startingManaged && managed == nil { return false }
-        if let managed { return managed.stopping == nil && (!systemSuspended || foregroundContinuationAllowed || managed.handle.origin != .foreground) }
-        return !systemSuspended || foregroundContinuationAllowed
-    }
-
     @discardableResult
     private func persistManagedEnd(_ handle: TranscriptionExecutionHandle, reason: TranscriptionBatchEndReason) async throws -> TranscriptionBatchEndReason {
         if let execution = handle.batchExecution {
@@ -717,8 +665,7 @@ public actor TranscriptionCoordinator {
             try? await closeReadingSequences(sessionID: sessionID)
         }
         // A claim can already own audio leases while its returned ticket has no active session yet.
-        guard activeSessionID == sessionID || analysisPrefetch != nil || batchAnalysisPrefetch != nil
-            || (activeSessionID == nil && worker != nil) else { return }
+        guard activeSessionID == sessionID || (activeSessionID == nil && worker != nil) else { return }
         restartAfterCancellation = true
         stopCurrentAttempt()
         do { try await invalidateActiveAttempt() }
@@ -730,12 +677,10 @@ public actor TranscriptionCoordinator {
     }
 
     private func captureInvalidationTarget() -> InvalidationTarget {
-        InvalidationTarget(work: activeWork, claim: pendingClaim, prefetch: analysisPrefetch, batchPrefetch: batchAnalysisPrefetch)
+        InvalidationTarget(work: activeWork, claim: pendingClaim)
     }
 
     private func invalidateAttempt(_ target: InvalidationTarget) async throws {
-        try await target.prefetch?.invalidate()
-        try await target.batchPrefetch?.invalidate()
         // A claim owns a durable attempt before its actor await returns to this coordinator.
         // Wait only for that short database operation; native work is never awaited here.
         let work: ActiveWork?
@@ -759,8 +704,6 @@ public actor TranscriptionCoordinator {
 
     private func stopCurrentAttempt() {
         attempt?.cancel()
-        analysisPrefetch?.cancel()
-        batchAnalysisPrefetch?.cancel()
         worker?.cancel()
     }
 
@@ -823,34 +766,235 @@ public actor TranscriptionCoordinator {
         }
     }
 
+    private func claimNextWALStep(
+        lease: TranscriptionComputeLease,
+        inputLease: TranscriptionInputLease?,
+        retry: (sessionID: UUID, generation: Int64)?,
+        sources: [TimelineAudioSource]?,
+        now: Date,
+        pacer: inout WALBackfillPacer
+    ) async throws -> WALStep {
+        let fingerprint = speech.configurationFingerprint
+
+        if let retry {
+            let windowClaim = Task { [archive] in
+                try await archive.claimTranscriptionWindow(
+                    configurationFingerprint: fingerprint,
+                    inputLease: inputLease,
+                    sessionID: retry.sessionID,
+                    expectedGeneration: retry.generation,
+                    sources: sources,
+                    isolateLocalFailures: false,
+                    now: now
+                )
+            }
+            pendingClaim = .window(windowClaim)
+            if let ticket = try await windowClaim.value {
+                return .transcribeWindow(ticket, source: .retry)
+            }
+            pendingClaim = nil
+
+            let epochClaim = Task { [archive] in
+                try await archive.claimEpochAnalysis(
+                    configurationFingerprint: fingerprint,
+                    sessionID: retry.sessionID,
+                    expectedGeneration: retry.generation,
+                    sources: sources,
+                    finalizeAvailablePrefixBefore: .distantFuture,
+                    isolateLocalFailures: false,
+                    now: now
+                )
+            }
+            pendingClaim = .epoch(epochClaim)
+            if let ticket = try await epochClaim.value {
+                return .prepareEpoch(ticket, source: .retry)
+            }
+            pendingClaim = nil
+            return .none
+        }
+
+        guard let execution = lease.managedHandle, let batch = execution.batchExecution else {
+            let allowHistorical = lease.historicalWorkAllowed
+            let focusedDay = lease.effectiveFocusedDay
+            let focusedSessionID = lease.effectiveFocusedSessionID
+            let claim = Task { [archive] in
+                try await archive.claimAutomaticWork(
+                    configurationFingerprint: fingerprint,
+                    inputLease: inputLease,
+                    allowHistorical: allowHistorical,
+                    focusedDay: focusedDay,
+                    focusedSessionID: focusedSessionID,
+                    now: now
+                )
+            }
+            pendingClaim = .automatic(claim)
+            switch try await claim.value {
+            case .analysis(let ticket):
+                return .prepareEpoch(ticket, source: .automatic)
+            case .transcription(let ticket):
+                return .transcribeWindow(ticket, source: .automatic)
+            case nil:
+                pendingClaim = nil
+                return .none
+            }
+        }
+
+        // Unified Omi-style WAL arbitration during active batch backfill:
+        // 1. Live wearable speech (`Tier 0`) and user-viewed views (`Tier 1`) automatically
+        //    interleave ahead of historical batch items without requiring manual flags.
+        // 2. If a continuous Watch epoch has hot-live WAL chunks blocked behind an unanalyzed
+        //    batch prefix, one 120 s stateless VAD pass (~0.15 s) prepares that prefix immediately.
+        var allowPriorityStep = pacer.canRunPriorityStepFromCredit
+        var burstTailHotOnly = false
+        if !allowPriorityStep,
+           let summary = try? await archive.livePriorityWorkSummary(configurationFingerprint: fingerprint),
+           pacer.canExtendHotTailBurst(
+               backgroundContinued: lease.isBackgroundContinued,
+               summary: (summary.hasHotLiveWork, summary.hotPendingSeconds)
+           ) {
+            allowPriorityStep = true
+            burstTailHotOnly = true
+        }
+
+        let today = TimelineDay(Date())
+        let hasActiveFocus = lease.hasActiveFocus(today: today)
+        let focusedDay = lease.effectiveFocusedDay
+        let focusedSessionID = lease.effectiveFocusedSessionID
+
+        if allowPriorityStep {
+            let continuedOrigin = execution.origin == .continuedProcessing
+            let interleaveSameDay = !continuedOrigin && !burstTailHotOnly && (managed?.interleavePriorityWork == true)
+            let focusEligible = !continuedOrigin && !burstTailHotOnly && hasActiveFocus
+            let effectiveHotOnly = continuedOrigin || burstTailHotOnly || (!interleaveSameDay && !focusEligible)
+            let allowFocusedHistorical = !effectiveHotOnly && lease.historicalWorkAllowed && focusEligible
+            let priorityMaxTier = (continuedOrigin || burstTailHotOnly) ? 0 : (interleaveSameDay ? 2 : 1)
+
+            let priorityClaim = Task { [archive] in
+                try await archive.claimAutomaticWork(
+                    configurationFingerprint: fingerprint,
+                    inputLease: inputLease,
+                    allowHistorical: allowFocusedHistorical,
+                    hotOnly: effectiveHotOnly,
+                    focusedDay: focusedDay,
+                    focusedSessionID: focusedSessionID,
+                    maxTier: priorityMaxTier
+                )
+            }
+            pendingClaim = .automatic(priorityClaim)
+            switch try await priorityClaim.value {
+            case .analysis(let ticket):
+                return .prepareEpoch(ticket, source: .interleavedLivePriority)
+            case .transcription(let ticket):
+                return .transcribeWindow(ticket, source: .interleavedLivePriority)
+            case nil:
+                pendingClaim = nil
+                let unblockClaim = Task { [archive] in
+                    try await archive.claimBatchPrefixBlockingLiveTail(
+                        execution: batch,
+                        configurationFingerprint: fingerprint,
+                        maxStepSeconds: Self.walVADStepSeconds,
+                        includeSameDayToday: interleaveSameDay
+                    )
+                }
+                pendingClaim = .epoch(unblockClaim)
+                if let prefixTicket = try await unblockClaim.value {
+                    return .prepareEpoch(prefixTicket, source: .batchBackfill)
+                }
+                pendingClaim = nil
+                if !burstTailHotOnly {
+                    if managed?.handle == execution {
+                        managed?.interleavePriorityWork = false
+                    }
+                    pacer.resetForIdlePriority(backgroundContinued: lease.isBackgroundContinued)
+                }
+            }
+        }
+
+        if hasActiveFocus {
+            let tier1WindowClaim = Task { [archive] in
+                try await archive.claimTranscriptionWindow(
+                    configurationFingerprint: fingerprint,
+                    batchExecution: batch,
+                    inputLease: inputLease,
+                    isolateLocalFailures: true,
+                    focusedDay: focusedDay,
+                    focusedSessionID: focusedSessionID,
+                    maxTier: 1
+                )
+            }
+            pendingClaim = .window(tier1WindowClaim)
+            if let ticket = try await tier1WindowClaim.value {
+                return .transcribeWindow(ticket, source: .batchBackfill)
+            }
+            pendingClaim = nil
+
+            let tier1EpochClaim = Task { [archive] in
+                try await archive.claimTranscriptionBatchAnalysis(
+                    execution: batch,
+                    configurationFingerprint: fingerprint,
+                    maxStepSeconds: Self.walVADStepSeconds,
+                    focusedDay: focusedDay,
+                    focusedSessionID: focusedSessionID,
+                    maxTier: 1
+                )
+            }
+            pendingClaim = .epoch(tier1EpochClaim)
+            if let ticket = try await tier1EpochClaim.value {
+                return .prepareEpoch(ticket, source: .batchBackfill)
+            }
+            pendingClaim = nil
+        }
+
+        let batchWindowClaim = Task { [archive] in
+            try await archive.claimTranscriptionWindow(
+                configurationFingerprint: fingerprint,
+                batchExecution: batch,
+                inputLease: inputLease,
+                isolateLocalFailures: true,
+                focusedDay: focusedDay,
+                focusedSessionID: focusedSessionID
+            )
+        }
+        pendingClaim = .window(batchWindowClaim)
+        if let ticket = try await batchWindowClaim.value {
+            return .transcribeWindow(ticket, source: .batchBackfill)
+        }
+        pendingClaim = nil
+
+        let batchEpochClaim = Task { [archive] in
+            try await archive.claimTranscriptionBatchAnalysis(
+                execution: batch,
+                configurationFingerprint: fingerprint,
+                maxStepSeconds: Self.walVADStepSeconds,
+                focusedDay: focusedDay,
+                focusedSessionID: focusedSessionID
+            )
+        }
+        pendingClaim = .epoch(batchEpochClaim)
+        if let ticket = try await batchEpochClaim.value {
+            return .prepareEpoch(ticket, source: .batchBackfill)
+        }
+        pendingClaim = nil
+
+        return .completeBatch(execution, batch)
+    }
+
     private func drain() async -> TranscriptionRunReport {
         let retry = retryScope
         let sources = retrySources
         var prepared = 0, transcribed = 0
         var consecutiveRevisions = 0
-        var priorityCreditSeconds: Double = (managed?.handle.origin == .continuedProcessing && systemSuspended) ? 8.0 : 12.0
-        var priorityBurstElapsedSeconds: Double = 0
-        var consecutivePriorityPrepSteps = 0
+        var pacer = WALBackfillPacer(backgroundContinued: computeLease.isBackgroundContinued)
         var finiteBudgetExhausted = false
         // Allow a short edit burst, but stop retrying if a file keeps changing without any committed progress.
         let maximumConsecutiveRevisions = 3
-        // Cost-aware DRR + burst-drain priority interleaving:
-        // - Normal 60 s Watch/Earphone chunks (<= 90 s hot tail) drain completely in one burst without stranding the final sentence.
-        // - Multi-chunk continuous speech or same-day backlog shares wall-clock compute 4:1 (`12 s` initial / `16 s` cap; `8 s` in background continued slices).
-        let maximumConsecutivePriorityPrepSteps = 24
         func monotonicUptimeSeconds() -> Double { Double(DispatchTime.now().uptimeNanoseconds) * 1e-9 }
-        func refillPriorityCredit(afterBatchElapsed elapsed: Double, origin: TranscriptionBatchOrigin?) {
-            let cap: Double = (origin == .continuedProcessing && systemSuspended) ? 8.0 : 16.0
-            let refill = max(3.0, min(10.0, max(0.1, elapsed)) * 4.0)
-            priorityCreditSeconds = min(cap, max(0, priorityCreditSeconds) + refill)
-            priorityBurstElapsedSeconds = 0
-            consecutivePriorityPrepSteps = 0
-        }
+
         do {
-            if managed?.handle.batchExecution == nil || managed?.handle.origin == .foreground {
+            if computeLease.allowsInitialHistoryPreservation {
                 try await preserveCompletedHistory()
             }
-            if managed == nil || managed?.handle.origin == .foreground {
+            if computeLease.allowsInitialVoiceprintExtraction {
                 // Process user-confirmed speaker anchors promptly without starving incoming live audio.
                 try await extractPendingVoiceprintSeedsIfNeeded(limit: 2)
             }
@@ -864,219 +1008,93 @@ public actor TranscriptionCoordinator {
                     activeExecutionID = nil
                     continue
                 }
-                if (prepared + transcribed) > 0, let remainingFiniteBackgroundSeconds {
-                    let hasFiniteCandidate = (managed?.stopping == nil && managed?.handle.id == finiteBackgroundExecutionID && finiteBackgroundExecutionID != nil)
-                        || (managed?.stopping == nil && managed?.handle.origin == .foreground && systemSuspended && foregroundContinuationAllowed)
-                        || (managed == nil && systemSuspended && foregroundContinuationAllowed)
-                    let stopThreshold: TimeInterval = transcribed > 0 ? 10 : 6
-                    if hasFiniteCandidate,
-                       let remaining = await remainingFiniteBackgroundSeconds(),
-                       remaining.isFinite, remaining < stopThreshold {
-                        if let run = managed, run.stopping == nil, run.handle.id == finiteBackgroundExecutionID {
-                            finiteBudgetExhausted = true
-                            let persistedReason = try await persistManagedEnd(run.handle, reason: .backgroundExpired)
-                            if managed?.stopping == nil {
-                                completeManaged(run.handle, reason: persistedReason, failure: nil)
-                            }
-                            activeExecutionID = nil
-                            break
-                        } else if let run = managed, run.stopping == nil, run.handle.origin == .foreground,
-                                  systemSuspended, foregroundContinuationAllowed {
-                            finiteBudgetExhausted = true
-                            foregroundContinuationAllowed = false
-                            let persistedReason = try await persistManagedEnd(run.handle, reason: .interrupted)
-                            if managed?.stopping == nil {
-                                completeManaged(run.handle, reason: persistedReason, failure: nil)
-                            }
-                            activeExecutionID = nil
-                            break
-                        } else if managed == nil, systemSuspended, foregroundContinuationAllowed {
-                            finiteBudgetExhausted = true
-                            foregroundContinuationAllowed = false
-                            phase = userPaused ? .paused : .systemSuspended
-                            break
+                let preBudgetLease = computeLease
+                if (prepared + transcribed) > 0,
+                   preBudgetLease.hasFiniteBudget,
+                   let remainingFiniteBackgroundSeconds,
+                   let remaining = await remainingFiniteBackgroundSeconds(),
+                   remaining.isFinite,
+                   remaining < preBudgetLease.finiteStopThreshold(transcribedWindows: transcribed) {
+                    if let run = managed, run.stopping == nil, run.handle.id == finiteBackgroundExecutionID {
+                        finiteBudgetExhausted = true
+                        let persistedReason = try await persistManagedEnd(run.handle, reason: .backgroundExpired)
+                        if managed?.stopping == nil {
+                            completeManaged(run.handle, reason: persistedReason, failure: nil)
                         }
+                        activeExecutionID = nil
+                        break
+                    } else if let run = managed, run.stopping == nil, run.handle.origin == .foreground,
+                              systemSuspended, foregroundContinuationAllowed {
+                        finiteBudgetExhausted = true
+                        foregroundContinuationAllowed = false
+                        let persistedReason = try await persistManagedEnd(run.handle, reason: .interrupted)
+                        if managed?.stopping == nil {
+                            completeManaged(run.handle, reason: persistedReason, failure: nil)
+                        }
+                        activeExecutionID = nil
+                        break
+                    } else if managed == nil, systemSuspended, foregroundContinuationAllowed {
+                        finiteBudgetExhausted = true
+                        foregroundContinuationAllowed = false
+                        phase = userPaused ? .paused : .systemSuspended
+                        break
                     }
                 }
-                let wantsPriorityInterleaving = managed?.stopping == nil
-                    && managed?.handle.batchExecution != nil
-                    && managed?.interleavePriorityWork == true
-                    && retry == nil
-                if managed?.handle.batchExecution != nil && !wantsPriorityInterleaving {
-                    try await releaseAnalysisPrefetch()
-                }
-                if let batchPrefetch = batchAnalysisPrefetch, batchPrefetch.execution != managed?.handle.batchExecution {
-                    try await releaseBatchAnalysisPrefetch()
+
+                try Task.checkCancellation()
+                guard canRun else { break }
+                let lease = computeLease
+                if hotArrivalCreditBoostPending {
+                    hotArrivalCreditBoostPending = false
+                    pacer.noteHotLiveArrival(backgroundContinued: lease.isBackgroundContinued)
                 }
                 requested = false
-                let execution = managed?.handle
+                let execution = lease.managedHandle
                 activeExecutionID = execution?.id
-                let currentFocusedDay = systemSuspended ? nil : focusedDay
-                let currentFocusedSessionID = systemSuspended ? nil : focusedSessionID
                 let inputLease = readingSequences.first?.lease
-                var selectedWindow: TranscriptionWindowTicket?
-                var selectedWindowIsInterleavedPriority = false
-                if wantsPriorityInterleaving {
-                    let hotOnlyOrigin = execution?.origin == .continuedProcessing
-                    let backgroundContinued = hotOnlyOrigin && systemSuspended
-                    var allowPriorityStep = consecutivePriorityPrepSteps < maximumConsecutivePriorityPrepSteps
-                        && priorityCreditSeconds > 0
-                    var burstTailHotOnly = false
-                    if !allowPriorityStep,
-                       consecutivePriorityPrepSteps < maximumConsecutivePriorityPrepSteps,
-                       !backgroundContinued,
-                       priorityBurstElapsedSeconds < 18.0,
-                       let summary = try? await archive.livePriorityWorkSummary(configurationFingerprint: speech.configurationFingerprint),
-                       summary.hasHotLiveWork,
-                       summary.hotPendingSeconds <= 90.0 {
-                        allowPriorityStep = true
-                        burstTailHotOnly = true
+                let stepStartedAt = Date()
+
+                let step = try await claimNextWALStep(
+                    lease: lease,
+                    inputLease: inputLease,
+                    retry: retry,
+                    sources: sources,
+                    now: stepStartedAt,
+                    pacer: &pacer
+                )
+
+                switch step {
+                case .prepareEpoch(let ticket, let source):
+                    #if DEBUG
+                    await onClaimReturned?(.analysis, ticket.sessionID)
+                    #endif
+                    let prepStart = monotonicUptimeSeconds()
+                    switch try await prepare(ticket) {
+                    case .committed:
+                        prepared += 1
+                        consecutiveRevisions = 0
+                    case .superseded:
+                        consecutiveRevisions += 1
+                        guard consecutiveRevisions < maximumConsecutiveRevisions else { throw TranscriptionCoordinatorError.repeatedRevisions }
+                    case .deferred:
+                        break
                     }
-                    if allowPriorityStep {
-                        let effectiveHotOnly = hotOnlyOrigin || burstTailHotOnly
-                        let allowFocusedHistorical = !effectiveHotOnly
-                            && historicalWorkAllowed
-                            && (currentFocusedDay != nil || currentFocusedSessionID != nil)
-                        let priorityMaxTier = effectiveHotOnly ? 0 : 2
-                        let activeAnalysis = try await analysisPrefetch?.activeTicket()
-                        let priorityClaim = Task { [archive, fingerprint = speech.configurationFingerprint] in
-                            try await archive.claimAutomaticWork(configurationFingerprint: fingerprint,
-                                inputLease: inputLease, allowHistorical: allowFocusedHistorical, hotOnly: effectiveHotOnly,
-                                focusedDay: currentFocusedDay, focusedSessionID: currentFocusedSessionID,
-                                maxTier: priorityMaxTier, activeAnalysis: activeAnalysis)
-                        }
-                        pendingClaim = .automatic(priorityClaim)
-                        switch try await priorityClaim.value {
-                        case .analysis(let ticket):
-                            #if DEBUG
-                            await onClaimReturned?(.analysis, ticket.sessionID)
-                            #endif
-                            try await beginAutomaticAnalysis(ticket)
-                            continue
-                        case .transcription(let ticket):
-                            consecutivePriorityPrepSteps = 0
-                            selectedWindow = ticket
-                            selectedWindowIsInterleavedPriority = true
-                        case nil:
-                            pendingClaim = nil
-                            if let prefetch = analysisPrefetch {
-                                let prepStart = monotonicUptimeSeconds()
-                                if let page = try await prefetch.take() {
-                                    consecutivePriorityPrepSteps += 1
-                                    switch try await prepare(page.ticket, prefetched: page.result, pipeline: prefetch) {
-                                    case .committed: prepared += 1; consecutiveRevisions = 0
-                                    case .superseded:
-                                        consecutiveRevisions += 1
-                                        guard consecutiveRevisions < maximumConsecutiveRevisions else { throw TranscriptionCoordinatorError.repeatedRevisions }
-                                    case .deferred: break
-                                    }
-                                    let prepElapsed = max(0.05, monotonicUptimeSeconds() - prepStart)
-                                    priorityCreditSeconds -= prepElapsed
-                                    priorityBurstElapsedSeconds += prepElapsed
-                                    continue
-                                } else {
-                                    analysisPrefetch = nil
-                                }
-                            }
-                            if managed?.handle == execution {
-                                managed?.interleavePriorityWork = false
-                            }
-                            priorityBurstElapsedSeconds = 0
-                            consecutivePriorityPrepSteps = 0
-                            priorityCreditSeconds = backgroundContinued ? 8.0 : 12.0
-                        }
+                    let prepElapsed = monotonicUptimeSeconds() - prepStart
+                    if source == .interleavedLivePriority {
+                        pacer.recordPriorityPrepStep(elapsed: prepElapsed)
+                    } else if source == .batchBackfill {
+                        pacer.refillAfterBackfillStep(elapsed: prepElapsed, backgroundContinued: computeLease.isBackgroundContinued)
+                        try await refreshBatch(execution)
                     }
-                }
-                if selectedWindow == nil {
-                    if execution?.batchExecution == nil && retry == nil {
-                        let allowHistorical = historicalWorkAllowed
-                        let activeAnalysis = try await analysisPrefetch?.activeTicket()
-                        let claim = Task { [archive, fingerprint = speech.configurationFingerprint] in
-                            try await archive.claimAutomaticWork(configurationFingerprint: fingerprint,
-                                inputLease: inputLease, allowHistorical: allowHistorical,
-                                focusedDay: currentFocusedDay, focusedSessionID: currentFocusedSessionID,
-                                activeAnalysis: activeAnalysis)
-                        }
-                        pendingClaim = .automatic(claim)
-                        switch try await claim.value {
-                        case .analysis(let ticket):
-                            #if DEBUG
-                            await onClaimReturned?(.analysis, ticket.sessionID)
-                            #endif
-                            try await beginAutomaticAnalysis(ticket)
-                            continue
-                        case .transcription(let ticket): selectedWindow = ticket
-                        case nil: selectedWindow = nil
-                        }
-                    } else {
-                        let isolateWindowFailures = retry == nil
-                        let focused = retry == nil ? currentFocusedDay : nil
-                        let focusedSession = retry == nil ? currentFocusedSessionID : nil
-                        let hasActiveFocus = retry == nil
-                            && ((currentFocusedDay != nil && currentFocusedDay != TimelineDay(Date())) || currentFocusedSessionID != nil)
-                        if let execution, let batch = execution.batchExecution, hasActiveFocus {
-                            let tier1WindowClaim = Task { [archive, fingerprint = speech.configurationFingerprint] in
-                                try await archive.claimTranscriptionWindow(configurationFingerprint: fingerprint,
-                                    batchExecution: batch, inputLease: inputLease,
-                                    isolateLocalFailures: isolateWindowFailures,
-                                    focusedDay: focused, focusedSessionID: focusedSession, maxTier: 1)
-                            }
-                            pendingClaim = .window(tier1WindowClaim)
-                            selectedWindow = try await tier1WindowClaim.value
-                            if selectedWindow == nil {
-                                pendingClaim = nil
-                                if batchAnalysisPrefetch != nil {
-                                    try await releaseBatchAnalysisPrefetch()
-                                }
-                                let tier1EpochClaim = Task { [archive, fingerprint = speech.configurationFingerprint] in
-                                    try await archive.claimTranscriptionBatchAnalysis(
-                                        execution: batch,
-                                        configurationFingerprint: fingerprint,
-                                        maxStepSeconds: 240,
-                                        focusedDay: focused,
-                                        focusedSessionID: focusedSession,
-                                        maxTier: 1
-                                    )
-                                }
-                                pendingClaim = .epoch(tier1EpochClaim)
-                                if let ticket = try await tier1EpochClaim.value {
-                                    #if DEBUG
-                                    await onClaimReturned?(.analysis, ticket.sessionID)
-                                    #endif
-                                    let prepStart = monotonicUptimeSeconds()
-                                    switch try await prepare(ticket) {
-                                    case .committed: prepared += 1; consecutiveRevisions = 0
-                                    case .superseded:
-                                        consecutiveRevisions += 1
-                                        guard consecutiveRevisions < maximumConsecutiveRevisions else { throw TranscriptionCoordinatorError.repeatedRevisions }
-                                    case .deferred: break
-                                    }
-                                    refillPriorityCredit(afterBatchElapsed: monotonicUptimeSeconds() - prepStart, origin: execution.origin)
-                                    try await refreshBatch(execution)
-                                    continue
-                                }
-                                pendingClaim = nil
-                            }
-                        }
-                        if selectedWindow == nil {
-                            let windowClaim = Task { [archive, fingerprint = speech.configurationFingerprint] in
-                                try await archive.claimTranscriptionWindow(configurationFingerprint: fingerprint,
-                                    batchExecution: execution?.batchExecution, inputLease: inputLease,
-                                    sessionID: retry?.sessionID, expectedGeneration: retry?.generation, sources: sources,
-                                    isolateLocalFailures: isolateWindowFailures,
-                                    focusedDay: focused, focusedSessionID: focusedSession)
-                            }
-                            pendingClaim = .window(windowClaim)
-                            selectedWindow = try await windowClaim.value
-                        }
-                    }
-                }
-                if let ticket = selectedWindow {
+                    continue
+
+                case .transcribeWindow(let ticket, let source):
                     #if DEBUG
                     await onClaimReturned?(.transcription, ticket.window.sessionID)
                     #endif
                     let stepStart = monotonicUptimeSeconds()
-                    switch try await transcribe(ticket, interleavedPriority: selectedWindowIsInterleavedPriority) {
+                    let isInterleavedPriority = source == .interleavedLivePriority
+                    switch try await transcribe(ticket, interleavedPriority: isInterleavedPriority) {
                     case .committed:
                         transcribed += lastTranscribedWindowCount
                         publish()
@@ -1084,125 +1102,47 @@ public actor TranscriptionCoordinator {
                     case .superseded:
                         consecutiveRevisions += 1
                         guard consecutiveRevisions < maximumConsecutiveRevisions else { throw TranscriptionCoordinatorError.repeatedRevisions }
-                    case .deferred: break
+                    case .deferred:
+                        break
                     }
-                    let stepElapsed = max(0.1, monotonicUptimeSeconds() - stepStart)
-                    if selectedWindowIsInterleavedPriority {
-                        priorityCreditSeconds -= stepElapsed
-                        priorityBurstElapsedSeconds += stepElapsed
-                    } else if execution?.batchExecution != nil {
-                        refillPriorityCredit(afterBatchElapsed: stepElapsed, origin: execution?.origin)
+                    let stepElapsed = monotonicUptimeSeconds() - stepStart
+                    if isInterleavedPriority {
+                        pacer.recordPriorityWindowStep(elapsed: stepElapsed)
+                    } else if source == .batchBackfill {
+                        pacer.refillAfterBackfillStep(elapsed: stepElapsed, backgroundContinued: computeLease.isBackgroundContinued)
                         try await refreshBatch(execution)
                     }
                     continue
-                }
-                pendingClaim = nil
-                // Published windows compete in the ordinary scheduler before requesting more analysis.
-                if execution?.batchExecution == nil, let prefetch = analysisPrefetch {
-                    if let page = try await prefetch.take() {
-                        switch try await prepare(page.ticket, prefetched: page.result, pipeline: prefetch) {
-                        case .committed: prepared += 1; consecutiveRevisions = 0
-                        case .superseded:
-                            consecutiveRevisions += 1
-                            guard consecutiveRevisions < maximumConsecutiveRevisions else { throw TranscriptionCoordinatorError.repeatedRevisions }
-                        case .deferred: break
-                        }
-                    } else { analysisPrefetch = nil }
-                    continue
-                }
-                try Task.checkCancellation()
-                if managed?.handle != execution { continue }
-                if let execution, let batch = execution.batchExecution {
-                    if let prefetch = batchAnalysisPrefetch, prefetch.execution == batch {
-                        batchAnalysisPrefetch = nil
-                        let prepStart = monotonicUptimeSeconds()
-                        if let page = try await prefetch.take() {
-                            switch try await prepare(page.ticket, prefetchedBatch: page.result) {
-                            case .committed: prepared += 1; consecutiveRevisions = 0
-                            case .superseded:
-                                consecutiveRevisions += 1
-                                guard consecutiveRevisions < maximumConsecutiveRevisions else { throw TranscriptionCoordinatorError.repeatedRevisions }
-                            case .deferred: break
-                            }
-                            refillPriorityCredit(afterBatchElapsed: monotonicUptimeSeconds() - prepStart, origin: execution.origin)
-                            try await refreshBatch(execution)
-                            continue
-                        }
-                    }
-                    let stepSeconds: Double = 240
-                    let epochClaim = Task { [archive, fingerprint = speech.configurationFingerprint] in
-                        try await archive.claimTranscriptionBatchAnalysis(
-                            execution: batch,
-                            configurationFingerprint: fingerprint,
-                            maxStepSeconds: stepSeconds,
-                            focusedDay: currentFocusedDay,
-                            focusedSessionID: currentFocusedSessionID
-                        )
-                    }
-                    pendingClaim = .epoch(epochClaim)
-                    if let ticket = try await epochClaim.value {
-                        #if DEBUG
-                        await onClaimReturned?(.analysis, ticket.sessionID)
-                        #endif
-                        let prepStart = monotonicUptimeSeconds()
-                        switch try await prepare(ticket) {
-                        case .committed: prepared += 1; consecutiveRevisions = 0
-                        case .superseded:
-                            consecutiveRevisions += 1
-                            guard consecutiveRevisions < maximumConsecutiveRevisions else { throw TranscriptionCoordinatorError.repeatedRevisions }
-                        case .deferred: break
-                        }
-                        refillPriorityCredit(afterBatchElapsed: monotonicUptimeSeconds() - prepStart, origin: execution.origin)
-                        try await refreshBatch(execution)
-                        continue
-                    }
-                    pendingClaim = nil
+
+                case .completeBatch(let batchHandle, let batch):
+                    try Task.checkCancellation()
+                    if managed?.handle != batchHandle { continue }
                     try await closeReadingSequence()
                     try Task.checkCancellation()
                     let reason: TranscriptionBatchEndReason
                     do {
-                        reason = try await persistManagedEnd(execution, reason: .completed)
+                        reason = try await persistManagedEnd(batchHandle, reason: .completed)
                     } catch TranscriptionBatchError.incomplete {
                         _ = try? await archive.deferUnclaimableBatchItems(
                             execution: batch,
                             configurationFingerprint: speech.configurationFingerprint
                         )
                         do {
-                            reason = try await persistManagedEnd(execution, reason: .completed)
+                            reason = try await persistManagedEnd(batchHandle, reason: .completed)
                         } catch TranscriptionBatchError.incomplete {
                             performanceLogger.error("Batch \(batch.batchID, privacy: .public) still had unclaimable items; suspending as systemEndedUnknown so automatic transcription can proceed")
-                            reason = try await persistManagedEnd(execution, reason: .systemEndedUnknown)
+                            reason = try await persistManagedEnd(batchHandle, reason: .systemEndedUnknown)
                         }
                     }
                     // A stop that arrived during the Archive await owns completion after its barrier.
-                    if managed?.stopping == nil { completeManaged(execution, reason: reason, failure: nil) }
+                    if managed?.stopping == nil { completeManaged(batchHandle, reason: reason, failure: nil) }
                     activeExecutionID = nil
                     continue
+
+                case .none:
+                    break
                 }
-                if let retry {
-                    let epochClaim = Task { [archive, fingerprint = speech.configurationFingerprint] in
-                        try await archive.claimEpochAnalysis(configurationFingerprint: fingerprint,
-                            sessionID: retry.sessionID, expectedGeneration: retry.generation, sources: sources,
-                            finalizeAvailablePrefixBefore: .distantFuture, isolateLocalFailures: false)
-                    }
-                    pendingClaim = .epoch(epochClaim)
-                    if let ticket = try await epochClaim.value {
-                        #if DEBUG
-                        await onClaimReturned?(.analysis, ticket.sessionID)
-                        #endif
-                        switch try await prepare(ticket) {
-                        case .committed:
-                            prepared += 1
-                            consecutiveRevisions = 0
-                        case .superseded:
-                            consecutiveRevisions += 1
-                            guard consecutiveRevisions < maximumConsecutiveRevisions else { throw TranscriptionCoordinatorError.repeatedRevisions }
-                        case .deferred: break
-                        }
-                        continue
-                    }
-                }
-                pendingClaim = nil
+
                 try await closeReadingSequence()
                 try Task.checkCancellation()
                 if managed?.handle != execution { continue }
@@ -1231,16 +1171,33 @@ public actor TranscriptionCoordinator {
                         default: phase = .idle
                         }
                     }
-                } else { applyWaitingState(waiting) }
-                if retry == nil,
-                   finiteBackgroundExecutionID == nil,
-                   !(systemSuspended && foregroundContinuationAllowed),
-                   (managed == nil || managed?.handle.origin == .foreground || managed?.handle.origin == .backgroundProcessing),
-                   canRun {
+                } else {
+                    applyWaitingState(waiting)
+                }
+
+                // Omi-style conversation silence boundary: if an open trailing utterance is waiting
+                // for context and no further WAL chunk arrives within `staleOpenTailSeconds` (180 s),
+                // wake automatically at the exact wall-clock deadline to seal `.receivedSnapshot`.
+                if phase == .waitingForContext,
+                   execution == nil,
+                   canRun,
+                   !computeLease.hasFiniteBudget,
+                   let finalizeAt = try? await archive.nextOpenTailFinalizationDate(
+                       configurationFingerprint: speech.configurationFingerprint,
+                       sessionID: retry?.sessionID,
+                       allowHistorical: retry != nil || historicalWorkAllowed,
+                       now: stepStartedAt
+                   ) {
+                    try Task.checkCancellation()
+                    if requested || managed?.handle != execution { continue }
+                    scheduleWake(at: finalizeAt)
+                }
+
+                if retry == nil, computeLease.allowsIdleVoiceprintExtraction, canRun {
                     try await extractPendingVoiceprintSeedsIfNeeded()
                     if requested { continue }
                 }
-                if let execution {
+                if let execution, execution.batchExecution == nil {
                     completeManaged(execution, reason: .completed, failure: nil)
                     activeExecutionID = nil
                 }
@@ -1261,15 +1218,12 @@ public actor TranscriptionCoordinator {
             }
         }
         do {
-            try await releaseAnalysisPrefetch()
-            try await releaseBatchAnalysisPrefetch()
             try await closeReadingSequence()
         } catch { phase = .failed; failureCode = "archive_reader_cleanup_failed" }
         speech.discardPreparedAudio()
         activeSessionID = nil
         attempt = nil
         activeWork = nil
-        activeWorkIsHistorical = false
         pendingClaim = nil
         activeExecutionID = nil
         worker = nil
@@ -1303,81 +1257,46 @@ public actor TranscriptionCoordinator {
         return report
     }
 
-    private func beginAutomaticAnalysis(_ ticket: EpochAnalysisTicket) async throws {
-        // Transfer claim ownership before cleanup awaits so pause/deletion can always find the new lease.
-        activeSessionID = ticket.sessionID
-        activeWork = .epoch(ticket)
-        pendingClaim = nil
-        let isHot = archive.isHotLiveAnalysis(ticket)
-        do {
-            try await releaseAnalysisPrefetch()
-            try Task.checkCancellation()
-            analysisPrefetch = AnalysisPrefetch(archive: archive, speech: speech, ticket: ticket,
-                                               readAheadAllowed: analysisPrefetchEnabled, lowLatency: isHot)
-            activeSessionID = nil; activeWork = nil
-        } catch {
-            try await archive.cancelEpochAnalysis(ticket: ticket)
-            activeSessionID = nil; activeWork = nil
-            throw error
-        }
-    }
-
-    private func prepare(_ claimed: EpochAnalysisTicket, prefetched: Result<SpeechAnalysisPage, Error>? = nil,
-                         prefetchedBatch: Result<SpeechAnalysisBatch, Error>? = nil,
-                         pipeline: AnalysisPrefetch? = nil) async throws -> WorkOutcome {
+    private func prepare(_ claimed: EpochAnalysisTicket) async throws -> WorkOutcome {
         var ticket = claimed
         let token = SpeechAttempt(id: ticket.attemptID)
         activeSessionID = ticket.sessionID
         lastAttemptedSessionID = ticket.sessionID
         activeWork = .epoch(ticket)
-        activeWorkIsHistorical = (managed?.handle.batchExecution != nil && managed?.interleavePriorityWork != true)
-            || !archive.isHotLiveAnalysis(ticket)
-        activeStepStartedUptime = Double(DispatchTime.now().uptimeNanoseconds) * 1e-9
         pendingClaim = nil
         attempt = token
-        defer { activeWorkIsHistorical = false }
         do {
             try Task.checkCancellation()
-            if prefetched == nil && prefetchedBatch == nil {
-                ticket = try await archive.withAnalysisReplayPrefix(
-                    ticket,
-                    includingRecognitionContext: speech.continuousArchive
-                )
-                activeWork = .epoch(ticket)
-                try Task.checkCancellation()
-                try token.checkCancellation()
-            }
+            ticket = try await archive.withAnalysisReplayPrefix(
+                ticket,
+                includingRecognitionContext: speech.continuousArchive
+            )
+            activeWork = .epoch(ticket)
+            try Task.checkCancellation()
+            try token.checkCancellation()
             phase = .preparing
             nativeInFlight = true
             publish()
-            let result: SpeechAnalysisBatch
-            let continuing: Bool
-            if let prefetched {
-                let page = try prefetched.get()
-                result = page.batch
-                continuing = !page.isFinal
-            } else if let prefetchedBatch {
-                result = try prefetchedBatch.get()
-                continuing = false
-            } else {
-                continuing = false
-                result = try await speech.prepare(inputs: ticket.inputs.map(speechInput), resume: ticket.checkpoint.map(speechCheckpoint),
-                                                 boundary: ticket.boundary, replayOrigin: ticket.replayOrigin, attempt: token)
-            }
+            let result = try await speech.prepare(
+                inputs: ticket.inputs.map(speechInput),
+                resume: ticket.checkpoint.map(speechCheckpoint),
+                boundary: ticket.boundary,
+                replayOrigin: ticket.replayOrigin,
+                attempt: token
+            )
             nativeInFlight = false
             try Task.checkCancellation()
             try token.checkCancellation()
-            try await archive.commitAnalysisBatch(ticket: ticket, windows: result.windows.map(archiveWindow),
-                                                  analyzedCoverage: result.analyzedCoverage, noSpeechCoverage: result.noSpeechCoverage,
-                                                  checkpoint: result.checkpoint.map(archiveCheckpoint), waitingForMoreAudio: result.waitingForMoreAudio,
-                                                  continuing: continuing)
+            try await archive.commitAnalysisBatch(
+                ticket: ticket,
+                windows: result.windows.map(archiveWindow),
+                analyzedCoverage: result.analyzedCoverage,
+                noSpeechCoverage: result.noSpeechCoverage,
+                checkpoint: result.checkpoint.map(archiveCheckpoint),
+                waitingForMoreAudio: result.waitingForMoreAudio,
+                continuing: false
+            )
             completedPreparations += 1
-            pipeline?.markPageCommitted()
-            if !continuing, pipeline != nil {
-                analysisPrefetch = nil
-            } else if let pipeline, pipeline.shouldYieldAfterCommit {
-                try? await releaseAnalysisPrefetch()
-            }
             activeSessionID = nil
             lastAttemptedSessionID = nil
             attempt = nil
@@ -1386,8 +1305,6 @@ public actor TranscriptionCoordinator {
             return .committed
         } catch {
             nativeInFlight = false
-            await pipeline?.stopNative()
-            if pipeline != nil { analysisPrefetch = nil }
             // Native readers have returned before their original-file leases are released.
             let isolated = shouldLocateFailure(error) && retryScope == nil ? localFailureCode(error) : nil
             if let isolated { try await archive.deferEpochAnalysis(ticket: ticket, code: isolated) }
@@ -1426,13 +1343,10 @@ public actor TranscriptionCoordinator {
         activeWork = .window(ticket)
         pendingClaim = nil
         attempt = token
-        defer { activeWorkIsHistorical = false }
         do {
             try Task.checkCancellation()
             let hotWindow = (try? await archive.isHotLiveWindow(ticket.window)) ?? false
             let isHotLive = interleavedPriority || hotWindow
-            activeWorkIsHistorical = !isHotLive
-            activeStepStartedUptime = Double(DispatchTime.now().uptimeNanoseconds) * 1e-9
             if let existingIndex = readingSequences.firstIndex(where: {
                 $0.lease.contains(ticket) && ticket.window.modelCoreFrames.start >= $0.coreEnd
             }) {
@@ -1461,12 +1375,10 @@ public actor TranscriptionCoordinator {
             }
             try Task.checkCancellation()
             guard let sequence = readingSequences.first else { throw SpeechError.incompatibleWindow }
-            let allowBackgroundBatching = speech.backgroundBudget != .standard
-                && finiteBackgroundExecutionID == nil
-                && (managed?.handle.origin == .backgroundProcessing || managed?.handle.origin == .continuedProcessing)
-            let allowForegroundBatching = !systemSuspended
-                && (managed == nil || managed?.handle.origin == .foreground || managed?.handle.origin == .continuedProcessing)
-            let allowCompanionBatching = !isHotLive && (allowForegroundBatching || allowBackgroundBatching)
+            let allowCompanionBatching = computeLease.allowsCompanionBatching(
+                isHotLive: isHotLive,
+                backgroundBudget: speech.backgroundBudget
+            )
             let windowBatchLimit = speech.coordinatorWindowBatchSize
             if allowCompanionBatching, retryScope == nil, !batchDecodeFailed, windowBatchLimit > 1 {
                 let companions = Task { [archive, limit = windowBatchLimit] in
@@ -1480,55 +1392,6 @@ public actor TranscriptionCoordinator {
                 guard tickets.allSatisfy({ sequence.lease.contains($0) }) else { throw SpeechError.incompatibleWindow }
             }
             phase = .transcribing
-            if analysisPrefetchEnabled, retryScope == nil {
-                #if DEBUG
-                let onClaim: @Sendable (UUID) async -> Void = { [observer = onClaimReturned] id in
-                    await observer?(.analysis, id)
-                }
-                #else
-                let onClaim: @Sendable (UUID) async -> Void = { _ in }
-                #endif
-                let currentFocusedDay = systemSuspended ? nil : focusedDay
-                let currentFocusedSessionID = systemSuspended ? nil : focusedSessionID
-                if (managed?.handle.batchExecution == nil || interleavedPriority), analysisPrefetch == nil {
-                    let hotOnly = interleavedPriority && managed?.handle.origin == .continuedProcessing
-                    let allowPrefetchHistorical = interleavedPriority
-                        ? (!hotOnly && historicalWorkAllowed && (currentFocusedDay != nil || currentFocusedSessionID != nil))
-                        : historicalWorkAllowed
-                    let prefetchMaxTier: Int? = interleavedPriority ? (hotOnly ? 0 : 2) : nil
-                    analysisPrefetch = AnalysisPrefetch(
-                        archive: archive,
-                        speech: speech,
-                        activeWindow: ticket.window,
-                        allowHistorical: allowPrefetchHistorical,
-                        hotOnly: hotOnly,
-                        focusedDay: currentFocusedDay,
-                        focusedSessionID: currentFocusedSessionID,
-                        maxTier: prefetchMaxTier,
-                        lowLatency: isHotLive,
-                        onClaim: onClaim
-                    )
-                } else if !interleavedPriority, batchAnalysisPrefetch == nil,
-                          let batchExec = managed?.handle.batchExecution,
-                          managed?.interleavePriorityWork != true {
-                    let remainingWindows = (try? await archive.pendingBatchWindowCount(
-                        execution: batchExec,
-                        configurationFingerprint: speech.configurationFingerprint
-                    )) ?? 3
-                    try Task.checkCancellation()
-                    try token.checkCancellation()
-                    if remainingWindows <= 2, batchAnalysisPrefetch == nil, managed?.handle.batchExecution == batchExec {
-                        batchAnalysisPrefetch = BatchAnalysisPrefetch(
-                            archive: archive,
-                            speech: speech,
-                            execution: batchExec,
-                            focusedDay: currentFocusedDay,
-                            focusedSessionID: currentFocusedSessionID,
-                            onClaim: onClaim
-                        )
-                    }
-                }
-            }
             nativeInFlight = true
             publish()
             if let prototypes = try? await archive.enrolledSpeakerPrototypes() {
@@ -1592,9 +1455,6 @@ public actor TranscriptionCoordinator {
             activeSessionID = nil
             attempt = nil
             activeWork = nil
-            // SQLite is already durable and powers the timeline. Runtime refresh
-            // projects JSON/Markdown after the drain settles (or on next launch),
-            // keeping whole-recording file rewrites out of the background ASR budget.
             performanceLogger.debug("Transcript postprocessing: windows=\(results.count), commitSeconds=\(Double(committedAt - commitStarted) / 1e9)")
             lastAttemptedSessionID = nil
             return .committed
@@ -1659,20 +1519,6 @@ public actor TranscriptionCoordinator {
         if let firstError { throw firstError }
     }
 
-    private func releaseAnalysisPrefetch() async throws {
-        guard let prefetch = analysisPrefetch else { return }
-        defer { analysisPrefetch = nil }
-        prefetch.cancel()
-        try await prefetch.release()
-    }
-
-    private func releaseBatchAnalysisPrefetch() async throws {
-        guard let prefetch = batchAnalysisPrefetch else { return }
-        defer { batchAnalysisPrefetch = nil }
-        prefetch.cancel()
-        try await prefetch.release()
-    }
-
     private func supersededByRevision(_ error: any Error, sessionID: UUID, generation: Int64) async throws -> Bool {
         guard let archiveError = error as? ArchiveError, archiveError == .staleAttempt else { return false }
         try Task.checkCancellation()
@@ -1691,12 +1537,27 @@ public actor TranscriptionCoordinator {
         case .unavailableAudio: phase = .audioUnavailable
         case .retryScheduled(let date):
             phase = .waitingForRetry
-            retryWakeTask?.cancel()
-            let delay = max(1, date.timeIntervalSinceNow)
-            retryWakeTask = Task { [weak self] in
-                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
-                await self?.requestWork()
+            scheduleWake(at: date, minimumDelay: 1)
+        }
+    }
+
+    /// Bridges monotonic `Task.sleep` to wall-clock `Date` without arbitrary fudge constants:
+    /// if `ContinuousClock` wakes slightly before `Date() >= targetDate`, it sleeps the exact
+    /// residual delta so downstream `Date`-based SQLite predicates (`<=` / `>`) partition cleanly.
+    private func scheduleWake(at targetDate: Date, minimumDelay: TimeInterval = 0) {
+        retryWakeTask?.cancel()
+        retryWakeTask = Task { [weak self] in
+            if minimumDelay > 0 {
+                let initial = max(minimumDelay, targetDate.timeIntervalSinceNow)
+                do { try await Task.sleep(for: .seconds(initial)) } catch { return }
             }
+            while !Task.isCancelled {
+                let remaining = targetDate.timeIntervalSinceNow
+                guard remaining > 0 else { break }
+                do { try await Task.sleep(for: .seconds(remaining)) } catch { return }
+            }
+            guard !Task.isCancelled else { return }
+            await self?.requestWork()
         }
     }
 
@@ -1748,6 +1609,20 @@ enum TranscriptionClaimKind: Sendable, Equatable { case analysis, transcription 
 enum TranscriptionStopBoundary: Sendable { case started, joined, finished }
 #endif
 
+private enum WALStep {
+    case prepareEpoch(EpochAnalysisTicket, source: WALStepSource)
+    case transcribeWindow(TranscriptionWindowTicket, source: WALStepSource)
+    case completeBatch(TranscriptionExecutionHandle, TranscriptionBatchExecution)
+    case none
+}
+
+private enum WALStepSource: Equatable {
+    case automatic
+    case interleavedLivePriority
+    case batchBackfill
+    case retry
+}
+
 private enum ActiveWork: Sendable {
     case epoch(EpochAnalysisTicket), window(TranscriptionWindowTicket), windows([TranscriptionWindowTicket])
 }
@@ -1755,201 +1630,6 @@ private enum ActiveWork: Sendable {
 private struct InvalidationTarget: Sendable {
     let work: ActiveWork?
     let claim: PendingClaim?
-    let prefetch: AnalysisPrefetch?
-    let batchPrefetch: BatchAnalysisPrefetch?
-}
-
-/// Holds at most one analysis page. Only drain commits it, after the prior recognition work.
-private final class AnalysisPrefetch: Sendable {
-    let isHotLive: Bool
-    private let archive: ArchiveStore
-    private let claim: Task<EpochAnalysisTicket?, Error>
-    private let result: Task<SpeechAnalysisStream?, Error>
-    private let attempt: SpeechAttempt
-    private let control: AnalysisStreamControl
-
-    init(archive: ArchiveStore, speech: SpeechEngine, activeWindow: ArchiveAnalysisWindow,
-         allowHistorical: Bool, hotOnly: Bool = false, focusedDay: TimelineDay? = nil,
-         focusedSessionID: UUID? = nil, maxTier: Int? = nil,
-         lowLatency: Bool = false,
-         onClaim: @escaping @Sendable (UUID) async -> Void) {
-        self.isHotLive = hotOnly || lowLatency
-        let claim = Task {
-            guard let ticket = try await archive.claimAutomaticAnalysis(configurationFingerprint: speech.configurationFingerprint,
-                activeWindow: activeWindow, allowHistorical: allowHistorical, hotOnly: hotOnly,
-                focusedDay: focusedDay, focusedSessionID: focusedSessionID, maxTier: maxTier) else {
-                return nil as EpochAnalysisTicket?
-            }
-            return try await analysisTicketWithContext(ticket, archive: archive, speech: speech)
-        }
-        self.archive = archive; self.claim = claim
-        let token = SpeechAttempt()
-        let control = AnalysisStreamControl(readAheadAllowed: true)
-        self.attempt = token; self.control = control
-        result = Task {
-            guard let ticket = try await claim.value else { return nil }
-            await onClaim(ticket.sessionID)
-            try token.checkCancellation()
-            let ticketHot = lowLatency || hotOnly || archive.isHotLiveAnalysis(ticket)
-            let stream = speech.prepareStream(inputs: ticket.inputs.map(speechInput), resume: ticket.checkpoint.map(speechCheckpoint),
-                                               boundary: ticket.boundary, replayOrigin: ticket.replayOrigin,
-                                               lowLatency: ticketHot, attempt: token)
-            control.install(stream)
-            return stream
-        }
-    }
-
-    init(archive: ArchiveStore, speech: SpeechEngine, ticket: EpochAnalysisTicket,
-         readAheadAllowed: Bool, lowLatency: Bool = false) {
-        self.isHotLive = lowLatency
-        self.archive = archive
-        let claim = Task { try await analysisTicketWithContext(ticket, archive: archive, speech: speech) }
-        self.claim = Task { try await claim.value as EpochAnalysisTicket? }
-        let token = SpeechAttempt(id: ticket.attemptID)
-        let control = AnalysisStreamControl(readAheadAllowed: readAheadAllowed)
-        self.attempt = token; self.control = control
-        result = Task {
-            let ticket = try await claim.value
-            try token.checkCancellation()
-            let stream = speech.prepareStream(inputs: ticket.inputs.map(speechInput), resume: ticket.checkpoint.map(speechCheckpoint),
-                                               boundary: ticket.boundary, replayOrigin: ticket.replayOrigin,
-                                               readAheadAllowed: readAheadAllowed, lowLatency: lowLatency, attempt: token)
-            control.install(stream)
-            return stream
-        }
-    }
-
-    func activeTicket() async throws -> EpochAnalysisTicket? { try await claim.value }
-    var hasCommittedPage: Bool { control.hasCommittedPage }
-    var shouldYieldAfterCommit: Bool { control.shouldYieldAfterCommit }
-    func markPageCommitted() { control.markPageCommitted() }
-    func requestYieldAfterFirstCommit() { control.requestYieldAfterFirstCommit() }
-    func setReadAheadAllowed(_ allowed: Bool) { control.setReadAheadAllowed(allowed) }
-    func cancel() { attempt.cancel(); control.cancel(); result.cancel() }
-
-    func invalidate() async throws {
-        cancel()
-        if case .success(let ticket?) = await claim.result { try await archive.invalidateEpochAnalysisAttempt(ticket: ticket) }
-    }
-
-    func take() async throws -> (ticket: EpochAnalysisTicket, result: Result<SpeechAnalysisPage, Error>)? {
-        guard let ticket = try await claim.value else { return nil }
-        do {
-            guard let stream = try await result.value, let page = try await stream.next() else { throw SpeechError.incompatibleCheckpoint }
-            if page.isFinal { await stream.waitUntilFinished() }
-            return (ticket, .success(page))
-        } catch { return (ticket, .failure(error)) }
-    }
-
-    func stopNative() async {
-        cancel()
-        if case .success(let stream?) = await result.result { await stream.waitUntilFinished() }
-    }
-
-    func release() async throws {
-        await stopNative()
-        if case .success(let ticket?) = await claim.result { try await archive.cancelEpochAnalysis(ticket: ticket) }
-    }
-}
-
-/// Non-blocking single-shot batch VAD prefetch launched during ASR when <= 2 pending windows remain in the active batch.
-private final class BatchAnalysisPrefetch: Sendable {
-    let execution: TranscriptionBatchExecution
-    private let archive: ArchiveStore
-    private let claim: Task<EpochAnalysisTicket?, Error>
-    private let result: Task<SpeechAnalysisBatch?, Error>
-    private let attempt: SpeechAttempt
-
-    init(archive: ArchiveStore, speech: SpeechEngine, execution: TranscriptionBatchExecution,
-         focusedDay: TimelineDay?, focusedSessionID: UUID? = nil,
-         onClaim: @escaping @Sendable (UUID) async -> Void) {
-        self.execution = execution
-        self.archive = archive
-        let claim = Task {
-            guard let ticket = try await archive.claimTranscriptionBatchAnalysis(
-                execution: execution,
-                configurationFingerprint: speech.configurationFingerprint,
-                maxStepSeconds: 240,
-                focusedDay: focusedDay,
-                focusedSessionID: focusedSessionID
-            ) else { return nil as EpochAnalysisTicket? }
-            return try await analysisTicketWithContext(ticket, archive: archive, speech: speech)
-        }
-        self.claim = claim
-        let token = SpeechAttempt()
-        self.attempt = token
-        self.result = Task {
-            guard let ticket = try await claim.value else { return nil }
-            await onClaim(ticket.sessionID)
-            try token.checkCancellation()
-            return try await speech.prepare(
-                inputs: ticket.inputs.map(speechInput),
-                resume: ticket.checkpoint.map(speechCheckpoint),
-                boundary: ticket.boundary,
-                replayOrigin: ticket.replayOrigin,
-                attempt: token
-            )
-        }
-    }
-
-    func cancel() { attempt.cancel(); result.cancel() }
-
-    func invalidate() async throws {
-        cancel()
-        if case .success(let ticket?) = await claim.result {
-            try await archive.invalidateEpochAnalysisAttempt(ticket: ticket)
-        }
-    }
-
-    func take() async throws -> (ticket: EpochAnalysisTicket, result: Result<SpeechAnalysisBatch, Error>)? {
-        guard let ticket = try await claim.value else { return nil }
-        do {
-            guard let batch = try await result.value else { throw SpeechError.incompatibleCheckpoint }
-            return (ticket, .success(batch))
-        } catch {
-            return (ticket, .failure(error))
-        }
-    }
-
-    func release() async throws {
-        cancel()
-        _ = await result.result
-        if case .success(let ticket?) = await claim.result {
-            try await archive.cancelEpochAnalysis(ticket: ticket)
-        }
-    }
-}
-
-private final class AnalysisStreamControl: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stream: SpeechAnalysisStream?
-    private var cancelled = false
-    private var readAheadAllowed: Bool
-    private var committedPage = false
-    private var yieldAfterCommit = false
-
-    init(readAheadAllowed: Bool) { self.readAheadAllowed = readAheadAllowed }
-    var hasCommittedPage: Bool { lock.withLock { committedPage } }
-    var shouldYieldAfterCommit: Bool { lock.withLock { yieldAfterCommit } }
-    func markPageCommitted() { lock.withLock { committedPage = true } }
-    func requestYieldAfterFirstCommit() {
-        lock.withLock {
-            yieldAfterCommit = true
-            readAheadAllowed = false
-            stream?.setReadAheadAllowed(false)
-        }
-    }
-    func install(_ stream: SpeechAnalysisStream) {
-        lock.withLock {
-            self.stream = stream
-            stream.setReadAheadAllowed(readAheadAllowed)
-            if cancelled { stream.cancel() }
-        }
-    }
-    func setReadAheadAllowed(_ allowed: Bool) {
-        lock.withLock { readAheadAllowed = allowed; stream?.setReadAheadAllowed(allowed) }
-    }
-    func cancel() { lock.withLock { cancelled = true; stream?.cancel() } }
 }
 
 private enum PendingClaim: Sendable {
@@ -1997,12 +1677,6 @@ private enum TranscriptionCoordinatorError: Error { case repeatedRevisions }
 private enum WorkOutcome { case committed, superseded, deferred }
 
 private struct Preferences: Codable { let userPaused: Bool }
-
-private func analysisTicketWithContext(_ ticket: EpochAnalysisTicket, archive: ArchiveStore, speech: SpeechEngine) async throws -> EpochAnalysisTicket {
-    do { return try await archive.withAnalysisReplayPrefix(ticket,
-        includingRecognitionContext: speech.continuousArchive) }
-    catch { try await archive.cancelEpochAnalysis(ticket: ticket); throw error }
-}
 
 private func speechInput(_ input: ArchivedAudioInput) -> SpeechAudioInput {
     SpeechAudioInput(envelope: input.envelope, audioURL: input.audioURL)
