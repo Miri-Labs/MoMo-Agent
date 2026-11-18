@@ -252,8 +252,12 @@ extension ArchiveStore {
         let currentVersion = try? row.requireInt(1),
         (currentVersion == existing.transcriptVersion || existing.independentOfTranscriptVersion),
         (try? row.requireInt(2)) == existing.generation,
-        (try? row.requireInt(3)) == existing.projectionVersion,
-        (row.integer(4) == 1) == existing.manifestProjected else {
+        (try? row.requireInt(3)) == existing.projectionVersion else {
+            verifiedRecordingFilesCache.removeValue(forKey: sessionID)
+            return
+        }
+        let currentManifestProjected = row.integer(4) == 1
+        guard !currentManifestProjected || existing.manifestProjected else {
             verifiedRecordingFilesCache.removeValue(forKey: sessionID)
             return
         }
@@ -275,7 +279,7 @@ extension ArchiveStore {
             transcriptVersion: currentVersion,
             generation: existing.generation,
             projectionVersion: existing.projectionVersion,
-            manifestProjected: existing.manifestProjected,
+            manifestProjected: currentManifestProjected,
             independentOfTranscriptVersion: existing.independentOfTranscriptVersion,
             chunkCount: chunkCount,
             directoryStamp: dirStamp,
@@ -422,9 +426,9 @@ extension ArchiveStore {
         if let manifestBytes = data["manifest.json"] {
             let manifestURL = directory.appendingPathComponent("manifest.json")
             let manifestHash = hashes["manifest.json"] ?? ContentHash.sha256(manifestBytes)
-            if manifestProjected,
-               let stored = storedManifestProjectionHash(sessionID: sessionID),
+            if let stored = storedManifestProjectionHash(sessionID: sessionID),
                stored.sha256 == manifestHash,
+               stored.chunkCount > 0,
                stored.chunkCount <= chunkCount {
                 if !database.isInTransaction,
                    let stamp = FileStatStamp.read(at: manifestURL),
@@ -434,7 +438,8 @@ extension ArchiveStore {
                         manifestStamp: stamp,
                         minimumChunkCount: stored.chunkCount
                     )
-                    if stored.chunkCount == chunkCount,
+                    if manifestProjected,
+                       stored.chunkCount == chunkCount,
                        (try? database.rows(
                            "SELECT 1 FROM metadata WHERE key=? LIMIT 1",
                            [.text("recording_projection_pending/" + sessionID.uuidString)]

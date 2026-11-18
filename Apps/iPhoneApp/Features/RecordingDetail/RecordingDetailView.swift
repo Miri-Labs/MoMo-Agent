@@ -501,16 +501,10 @@ struct RecordingDetailView: View {
             return String(localized: "部分内容未能完成转写，已收到的音频会保留。")
         }
         if isProcessing {
-            if transcription?.activeSessionID == sessionID, transcription?.phase == .preparing,
-               let coverage, let analyzed = coverage.analyzedDuration, coverage.receivedDuration > 0 {
-                let scannedText = Self.formatCoverageDuration(analyzed, reference: coverage.receivedDuration)
-                let totalText = Self.formatCoverageDuration(coverage.receivedDuration, reference: coverage.receivedDuration)
-                return String(localized: "正在快速扫描静音与语音段（已推进至 \(scannedText) / \(totalText)），已有内容可先阅读。")
-            }
             if let active = transcription?.activeSessionID, active != sessionID {
                 return String(localized: "正在优先转写最新语音，随后自动继续这段录音；已有内容可先阅读。")
             }
-            return String(localized: "正在分析语音，已有内容可以先阅读。")
+            return String(localized: "正在转写，已有内容可以先阅读。")
         }
         if coverage?.epochs.contains(where: { !$0.notReceived.isEmpty }) == true { return String(localized: "还有录音未传到手机，已收到的内容可以先阅读。") }
         if let status = transcriptionPresentation?.status { return status }

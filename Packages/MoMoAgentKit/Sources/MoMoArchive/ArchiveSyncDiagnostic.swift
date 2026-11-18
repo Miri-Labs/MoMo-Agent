@@ -24,41 +24,86 @@ public struct ArchiveSyncDiagnostic: Codable, Sendable {
 
 extension ArchiveStore {
     /// One actor-owned snapshot, unlike copying SQLite and its changing WAL separately.
-    public func writeSyncDiagnostic(now: Date = Date()) throws {
-        guard lastSyncDiagnosticAt.map({ now.timeIntervalSince($0) >= 30 }) ?? true else { return }
+    public func writeSyncDiagnostic(now: Date = Date(), minimumInterval: TimeInterval = 30) throws {
+        guard lastSyncDiagnosticAt.map({ now.timeIntervalSince($0) >= minimumInterval }) ?? true else { return }
         lastSyncDiagnosticAt = now
         let startedMs = APIPerformanceMonitor.uptimeMilliseconds()
         let rows = try database.rows("""
             SELECT s.source_device,
-              CASE
-                WHEN c.timebase_hz > 0 AND c.wall_clock_anchor != 0 THEN
-                  date(c.wall_clock_anchor + c.timezone_offset + 1.0 * c.start_frame / c.timebase_hz, 'unixepoch')
-                ELSE
-                  date(julianday(json_extract(CAST(c.manifest AS TEXT),'$.wallClockAnchor')) +
-                    (json_extract(CAST(c.manifest AS TEXT),'$.timezoneOffset') +
-                     1.0*json_extract(CAST(c.manifest AS TEXT),'$.frames.start') /
-                     json_extract(CAST(c.manifest AS TEXT),'$.timebaseHz')) / 86400.0)
-              END,
-              c.id,c.retention,
-              CASE
-                WHEN c.byte_count > 0 THEN c.byte_count
-                ELSE json_extract(CAST(c.manifest AS TEXT),'$.byteCount')
-              END
-            FROM chunks c JOIN sessions s ON s.id=c.session_id WHERE s.deleted=0
-            ORDER BY s.source_device,2,c.rowid
+              c.timebase_hz,
+              c.wall_clock_anchor,
+              c.timezone_offset,
+              c.start_frame,
+              c.id,
+              c.retention,
+              c.byte_count,
+              CASE WHEN c.timebase_hz <= 0 OR c.wall_clock_anchor = 0 OR c.byte_count <= 0 THEN c.manifest ELSE NULL END
+            FROM sessions s JOIN chunks c ON c.session_id=s.id
+            WHERE s.deleted=0
+            ORDER BY c.rowid
             """)
-        var days: [ArchiveSyncDiagnostic.Day] = []
-        var source = "", day = "", ids: [String] = [], retention: [String: Int] = [:], bytes: Int64 = 0
-        for row in rows {
-            let nextSource = try row.requireString(0), nextDay = try row.requireString(1)
-            if nextSource != source || nextDay != day {
-                if !ids.isEmpty { days.append(.init(sourceDeviceID: source, localDay: day, chunkIDs: ids, retentionCounts: retention, receivedBytes: bytes)) }
-                source = nextSource; day = nextDay; ids = []; retention = [:]; bytes = 0
-            }
-            ids.append(try row.requireString(2)); retention[try row.requireString(3), default: 0] += 1
-            bytes += try row.requireInt(4)
+        struct DayAccumulator {
+            var chunkIDs: [String] = []
+            var retentionCounts: [String: Int] = [:]
+            var receivedBytes: Int64 = 0
         }
-        if !ids.isEmpty { days.append(.init(sourceDeviceID: source, localDay: day, chunkIDs: ids, retentionCounts: retention, receivedBytes: bytes)) }
+        struct DayKey: Hashable {
+            let sourceDeviceID: String
+            let localDay: String
+        }
+        var dayStringsByEpochDay: [Int: String] = [:]
+        func formatEpochDay(_ epochDay: Int) -> String {
+            if let cached = dayStringsByEpochDay[epochDay] { return cached }
+            // Civil-from-days algorithm (Howard Hinnant), matching SQLite's proleptic Gregorian date(..., 'unixepoch').
+            let z = epochDay + 719_468
+            let era = (z >= 0 ? z : z - 146_096) / 146_097
+            let doe = z - era * 146_097
+            let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365
+            var y = yoe + era * 400
+            let doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+            let mp = (5 * doy + 2) / 153
+            let d = doy - (153 * mp + 2) / 5 + 1
+            let m = mp + (mp < 10 ? 3 : -9)
+            if m <= 2 { y += 1 }
+            let formatted = String(format: "%04d-%02d-%02d", y, m, d)
+            dayStringsByEpochDay[epochDay] = formatted
+            return formatted
+        }
+        var buckets: [DayKey: DayAccumulator] = [:]
+        for row in rows {
+            let sourceDevice = try row.requireString(0)
+            var rate = row.double(1) ?? 0
+            var anchor = row.double(2) ?? 0
+            var tzOffset = row.integer(3) ?? 0
+            var startFrame = row.integer(4) ?? 0
+            let chunkID = try row.requireString(5)
+            let retention = try row.requireString(6)
+            var byteCount = row.integer(7) ?? 0
+            if (rate <= 0 || anchor == 0 || byteCount <= 0),
+               let manifestBlob = row.data(8),
+               let manifest = try? WireJSON.decode(ChunkManifest.self, from: manifestBlob) {
+                rate = manifest.timebaseHz
+                anchor = manifest.wallClockAnchor.timeIntervalSince1970
+                tzOffset = Int64(manifest.timezoneOffset)
+                startFrame = manifest.frames.start
+                byteCount = manifest.byteCount
+            }
+            let localSeconds = anchor + Double(tzOffset) + (rate > 0 ? Double(startFrame) / rate : 0)
+            let localDay = formatEpochDay(Int(floor(localSeconds / 86_400.0)))
+            let key = DayKey(sourceDeviceID: sourceDevice, localDay: localDay)
+            var acc = buckets[key, default: DayAccumulator()]
+            acc.chunkIDs.append(chunkID)
+            acc.retentionCounts[retention, default: 0] += 1
+            acc.receivedBytes += byteCount
+            buckets[key] = acc
+        }
+        let days = buckets.keys.sorted {
+            $0.sourceDeviceID == $1.sourceDeviceID ? $0.localDay < $1.localDay : $0.sourceDeviceID < $1.sourceDeviceID
+        }.compactMap { key -> ArchiveSyncDiagnostic.Day? in
+            guard let acc = buckets[key] else { return nil }
+            return .init(sourceDeviceID: key.sourceDeviceID, localDay: key.localDay,
+                         chunkIDs: acc.chunkIDs, retentionCounts: acc.retentionCounts, receivedBytes: acc.receivedBytes)
+        }
         let latest = try database.rows("SELECT value FROM metadata WHERE key='latest_receive_commit'").first
             .map { try WireJSON.decode(ArchiveSyncDiagnostic.Commit.self, from: Data($0.requireString(0).utf8)) }
         let receiptCounts = try database.rows("""

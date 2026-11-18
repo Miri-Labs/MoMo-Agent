@@ -646,8 +646,7 @@ struct RecordingTranscriptionPresentation {
 
     var status: String? {
         switch activity {
-        case .preparing: String(localized: "正在分析语音")
-        case .transcribing: String(localized: "正在本机转写，已有内容可以先看")
+        case .preparing, .transcribing: String(localized: "正在本机转写，已有内容可以先看")
         case .queued: String(localized: "等待本机整理")
         case .deferred: String(localized: "稍后继续整理，回到 App 后会自动继续")
         case .failed: String(localized: "转写暂未完成，音频已保留")

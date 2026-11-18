@@ -346,18 +346,10 @@ struct LibraryView: View {
         case .failed: return Text("整理暂未完成")
         case .waitingForAudio: return Text("等待原音同步")
         case .audioUnavailable: return Text("部分原音暂不可用")
-        case .preparing:
-            return Text("正在分析语音 · \(TimelineDate.liveDuration(remaining))待整理")
-        case .transcribing:
-            if (transcription?.completedWindows ?? 0) == 0, isModelPreparing {
-                return Text("正在加载模型 · \(TimelineDate.liveDuration(remaining))待整理")
-            }
+        case .preparing, .transcribing:
             return Text("正在转写 · \(TimelineDate.liveDuration(remaining))待整理")
         default:
-            if isModelPreparing {
-                return Text("正在加载模型 · \(TimelineDate.liveDuration(remaining))待整理")
-            }
-            if transcription?.nativeInFlight == true {
+            if isModelPreparing || transcription?.nativeInFlight == true {
                 return Text("正在转写 · \(TimelineDate.liveDuration(remaining))待整理")
             }
             return Text("\(TimelineDate.duration(remaining))待整理")

@@ -497,10 +497,20 @@ extension ArchiveStore {
                 try database.execute("INSERT INTO transcript_search(session_id,span_id,text,version) VALUES(?,?,?,?)", [.text(document.sessionID.uuidString), .text(span.id.uuidString), .text(span.text), .integer(document.version)])
             }
         } else if let previous,
-                  previous.spans.count == document.spans.count,
-                  zip(previous.spans, document.spans).allSatisfy({ $0.id == $1.id && $0.text == $1.text }) {
+                  previous.spans.count <= document.spans.count,
+                  ({
+                      var currentTexts: [UUID: String] = Dictionary(minimumCapacity: document.spans.count)
+                      for span in document.spans { currentTexts[span.id] = span.text }
+                      return previous.spans.allSatisfy { currentTexts[$0.id] == $0.text }
+                  })() {
             try database.execute("UPDATE transcript_search SET version=? WHERE session_id=?",
                 [.integer(document.version), .text(document.sessionID.uuidString)])
+            if document.spans.count > previous.spans.count {
+                let existingIDs = Set(previous.spans.map(\.id))
+                for span in document.spans where !existingIDs.contains(span.id) {
+                    try database.execute("INSERT INTO transcript_search(session_id,span_id,text,version) VALUES(?,?,?,?)", [.text(document.sessionID.uuidString), .text(span.id.uuidString), .text(span.text), .integer(document.version)])
+                }
+            }
         } else {
             try database.execute("DELETE FROM transcript_search WHERE session_id=?", [.text(document.sessionID.uuidString)])
             for span in document.spans {

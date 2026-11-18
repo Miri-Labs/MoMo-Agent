@@ -125,7 +125,7 @@ final class PhoneReceiveCoordinator {
             coalescedChangedTask = Task { @MainActor [weak self] in
                 guard let self else { return }
                 await self.onChanged()
-                try? await self.archive.writeSyncDiagnostic()
+                try? await self.archive.writeSyncDiagnostic(minimumInterval: 120)
                 self.coalescedChangedTask = nil
                 if self.pendingCoalescedChanged {
                     self.pendingCoalescedChanged = false
@@ -145,7 +145,7 @@ final class PhoneReceiveCoordinator {
             self.pendingCoalescedChanged = false
             self.lastChangedNotificationUptime = Double(DispatchTime.now().uptimeNanoseconds) * 1e-9
             await self.onChanged()
-            try? await self.archive.writeSyncDiagnostic()
+            try? await self.archive.writeSyncDiagnostic(minimumInterval: 120)
         }
     }
 

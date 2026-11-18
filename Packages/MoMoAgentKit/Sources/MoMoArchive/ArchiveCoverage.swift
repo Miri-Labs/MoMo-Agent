@@ -61,13 +61,58 @@ extension ArchiveStore {
         }
         let key: [SQLValue] = [.text(epochID.uuidString)]
         let configurationKey = key + [fingerprint.map(SQLValue.text) ?? .null]
-        let rows = try database.rows("SELECT c.id,c.start_frame,c.end_frame,c.retention,j.state,j.configuration_hash,j.error_code FROM chunks c LEFT JOIN transcription_jobs j ON j.chunk_id=c.id WHERE c.epoch_id=? ORDER BY c.start_frame,c.rowid", key)
+        let hasEpochAnalysis = fingerprint == nil ? false : try !database.rows("SELECT 1 FROM analysis_epochs WHERE epoch_id=? AND configuration_hash=? LIMIT 1", configurationKey).isEmpty
         var chunks: [ChunkCoverageMeta] = []
-        chunks.reserveCapacity(rows.count)
-        for row in rows {
-            let start = try row.requireInt(1)
-            let end = try row.requireInt(2)
-            chunks.append(ChunkCoverageMeta(chunkID: try row.requireUUID(0), frames: try FrameRange(start: start, count: end - start)))
+        var legacyCompleted: [FrameRange] = []
+        var failures: [CoverageFailure] = []
+        var unavailableSourceRanges: [FrameRange] = []
+        if fingerprint != nil && hasEpochAnalysis {
+            let chunkRows = try database.rows("SELECT id,start_frame,end_frame,retention FROM chunks WHERE epoch_id=? ORDER BY start_frame,rowid", key)
+            chunks.reserveCapacity(chunkRows.count)
+            for row in chunkRows {
+                let start = try row.requireInt(1)
+                let end = try row.requireInt(2)
+                let range = try FrameRange(start: start, count: end - start)
+                chunks.append(ChunkCoverageMeta(chunkID: try row.requireUUID(0), frames: range))
+                if row.string(3) != "present" {
+                    unavailableSourceRanges.append(range)
+                }
+            }
+            if let fingerprint {
+                let failedJobRows = try database.rows("""
+                    SELECT c.id,c.start_frame,c.end_frame,j.error_code
+                    FROM transcription_jobs j JOIN chunks c ON c.id=j.chunk_id
+                    WHERE j.state='failed' AND j.configuration_hash=? AND c.epoch_id=?
+                    ORDER BY c.start_frame,c.rowid
+                    """, [.text(fingerprint), .text(epochID.uuidString)])
+                for row in failedJobRows {
+                    let start = try row.requireInt(1)
+                    let end = try row.requireInt(2)
+                    failures.append(CoverageFailure(chunkID: try row.requireUUID(0),
+                        frames: try FrameRange(start: start, count: end - start),
+                        errorCode: row.string(3)))
+                }
+            }
+        } else {
+            let rows = try database.rows("SELECT c.id,c.start_frame,c.end_frame,c.retention,j.state,j.configuration_hash,j.error_code FROM chunks c LEFT JOIN transcription_jobs j ON j.chunk_id=c.id WHERE c.epoch_id=? ORDER BY c.start_frame,c.rowid", key)
+            chunks.reserveCapacity(rows.count)
+            for row in rows {
+                let start = try row.requireInt(1)
+                let end = try row.requireInt(2)
+                let range = try FrameRange(start: start, count: end - start)
+                let cid = try row.requireUUID(0)
+                chunks.append(ChunkCoverageMeta(chunkID: cid, frames: range))
+                if row.string(3) != "present" {
+                    unavailableSourceRanges.append(range)
+                }
+                if let fingerprint, row.string(5) == fingerprint {
+                    if row.string(4) == "complete" {
+                        legacyCompleted.append(range)
+                    } else if row.string(4) == "failed" {
+                        failures.append(CoverageFailure(chunkID: cid, frames: range, errorCode: row.string(6)))
+                    }
+                }
+            }
         }
         let received = try CoverageRanges.union(chunks.map(\.frames))
         let closure = try database.rows("SELECT end_frame FROM epoch_closures WHERE epoch_id=?", key).first?.requireInt(0)
@@ -89,15 +134,8 @@ extension ArchiveStore {
         let windows = try windowRows.map {
             try FrameRange(start: $0.requireInt(0), count: $0.requireInt(1) - $0.requireInt(0))
         }
-        let hasEpochAnalysis = fingerprint == nil ? false : try !database.rows("SELECT 1 FROM analysis_epochs WHERE epoch_id=? AND configuration_hash=?", configurationKey).isEmpty
-        let legacyCompleted = fingerprint == nil || hasEpochAnalysis ? [] : rows.indices.filter {
-            rows[$0].string(4) == "complete" && rows[$0].string(5) == fingerprint
-        }.map { chunks[$0].frames }
         let transcribed = try CoverageRanges.intersection(windows + legacyCompleted, received)
         let processed = try CoverageRanges.union(transcribed + noSpeech)
-        var failures = rows.indices.filter { fingerprint != nil && rows[$0].string(4) == "failed" && rows[$0].string(5) == fingerprint }.map {
-            CoverageFailure(chunkID: chunks[$0].chunkID, frames: chunks[$0].frames, errorCode: rows[$0].string(6))
-        }
         for row in try database.rows("SELECT f.start_frame,f.end_frame,f.error_code FROM processing_failures f JOIN sessions s ON s.id=f.session_id WHERE f.epoch_id=? AND f.configuration_hash=? AND f.generation=s.generation AND s.deleted=0", configurationKey) {
             let range = try FrameRange(start: row.requireInt(0), count: row.requireInt(1) - row.requireInt(0))
             var lo = 0, hi = chunks.count
@@ -111,7 +149,7 @@ extension ArchiveStore {
             failures.append(CoverageFailure(chunkID: chunks[lo].chunkID, frames: range, errorCode: row.string(2)))
         }
         let failed = try CoverageRanges.subtract(failures.map(\.frames), processed)
-        let unavailable = try CoverageRanges.union(rows.indices.filter { rows[$0].string(3) != "present" }.map { chunks[$0].frames })
+        let unavailable = try CoverageRanges.union(unavailableSourceRanges)
         let locations = marks.sorted {
             $0.sourceFrame == $1.sourceFrame ? $0.markID.uuidString < $1.markID.uuidString : $0.sourceFrame < $1.sourceFrame
         }.map { mark in
