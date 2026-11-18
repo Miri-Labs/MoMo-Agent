@@ -15,6 +15,7 @@ struct LibraryView: View {
     @Bindable var model: LibraryModel
     let playback: AudioPlaybackController
     let transcription: TranscriptionSnapshot?
+    var modelStatus: LocalSpeechModelStatus? = nil
     let speechFailure: String?
     let batches: [TranscriptionBatch]
     let delete: (UUID) async throws -> Void
@@ -246,17 +247,33 @@ struct LibraryView: View {
         .foregroundStyle(MoMoPalette.ink).padding(.horizontal, 16)
     }
 
+    private var isActivelyProcessingTranscription: Bool {
+        if TimelinePresentation.resourceExplanation(transcription) != nil { return false }
+        if case .preparing = modelStatus { return true }
+        guard let transcription else { return false }
+        return transcription.nativeInFlight
+            || transcription.phase == .preparing
+            || transcription.phase == .transcribing
+    }
+
     private func processingProgress(_ progress: TimelineDayProgress) -> some View {
         let isToday = timeline.selectedDay == TimelineDay(Date())
         let remaining = progress.remaining ?? progress.received
+        let active = remaining >= 0.01 && isActivelyProcessingTranscription
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
                 HStack(spacing: 7) {
-                    Image(systemName: "clock")
-                        .foregroundStyle(MoMoPalette.muted)
-                        .accessibilityHidden(true)
+                    if active {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .accessibilityHidden(true)
+                    } else {
+                        Image(systemName: "clock")
+                            .foregroundStyle(MoMoPalette.muted)
+                            .accessibilityHidden(true)
+                    }
                     if !isToday, let processed = progress.processed, remaining >= 0.01 {
-                        Text("整理进度")
+                        Text(active ? "正在整理" : "整理进度")
                         Text("\(Int(min(1, processed / progress.received) * 100))%")
                             .foregroundStyle(MoMoPalette.muted)
                     } else {
@@ -319,13 +336,31 @@ struct LibraryView: View {
         if TimelinePresentation.resourceExplanation(transcription) != nil {
             return Text("整理已暂停")
         }
+        let isModelPreparing: Bool = {
+            if case .preparing = modelStatus { return true }
+            return false
+        }()
         switch transcription?.phase {
         case .paused: return Text("整理已暂停")
-        case .systemSuspended: return Text("后台整理已暂停")
+        case .systemSuspended: return Text("后台已暂停 · \(TimelineDate.duration(remaining))待整理")
         case .failed: return Text("整理暂未完成")
         case .waitingForAudio: return Text("等待原音同步")
         case .audioUnavailable: return Text("部分原音暂不可用")
-        default: return Text("\(TimelineDate.duration(remaining))待整理")
+        case .preparing:
+            return Text("正在分析语音 · \(TimelineDate.liveDuration(remaining))待整理")
+        case .transcribing:
+            if (transcription?.completedWindows ?? 0) == 0, isModelPreparing {
+                return Text("正在加载模型 · \(TimelineDate.liveDuration(remaining))待整理")
+            }
+            return Text("正在转写 · \(TimelineDate.liveDuration(remaining))待整理")
+        default:
+            if isModelPreparing {
+                return Text("正在加载模型 · \(TimelineDate.liveDuration(remaining))待整理")
+            }
+            if transcription?.nativeInFlight == true {
+                return Text("正在转写 · \(TimelineDate.liveDuration(remaining))待整理")
+            }
+            return Text("\(TimelineDate.duration(remaining))待整理")
         }
     }
 

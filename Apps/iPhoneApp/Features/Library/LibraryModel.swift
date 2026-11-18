@@ -485,6 +485,23 @@ final class LibraryModel {
         if isLoading || isLoadingMore { refreshRequested = true }
     }
 
+    /// Lightweight streaming progress refresh: updates the selected timeline day and today's
+    /// remaining duration (~48ms) without running `recordingsPage(limit: 50)` (1.2s–2.9s on large
+    /// multi-day archives), keeping `ArchiveStore` free for continuous ASR window claims/commits.
+    func refreshStreamingTimeline() async {
+        guard hasLoadedOnce else {
+            await refresh(inspectFiles: false)
+            return
+        }
+        let affectedDays: Set<TimelineDay> = [timeline.selectedDay, TimelineDay(Date())]
+        timeline.discardPendingReads(days: affectedDays)
+        searchGeneration &+= 1
+        searchRevision &+= 1
+        snapshotRevision &+= 1
+        await timeline.refresh()
+        updateTranscriptCache(allowBackgroundPrefetch: false)
+    }
+
     func refresh(inspectFiles: Bool = true) async {
         refreshRequested = true
         if inspectFiles { pendingFileInspection = true }

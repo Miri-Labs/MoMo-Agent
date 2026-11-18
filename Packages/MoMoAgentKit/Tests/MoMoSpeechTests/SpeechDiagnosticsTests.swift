@@ -137,6 +137,8 @@ import MoMoContracts
 
     let pacer = BackgroundCPUPacer(initiallyForeground: false, budget: .standard)
     #expect(pacer.currentRefillRate == 0.65)
+    pacer.setBackgroundBudget(.finiteBackgroundTask)
+    #expect(pacer.currentRefillRate == 0.55)
     pacer.setBackgroundBudget(.elevatedSystemTask)
     #expect(pacer.currentRefillRate == 1.35)
     pacer.setBackgroundBudget(.externalPowerSystemTask)
