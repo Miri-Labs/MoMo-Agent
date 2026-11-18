@@ -260,10 +260,11 @@ final class PhoneRemoteAgent {
         autoReconnectTask?.cancel(); autoReconnectTask = nil
         if userInitiated { autoReconnectAttempt = 0 }
         ancillaryStarted = false
-        if connection.network == "tailscale" { tailnet.prepareForForeground(peer: connection.baseURL.host) }
-        else { network?.resume() }
-        if active, store.canContactServer {
-            store.foreground(); context?.foreground()
+        if connection.network != "tailscale" {
+            network?.resume()
+            if active, store.canContactServer {
+                store.foreground(); context?.foreground()
+            }
         }
         let scene = sceneGeneration, owner = UUID(), confirmation = connectionConfirmation
         recoveryID = owner; recovering = true; failure = nil
@@ -282,6 +283,14 @@ final class PhoneRemoteAgent {
                 }
             }
             do {
+                if connection.network == "tailscale" {
+                    await self.tailnet.ensureForegroundReady(peer: connection.baseURL.host)
+                    try Task.checkCancellation()
+                    guard self.sceneGeneration == scene, self.recoveryID == owner, self.store === store else { return }
+                    if self.active, store.canContactServer {
+                        store.foreground(); sync?.foreground()
+                    }
+                }
                 let probeTimeout: Duration = (connection.network == "tailscale" && self.tailnet.state != "Running")
                     ? .seconds(25) : .seconds(12)
                 try await Self.probeCapabilities(client, timeout: probeTimeout)
@@ -405,7 +414,7 @@ final class PhoneRemoteAgent {
             backgroundInboxReads -= 1
             suspendTransportIfIdle()
         }
-        if connection?.network == "tailscale" { tailnet.prepareForForeground(peer: connection?.baseURL.host) }
+        if connection?.network == "tailscale" { await tailnet.ensureForegroundReady(peer: connection?.baseURL.host) }
         else { network?.resume() }
         return try await store.refreshInboxInBackground()
     }

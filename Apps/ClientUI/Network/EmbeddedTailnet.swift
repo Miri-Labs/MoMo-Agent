@@ -29,10 +29,12 @@ final class EmbeddedTailnet {
     @ObservationIgnored private var desktopMediaSession: URLSession?
     @ObservationIgnored private var closing: Task<Void, Never>?
     @ObservationIgnored private var needsRestart = false
+    @ObservationIgnored private var localProxyDead = false
     @ObservationIgnored private var needsProxyCheck = false
     @ObservationIgnored private var proxyCheck: Task<Void, Never>?
     @ObservationIgnored private var sessionGeneration = UUID()
     @ObservationIgnored private var lastRecoveryRestart: ContinuousClock.Instant?
+    @ObservationIgnored private var lastLocalProxyRebuild: ContinuousClock.Instant?
     @ObservationIgnored private var needsPeerWarmup = true
     @ObservationIgnored private var lastPeerWarmupAt: ContinuousClock.Instant?
     @ObservationIgnored private var peerWarmup: Task<Void, Never>?
@@ -45,6 +47,7 @@ final class EmbeddedTailnet {
     @ObservationIgnored var peerMapTimeout: Duration = .seconds(12)
     @ObservationIgnored var peerWarmupTimeout: Duration = .seconds(4)
     @ObservationIgnored var recoveryRestartInterval: Duration = .seconds(60)
+    @ObservationIgnored var localProxyRebuildInterval: Duration = .milliseconds(500)
 
     private static let startupStates: Set<String> = ["starting", "Starting", "NoState", "Stopped", "stopped"]
 
@@ -62,6 +65,20 @@ final class EmbeddedTailnet {
         return lastRecoveryRestart.duration(to: .now) >= recoveryRestartInterval
     }
 
+    private var canRebuildDeadLocalProxyNow: Bool {
+        guard let lastLocalProxyRebuild else { return true }
+        return lastLocalProxyRebuild.duration(to: .now) >= localProxyRebuildInterval
+    }
+
+    private func rebuildDeadLocalProxy() async throws {
+        if let lastLocalProxyRebuild, lastLocalProxyRebuild.duration(to: .now) < localProxyRebuildInterval {
+            let remaining = localProxyRebuildInterval - lastLocalProxyRebuild.duration(to: .now)
+            if remaining > .zero { try await Task.sleep(for: remaining) }
+        }
+        lastLocalProxyRebuild = .now
+        await close()
+    }
+
     func start() async throws {
         guard proxySettingsError == nil else { throw TailnetError.unavailable }
         let checkedProxy = needsProxyCheck
@@ -69,6 +86,10 @@ final class EmbeddedTailnet {
         if let closing { await closing.value }
         try Task.checkCancellation()
         guard !signingOut, !signedOut else { throw TailnetError.loginRequired }
+        if localProxyDead {
+            try await rebuildDeadLocalProxy()
+            return try await start()
+        }
         if needsRestart, (node == nil || canRebuildForRecoveryNow) {
             try await rebuildForRecovery()
             return try await start()
@@ -80,6 +101,10 @@ final class EmbeddedTailnet {
                 await refreshStatus(ignoreFailedRestartGate: recoveringWithinCooldown)
                 try Task.checkCancellation()
                 guard attempt == generation else { throw CancellationError() }
+                if localProxyDead {
+                    try await rebuildDeadLocalProxy()
+                    return try await start()
+                }
                 if state == "Running" {
                     needsRestart = false
                 } else if needsRestart {
@@ -460,6 +485,35 @@ final class EmbeddedTailnet {
         }
     }
 
+    /// Verify and repair any iOS-reclaimed loopback SOCKS5 listener before foreground chat/context streams open.
+    func ensureForegroundReady(peer: String? = nil) async {
+        diagnostics.recordLink("activity", "foreground-check")
+        guard !signingOut, !signedOut, proxySettingsError == nil else { return }
+        if let existing = node {
+            needsProxyCheck = true
+            needsPeerWarmup = true
+            lastPeerWarmupAt = nil
+            if Self.startupStates.contains(state) {
+                ensureNodeUp(existing, attempt: generation)
+            }
+            ensureWatchRunning(attempt: generation)
+            await checkProxyIfNeeded()
+            if localProxyDead || (needsRestart && canRebuildForRecoveryNow) {
+                try? await start()
+            }
+            if let peer, TailnetEndpoint.isAddress(peer), state == "Running",
+               let currentNode = node, mappedAddresses.contains(peer) {
+                startPeerWarmupIfNeeded(peer, node: currentNode)
+            }
+        } else {
+            try? await start()
+            if let peer, TailnetEndpoint.isAddress(peer), state == "Running",
+               let currentNode = node, mappedAddresses.contains(peer) {
+                startPeerWarmupIfNeeded(peer, node: currentNode)
+            }
+        }
+    }
+
     func prepareForForeground(peer: String? = nil) {
         diagnostics.recordLink("activity", "foreground-check")
         // iOS can reclaim the SOCKS listener while suspended even if LocalAPI says Running.
@@ -675,13 +729,17 @@ final class EmbeddedTailnet {
                 request.setValue("Basic " + Data("tsnet:\(loopback.localAPIKey)".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
                 request.setValue("localapi", forHTTPHeaderField: "Sec-Tailscale")
                 let (data, response) = try await probe.data(for: request)
-                guard !Task.isCancelled, self?.generation == attempt, self?.sessionGeneration == sessionAttempt else { return }
+                guard !Task.isCancelled, self?.generation == attempt, self?.sessionGeneration == sessionAttempt else {
+                    if self?.generation == attempt { self?.needsProxyCheck = true }
+                    return
+                }
                 let code = (response as? HTTPURLResponse)?.statusCode
                 guard code == 200 else {
                     self?.diagnostics.recordLink("localProxyHTTP", "unexpected-response",
                                                  details: ["http": code.map(String.init) ?? "none"])
                     throw URLError(.cannotConnectToHost)
                 }
+                self?.localProxyDead = false
                 self?.diagnostics.recordLink("localProxy", "reachable")
                 if let self, self.generation == attempt,
                    let status = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -698,7 +756,12 @@ final class EmbeddedTailnet {
                    self?.generation == attempt, self?.sessionGeneration == sessionAttempt {
                     let repairable = AgentTransportFailure.isSocketOrLinkFailure(error)
                     self?.diagnostics.recordLink("localProxy", repairable ? "restart-required" : "check-failed", error: error)
-                    if repairable { self?.needsRestart = true }
+                    if repairable {
+                        self?.localProxyDead = true
+                        self?.needsRestart = true
+                    }
+                } else if self?.generation == attempt {
+                    self?.needsProxyCheck = true
                 }
             }
         }
@@ -712,7 +775,7 @@ final class EmbeddedTailnet {
         diagnostics.recordLink("node", "closing")
         generation = UUID(); watch?.cancel(); watch = nil; up?.cancel(); up = nil
         pathMonitor?.cancel(); pathMonitor = nil; lastPathSignature = nil
-        needsRestart = false; needsProxyCheck = false
+        needsRestart = false; localProxyDead = false; needsProxyCheck = false
         peerWarmup?.cancel(); peerWarmup = nil; needsPeerWarmup = true; lastPeerWarmupAt = nil
         resumeAllPeerWarmupWaiters()
         invalidateCachedSessions(finishTasks: false)
