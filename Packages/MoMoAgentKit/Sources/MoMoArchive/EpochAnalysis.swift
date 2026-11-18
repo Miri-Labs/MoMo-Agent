@@ -644,10 +644,18 @@ extension ArchiveStore {
                       cached.generation == prev.generation else { return nil }
                 return (cached.fullSpanCount, cached.blockIDs)
             }()
+            let previousSpansUnchanged: Bool = {
+                guard let prev = previous else { return true }
+                return updated.spans.count >= prev.spans.count
+                    && zip(prev.spans, updated.spans).allSatisfy { $0 == $1 }
+            }()
+            let effectiveAppendingSpans: [TranscriptSpan]? = previousSpansUnchanged
+                ? Array(updated.spans.dropFirst(previous?.spans.count ?? 0))
+                : nil
             let meta = try storeDocument(
                 updated,
-                invalidatesExistingSources: regrouped || restoredAnchors,
-                appendingSpans: (regrouped || restoredAnchors) ? nil : appendedSpans,
+                invalidatesExistingSources: (regrouped || restoredAnchors) && !previousSpansUnchanged,
+                appendingSpans: effectiveAppendingSpans,
                 knownPrevious: .some(previous),
                 trustedPreviousBlockPrefix: trustedPrefix
             )
