@@ -187,7 +187,7 @@ final class PhoneRuntime {
                         }
                     } else if refreshProgress {
                         if completedNewWindows { self.remoteAgent.sourcesChanged() }
-                        await self.library.refresh(inspectFiles: false)
+                        await self.library.refreshStreamingTimeline()
                     }
                     if refreshProgress {
                         self.requestAudioMaintenance(force: becameIdle)
@@ -255,8 +255,14 @@ final class PhoneRuntime {
         backgroundTasks?.onFailure = { [weak self] message in self?.speechFailure = message }
         backgroundTasks?.onMemoryWarning = { [weak self] in
             guard let self else { return }
-            let dropIdleRecognizer = !self.isForeground && self.transcriptionSnapshot?.nativeInFlight != true
-            self.speech?.releaseIdleResources(dropRecognizer: dropIdleRecognizer)
+            // Never evict SpeakerRuntime or SherpaRuntime while foregrounded or mid-pipeline
+            // (including the brief SQLite/VAD gap between `prepare` and `transcribe`), which
+            // otherwise forces a 9s–17s CoreML cold reload on the very next window.
+            if self.isForeground || self.isTranscriptionPipelineActive {
+                self.speech?.trimBackgroundMemory()
+            } else {
+                self.speech?.releaseIdleResources(dropRecognizer: true)
+            }
         }
         backgroundTasks?.onSystemTaskStarting = { [weak self] in
             guard let self else { return }
@@ -494,11 +500,29 @@ final class PhoneRuntime {
         receiver.dismissFailures()
     }
 
-    private static func resolvedBackgroundBudget(systemGrantActive: Bool) -> SpeechBackgroundBudget {
-        guard systemGrantActive,
-              !ProcessInfo.processInfo.isLowPowerModeEnabled,
+    private var isTranscriptionPipelineActive: Bool {
+        if preparingTranscriptionContinuation
+            || resumingAutomaticTranscription
+            || requestedTranscriptionBatchID != nil
+            || activeSystemTaskRunning
+            || backgroundTasks?.hasActiveContinuedGrant == true
+            || transcriptionContinuation?.isActive == true
+            || receivedAudioTranscription?.isActive == true {
+            return true
+        }
+        guard let snapshot = transcriptionSnapshot else { return false }
+        return snapshot.nativeInFlight
+            || snapshot.execution != nil
+            || [.preparing, .transcribing, .queued].contains(snapshot.phase)
+    }
+
+    private static func resolvedBackgroundBudget(systemGrantActive: Bool, finiteGrantActive: Bool) -> SpeechBackgroundBudget {
+        guard !ProcessInfo.processInfo.isLowPowerModeEnabled,
               [.nominal, .fair].contains(ProcessInfo.processInfo.thermalState) else {
             return .standard
+        }
+        if !systemGrantActive {
+            return finiteGrantActive ? .finiteBackgroundTask : .standard
         }
         if !UIDevice.current.isBatteryMonitoringEnabled {
             UIDevice.current.isBatteryMonitoringEnabled = true
@@ -514,12 +538,14 @@ final class PhoneRuntime {
     private func syncSpeechExecutionMode() {
         speech?.setSceneForeground(isForeground)
         let systemGrantActive = activeSystemTaskRunning || backgroundTasks?.hasActiveContinuedGrant == true
-        let elevatedQoS = isForeground
-            || systemGrantActive
-            || transcriptionContinuation?.isActive == true
+        let finiteGrantActive = transcriptionContinuation?.isActive == true
             || receivedAudioTranscription?.isActive == true
+        let elevatedQoS = isForeground || systemGrantActive || finiteGrantActive
         speech?.setForegroundPriority(elevatedQoS)
-        speech?.setBackgroundBudget(Self.resolvedBackgroundBudget(systemGrantActive: systemGrantActive))
+        speech?.setBackgroundBudget(Self.resolvedBackgroundBudget(
+            systemGrantActive: systemGrantActive,
+            finiteGrantActive: finiteGrantActive
+        ))
     }
 
     func foreground() async {
@@ -547,7 +573,11 @@ final class PhoneRuntime {
             let archive = self.archive
             Task.detached(priority: .utility) { await archive.repairFileProtectionIfNeeded() }
         }
-        requestSpeechWarmup()
+        let benchmarkRequested = ProcessInfo.processInfo.environment["MOMO_BENCHMARK_SESSION_ID"] != nil
+            || ProcessInfo.processInfo.environment["MOMO_BENCHMARK_SPEECH_MODEL"] == "1"
+        if benchmarkRequested {
+            requestSpeechWarmup()
+        }
         let foregroundAllowed = PhoneBackgroundTasks.resourcesAllowProcessing(foreground: true)
         await transcription?.setHistoricalWorkAllowed(foregroundAllowed,
             constraint: PhoneBackgroundTasks.currentProcessingConstraint(foreground: true))
@@ -567,9 +597,12 @@ final class PhoneRuntime {
         transcriptionContinuation?.finish()
         transport?.allowControlReplay()
         requestWatchStatus()
+        await resumeAutomaticTranscription()
         await receiver.reconcile()
         remoteAgent.updateWatchStatus(receiver.currentWatchStatus)
-        await resumeAutomaticTranscription()
+        if !benchmarkRequested, !isTranscriptionPipelineActive {
+            requestSpeechWarmup()
+        }
         if libraryPresentationDeferred {
             do { try await prepareLibraryPresentation() }
             catch { refreshFailure = String(localized: "资料界面尚未更新：\(error.localizedDescription)"); return }
@@ -613,7 +646,8 @@ final class PhoneRuntime {
         if transcription != nil, PhoneBackgroundTasks.resourcesAllowProcessing,
            !activeSystemTaskRunning, backgroundTasks?.hasActiveContinuedGrant != true {
             let snapshot = transcriptionSnapshot
-            let activeWork = preparingTranscriptionContinuation
+            let activeWork = foregrounding
+                || preparingTranscriptionContinuation
                 || resumingAutomaticTranscription
                 || requestedTranscriptionBatchID != nil
                 || activeBatches.contains(where: { isBatchAutomaticallyResumable($0) })

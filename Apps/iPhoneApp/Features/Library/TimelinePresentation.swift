@@ -101,6 +101,20 @@ enum TimelineDate {
         if minutes == 0 { return String(localized: "\(hours) 小时") }
         return String(localized: "\(hours) 小时 \(minutes) 分钟")
     }
+
+    static func liveDuration(_ seconds: TimeInterval) -> String {
+        let totalSeconds = max(1, Int(seconds.rounded(.up)))
+        if totalSeconds < 60 {
+            return String(localized: "\(totalSeconds) 秒")
+        }
+        let hours = totalSeconds / 3_600
+        let minutes = (totalSeconds % 3_600) / 60
+        let secs = totalSeconds % 60
+        if hours > 0 {
+            return String(localized: "\(hours) 小时 \(minutes) 分 \(String(format: "%02d", secs)) 秒")
+        }
+        return String(localized: "\(minutes) 分 \(String(format: "%02d", secs)) 秒")
+    }
 }
 
 @MainActor

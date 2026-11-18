@@ -73,7 +73,9 @@ struct PhoneRootView: View {
             Tab(String(localized: "转录"), systemImage: "doc.text", value: .transcripts) {
                 NavigationStack {
                     LibraryView(model: runtime.library, playback: runtime.playback,
-                        transcription: runtime.transcriptionSnapshot, speechFailure: runtime.speechFailure,
+                        transcription: runtime.transcriptionSnapshot,
+                        modelStatus: runtime.modelStatus,
+                        speechFailure: runtime.speechFailure,
                         batches: runtime.activeBatches,
                         delete: { try await runtime.delete(sessionID: $0) },
                         refresh: { await runtime.refresh() },

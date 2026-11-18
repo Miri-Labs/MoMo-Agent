@@ -44,8 +44,12 @@ func withNativeCancelToken(_ attempt: SpeechAttempt, _ body: (OpaquePointer?) ->
 }
 
 public enum SpeechBackgroundBudget: String, Sendable, Equatable {
-    /// Conservative pace (`0.65` CPU-s/s) for finite UIKit background tasks subject to XNU's 48s/60s `cpu_resource_fatal` limit.
+    /// Conservative pace (`0.65` CPU-s/s) for idle/ungranted background state subject to XNU's 48s/60s `cpu_resource_fatal` limit.
     case standard
+    /// Front-loaded burst (`14.0` CPU-s initial burst + `0.55` CPU-s/s refill = `47.0` CPU-s max over 60s)
+    /// for ~26–28s UIKit `beginBackgroundTask` wakes (`ReceivedAudioTranscription` / `PhoneTranscriptionContinuation`),
+    /// allowing cold CoreML model load + first window commit before UIKit task expiration while staying below XNU's 48s/60s ceiling.
+    case finiteBackgroundTask
     /// Elevated pace (`1.35` CPU-s/s) for system `BGProcessingTask` / `BGContinuedProcessingTask` grants on battery under nominal/fair thermal state.
     case elevatedSystemTask
     /// High-throughput pace (`2.20` CPU-s/s) for system processing grants while connected to external power under nominal/fair thermal state.
@@ -54,6 +58,7 @@ public enum SpeechBackgroundBudget: String, Sendable, Equatable {
     var parameters: (maxCapacity: Double, initialBurst: Double, refillRate: Double) {
         switch self {
         case .standard: return (9.5, 9.5, 0.65)
+        case .finiteBackgroundTask: return (14.0, 14.0, 0.55)
         case .elevatedSystemTask: return (10.0, 8.0, 1.35)
         case .externalPowerSystemTask: return (14.0, 12.0, 2.20)
         }

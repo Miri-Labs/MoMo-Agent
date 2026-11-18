@@ -102,7 +102,7 @@ struct TranscriptionComputeLease: Sendable, Equatable {
     }
 
     var allowsInitialVoiceprintExtraction: Bool {
-        managedHandle == nil || managedHandle?.origin == .foreground
+        !systemSuspended && !hasFiniteBudget && (managedHandle == nil || managedHandle?.origin == .foreground)
     }
 
     var allowsIdleVoiceprintExtraction: Bool {
@@ -113,12 +113,13 @@ struct TranscriptionComputeLease: Sendable, Equatable {
     }
 
     func allowsCompanionBatching(isHotLive: Bool, backgroundBudget: SpeechBackgroundBudget) -> Bool {
-        guard !isHotLive else { return false }
+        guard !isHotLive, !hasFiniteBudget else { return false }
         let allowForeground = !systemSuspended
             && (managedHandle == nil
                 || managedHandle?.origin == .foreground
                 || managedHandle?.origin == .continuedProcessing)
         let allowBackground = backgroundBudget != .standard
+            && backgroundBudget != .finiteBackgroundTask
             && finiteBackgroundExecutionID == nil
             && (managedHandle?.origin == .backgroundProcessing
                 || managedHandle?.origin == .continuedProcessing)
