@@ -743,6 +743,155 @@ class ModelSetupTests(unittest.TestCase):
         ])
         self.assertGreaterEqual(final_state['acp_starts'], 2)
 
+    def test_antigravity_priority_gate_serializes_background_and_preempts_for_interactive(self):
+        import threading
+        import time
+        import antigravity_bridge as ab
+
+        gate = ab._AgyPriorityGate(max_total=2, max_background=1, background_pace_seconds=0.02)
+        order: list[str] = []
+        bg_in_flight = 0
+        max_bg_in_flight = 0
+        lock = threading.Lock()
+        bg1_entered = threading.Event()
+        release_bg1 = threading.Event()
+        bg2_queued = threading.Event()
+
+        def run_bg1():
+            nonlocal bg_in_flight, max_bg_in_flight
+            with gate.acquire(background=True):
+                with lock:
+                    bg_in_flight += 1
+                    max_bg_in_flight = max(max_bg_in_flight, bg_in_flight)
+                    order.append('bg1-start')
+                bg1_entered.set()
+                release_bg1.wait(timeout=2.0)
+                with lock:
+                    order.append('bg1-end')
+                    bg_in_flight -= 1
+
+        def run_bg2():
+            nonlocal bg_in_flight, max_bg_in_flight
+            bg2_queued.set()
+            with gate.acquire(background=True):
+                with lock:
+                    bg_in_flight += 1
+                    max_bg_in_flight = max(max_bg_in_flight, bg_in_flight)
+                    order.append('bg2-start')
+                with lock:
+                    bg_in_flight -= 1
+
+        def run_interactive():
+            with gate.acquire(background=False):
+                with lock:
+                    order.append('interactive')
+
+        t1 = threading.Thread(target=run_bg1)
+        t1.start()
+        self.assertTrue(bg1_entered.wait(timeout=1.0))
+
+        t2 = threading.Thread(target=run_bg2)
+        t2.start()
+        self.assertTrue(bg2_queued.wait(timeout=1.0))
+        time.sleep(0.03)
+
+        # Cancelled background waiter must abort immediately without running.
+        cancelled_ev = threading.Event()
+        cancelled_ev.set()
+        with self.assertRaises(RuntimeError):
+            with gate.acquire(background=True, cancel_event=cancelled_ev):
+                order.append('should-not-run')
+
+        # Interactive request uses reserved slot immediately even while bg1 is still running and bg2 is queued!
+        ti = threading.Thread(target=run_interactive)
+        ti.start()
+        ti.join(timeout=1.0)
+        self.assertFalse(ti.is_alive())
+
+        release_bg1.set()
+        t1.join(timeout=1.0)
+        t2.join(timeout=1.0)
+
+        self.assertEqual(max_bg_in_flight, 1)
+        self.assertEqual(order, ['bg1-start', 'interactive', 'bg1-end', 'bg2-start'])
+
+    def test_antigravity_seeding_caps_max_workers_and_classifies_interactive_turns(self):
+        import sqlite3
+        import time
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from superagent_gateway import SuperAgentGateway
+        from superagent_runtime import DEFAULT_PROACTIVE_RULES, seed_superagent_orchestrator
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / 'work'
+            work.mkdir()
+            settings = {
+                'sources': [
+                    {'id': 'momo', 'revision': 3, 'installed': True, 'value': {'enabled': True, 'config': {
+                        'bridgeUrl': 'http://127.0.0.1:5678', 'pollIntervalMs': 250}}},
+                ],
+                'blocks': {
+                    'policy': {'revision': 1, 'value': {'rules': DEFAULT_PROACTIVE_RULES, 'sources': {'momo': {
+                        'allowed': [{'id': 'owner'}], 'bots': [{'id': 'recorder'}], 'admission': {}}}}},
+                    'eval': {'revision': 1, 'value': {'mode': 'observe', 'timeoutSeconds': 180, 'model': {'provider': 'antigravity', 'model': 'm1'}}},
+                    'executor': {'revision': 1, 'value': {'directory': str(work), 'maxWorkers': 3, 'model': {'provider': 'antigravity', 'model': 'm1'}}},
+                },
+            }
+            writes = []
+
+            def request(port, method, path, payload=None, **kwargs):
+                if method == 'PUT':
+                    writes.append((path, payload))
+                    if path == '/orchestrator/api/settings/executor':
+                        settings['blocks']['executor']['value'] = dict(payload['value'])
+                        settings['blocks']['executor']['revision'] += 1
+                    return {}
+                return {
+                    '/orchestrator/api/settings': settings,
+                    '/orchestrator/api/prompts': {'current': {'revision': 4}},
+                    '/orchestrator/api/state': {'health': {'runtime': {'state': 'ready'}}},
+                }[path]
+
+            with patch('superagent_runtime.dsh_api_request', side_effect=request):
+                seed_superagent_orchestrator(
+                    dsh_port=1235,
+                    gateway_port=5678,
+                    work_dir=work,
+                    proactive_mode='observe',
+                    dsh_provider='antigravity',
+                    model_id='m1',
+                )
+            self.assertEqual(settings['blocks']['executor']['value']['maxWorkers'], 1)
+
+            with patch('superagent_runtime.dsh_api_request', side_effect=request):
+                seed_superagent_orchestrator(
+                    dsh_port=1235,
+                    gateway_port=5678,
+                    work_dir=work,
+                    proactive_mode='observe',
+                    dsh_provider='anthropic',
+                    model_id='m1',
+                )
+            self.assertEqual(settings['blocks']['executor']['value']['maxWorkers'], 3)
+
+        conn = sqlite3.connect(':memory:')
+        conn.execute('CREATE TABLE chat_runs (status TEXT, cancel_requested INTEGER, updated_at REAL)')
+        fake_gw = SimpleNamespace(bridge=SimpleNamespace(db=conn))
+        orch_tools = [{'type': 'function', 'function': {'name': 'orchestrator_reply'}}]
+        worker_tools = [{'type': 'function', 'function': {'name': 'bash'}}]
+
+        # Proactive orchestrator wakeup with no active chat_runs is background:
+        self.assertFalse(SuperAgentGateway._is_interactive_orchestrator_turn(fake_gw, orch_tools))
+
+        # Active user chat run with orchestrator_reply is interactive:
+        conn.execute('INSERT INTO chat_runs VALUES (?, ?, ?)', ('started', 0, time.time()))
+        self.assertTrue(SuperAgentGateway._is_interactive_orchestrator_turn(fake_gw, orch_tools))
+
+        # Background worker turn during an active user chat run stays background:
+        self.assertFalse(SuperAgentGateway._is_interactive_orchestrator_turn(fake_gw, worker_tools))
+        conn.close()
+
 
 if __name__ == '__main__':
     unittest.main()

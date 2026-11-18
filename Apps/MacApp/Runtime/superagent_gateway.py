@@ -585,6 +585,25 @@ class SuperAgentGateway:
             }
         )
 
+    def _is_interactive_orchestrator_turn(self, tools: list[dict] | None) -> bool:
+        if not tools:
+            return False
+        has_orch_reply = False
+        for item in tools:
+            if not isinstance(item, dict):
+                continue
+            fn = item.get("function") if isinstance(item.get("function"), dict) else item
+            if fn.get("name") == "orchestrator_reply":
+                has_orch_reply = True
+                break
+        if not has_orch_reply:
+            return False
+        row = self.bridge.db.execute(
+            "SELECT 1 FROM chat_runs WHERE status IN ('queued', 'started') AND cancel_requested=0 AND updated_at > ? LIMIT 1",
+            (time.time() - 300.0,),
+        ).fetchone()
+        return row is not None
+
     async def handle_internal_antigravity_completions(self, request: web.Request) -> web.StreamResponse:
         if refused := self._check_internal_antigravity_auth(request):
             return refused
@@ -603,6 +622,7 @@ class SuperAgentGateway:
         tool_choice = payload.get("tool_choice")
         response_format = payload.get("response_format") if isinstance(payload.get("response_format"), dict) else None
         stream_requested = bool(payload.get("stream"))
+        is_background = not self._is_interactive_orchestrator_turn(tools)
 
         try:
             check_read_progress(messages)
@@ -617,6 +637,7 @@ class SuperAgentGateway:
                 response_format=response_format,
                 data_dir=self.data,
                 timeout=180.0,
+                background=is_background,
             )
         except Exception as err:
             notice = self._record_provider_issue(err, provider="antigravity")
@@ -2267,8 +2288,8 @@ class SuperAgentGateway:
                     )
             else:
                 text = await asyncio.wait_for(
-                    asyncio.to_thread(self._call_configured_llm_oneshot, prompt),
-                    timeout=180.0,
+                    asyncio.to_thread(self._call_configured_llm_oneshot, prompt, stop_review),
+                    timeout=300.0,
                 )
             with self.bridge.db:
                 self.bridge.db.execute(
@@ -2277,7 +2298,7 @@ class SuperAgentGateway:
                 )
             self._clear_provider_notice_if_recovered()
         except Exception as exc:
-            log.warning("Direct /v1/runs execution failed (%s): %s", run_id, exc)
+            log.warning("Direct /v1/runs execution failed (%s): %s", run_id, exc or repr(exc))
             notice = self._record_provider_issue(exc)
             err_code = notice["short_error"] if notice else "execution_failed"
             if isinstance(exc, RepeatedToolRead):
@@ -2856,6 +2877,7 @@ class SuperAgentGateway:
                     data_dir=self.data,
                     timeout=150.0,
                     background=True,
+                    cancel_event=stop,
                 )
                 msg = ((resp.get("choices") or [{}])[0]).get("message") or {}
                 tool_calls = msg.get("tool_calls") or []
@@ -3000,7 +3022,7 @@ class SuperAgentGateway:
                         }
                     )
 
-    def _call_configured_llm_oneshot(self, prompt: str) -> str:
+    def _call_configured_llm_oneshot(self, prompt: str, stop: threading.Event | None = None) -> str:
         llm = resolve_superagent_llm(self.data)
         provider = llm["dsh_provider"]
         model_id = llm["model_id"]
@@ -3038,6 +3060,7 @@ class SuperAgentGateway:
                 timeout=90.0,
                 background=True,
                 oneshot=True,
+                cancel_event=stop,
             )
             msg = ((resp.get("choices") or [{}])[0]).get("message") or {}
             return str(msg.get("content") or "").strip()

@@ -26,8 +26,120 @@ import uuid
 
 log = logging.getLogger("momo.antigravity")
 
-_AGY_TOTAL_SEM = threading.BoundedSemaphore(4)
-_AGY_BACKGROUND_SEM = threading.BoundedSemaphore(1)
+BACKGROUND_PACE_SECONDS = 1.5
+
+
+class _AgyPriorityGate:
+    """Priority-aware scheduler: reserves an interactive slot for foreground chat and serializes background work."""
+
+    def __init__(
+        self,
+        *,
+        max_total: int = 2,
+        max_background: int = 1,
+        background_pace_seconds: float = BACKGROUND_PACE_SECONDS,
+    ) -> None:
+        self.max_total = max_total
+        self.max_background = max_background
+        self.background_pace_seconds = background_pace_seconds
+        self._cond = threading.Condition()
+        self._interactive_active = 0
+        self._background_active = 0
+        self._interactive_queue: deque[object] = deque()
+        self._background_queue: deque[object] = deque()
+        self._next_background_not_before = 0.0
+
+    def reset(self) -> None:
+        with self._cond:
+            self._next_background_not_before = 0.0
+            self._cond.notify_all()
+
+    def note_rate_limited(self, backoff_seconds: float = 4.0) -> None:
+        with self._cond:
+            target = time.monotonic() + max(1.0, min(15.0, backoff_seconds))
+            if target > self._next_background_not_before:
+                self._next_background_not_before = target
+            self._cond.notify_all()
+
+    @contextlib.contextmanager
+    def acquire(
+        self,
+        *,
+        background: bool = False,
+        cancel_event: threading.Event | None = None,
+        queue_timeout: float | None = None,
+        pace_seconds: float | None = None,
+    ):
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("Antigravity request cancelled before execution")
+        token = object()
+        deadline = (time.monotonic() + max(1.0, queue_timeout)) if queue_timeout is not None else None
+        effective_pace = (
+            self.background_pace_seconds if pace_seconds is None else max(0.0, pace_seconds)
+        )
+
+        with self._cond:
+            target_queue = self._background_queue if background else self._interactive_queue
+            target_queue.append(token)
+            try:
+                while True:
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise RuntimeError("Antigravity request cancelled while queued")
+                    now = time.monotonic()
+                    if deadline is not None and now >= deadline:
+                        raise TimeoutError("Timed out waiting for Antigravity execution slot")
+
+                    total_active = self._interactive_active + self._background_active
+                    if not background:
+                        if self._interactive_queue[0] is token and total_active < self.max_total:
+                            self._interactive_queue.popleft()
+                            self._interactive_active += 1
+                            break
+                        wait_slice = 0.25 if cancel_event is not None else None
+                    else:
+                        can_run_bg = (
+                            self._background_queue[0] is token
+                            and not self._interactive_queue
+                            and self._interactive_active == 0
+                            and self._background_active < self.max_background
+                            and total_active < self.max_total
+                        )
+                        if can_run_bg:
+                            pace_rem = self._next_background_not_before - now
+                            if pace_rem <= 0:
+                                self._background_queue.popleft()
+                                self._background_active += 1
+                                break
+                            wait_slice = min(pace_rem, 0.25) if cancel_event is not None else pace_rem
+                        else:
+                            wait_slice = 0.25 if cancel_event is not None else None
+
+                    if deadline is not None:
+                        rem = max(0.01, deadline - now)
+                        wait_slice = rem if wait_slice is None else min(wait_slice, rem)
+                    self._cond.wait(timeout=wait_slice)
+            except BaseException:
+                if token in target_queue:
+                    target_queue.remove(token)
+                self._cond.notify_all()
+                raise
+
+        try:
+            yield
+        finally:
+            with self._cond:
+                if background:
+                    self._background_active = max(0, self._background_active - 1)
+                    if effective_pace > 0:
+                        target = time.monotonic() + effective_pace
+                        if target > self._next_background_not_before:
+                            self._next_background_not_before = target
+                else:
+                    self._interactive_active = max(0, self._interactive_active - 1)
+                self._cond.notify_all()
+
+
+_AGY_GATE = _AgyPriorityGate()
 
 MAX_PROMPT_UTF8_BYTES = 140_000
 MAX_SESSION_ACCUMULATED_BYTES = 280_000
@@ -106,6 +218,7 @@ def clear_antigravity_caches() -> None:
         _MODEL_CACHE.clear()
     with _EXHAUSTED_LOCK:
         _EXHAUSTED_MODELS.clear()
+    _AGY_GATE.reset()
 
 
 def _detect_agy_stream_error(raw_text: str) -> str | None:
@@ -172,6 +285,7 @@ def _record_model_rate_limited(model_id: str, err: BaseException) -> None:
         strikes = (prev[1] + 1) if prev is not None else 1
         adaptive = hinted if hinted is not None else min(120.0, 15.0 * (2 ** min(strikes - 1, 3)))
         _EXHAUSTED_MODELS[mid] = (now + adaptive, strikes)
+    _AGY_GATE.note_rate_limited(min(10.0, hinted if hinted is not None else 4.0))
 
 
 def _clear_model_rate_limited(model_id: str) -> None:
@@ -1410,14 +1524,21 @@ def _build_acp_turn_prompt(
 
 
 @contextlib.contextmanager
-def _agy_concurrency_slot(*, background: bool = False):
-    if background:
-        with _AGY_BACKGROUND_SEM:
-            with _AGY_TOTAL_SEM:
-                yield
-    else:
-        with _AGY_TOTAL_SEM:
-            yield
+def _agy_concurrency_slot(
+    *,
+    background: bool = False,
+    cancel_event: threading.Event | None = None,
+    queue_timeout: float | None = None,
+):
+    is_test_override = bool(os.environ.get("MOMO_ANTIGRAVITY_CLI")) or _is_mocked_subprocess()
+    pace = 0.0 if is_test_override else None
+    with _AGY_GATE.acquire(
+        background=background,
+        cancel_event=cancel_event,
+        queue_timeout=queue_timeout,
+        pace_seconds=pace,
+    ):
+        yield
 
 
 def _run_antigravity_acp_completion(
@@ -1430,7 +1551,6 @@ def _run_antigravity_acp_completion(
     response_format: dict | None,
     sandbox_dir: Path,
     timeout: float,
-    background: bool,
     oneshot: bool,
 ) -> dict:
     base_tools = _normalize_openai_tools(tools)
@@ -1481,7 +1601,7 @@ def _run_antigravity_acp_completion(
     context_key = hashlib.sha256(context_fingerprint_src).hexdigest()
     msg_digests = [_canonical_message_digest(m) for m in non_sys_messages]
 
-    with _agy_concurrency_slot(background=background):
+    if True:
         daemon = _get_or_start_acp_daemon(cli, sandbox_dir)
         warm_session: _WarmACPSession | None = None
         matched_len = 0
@@ -1617,7 +1737,6 @@ def _run_antigravity_acp_completion(
                     response_format=response_format,
                     sandbox_dir=sandbox_dir,
                     timeout=timeout,
-                    background=background,
                     oneshot=True,
                 )
             raise
@@ -1634,6 +1753,7 @@ def _run_antigravity_legacy_print_completion(
     sandbox_dir: Path,
     timeout: float,
     background: bool,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
     """Fallback single-turn `agy -p` execution (used only when `MOMO_ANTIGRAVITY_TRANSPORT=print` or mocked subprocess)."""
     prompt, tool_schema, declared_names = build_antigravity_prompt(
@@ -1677,7 +1797,11 @@ def _run_antigravity_legacy_print_completion(
             cmd.extend(["--json-schema", schema_str])
 
     try:
-        with _agy_concurrency_slot(background=background):
+        with _agy_concurrency_slot(
+            background=background,
+            cancel_event=cancel_event,
+            queue_timeout=max(timeout * 2.5, 300.0) if background else timeout,
+        ):
             proc = subprocess.run(
                 cmd,
                 cwd=str(sandbox_dir),
@@ -1739,6 +1863,7 @@ def run_antigravity_completion(
     timeout: float = 180.0,
     background: bool = False,
     oneshot: bool = False,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
     """Execute a chat completion via the persistent `agy acp` session daemon (with KV-cache reuse across turns)."""
     cli = find_antigravity_cli()
@@ -1758,71 +1883,78 @@ def run_antigravity_completion(
             sandbox_dir=sandbox_dir,
             timeout=timeout,
             background=background,
+            cancel_event=cancel_event,
         )
 
-    primary = str(model or "").strip()
-    tried: set[str] = set()
-    candidate: str | None = primary
-    if _is_model_cooled_down(primary):
-        alt = _next_dynamic_candidate(primary, cli, tried=set())
-        if alt:
-            candidate = alt
+    queue_limit = max(timeout * 2.5, 300.0) if background else max(timeout, 60.0)
+    with _agy_concurrency_slot(
+        background=background,
+        cancel_event=cancel_event,
+        queue_timeout=queue_limit,
+    ):
+        primary = str(model or "").strip()
+        tried: set[str] = set()
+        candidate: str | None = primary
+        if _is_model_cooled_down(primary):
+            alt = _next_dynamic_candidate(primary, cli, tried=set())
+            if alt:
+                candidate = alt
 
-    last_error: Exception | None = None
-    max_attempts = 4
-    while candidate and len(tried) < max_attempts:
-        tried.add(candidate)
-        use_oneshot = oneshot or (candidate != primary)
-        try:
+        last_error: Exception | None = None
+        max_attempts = 4
+        while candidate and len(tried) < max_attempts:
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("Antigravity request cancelled before attempt")
+            tried.add(candidate)
+            use_oneshot = oneshot or (candidate != primary)
             try:
-                completion = _run_antigravity_acp_completion(
-                    cli=cli,
-                    model=candidate,
-                    messages=messages,
-                    tools=tools,
-                    tool_choice=tool_choice,
-                    response_format=response_format,
-                    sandbox_dir=sandbox_dir,
-                    timeout=timeout,
-                    background=background,
-                    oneshot=use_oneshot,
-                )
-            except Exception as net_err:
-                if not _is_transient_network_or_daemon_error(net_err):
-                    raise
-                log.warning("Antigravity transient network/daemon error on %s (%s); recycling ACP daemon and retrying once", candidate, net_err)
-                shutdown_antigravity_daemon()
-                time.sleep(0.6)
-                completion = _run_antigravity_acp_completion(
-                    cli=cli,
-                    model=candidate,
-                    messages=messages,
-                    tools=tools,
-                    tool_choice=tool_choice,
-                    response_format=response_format,
-                    sandbox_dir=sandbox_dir,
-                    timeout=timeout,
-                    background=background,
-                    oneshot=True,
-                )
-            _clear_model_rate_limited(candidate)
-            if candidate != primary:
-                log.info("Antigravity fulfilled %s using dynamically discovered model %s", primary, candidate)
-                completion["model"] = primary
-            return completion
-        except Exception as err:
-            last_error = err
-            if _is_quota_or_rate_error(err):
-                _record_model_rate_limited(candidate, err)
-                nxt = _next_dynamic_candidate(primary, cli, tried=tried)
-                if nxt and len(tried) < max_attempts:
-                    log.warning("Antigravity model %s hit quota/rate limit (%s); falling back to discovered model %s", candidate, err, nxt)
-                    candidate = nxt
-                    continue
-            raise
-    if last_error is not None:
-        raise last_error
-    raise RuntimeError("Antigravity completion failed without available candidate models")
+                try:
+                    completion = _run_antigravity_acp_completion(
+                        cli=cli,
+                        model=candidate,
+                        messages=messages,
+                        tools=tools,
+                        tool_choice=tool_choice,
+                        response_format=response_format,
+                        sandbox_dir=sandbox_dir,
+                        timeout=timeout,
+                        oneshot=use_oneshot,
+                    )
+                except Exception as net_err:
+                    if not _is_transient_network_or_daemon_error(net_err):
+                        raise
+                    log.warning("Antigravity transient network/daemon error on %s (%s); recycling ACP daemon and retrying once", candidate, net_err)
+                    shutdown_antigravity_daemon()
+                    time.sleep(0.6)
+                    completion = _run_antigravity_acp_completion(
+                        cli=cli,
+                        model=candidate,
+                        messages=messages,
+                        tools=tools,
+                        tool_choice=tool_choice,
+                        response_format=response_format,
+                        sandbox_dir=sandbox_dir,
+                        timeout=timeout,
+                        oneshot=True,
+                    )
+                _clear_model_rate_limited(candidate)
+                if candidate != primary:
+                    log.info("Antigravity fulfilled %s using dynamically discovered model %s", primary, candidate)
+                    completion["model"] = primary
+                return completion
+            except Exception as err:
+                last_error = err
+                if _is_quota_or_rate_error(err):
+                    _record_model_rate_limited(candidate, err)
+                    nxt = _next_dynamic_candidate(primary, cli, tried=tried)
+                    if nxt and len(tried) < max_attempts:
+                        log.warning("Antigravity model %s hit quota/rate limit (%s); falling back to discovered model %s", candidate, err, nxt)
+                        candidate = nxt
+                        continue
+                raise
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Antigravity completion failed without available candidate models")
 
 
 def format_sse_chunks_from_completion(completion: dict) -> bytes:
@@ -1915,17 +2047,24 @@ async def run_antigravity_completion_async(
     timeout: float = 180.0,
     background: bool = False,
     oneshot: bool = False,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
-    """Async non-blocking wrapper around `run_antigravity_completion`."""
-    return await asyncio.to_thread(
-        run_antigravity_completion,
-        model=model,
-        messages=messages,
-        tools=tools,
-        tool_choice=tool_choice,
-        response_format=response_format,
-        data_dir=data_dir,
-        timeout=timeout,
-        background=background,
-        oneshot=oneshot,
-    )
+    """Async non-blocking wrapper around `run_antigravity_completion` that propagates task cancellation to the queue."""
+    effective_cancel = cancel_event or threading.Event()
+    try:
+        return await asyncio.to_thread(
+            run_antigravity_completion,
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            response_format=response_format,
+            data_dir=data_dir,
+            timeout=timeout,
+            background=background,
+            oneshot=oneshot,
+            cancel_event=effective_cancel,
+        )
+    except asyncio.CancelledError:
+        effective_cancel.set()
+        raise
