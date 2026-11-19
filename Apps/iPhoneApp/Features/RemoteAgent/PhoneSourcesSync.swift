@@ -159,7 +159,21 @@ final class PhoneSourcesSync {
                     var next = currentSaved; next.revision += 1; next.pending = snapshot(kind, next.revision, access)
                     try commit(next, kind)
                 }
-                try await deliver(kind)
+                if !currentSaved.enabled || !["enabled", "foreground_only"].contains(access) {
+                    try await deliver(kind)
+                } else if preference(kind).pending != nil {
+                    do {
+                        try await deliver(kind)
+                    } catch let AgentClientError.http(code, _, _, _) where code == 400 || code == 409 || code == 422 {
+                        // Drop poisoned/superseded pending snapshot and advance revision so a fresh snapshot can succeed.
+                        var recovered = preference(kind)
+                        recovered.pending = nil
+                        if code == 409 {
+                            recovered.revision = max(recovered.revision + 1, Int64(Date().timeIntervalSince1970))
+                        }
+                        try commit(recovered, kind)
+                    }
+                }
                 guard preference(kind).enabled else { failures[kind] = nil; continue }
                 let now = Date()
                 let start = now.addingTimeInterval((kind == .calendar || kind == .motion) ? -86400 : -7 * 86400)
@@ -175,7 +189,16 @@ final class PhoneSourcesSync {
                 next.pending = .init(device: deviceID, kind: kind, revision: next.revision, state: status,
                                      observedAt: now, windowStart: start, windowEnd: end, records: records)
                 try commit(next, kind)
-                try await deliver(kind)
+                do {
+                    try await deliver(kind)
+                } catch let AgentClientError.http(code, _, _, _) where code == 409 {
+                    var bumped = preference(kind)
+                    bumped.revision = max(bumped.revision + 1, Int64(Date().timeIntervalSince1970))
+                    bumped.pending = .init(device: deviceID, kind: kind, revision: bumped.revision, state: status,
+                                           observedAt: now, windowStart: start, windowEnd: end, records: records)
+                    try commit(bumped, kind)
+                    try await deliver(kind)
+                }
                 if ["enabled", "foreground_only"].contains(status) {
                     failures[kind] = nil
                 } else if reader.canPromptAuthorization(kind) {
