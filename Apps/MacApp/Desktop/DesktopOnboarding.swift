@@ -320,13 +320,19 @@ struct ModelConnectionFields: View {
     private var apiFields: some View {
         VStack(alignment: .leading, spacing: continueSetup ? 16 : 0) {
             apiField("API 地址") {
-                TextField("https://api.example.com/v1", text: $model.providerURL).accessibilityIdentifier("onboarding.modelURL")
+                TextField("", text: $model.providerURL, prompt: Text(verbatim: "https://api.example.com/v1"))
+                    .labelsHidden()
+                    .accessibilityIdentifier("onboarding.modelURL")
             }
             apiField("模型") {
-                TextField("模型名称", text: $model.modelName).accessibilityIdentifier("onboarding.modelName")
+                TextField("", text: $model.modelName, prompt: Text("模型名称"))
+                    .labelsHidden()
+                    .accessibilityIdentifier("onboarding.modelName")
             }
             apiField("密钥") {
-                SecureField("API 密钥", text: $model.providerKey).accessibilityIdentifier("onboarding.modelKey")
+                SecureField("", text: $model.providerKey, prompt: Text("API 密钥"))
+                    .labelsHidden()
+                    .accessibilityIdentifier("onboarding.modelKey")
             }
         }.multilineTextAlignment(.leading).disabled(model.busy != nil)
     }

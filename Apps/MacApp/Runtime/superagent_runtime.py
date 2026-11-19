@@ -564,6 +564,9 @@ def resolve_superagent_llm(data: Path) -> dict:
             or os.environ.get("DEEPSEEK_API_KEY")
             or "momo-local-key"
         ).strip()
+        from urllib.parse import urlsplit
+
+        custom_api = "openai-responses" if (urlsplit(base_url).hostname or "").lower() == "api.openai.com" else "openai-completions"
         return {
             "dsh_provider": "momo-custom",
             "model_id": model_id,
@@ -571,7 +574,7 @@ def resolve_superagent_llm(data: Path) -> dict:
             "env": {"MOMO_LLM_API_KEY": api_key},
             "providers_config": {
                 "momo-custom": {
-                    "api": "openai-completions",
+                    "api": custom_api,
                     "baseURL": base_url,
                     "apiKeyEnv": "MOMO_LLM_API_KEY",
                     "models": [{"id": model_id, "input": ["text", "image"]}],

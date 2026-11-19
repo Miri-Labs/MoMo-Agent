@@ -2805,10 +2805,16 @@ class SuperAgentGateway:
         else:
             client_ctx = OpenAI(api_key=llm["env"]["MOMO_LLM_API_KEY"], base_url=llm["base_url"], timeout=90)
 
+        from urllib.parse import urlsplit
+
+        use_responses_api = (
+            provider == "openai-codex"
+            or (urlsplit(str(llm.get("base_url") or "")).hostname or "").lower() == "api.openai.com"
+        )
         with client_ctx as client:
             completions = (
                 _CodexCompletionsAdapter(client, model_id)
-                if provider == "openai-codex"
+                if use_responses_api
                 else client.chat.completions
             )
             while True:
