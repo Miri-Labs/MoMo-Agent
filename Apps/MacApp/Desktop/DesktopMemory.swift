@@ -5,6 +5,8 @@ import MoMoAgentClient
 struct DesktopMemory: View {
     @Bindable var model: DesktopModel
     var isActive: Bool = true
+    @Binding var detailOpen: Bool
+    @Binding var inspectorWidth: CGFloat
     @State private var selectedMemoryID: String? = nil
     @State private var revealInExplorerID: String? = nil
     @State private var readerBackStack: [String] = []
@@ -16,6 +18,7 @@ struct DesktopMemory: View {
     @State private var searchQuery = ""
     @State private var readingSource: ContextSource?
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
 
     private var vault: MemoryVaultSnapshot {
         model.vaultSnapshot
@@ -177,38 +180,28 @@ struct DesktopMemory: View {
     var body: some View {
         let colors = MemoryNotebookPalette(scheme: scheme)
         let tree = filteredTree
+        let active = resolvedSelectedMemory(wide: true, tree: tree)
 
-        GeometryReader { geometry in
-            let totalWidth = max(1, geometry.size.width)
-            let totalHeight = max(1, geometry.size.height)
-            let wide = totalWidth >= 680
-            let active = resolvedSelectedMemory(wide: wide, tree: tree)
-            let sidebarWidth: CGFloat = wide ? 268 : totalWidth
-            let paneWidth: CGFloat = wide ? max(1, totalWidth - sidebarWidth - 0.5) : totalWidth
+        HStack(spacing: 0) {
+            vaultExplorerSidebar(tree: tree, activeID: detailOpen ? active?.id : nil)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(MoMoPalette.pane)
 
-            HStack(spacing: 0) {
-                if wide || active == nil {
-                    vaultExplorerSidebar(tree: tree, activeID: active?.id)
-                        .frame(width: sidebarWidth, height: totalHeight)
-                        .background(MoMoPalette.subpane)
-                }
-
-                if wide {
-                    Rectangle()
-                        .fill(MoMoPalette.borderSubtle)
-                        .frame(width: 0.5, height: totalHeight)
-                        .accessibilityHidden(true)
-                }
-
-                if wide || active != nil {
+            if detailOpen {
+                DesktopRightInspectorContainer(width: $inspectorWidth) {
                     documentWorkspacePane(
                         active: active,
                         tree: tree,
-                        wide: wide,
-                        colors: colors
+                        wide: true,
+                        colors: colors,
+                        onClose: {
+                            withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                                detailOpen = false
+                            }
+                        }
                     )
-                    .frame(width: paneWidth, height: totalHeight)
                 }
+                .transition(.opacity)
             }
         }
         .background(MoMoPalette.pane)
@@ -257,19 +250,19 @@ struct DesktopMemory: View {
 
     private var explorerToolbar: some View {
         HStack(spacing: 4) {
-            HStack(spacing: 6) {
+            HStack(spacing: 7) {
                 Text("记忆")
-                    .font(.system(size: 13.5, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                     .tracking(-0.08)
                     .foregroundStyle(MoMoPalette.ink)
                     .accessibilityAddTraits(.isHeader)
 
                 if !vault.activeMemories.isEmpty {
                     Text("\(vault.activeMemories.count)")
-                        .font(.system(size: 10.5, weight: .regular))
+                        .font(.system(size: 11.5, weight: .regular))
                         .monospacedDigit()
                         .foregroundStyle(MoMoPalette.muted)
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, 6.5)
                         .padding(.vertical, 1.5)
                         .background(MoMoPalette.ink.opacity(0.055), in: Capsule())
                 }
@@ -386,6 +379,9 @@ struct DesktopMemory: View {
                         readerBackStack.removeAll()
                         readerForwardStack.removeAll()
                         selectedMemoryID = memory.id
+                        withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                            detailOpen = true
+                        }
                     },
                     onOpenPopup: { item in
                         inspecting = item
@@ -405,7 +401,8 @@ struct DesktopMemory: View {
         active: ContextMemory?,
         tree: MemoryVaultTree,
         wide: Bool,
-        colors: MemoryNotebookPalette
+        colors: MemoryNotebookPalette,
+        onClose: (() -> Void)? = nil
     ) -> some View {
         if let memory = active {
             let outgoing = vault.childrenByParentID[memory.id] ?? []
@@ -451,6 +448,7 @@ struct DesktopMemory: View {
                     onInstruct: model.taskStore != nil ? { prompt in
                         try await Self.dispatchInstruction(prompt, model: model)
                     } : nil,
+                    onClose: onClose,
                     colors: colors
                 )
 
@@ -513,6 +511,7 @@ private struct DesktopNoteTopBar: View {
     let onForward: (() -> Void)?
     let onDelete: () -> Void
     let onInstruct: ((String) async throws -> Void)?
+    var onClose: (() -> Void)? = nil
     let colors: MemoryNotebookPalette
 
     @State private var copied = false
@@ -600,7 +599,7 @@ private struct DesktopNoteTopBar: View {
                                 .foregroundStyle(colors.secondaryInk.opacity(0.5))
                         }
                         Text(digest.title)
-                            .font(.system(size: 12.5, weight: .medium))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(colors.ink)
                             .lineLimit(1)
                     }
@@ -660,8 +659,21 @@ private struct DesktopNoteTopBar: View {
                     .help("更多操作")
                     .accessibilityLabel("更多操作")
                     .accessibilityIdentifier("remote.inlineMemoryMore")
+
+                    if let onClose {
+                        Button(action: onClose) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(colors.secondaryInk)
+                                .frame(width: 26, height: 26)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("收起记忆详情")
+                        .accessibilityLabel("收起记忆详情")
+                    }
                 }
-                .padding(.horizontal, 18)
+                .padding(.horizontal, 14)
             }
             .frame(height: 44)
 
@@ -894,7 +906,7 @@ private final class MacVaultRowCellView: NSTableCellView {
 
             let titleX = pillRect.minX + 39
             let titleWidth = max(10, countX - titleX - 6)
-            drawTruncatedText(title, font: .systemFont(ofSize: 12, weight: .medium), color: MacVaultPalette.ink.withAlphaComponent(depth == 0 ? 0.84 : 0.76), in: NSRect(x: titleX, y: pillRect.minY, width: titleWidth, height: pillRect.height))
+            drawTruncatedText(title, font: .systemFont(ofSize: 12.5, weight: .semibold), color: MacVaultPalette.ink.withAlphaComponent(depth == 0 ? 0.72 : 0.64), in: NSRect(x: titleX, y: pillRect.minY, width: titleWidth, height: pillRect.height))
 
         case let .note(memory, title, symbol, shortJournalDate, isSelected, depth):
             if depth > 0 {
@@ -935,7 +947,7 @@ private final class MacVaultRowCellView: NSTableCellView {
             let titleX = pillRect.minX + 25
             let titleWidth = max(10, rightEdge - titleX)
             let titleColor = isSelected ? MacVaultPalette.ink : MacVaultPalette.ink.withAlphaComponent(0.84)
-            drawTruncatedText(title, font: .systemFont(ofSize: 12.5, weight: isSelected ? .medium : .regular), color: titleColor, in: NSRect(x: titleX, y: pillRect.minY, width: titleWidth, height: pillRect.height))
+            drawTruncatedText(title, font: .systemFont(ofSize: 14.5, weight: isSelected ? .medium : .regular), color: titleColor, in: NSRect(x: titleX, y: pillRect.minY, width: titleWidth, height: pillRect.height))
         }
     }
 
@@ -1100,10 +1112,10 @@ private struct MacVaultSidebarListView: NSViewRepresentable {
         }
 
         func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-            guard entries.indices.contains(row) else { return 28 }
+            guard entries.indices.contains(row) else { return 36 }
             switch entries[row] {
-            case let .folder(_, _, _, depth, _, _): return depth == 0 ? 30 : 28
-            case .note: return 28
+            case let .folder(_, _, _, depth, _, _): return depth == 0 ? 34 : 32
+            case .note: return 36
             }
         }
 
@@ -1373,7 +1385,7 @@ private enum MacFullNoteComposer {
         result.append(NSAttributedString(
             string: digest.title + "\n",
             attributes: [
-                .font: NSFont.systemFont(ofSize: 19.5, weight: .semibold),
+                .font: NSFont.systemFont(ofSize: 19, weight: .semibold),
                 .kern: -0.35,
                 .foregroundColor: ink,
                 .paragraphStyle: titleStyle

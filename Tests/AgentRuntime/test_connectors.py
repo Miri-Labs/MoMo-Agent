@@ -275,6 +275,129 @@ class ConnectorsTests(unittest.TestCase):
         self.assertEqual(disc["removed_items"], 4)
         self.assertEqual(connectors.connectors_status(self.data, self.store)["connectors"]["feishu"]["item_count"], 0)
 
+    def test_feishu_bot_filtering_thread_grouping_mute_and_live_read_tools(self):
+        connectors.save_connectors_config(
+            self.data,
+            {
+                "email": {},
+                "feishu": {
+                    "domain": "feishu",
+                    "app_id": "cli_test_app",
+                    "app_secret": "sec_test_secret",
+                    "access_token": "tok_live",
+                    "refresh_token": "ref_live",
+                    "expires_at": time.time() + 3600,
+                    "user_name": "测试主人",
+                    "enabled": True,
+                    "connected": True,
+                },
+            },
+        )
+        now = time.time()
+        # Seed a legacy bot alert card that should be purged automatically on sync
+        connectors._upsert_connector_item(
+            self.store,
+            item_id="feishu:msg:om_legacy_bot",
+            connector="feishu",
+            item_type="feishu_message",
+            thread_id="oc_alert",
+            title="告警群 · 生产告警",
+            sender="cli_alert_bot",
+            channel="告警群",
+            content="[告警群] 生产告警",
+            occurred_at=now - 30,
+            metadata={"chat_id": "oc_alert", "msg_type": "interactive", "sender_type": "app"},
+        )
+
+        def fake_http(url, *, method="GET", headers=None, body=None, timeout=20.0):
+            if "/open-apis/im/v1/chats" in url:
+                return {"code": 0, "data": {"items": [{"chat_id": "oc_team", "name": "核心产品群"}]}}
+            if "/open-apis/search/v2/message" in url:
+                return {"code": 0, "data": {"items": ["om_h1"]}}
+            if url.endswith("/open-apis/im/v1/messages/om_h1"):
+                return {
+                    "code": 0,
+                    "data": {
+                        "items": [
+                            {
+                                "message_id": "om_h1",
+                                "chat_id": "oc_team",
+                                "msg_type": "text",
+                                "create_time": str(int((now - 60) * 1000)),
+                                "sender": {"id": "ou_alice", "sender_type": "user"},
+                                "body": {"content": json.dumps({"text": "明天三点评审"})},
+                            }
+                        ]
+                    },
+                }
+            if "/open-apis/im/v1/messages" in url:
+                return {
+                    "code": 0,
+                    "data": {
+                        "items": [
+                            {
+                                "message_id": "om_bot_1",
+                                "msg_type": "interactive",
+                                "create_time": str(int((now - 10) * 1000)),
+                                "sender": {"id": "cli_deploy_bot", "sender_type": "app"},
+                                "body": {"content": json.dumps({"title": "生产部署成功"})},
+                            },
+                            {
+                                "message_id": "om_h2",
+                                "msg_type": "text",
+                                "create_time": str(int((now - 20) * 1000)),
+                                "sender": {"id": "ou_alice", "sender_type": "user"},
+                                "body": {"content": json.dumps({"text": "记得带上最新报价单"})},
+                            },
+                            {
+                                "message_id": "om_h1",
+                                "msg_type": "text",
+                                "create_time": str(int((now - 60) * 1000)),
+                                "sender": {"id": "ou_alice", "sender_type": "user"},
+                                "body": {"content": json.dumps({"text": "明天三点评审"})},
+                            },
+                        ]
+                    },
+                }
+            if "/open-apis/drive/v1/files" in url:
+                return {"code": 0, "data": {"files": []}}
+            if url.endswith("/open-apis/docx/v1/documents/doxcnLive12345"):
+                return {"code": 0, "data": {"document": {"title": "实时文档标题"}}}
+            if url.endswith("/open-apis/docx/v1/documents/doxcnLive12345/raw_content"):
+                return {"code": 0, "data": {"content": "这是实时拉取的飞书文档正文。"}}
+            raise AssertionError(f"Unexpected URL: {url}")
+
+        res = connectors.sync_feishu_connector(self.data, self.store, http_fn=fake_http)
+        self.assertEqual(res["purged_bots"], 1)
+        self.assertEqual(res["synced"], 2)  # Only 2 human messages, bot message skipped
+
+        # Digest groups the 2 messages in oc_team into 1 chronological thread entry
+        digest = connectors.recent_connector_digest(self.store, hours=24.0, limit=10)
+        self.assertEqual(len(digest), 1)
+        self.assertEqual(digest[0]["message_count"], 2)
+        self.assertIn("明天三点评审", digest[0]["preview"])
+        self.assertIn("记得带上最新报价单", digest[0]["preview"])
+
+        # Live read tools work in real time
+        doc = connectors.read_feishu_doc_live(self.data, "https://example.feishu.cn/docx/doxcnLive12345?from=copy", http_fn=fake_http)
+        self.assertEqual(doc["title"], "实时文档标题")
+        self.assertIn("实时拉取", doc["content"])
+
+        thread = connectors.read_feishu_thread_live(self.data, "oc_team", http_fn=fake_http)
+        self.assertEqual(thread["count"], 2)
+        self.assertEqual(thread["messages"][0]["text"], "明天三点评审")
+        self.assertEqual(thread["messages"][1]["text"], "记得带上最新报价单")
+
+        searched = connectors.search_feishu_live(self.data, "评审", http_fn=fake_http)
+        self.assertEqual(searched["count"], 1)
+        self.assertEqual(searched["matches"][0]["chat_id"], "oc_team")
+
+        # Muting removes cached items and skips future sync
+        muted = connectors.mute_connector_channel(self.data, self.store, "feishu", "核心产品群", mute=True)
+        self.assertEqual(muted["removed_items"], 2)
+        res_after_mute = connectors.sync_feishu_connector(self.data, self.store, http_fn=fake_http)
+        self.assertEqual(res_after_mute["synced"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

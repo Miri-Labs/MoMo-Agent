@@ -275,4 +275,20 @@ test('Dots timestamp markers group within 30 minutes, split across calendar days
   assert.equal(grouped[1].sentAtMs, day2Early, 'Multi-round assistant turn preserves its initial timestamp');
   assert.equal(grouped[2].sentAtMs, null, 'System rows never carry turn timestamps');
 });
+test('momo-choices parser and reply formatter support single and multi select', () => {
+  const spec = core.parseChoiceSpec(JSON.stringify({
+    title: '要记进提醒事项吗？',
+    multi: true,
+    options: [
+      { label: '发杭州客户复盘 PPT', detail: '周五 11:00 前', reply: '把「发杭州客户复盘 PPT（周五 11:00 前）」记进提醒事项' },
+      { label: '定团队聚餐包间', detail: '周五 17:00 前' }
+    ]
+  }));
+  assert.ok(spec && spec.id.startsWith('choice-'));
+  assert.equal(spec.multi, true);
+  assert.equal(spec.options.length, 2);
+  assert.equal(core.formatChoiceReply(spec, [0]), '把「发杭州客户复盘 PPT（周五 11:00 前）」记进提醒事项');
+  assert.equal(core.formatChoiceReply(spec, [1, 0]), '1. 把「发杭州客户复盘 PPT（周五 11:00 前）」记进提醒事项\n2. 定团队聚餐包间');
+  assert.equal(core.parseChoiceSpec('{broken json'), null);
+});
 console.log(`${passed} renderer core tests passed`);

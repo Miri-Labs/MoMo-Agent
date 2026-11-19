@@ -299,6 +299,13 @@ private struct RemoteConversationView: View {
                         openLibrary()
                     } else { Task { await store.checkAgain(id: id) } }
                 } catch { sendFailure = error.localizedDescription }
+            },
+            onQuickReply: { text in
+                do {
+                    try store.enqueueIndependentMessage(text)
+                    composeRevision += 1
+                    sendFailure = nil
+                } catch { sendFailure = error.localizedDescription }
             })
     }
 

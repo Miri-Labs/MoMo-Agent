@@ -180,6 +180,8 @@ struct DesktopSources: View {
     @Bindable var model: DesktopModel
     var isActive: Bool = true
     var resetToken: UInt64 = 0
+    @Binding var detailOpen: Bool
+    @Binding var inspectorWidth: CGFloat
     @State private var day = Calendar.current.startOfDay(for: Date())
     @State private var selectedID: String?
     @State private var query = ""
@@ -189,6 +191,7 @@ struct DesktopSources: View {
     @State private var illustrationError: String?
     @State private var expandedDays: [String: Bool] = [:]
     @State private var selectedSpanID: String?
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
     private let calendar = Calendar.current
     private let defaultLocalOffset = TimeZone.current.secondsFromGMT()
 
@@ -264,6 +267,8 @@ struct DesktopSources: View {
     }
 
     var body: some View {
+        let activeDetailWindow = selected ?? visible.first
+
         Group {
             if let illustration = selectedIllustration {
                 Group {
@@ -287,27 +292,76 @@ struct DesktopSources: View {
                 }
                 .id(selectedDayKey)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let selected {
-                DesktopSourceReader(
-                    model: model,
-                    source: selected.source,
-                    window: selected.window,
-                    initialSpanID: selectedSpanID,
-                    close: { selectedID = nil }
-                )
-                .id(selected.id)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                timeline
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                HStack(spacing: 0) {
+                    timeline
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    if detailOpen {
+                        DesktopRightInspectorContainer(width: $inspectorWidth) {
+                            if let activeWindow = activeDetailWindow {
+                                DesktopSourceReader(
+                                    model: model,
+                                    source: activeWindow.source,
+                                    window: activeWindow.window,
+                                    initialSpanID: selectedSpanID,
+                                    close: {
+                                        withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                                            detailOpen = false
+                                        }
+                                    }
+                                )
+                                .id(activeWindow.id)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else {
+                                VStack(spacing: 10) {
+                                    HStack {
+                                        Text("转录详情")
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundStyle(MoMoPalette.ink)
+                                        Spacer()
+                                        Button {
+                                            withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                                                detailOpen = false
+                                            }
+                                        } label: {
+                                            Image(systemName: "xmark")
+                                                .font(.system(size: 11.5, weight: .medium))
+                                                .foregroundStyle(MoMoPalette.muted)
+                                                .frame(width: 26, height: 26)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .padding(.leading, 16)
+                                    .padding(.trailing, 10)
+                                    .frame(height: 44)
+                                    .overlay(alignment: .bottom) {
+                                        Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
+                                    }
+
+                                    Spacer()
+                                    Text("选择左侧任意转录片段查看原文")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(MoMoPalette.muted)
+                                    Spacer()
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        }
+                        .transition(.opacity)
+                    }
+                }
             }
         }
         .background(MoMoPalette.pane)
         .onChange(of: resetToken) {
             if selectedIllustrationID != nil {
                 selectedIllustrationID = nil
-            } else if selectedID != nil {
-                selectedID = nil
+            } else if detailOpen {
+                withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                    detailOpen = false
+                }
             }
         }
         .task(id: isActive) {
@@ -390,15 +444,15 @@ struct DesktopSources: View {
                 HStack(spacing: 10) {
                     HStack(spacing: 7) {
                         Text("转录")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: 15, weight: .medium))
                             .tracking(-0.1)
                             .foregroundStyle(MoMoPalette.ink)
                             .accessibilityAddTraits(.isHeader)
                         if !currentVisible.isEmpty {
                             Text("\(currentVisible.count)")
-                                .font(.system(size: 10.5, weight: .regular).monospacedDigit())
+                                .font(.system(size: 11.5, weight: .regular).monospacedDigit())
                                 .foregroundStyle(MoMoPalette.muted)
-                                .padding(.horizontal, 6)
+                                .padding(.horizontal, 6.5)
                                 .padding(.vertical, 1.5)
                                 .background(MoMoPalette.ink.opacity(0.055), in: Capsule())
                         }
@@ -552,6 +606,9 @@ struct DesktopSources: View {
                             expandedDays[item.logicalDayKey] = true
                         }
                         selectedID = item.id
+                        withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                            detailOpen = true
+                        }
                     }
                 )
                 .momoScrollEdgeFade(top: 10, surface: MoMoPalette.pane)
@@ -590,6 +647,9 @@ struct DesktopSources: View {
         expandedDays[key] = true
         selectedSpanID = anchor?.spanId
         selectedID = source.id
+        withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+            detailOpen = true
+        }
     }
 
     private var dateBar: some View {
@@ -820,17 +880,17 @@ private final class MacTranscriptRowCellView: NSTableCellView {
         cardLayerView.layer?.cornerCurve = .continuous
         addSubview(cardLayerView)
 
-        timeBadgeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
+        timeBadgeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12.5, weight: .medium)
         timeBadgeLabel.lineBreakMode = .byClipping
         timeBadgeLabel.maximumNumberOfLines = 1
         addSubview(timeBadgeLabel)
 
-        headlineLabel.font = NSFont.systemFont(ofSize: 13.8, weight: .medium)
+        headlineLabel.font = NSFont.systemFont(ofSize: 14.5, weight: .medium)
         headlineLabel.lineBreakMode = .byTruncatingTail
         headlineLabel.maximumNumberOfLines = 1
         addSubview(headlineLabel)
 
-        excerptLabel.font = NSFont.systemFont(ofSize: 12.5, weight: .regular)
+        excerptLabel.font = NSFont.systemFont(ofSize: 13.5, weight: .regular)
         excerptLabel.lineBreakMode = .byTruncatingTail
         excerptLabel.maximumNumberOfLines = 2
         excerptLabel.cell?.wraps = true
@@ -876,9 +936,9 @@ private final class MacTranscriptRowCellView: NSTableCellView {
             timeBadgeLabel.stringValue = timeLabel
             headlineLabel.stringValue = headline
             headlineLabel.isHidden = headline.isEmpty
-            headlineLabel.font = NSFont.systemFont(ofSize: 13.8, weight: .medium)
+            headlineLabel.font = NSFont.systemFont(ofSize: 14.5, weight: .medium)
             excerptLabel.stringValue = excerpt
-            excerptLabel.font = NSFont.systemFont(ofSize: headline.isEmpty ? 13.5 : 12.5, weight: .regular)
+            excerptLabel.font = NSFont.systemFont(ofSize: headline.isEmpty ? 14.5 : 13.5, weight: .regular)
             excerptLabel.isHidden = excerpt.isEmpty
             actionHintLabel.isHidden = false
             setAccessibilityIdentifier("desktop.source.\(item.id)")
@@ -1756,7 +1816,7 @@ private enum MacSourceTranscriptComposer {
             bodyStyle.lineSpacing = 6.2
             bodyStyle.paragraphSpacing = 16
             let bodyAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 13.8, weight: .regular),
+                .font: NSFont.systemFont(ofSize: 14.5, weight: .regular),
                 .foregroundColor: ink,
                 .paragraphStyle: bodyStyle,
             ]
@@ -1791,7 +1851,7 @@ private enum MacSourceTranscriptComposer {
                     result.append(NSAttributedString(
                         string: (span.text ?? "") + "\n",
                         attributes: [
-                            .font: NSFont.systemFont(ofSize: 13.8, weight: .regular),
+                            .font: NSFont.systemFont(ofSize: 14.5, weight: .regular),
                             .foregroundColor: ink,
                             .paragraphStyle: topBodyStyle,
                         ]
@@ -1810,7 +1870,7 @@ private enum MacSourceTranscriptComposer {
             result.append(NSAttributedString(
                 string: fallbackText + "\n",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 13.8, weight: .regular),
+                    .font: NSFont.systemFont(ofSize: 14.5, weight: .regular),
                     .foregroundColor: ink,
                     .paragraphStyle: bodyStyle,
                 ]

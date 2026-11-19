@@ -13,7 +13,7 @@ struct MoMoAgentMacApp: App {
             Group {
                 if model.setupStep == .completed { DesktopRoot(model: model) }
                 else { DesktopOnboarding(model: model) }
-            }.tint(MoMoPalette.ink).foregroundStyle(MoMoPalette.ink).background(MoMoPalette.canvas)
+            }.tint(MoMoPalette.ink).foregroundStyle(MoMoPalette.ink).background(MoMoPalette.sidebar)
                 .frame(minWidth: 820, minHeight: 620)
                 .background(DesktopCompanionAttachment(model: model, companion: companion))
                 .task {
