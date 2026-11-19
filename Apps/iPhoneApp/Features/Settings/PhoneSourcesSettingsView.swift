@@ -54,6 +54,19 @@ struct PhoneSourcesSettingsView: View {
                     Text("此设备不支持运动与出行状态检测。")
                         .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
                 }
+                if !preference.enabled && !sources.canPromptAuthorization(kind) && sources.authorization(kind) == "needs_permission" {
+                    PhoneSettingsSurface {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(kind == .visits
+                                 ? "系统定位权限已关闭，无法再次弹窗。请在系统设置中开启定位权限后返回打开开关。"
+                                 : "系统权限已关闭，请在系统设置中允许访问后返回打开开关。")
+                                .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
+                            Button("打开系统设置") {
+                                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                            }
+                        }.phoneText(.body).buttonStyle(PhoneActionButtonStyle()).padding(18)
+                    }
+                }
                 if preference.enabled {
                     PhoneSettingsSurface {
                         VStack(alignment: .leading, spacing: 8) {
@@ -66,7 +79,13 @@ struct PhoneSourcesSettingsView: View {
                                 Button("打开系统设置") { if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) } }
                             }
                             if kind == .visits && sources.authorization(kind) == "foreground_only" {
-                                Button("允许后台记录到访") { sources.requestBackgroundVisits() }
+                                if sources.canPromptBackgroundVisits() {
+                                    Button("允许后台记录到访") { sources.requestBackgroundVisits() }
+                                } else {
+                                    Button("在系统设置中改为「始终」以支持后台记录") {
+                                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                                    }
+                                }
                             }
                             Button { Task { await sources.refresh(kind) } } label: {
                                 HStack { Text("立即同步"); Spacer(); if busy { ProgressView().controlSize(.small) } }
