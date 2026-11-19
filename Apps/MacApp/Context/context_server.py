@@ -19,6 +19,16 @@ from life_illustrations import LifeIllustrations
 from device_telemetry import read_device_telemetry, sync_device_telemetry
 from health_store import read_health, sync_health
 from phone_sources import read_phone_sources, sync_phone_source
+from connectors import (
+    ConnectorError,
+    configure_email_connector,
+    connectors_status,
+    disconnect_connector,
+    list_connector_items,
+    read_connector_item,
+    start_feishu_oauth,
+    sync_connectors,
+)
 from situational_context import read_situational_context
 import life_pulse
 
@@ -147,8 +157,37 @@ class ContextService:
                             result = {"job_id": job["id"], "state": job["state"], "enqueued": enqueued}
                         elif url.path == "/v1/speakers/ack":
                             result = store.ack_speaker_relabels(body.get("ids") or [])
+                        elif url.path == "/v1/connectors/email/configure":
+                            result = configure_email_connector(service.data, body)
+                            service.trigger_connector_sync("email")
+                        elif url.path == "/v1/connectors/feishu/oauth/start":
+                            result = start_feishu_oauth(
+                                service.data,
+                                body,
+                                on_connected=lambda: service.trigger_connector_sync("feishu"),
+                            )
+                        elif url.path == "/v1/connectors/sync":
+                            target = str(body.get("connector") or "all").strip()
+                            result = sync_connectors(service.data, store, target)
+                            if any((v or {}).get("changed", 0) > 0 for v in (result.get("results") or {}).values()):
+                                service.maybe_emit_life_pulse(store)
+                        elif url.path == "/v1/connectors/disconnect":
+                            target = str(body.get("connector") or "").strip()
+                            clear_data = bool(body.get("clear_data", False))
+                            result = disconnect_connector(service.data, store, target, clear_data=clear_data)
                         else:
                             self.respond(404, {"error": {"code": "not_found", "message": "Unknown MoMo route"}}); return
+                    elif url.path == "/v1/connectors":
+                        result = connectors_status(service.data, store)
+                    elif url.path == "/v1/connectors/items":
+                        c_kind = query.get("connector", ["all"])[0]
+                        c_limit = min(int(query.get("limit", ["30"])[0]), 100)
+                        result = {"items": list_connector_items(store, connector=c_kind, limit=c_limit)}
+                    elif url.path == "/v1/connectors/item":
+                        item = read_connector_item(store, query.get("id", [""])[0])
+                        if item is None:
+                            self.respond(404, {"error": {"code": "not_found", "message": "Connector item not found"}}); return
+                        result = item
                     elif url.path == "/v1/summaries":
                         result = recording_summary.read(store, query['id'][0])
                     elif url.path == "/v1/device-telemetry":
@@ -191,6 +230,8 @@ class ContextService:
                     self.respond(200, result)
                 except Conflict as error:
                     self.respond(409, {"error": {"code": "revision_conflict", "message": str(error)}})
+                except ConnectorError as error:
+                    self.respond(400, {"error": {"code": "connector_error", "message": str(error)}})
                 except FileNotFoundError:
                     self.respond(404, {'error': {'code': 'not_found', 'message': 'Illustration is unavailable'}})
                 except (ValueError, KeyError, TypeError) as error:
@@ -215,8 +256,33 @@ class ContextService:
         self.threads.append(threading.Thread(target=self.dispatch_illustrations, daemon=True, name='momo-life-illustrations'))
 
     def start(self):
+        self._connector_sync_lock = threading.Lock()
         for thread in self.threads:
             thread.start()
+
+    def trigger_connector_sync(self, connector: str = "all") -> None:
+        lock = getattr(self, "_connector_sync_lock", None)
+        if lock is None:
+            self._connector_sync_lock = threading.Lock()
+            lock = self._connector_sync_lock
+        if not lock.acquire(blocking=False):
+            return
+
+        def _run():
+            try:
+                store = ContextStore(self.directory)
+                try:
+                    res = sync_connectors(self.data, store, connector)
+                    if any((v or {}).get("changed", 0) > 0 for v in (res.get("results") or {}).values()):
+                        self.maybe_emit_life_pulse(store)
+                finally:
+                    store.close()
+            except Exception:
+                pass
+            finally:
+                lock.release()
+
+        threading.Thread(target=_run, daemon=True, name=f"momo-connector-sync-{connector}").start()
 
     def close(self):
         self.stopped.set()
@@ -277,6 +343,9 @@ class ContextService:
                 if time.monotonic() >= getattr(self, "next_pulse_dispatch", 0):
                     self.next_pulse_dispatch = time.monotonic() + 30
                     self.maybe_emit_life_pulse(store, now=now)
+                if time.monotonic() >= getattr(self, "next_connector_sync", 0):
+                    self.next_connector_sync = time.monotonic() + 900
+                    self.trigger_connector_sync("all")
                 review = store.db.execute(
                     "SELECT * FROM memory_reviews WHERE state='running' OR (state='pending' AND first_attempt IS NOT NULL) ORDER BY rowid LIMIT 1"
                 ).fetchone()

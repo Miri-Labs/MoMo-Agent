@@ -352,8 +352,23 @@ def build_holistic_briefing_pack(data: Path, chat_db, *, now: float | None = Non
         evidence_list.append({"physiology_and_recovery": physiology})
     if situation_digest:
         evidence_list.append({"situation_and_schedule": situation_digest})
+    connector_digest: list[dict] = []
+    try:
+        from connectors import recent_connector_digest
+        from context_store import ContextStore
+
+        cstore = ContextStore(base / "context")
+        try:
+            connector_digest = recent_connector_digest(cstore, hours=24.0, limit=12)
+        finally:
+            cstore.close()
+    except Exception:
+        connector_digest = []
+
     if proactive_prefs:
         evidence_list.append({"proactive_preferences": proactive_prefs})
+    if connector_digest:
+        evidence_list.append({"recent_connector_updates": connector_digest})
 
     fallback = None
     if recordings:
@@ -401,6 +416,7 @@ def build_holistic_briefing_pack(data: Path, chat_db, *, now: float | None = Non
         "situation_and_schedule": situation_digest,
         "project_and_core_notes": project_and_other_notes,
         "recent_chat_requests": chat_items,
+        "recent_connector_updates": connector_digest or None,
         "proactive_preferences": proactive_prefs or None,
     }
     return {

@@ -198,6 +198,136 @@ def _cmd_health(data: Path, args: argparse.Namespace) -> dict:
         store.close()
 
 
+def _context_server_post(data: Path, path: str, body: dict) -> dict | None:
+    conn_file = data / "connection.json"
+    key_file = data / "api-key"
+    if not conn_file.is_file() or not key_file.is_file():
+        return None
+    try:
+        conn_info = json.loads(conn_file.read_text(encoding="utf-8"))
+        base_url = str(conn_info.get("data_url") or "").rstrip("/")
+        token = key_file.read_text(encoding="utf-8").strip()
+        if not base_url or not token:
+            return None
+        req = urllib.request.Request(
+            f"{base_url}{path}",
+            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            err_obj = json.loads(raw)
+            msg = err_obj.get("message") or err_obj.get("error") or raw
+        except ValueError:
+            msg = raw or str(exc)
+        raise ValueError(msg) from exc
+    except Exception:
+        return None
+
+
+def _cmd_connectors(data: Path, args: argparse.Namespace) -> dict:
+    from connectors import (
+        configure_email_connector,
+        connectors_status,
+        disconnect_connector,
+        list_connector_items,
+        read_connector_item,
+        sync_connectors,
+    )
+    action = str(getattr(args, "action", "") or "").strip()
+    if args.item_id or action == "item":
+        store = _open_context(data)
+        try:
+            item = read_connector_item(store, args.item_id)
+            if item is None:
+                raise ValueError(f"Connector item not found: {args.item_id}")
+            return item
+        finally:
+            store.close()
+    if args.items or action == "items":
+        store = _open_context(data)
+        try:
+            return {"items": list_connector_items(store, connector=args.connector, limit=args.limit)}
+        finally:
+            store.close()
+    if action == "configure-email":
+        payload: dict[str, object] = {
+            "username": args.username,
+            "enabled": True,
+        }
+        if args.password:
+            payload["password"] = args.password
+        if args.preset:
+            payload["preset"] = args.preset
+        if args.host:
+            payload["host"] = args.host
+        if args.port:
+            payload["port"] = args.port
+        if args.folder:
+            payload["folder"] = args.folder
+        if args.sync_days:
+            payload["sync_days"] = args.sync_days
+        live = _context_server_post(data, "/v1/connectors/email/configure", payload)
+        if live is not None:
+            return live
+        res = configure_email_connector(data, payload)
+        store = _open_context(data)
+        try:
+            sync_connectors(data, store, target="email")
+        finally:
+            store.close()
+        return res
+    if action == "start-feishu-oauth":
+        payload = {
+            "domain": args.domain or "feishu",
+            "app_id": args.app_id,
+        }
+        if args.app_secret:
+            payload["app_secret"] = args.app_secret
+        live = _context_server_post(data, "/v1/connectors/feishu/oauth/start", payload)
+        if live is None:
+            raise ValueError("MoMo 本地上下文服务未运行，请确认 MoMo Agent 已启动后重试。")
+        if getattr(args, "open_browser", False) and live.get("authorize_url"):
+            import subprocess
+            subprocess.Popen(["open", str(live["authorize_url"])], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            live["opened_in_browser"] = True
+        return live
+    if action == "sync":
+        live = _context_server_post(data, "/v1/connectors/sync", {"connector": args.connector})
+        if live is not None:
+            return live
+        store = _open_context(data)
+        try:
+            return sync_connectors(data, store, target=args.connector)
+        finally:
+            store.close()
+    if action == "disconnect":
+        target = args.connector
+        if target not in ("feishu", "email"):
+            raise ValueError("Specify --connector feishu or --connector email to disconnect")
+        live = _context_server_post(data, "/v1/connectors/disconnect", {"connector": target, "clear_data": False})
+        if live is not None:
+            return live
+        store = _open_context(data)
+        try:
+            return disconnect_connector(data, store, target)
+        finally:
+            store.close()
+    store = _open_context(data)
+    try:
+        return connectors_status(data, store)
+    finally:
+        store.close()
+
+
 def _cmd_situation(data: Path, args: argparse.Namespace) -> dict:
     from situational_context import read_situational_context
     store = _open_context(data)
@@ -637,6 +767,29 @@ def main() -> int:
     health.add_argument("--after", default="")
     health.add_argument("--limit", type=int, default=20)
 
+    conn_p = sub.add_parser("connectors", help="Read and configure read-only external connectors (Feishu personal OAuth & IMAP Email)")
+    conn_p.add_argument(
+        "--action",
+        choices=("status", "items", "item", "sync", "configure-email", "start-feishu-oauth", "disconnect"),
+        default="status",
+        help="Action to perform on connectors",
+    )
+    conn_p.add_argument("--connector", choices=("all", "feishu", "email"), default="all")
+    conn_p.add_argument("--items", action="store_true", help="List recent synced connector items")
+    conn_p.add_argument("--item-id", default="", help="Read full content of a specific connector item")
+    conn_p.add_argument("--limit", type=int, default=25)
+    conn_p.add_argument("--username", default="", help="Email address for configure-email")
+    conn_p.add_argument("--password", default="", help="App password or IMAP authorization code for configure-email")
+    conn_p.add_argument("--preset", default="", help="Optional email preset (auto-inferred from email domain if omitted)")
+    conn_p.add_argument("--host", default="", help="Optional custom IMAP host")
+    conn_p.add_argument("--port", type=int, default=0, help="Optional custom IMAP port (default 993)")
+    conn_p.add_argument("--folder", default="", help="Optional IMAP folder (default INBOX)")
+    conn_p.add_argument("--sync-days", type=int, default=0, help="Optional lookback days (1-30)")
+    conn_p.add_argument("--app-id", default="", help="Feishu app_id for start-feishu-oauth")
+    conn_p.add_argument("--app-secret", default="", help="Feishu app_secret for start-feishu-oauth")
+    conn_p.add_argument("--domain", choices=("feishu", "lark"), default="feishu", help="Feishu or Lark domain")
+    conn_p.add_argument("--open", dest="open_browser", action="store_true", help="Open Feishu OAuth authorize URL in default browser")
+
     sub.add_parser("situation", help="Read unified situational context across devices, mobility, sleep/vitals, and schedule")
 
     mem_list = sub.add_parser("memories", help="List shared MoMo memories and user profile facts")
@@ -737,6 +890,7 @@ def main() -> int:
         "pim": _cmd_pim,
         "briefing": _cmd_briefing,
         "dream": _cmd_dream,
+        "connectors": _cmd_connectors,
     }
     try:
         output = handlers[args.command](data, args)

@@ -1385,6 +1385,36 @@ final class DesktopModel {
         }
     }
 
+    func contextAPIRequest(path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
+        guard let baseURL = connection?.dataURL else {
+            throw DesktopError.message(String(localized: "Mac 服务尚未启动。"))
+        }
+        guard let url = URL(string: path, relativeTo: baseURL) else {
+            throw DesktopError.message(String(localized: "无效的服务地址。"))
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        if let body {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw DesktopError.message(String(localized: "服务未返回有效响应。"))
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let err = obj["error"] as? [String: Any],
+               let msg = err["message"] as? String, !msg.isEmpty {
+                throw DesktopError.message(msg)
+            }
+            throw DesktopError.message("请求失败 (HTTP \(http.statusCode))")
+        }
+        return data
+    }
+
     private func privateWrite(_ data: Data, to url: URL) throws {
         try data.write(to: url, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)

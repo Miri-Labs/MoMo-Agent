@@ -126,6 +126,13 @@ def compute_semantic_vector(situation: dict, now: float | None = None) -> dict:
     )[:16]
     has_schedule = bool(upcoming or extended or reminders)
 
+    connector_items = situation.get("recent_connectors") or []
+    connector_sig = (
+        digest(canonical([(c.get("id"), c.get("occurred_at")) for c in connector_items]))[:16]
+        if connector_items
+        else None
+    )
+
     return {
         "structural": {
             "sleep_id": sleep_id,
@@ -133,6 +140,7 @@ def compute_semantic_vector(situation: dict, now: float | None = None) -> dict:
             "workout_id": workout_id,
             "visit": visit_vec,
             "schedule_sig": schedule_sig,
+            "connector_sig": connector_sig,
         },
         "quantized": {
             "phone": phone_vec,
@@ -215,6 +223,8 @@ def describe_deltas(prev_vector: dict | None, curr_vector: dict) -> list[str]:
             deltas.append("离开上一个停留地点")
     if c_struct.get("schedule_sig") != p_struct.get("schedule_sig"):
         deltas.append("未来 12 小时日历日程或待办提醒发生变更")
+    if c_struct.get("connector_sig") and c_struct.get("connector_sig") != p_struct.get("connector_sig"):
+        deltas.append("收到新的飞书消息/文档或邮件更新")
 
     if c_quant.get("motion") != p_quant.get("motion"):
         deltas.append(f"出行/运动姿态变化：{p_quant.get('motion') or '无'} -> {c_quant.get('motion') or '无'}")
@@ -712,6 +722,17 @@ def format_pulse_brief(
         for rem in reminders[:5]:
             if rem.get("title"):
                 recall_seeds.append(str(rem["title"]))
+        conn_items = situation.get("recent_connectors") or []
+        if conn_items:
+            lines.append("")
+            lines.append("[近期外部连接器动态（飞书与邮件 · 只读，可用 connectors / search_memory 精读）]")
+            for ci in conn_items[:8]:
+                ci_title = str(ci.get("title") or "").strip()
+                if ci_title:
+                    recall_seeds.append(ci_title)
+                ci_ch = str(ci.get("channel") or ci.get("connector") or "")
+                ci_prev = " ".join(str(ci.get("preview") or "").split())[:140]
+                lines.append(f"- [{ci.get('connector')}/{ci_ch}] {ci_title} | id=`{ci.get('id')}` | {ci_prev}")
         recall_seeds.extend(rec_digest["query_seeds"])
         recall_seeds.extend(chat_seeds)
 
@@ -760,6 +781,11 @@ def maybe_emit_pulse(
         return None
 
     situation = read_situational_context(store, data_dir=data_dir, now=now_ts)
+    try:
+        from connectors import recent_connector_digest
+        situation["recent_connectors"] = recent_connector_digest(store, hours=12.0, limit=8)
+    except Exception:
+        situation["recent_connectors"] = []
     vector = compute_semantic_vector(situation, now=now_ts)
     fp = semantic_fingerprint(vector)
 
