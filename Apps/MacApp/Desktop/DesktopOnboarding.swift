@@ -440,11 +440,11 @@ struct DesktopOnboarding: View {
                     GeometryReader { geometry in
                         ScrollView {
                             VStack(spacing: 20) {
-                                if model.setupStep != .pair && model.setupStep != .model && model.setupStep != .permissions {
+                                if model.setupStep != .pair && model.setupStep != .model && model.setupStep != .permissions && model.setupStep != .connectors {
                                     PersonalAgentSlot(size: 64, active: model.busy != nil, expression: model.setupStep == .ready ? .settled : .present)
                                 }
                                 stage
-                                if let busy = model.busy, model.preparationPhase == nil, model.setupStep != .pair && model.setupStep != .permissions { ProgressView(busy).controlSize(.small).accessibilityIdentifier("onboarding.progress") }
+                                if let busy = model.busy, model.preparationPhase == nil, model.setupStep != .pair && model.setupStep != .permissions && model.setupStep != .connectors { ProgressView(busy).controlSize(.small).accessibilityIdentifier("onboarding.progress") }
                                 if let failure = model.failure, model.setupStep != .pair { Text(failure).foregroundStyle(MoMoPalette.failure).phoneText(.metadata).textSelection(.enabled) }
                             }.frame(maxWidth: 360).padding(.horizontal, 32).padding(.vertical, 32).frame(maxWidth: .infinity)
                                 .frame(minHeight: geometry.size.height)
@@ -467,10 +467,11 @@ struct DesktopOnboarding: View {
     }
     private var stepLabel: String {
         switch model.setupStep {
-        case .prepare: "1 / 4"
-        case .model: "2 / 4"
-        case .permissions: "3 / 4"
-        case .pair: "4 / 4"
+        case .prepare: "1 / 5"
+        case .model: "2 / 5"
+        case .permissions: "3 / 5"
+        case .connectors: "4 / 5"
+        case .pair: "5 / 5"
         default: String(localized: "准备完成")
         }
     }
@@ -514,6 +515,8 @@ struct DesktopOnboarding: View {
             }
         case .permissions:
             DesktopOnboardingPermissions(model: model)
+        case .connectors:
+            DesktopOnboardingConnectors(model: model)
         case .pair:
             DesktopOnboardingPairing(model: model)
         case .ready:
@@ -572,7 +575,7 @@ struct DesktopOnboardingPermissions: View {
             }
 
             if state.allGranted {
-                Button("继续配对") { model.advanceSetup(.pair) }
+                Button("继续") { model.advanceSetup(.connectors) }
                     .buttonStyle(DesktopSetupButton())
                     .accessibilityIdentifier("onboarding.permissionsContinue")
             } else if openedScreenRecording, !state.isGranted(.screenRecording) {
@@ -591,7 +594,7 @@ struct DesktopOnboardingPermissions: View {
                         .accessibilityIdentifier("onboarding.permissionsRelaunch")
                 }
                 if !state.allGranted {
-                    Button("稍后开启") { model.advanceSetup(.pair) }
+                    Button("稍后开启") { model.advanceSetup(.connectors) }
                         .disabled(model.busy != nil)
                         .accessibilityIdentifier("onboarding.skipPermissions")
                 }

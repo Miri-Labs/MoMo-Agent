@@ -35,7 +35,7 @@ struct DesktopProactiveSnapshot: Sendable, Equatable {
 
 @MainActor @Observable
 final class DesktopModel {
-    enum SetupStep: String { case welcome, prepare, model, permissions, pair, ready, completed }
+    enum SetupStep: String { case welcome, prepare, model, permissions, connectors, pair, ready, completed }
     var setupStep = SetupStep.welcome
     var selection = "chat"
     var managingConnection = false
@@ -1245,7 +1245,7 @@ final class DesktopModel {
         } else if status?.agentOnline != true {
             advanceSetup(.model)
         } else {
-            advanceSetup(hasDesktopPermissions ? .pair : .permissions)
+            advanceSetup(hasDesktopPermissions ? .connectors : .permissions)
         }
     }
     func prepareAndContinue() async { await prepare(); if isPrepared && failure == nil { advanceSetup(.model) } }
@@ -1255,7 +1255,7 @@ final class DesktopModel {
         busy = String(localized: "正在等待 MoMo 就绪…"); defer { busy = nil }
         for _ in 0..<60 {
             await refresh()
-            if status?.agentOnline == true { advanceSetup(hasDesktopPermissions ? .pair : .permissions); return }
+            if status?.agentOnline == true { advanceSetup(hasDesktopPermissions ? .connectors : .permissions); return }
             do { try await Task.sleep(for: .seconds(1)) } catch { return }
         }
         failure = String(localized: "MoMo 尚未就绪，请检查模型配置后重试。")

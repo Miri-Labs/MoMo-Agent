@@ -311,13 +311,13 @@ struct DesktopConnectorsView: View {
         let prompt: String
         switch (connector, reconnect) {
         case ("feishu", false):
-            prompt = "帮我接入飞书连接器，只读同步我的飞书消息和云文档。请一步步带我完成。"
+            prompt = "帮我接入飞书连接器，只读同步我的飞书消息和云文档。请按 connectors-setup skill 一步步带我完成。"
         case ("feishu", true):
-            prompt = "帮我检查一下飞书连接器的状态和同步情况，有问题的话顺手帮我修好。"
+            prompt = "帮我检查一下飞书连接器的状态和同步情况，有问题的话按 connectors-setup skill 顺手帮我修好。"
         case ("email", false):
-            prompt = "帮我接入我的邮箱连接器，只读同步近期邮件。请一步步带我完成。"
+            prompt = "帮我接入我的邮箱连接器，只读同步近期邮件。请按 connectors-setup skill 一步步带我完成。"
         default:
-            prompt = "帮我检查一下邮箱连接器的状态和同步情况，有问题的话顺手帮我修好。"
+            prompt = "帮我检查一下邮箱连接器的状态和同步情况，有问题的话按 connectors-setup skill 顺手帮我修好。"
         }
         do {
             try store.enqueueIndependentMessage(prompt)
@@ -446,9 +446,283 @@ struct DesktopConnectorsView: View {
     }
 }
 
+// MARK: - Onboarding Step
+
+struct DesktopOnboardingConnectors: View {
+    @Bindable var model: DesktopModel
+
+    @State private var status: ConnectorsStatusResponse?
+    @State private var busyConnector: String?
+    @State private var errorMessage: String?
+
+    @State private var expandFeishu = false
+    @State private var feishuDomain = "feishu"
+    @State private var feishuAppID = ""
+    @State private var feishuAppSecret = ""
+    @State private var awaitingFeishuOAuth = false
+    @State private var feishuRedirectURI = ""
+
+    @State private var expandEmail = false
+    @State private var emailUsername = ""
+    @State private var emailPassword = ""
+
+    private var anyConnected: Bool {
+        status?.connectors.feishu.connected == true || status?.connectors.email.connected == true
+    }
+
+    var body: some View {
+        VStack(spacing: 24) {
+            PersonalAgentSlot(size: 64, active: busyConnector != nil, expression: anyConnected ? .settled : .present)
+
+            Text("连接飞书与邮件")
+                .font(.system(size: 28, weight: .semibold))
+                .accessibilityAddTraits(.isHeader)
+
+            VStack(spacing: 0) {
+                onboardingRow(
+                    title: "飞书",
+                    connected: status?.connectors.feishu.connected == true,
+                    account: status?.connectors.feishu.account_label ?? "",
+                    expanded: $expandFeishu,
+                    connector: "feishu"
+                ) {
+                    FeishuConnectorIcon(connected: status?.connectors.feishu.connected == true)
+                }
+
+                if expandFeishu {
+                    VStack(spacing: 8) {
+                        Picker("", selection: $feishuDomain) {
+                            Text("飞书").tag("feishu")
+                            Text("Lark").tag("lark")
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        TextField("", text: $feishuAppID, prompt: Text(verbatim: "App ID"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                        SecureField("", text: $feishuAppSecret, prompt: Text("App Secret"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                        if awaitingFeishuOAuth, !feishuRedirectURI.isEmpty {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.mini)
+                                Text(feishuRedirectURI)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .textSelection(.enabled)
+                                Spacer()
+                                Button("复制") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(feishuRedirectURI, forType: .string)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+                        }
+                        HStack {
+                            Spacer()
+                            Button("授权登录") { Task { await startFeishuOAuth() } }
+                                .buttonStyle(DesktopSetupButton(filled: true, minimumHeight: 28, fontSize: 12))
+                                .disabled(busyConnector != nil || feishuAppID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                    .padding(.bottom, 12)
+                }
+
+                Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
+
+                onboardingRow(
+                    title: "邮件",
+                    connected: status?.connectors.email.connected == true,
+                    account: status?.connectors.email.account_label ?? "",
+                    expanded: $expandEmail,
+                    connector: "email"
+                ) {
+                    MailConnectorIcon(connected: status?.connectors.email.connected == true)
+                }
+
+                if expandEmail {
+                    VStack(spacing: 8) {
+                        TextField("", text: $emailUsername, prompt: Text(verbatim: "you@example.com"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                        SecureField("", text: $emailPassword, prompt: Text("应用专用密码 / 授权码"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                        HStack {
+                            Spacer()
+                            Button("连接") { Task { await saveEmail() } }
+                                .buttonStyle(DesktopSetupButton(filled: true, minimumHeight: 28, fontSize: 12))
+                                .disabled(busyConnector != nil || emailUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                    .padding(.bottom, 12)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 6)
+            .momoElevatedCard(cornerRadius: 18)
+
+            if let errorMessage, !errorMessage.isEmpty {
+                Text(errorMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(MoMoPalette.failure)
+                    .textSelection(.enabled)
+            }
+
+            Button(anyConnected ? "继续" : "继续配对") {
+                model.advanceSetup(.pair)
+            }
+            .buttonStyle(DesktopSetupButton())
+            .accessibilityIdentifier("onboarding.connectorsContinue")
+
+            HStack(spacing: 24) {
+                Button("返回") { model.advanceSetup(.permissions) }
+                    .disabled(busyConnector != nil)
+                    .accessibilityIdentifier("onboarding.connectorsBack")
+                Button("稍后设置") { model.advanceSetup(.pair) }
+                    .disabled(busyConnector != nil)
+                    .accessibilityIdentifier("onboarding.skipConnectors")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 13))
+            .foregroundStyle(.secondary)
+        }
+        .multilineTextAlignment(.center)
+        .task { await refreshStatus() }
+    }
+
+    @ViewBuilder
+    private func onboardingRow<Icon: View>(
+        title: String,
+        connected: Bool,
+        account: String,
+        expanded: Binding<Bool>,
+        connector: String,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
+        HStack(spacing: 12) {
+            icon()
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .medium))
+                if connected, !account.isEmpty {
+                    Text(account)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .multilineTextAlignment(.leading)
+
+            Spacer(minLength: 8)
+
+            if connected {
+                Label("已连接", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(MoMoPalette.success)
+            } else {
+                Button("让 MoMo 配") {
+                    handoffToMoMo(connector)
+                }
+                .buttonStyle(DesktopSetupButton(filled: true, minimumHeight: 28, fontSize: 12))
+                .disabled(busyConnector != nil)
+
+                Button(expanded.wrappedValue ? "收起" : "手动") {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        expanded.wrappedValue.toggle()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(busyConnector != nil)
+            }
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func handoffToMoMo(_ connector: String) {
+        errorMessage = nil
+        let prompt = connector == "feishu"
+            ? "帮我接入飞书连接器，只读同步我的飞书消息和云文档。请按 connectors-setup skill 一步步带我完成。"
+            : "帮我接入我的邮箱连接器，只读同步近期邮件。请按 connectors-setup skill 一步步带我完成。"
+        if let store = model.taskStore {
+            do {
+                try store.enqueueIndependentMessage(prompt)
+                model.advanceSetup(.completed)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        } else {
+            errorMessage = "MoMo 尚未就绪，请稍候再试。"
+        }
+    }
+
+    private func refreshStatus() async {
+        do {
+            let data = try await model.contextAPIRequest(path: "/v1/connectors")
+            let decoded = try JSONDecoder().decode(ConnectorsStatusResponse.self, from: data)
+            status = decoded
+            if decoded.connectors.feishu.connected {
+                awaitingFeishuOAuth = false
+                expandFeishu = false
+            }
+        } catch {
+            // Keep onboarding smooth if context server is still warming up.
+        }
+    }
+
+    private func startFeishuOAuth() async {
+        busyConnector = "feishu"
+        errorMessage = nil
+        defer { busyConnector = nil }
+        do {
+            var payload: [String: Any] = ["domain": feishuDomain, "app_id": feishuAppID]
+            if !feishuAppSecret.isEmpty { payload["app_secret"] = feishuAppSecret }
+            let data = try await model.contextAPIRequest(path: "/v1/connectors/feishu/oauth/start", method: "POST", body: payload)
+            if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let urlStr = obj["authorize_url"] as? String,
+               let url = URL(string: urlStr) {
+                feishuRedirectURI = (obj["redirect_uri"] as? String) ?? ""
+                awaitingFeishuOAuth = true
+                NSWorkspace.shared.open(url)
+                Task {
+                    for _ in 0..<60 {
+                        try? await Task.sleep(for: .seconds(2))
+                        if !awaitingFeishuOAuth { break }
+                        await refreshStatus()
+                    }
+                }
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func saveEmail() async {
+        busyConnector = "email"
+        errorMessage = nil
+        defer { busyConnector = nil }
+        do {
+            let payload: [String: Any] = [
+                "username": emailUsername,
+                "password": emailPassword,
+                "enabled": true,
+            ]
+            _ = try await model.contextAPIRequest(path: "/v1/connectors/email/configure", method: "POST", body: payload)
+            emailPassword = ""
+            expandEmail = false
+            await refreshStatus()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
 // MARK: - Apple Settings-Style Connector Icons
 
-private struct FeishuConnectorIcon: View {
+struct FeishuConnectorIcon: View {
     let connected: Bool
 
     private static let installedAppIcon: NSImage? = {
@@ -549,7 +823,7 @@ private struct FeishuConnectorIcon: View {
     }
 }
 
-private struct MailConnectorIcon: View {
+struct MailConnectorIcon: View {
     let connected: Bool
 
     var body: some View {
