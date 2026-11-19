@@ -17,6 +17,7 @@ import MoMoAgentClient
     private var enabled = false
     private var locationFailed = false
     private var visitAccessWaiter: CheckedContinuation<Void, Error>?
+    private static let alwaysPromptedKey = "momo.location.didRequestAlwaysAuthorization"
     enum ReadError: Error { case denied, unavailable, tooManyRecords }
 
     private struct RawMotionSample: Sendable {
@@ -98,13 +99,21 @@ import MoMoAgentClient
             guard CMMotionActivityManager.authorizationStatus() == .authorized else { throw ReadError.denied }
         }
     }
+    func canPromptBackgroundVisits() -> Bool {
+        location.authorizationStatus == .authorizedWhenInUse
+            && !UserDefaults.standard.bool(forKey: Self.alwaysPromptedKey)
+    }
     func requestBackgroundVisits() {
-        if enabled && location.authorizationStatus == .authorizedWhenInUse { location.requestAlwaysAuthorization() }
+        guard enabled && location.authorizationStatus == .authorizedWhenInUse else { return }
+        UserDefaults.standard.set(true, forKey: Self.alwaysPromptedKey)
+        location.requestAlwaysAuthorization()
     }
     func setVisitsEnabled(_ value: Bool) throws {
         enabled = value
-        if enabled { updateMonitoring() }
-        else {
+        if enabled {
+            locationFailed = false
+            updateMonitoring()
+        } else {
             location.stopMonitoringVisits()
             location.stopMonitoringSignificantLocationChanges()
             geocoder.cancelGeocode()
@@ -118,7 +127,8 @@ import MoMoAgentClient
             if CLLocationManager.significantLocationChangeMonitoringAvailable() {
                 location.startMonitoringSignificantLocationChanges()
             }
-            if visits.isEmpty {
+            let latestStart = visits.compactMap(\.start).max() ?? 0
+            if visits.isEmpty || Date().timeIntervalSince1970 - latestStart > 1800 {
                 location.requestLocation()
             }
         } else {
@@ -127,6 +137,10 @@ import MoMoAgentClient
         }
     }
     func read(_ kind: PhoneSourceKind, from: Date, to: Date) async throws -> [PhoneSourceSnapshot.Record] {
+        if kind == .visits {
+            locationFailed = false
+            if enabled { updateMonitoring() }
+        }
         guard ["enabled", "foreground_only"].contains(authorization(kind)) else { throw ReadError.denied }
         let values: [PhoneSourceSnapshot.Record]
         switch kind {
@@ -419,7 +433,16 @@ import MoMoAgentClient
         }
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        if let clError = error as? CLError, clError.code == .locationUnknown { return }
-        Task { @MainActor [weak self] in self?.locationFailed = true; self?.onChange?() }
+        if let clError = error as? CLError, clError.code == .denied {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.location.stopMonitoringVisits()
+                self.location.stopMonitoringSignificantLocationChanges()
+                self.onChange?()
+            }
+            return
+        }
+        // Transient one-shot location errors (network, timeout, locationUnknown) must not
+        // permanently disable visit monitoring or lock `authorization(.visits)` to unavailable.
     }
 }

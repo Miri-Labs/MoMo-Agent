@@ -12,12 +12,14 @@ import MoMoContracts
     func authorization(_ kind: PhoneSourceKind) -> String
     func authorize(_ kind: PhoneSourceKind) async throws
     func setVisitsEnabled(_ enabled: Bool) throws
+    func canPromptBackgroundVisits() -> Bool
     func requestBackgroundVisits()
     func read(_ kind: PhoneSourceKind, from: Date, to: Date) async throws -> [PhoneSourceSnapshot.Record]
 }
 
 extension PhoneSourcesReading {
     func canPromptAuthorization(_ kind: PhoneSourceKind) -> Bool { false }
+    func canPromptBackgroundVisits() -> Bool { true }
 }
 
 @MainActor @Observable
@@ -41,6 +43,7 @@ final class PhoneSourcesSync {
     private var state: State
     private(set) var busy: Set<PhoneSourceKind> = []
     private(set) var failures: [PhoneSourceKind: String] = [:]
+    private(set) var authorizationRevision: Int = 0
     @ObservationIgnored private var pendingRefresh: Set<PhoneSourceKind> = []
 
     init(directory: URL, deviceID: UUID, connection: AgentConnection, key: String,
@@ -54,14 +57,20 @@ final class PhoneSourcesSync {
         } else { state = State(workspaceID: connection.workspaceID) }
         try reader.setVisitsEnabled(preference(.visits).enabled)
         reader.onChange = { [weak self] in
-            guard let self, active else { return }
+            guard let self else { return }
+            self.authorizationRevision &+= 1
+            guard active else { return }
             Task { await self.refreshAll() }
         }
     }
     func preference(_ kind: PhoneSourceKind) -> Preference { state.sources[kind.rawValue] ?? Preference() }
-    func canPromptAuthorization(_ kind: PhoneSourceKind) -> Bool { reader.canPromptAuthorization(kind) }
-    func authorization(_ kind: PhoneSourceKind) -> String { reader.authorization(kind) }
-    func requestBackgroundVisits() { reader.requestBackgroundVisits() }
+    func canPromptAuthorization(_ kind: PhoneSourceKind) -> Bool { _ = authorizationRevision; return reader.canPromptAuthorization(kind) }
+    func canPromptBackgroundVisits() -> Bool { _ = authorizationRevision; return reader.canPromptBackgroundVisits() }
+    func authorization(_ kind: PhoneSourceKind) -> String { _ = authorizationRevision; return reader.authorization(kind) }
+    func requestBackgroundVisits() {
+        reader.requestBackgroundVisits()
+        authorizationRevision &+= 1
+    }
     func requestPermission(_ kind: PhoneSourceKind) async {
         guard !busy.contains(kind) else { return }
         busy.insert(kind)
@@ -77,6 +86,7 @@ final class PhoneSourcesSync {
     }
     func foreground() {
         active = true
+        authorizationRevision &+= 1
         guard polling == nil else { return }
         polling = Task { [weak self] in
             while !Task.isCancelled {
