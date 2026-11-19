@@ -311,11 +311,11 @@ struct DesktopConnectorsView: View {
         let prompt: String
         switch (connector, reconnect) {
         case ("feishu", false):
-            prompt = "帮我接入飞书连接器，只读同步我的飞书消息和云文档。请按 connectors-setup skill 一步步带我完成。"
+            prompt = "帮我接入飞书连接器，只读同步我的飞书群聊消息和云文档。"
         case ("feishu", true):
             prompt = "帮我检查一下飞书连接器的状态和同步情况，有问题的话按 connectors-setup skill 顺手帮我修好。"
         case ("email", false):
-            prompt = "帮我接入我的邮箱连接器，只读同步近期邮件。请按 connectors-setup skill 一步步带我完成。"
+            prompt = "帮我接入我的邮箱连接器，只读同步近期邮件。"
         default:
             prompt = "帮我检查一下邮箱连接器的状态和同步情况，有问题的话按 connectors-setup skill 顺手帮我修好。"
         }
@@ -645,8 +645,8 @@ struct DesktopOnboardingConnectors: View {
     private func handoffToMoMo(_ connector: String) {
         errorMessage = nil
         let prompt = connector == "feishu"
-            ? "帮我接入飞书连接器，只读同步我的飞书消息和云文档。请按 connectors-setup skill 一步步带我完成。"
-            : "帮我接入我的邮箱连接器，只读同步近期邮件。请按 connectors-setup skill 一步步带我完成。"
+            ? "帮我接入飞书连接器，只读同步我的飞书群聊消息和云文档。"
+            : "帮我接入我的邮箱连接器，只读同步近期邮件。"
         if let store = model.taskStore {
             do {
                 try store.enqueueIndependentMessage(prompt)
