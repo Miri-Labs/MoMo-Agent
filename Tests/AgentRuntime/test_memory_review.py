@@ -454,23 +454,53 @@ class MemoryReviewTests(unittest.TestCase):
             service.advance_review(self.store, job)
         self.assertIsNotNone(review.next_review(self.store, self.data, 10300))
 
+    @staticmethod
+    def _mock_openai_client(create_mock):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.__exit__.return_value = False
+        client.chat.completions.create = create_mock
+        return client
+
+    @staticmethod
+    def _mock_openai_reply(content=None, tool_calls=None):
+        from types import SimpleNamespace
+
+        tc_objs = [
+            SimpleNamespace(
+                id=tc["id"],
+                function=SimpleNamespace(name=tc["function"]["name"], arguments=tc["function"]["arguments"]),
+            )
+            for tc in (tool_calls or [])
+        ]
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content, tool_calls=tc_objs))])
+
+    @staticmethod
+    def _mock_custom_llm():
+        return {"dsh_provider": "custom", "model_id": "mock", "base_url": "http://127.0.0.1:9", "env": {"MOMO_LLM_API_KEY": "k"}}
+
     def test_repeated_noop_writes_do_not_keep_dream_alive(self):
         from superagent_gateway import RepeatedToolRead, SuperAgentGateway
+        from unittest.mock import Mock
         gateway = SuperAgentGateway.__new__(SuperAgentGateway)
         gateway.data = self.data
         write = {"id": "repeat", "function": {"name": "notebook", "arguments": json.dumps({
             "action": "write", "path": "projects/repeated.md", "content": "# Repeated"})}}
-        with patch("superagent_gateway.resolve_superagent_llm", return_value={"dsh_provider": "antigravity", "model_id": "mock"}):
-            with patch("antigravity_bridge.run_antigravity_completion",
-                       return_value={"choices": [{"message": {"tool_calls": [write]}}]}) as model:
-                with self.assertRaises(RepeatedToolRead):
-                    gateway._call_configured_llm_memory_review("momo-review-repeat", "review")
-                self.assertEqual(4, model.call_count)
+        model = Mock(return_value=self._mock_openai_reply(tool_calls=[write]))
+        with patch("superagent_gateway.resolve_superagent_llm", return_value=self._mock_custom_llm()), \
+             patch("openai.OpenAI", return_value=self._mock_openai_client(model)):
+            with self.assertRaises(RepeatedToolRead):
+                gateway._call_configured_llm_memory_review("momo-review-repeat", "review")
+            self.assertEqual(4, model.call_count)
         self.assertEqual(1, review.successful_writes(self.data / "hermes", "momo-review-repeat"))
 
     def test_daily_write_needs_a_separate_completion_receipt(self):
         import daily_review
         from superagent_gateway import SuperAgentGateway
+        from unittest.mock import Mock
         self.message(1, "fixture")
         job = review.next_review(self.store, self.data, 1)
         self.store.db.execute("UPDATE memory_reviews SET first_attempt=1 WHERE id=?", (job["id"],))
@@ -480,11 +510,16 @@ class MemoryReviewTests(unittest.TestCase):
         session = "momo-review-" + job["id"]
         write = {"id": "write", "function": {"name": "notebook", "arguments": json.dumps({
             "action": "write", "path": "projects/unfinished.md", "content": "# Started"})}}
-        replies = [{"choices": [{"message": m}]} for m in ({"tool_calls": [write]}, {"content": ""}, {"content": ""})]
-        with patch("superagent_gateway.resolve_superagent_llm", return_value={"dsh_provider": "antigravity", "model_id": "mock"}):
-            with patch("antigravity_bridge.run_antigravity_completion", side_effect=replies):
-                with self.assertRaises(review.InvalidReviewReceipt):
-                    gateway._call_configured_llm_memory_review(session, prompt)
+        replies = [
+            self._mock_openai_reply(tool_calls=[write]),
+            self._mock_openai_reply(content=""),
+            self._mock_openai_reply(content=""),
+        ]
+        model = Mock(side_effect=replies)
+        with patch("superagent_gateway.resolve_superagent_llm", return_value=self._mock_custom_llm()), \
+             patch("openai.OpenAI", return_value=self._mock_openai_client(model)):
+            with self.assertRaises(review.InvalidReviewReceipt):
+                gateway._call_configured_llm_memory_review(session, prompt)
         self.assertEqual(1, review.successful_writes(self.data / "hermes", session))
         self.assertIsNone(review.state(self.store, "chat_cursor"))
 
@@ -516,17 +551,19 @@ class MemoryReviewTests(unittest.TestCase):
 
         def page(i, offset):
             fn = {"name": "read_recording", "arguments": json.dumps({"source_id": source_id, "limit": 5, "offset": offset})}
-            return {"choices": [{"message": {"tool_calls": [{"id": str(i), "function": fn}]}}]}
+            return self._mock_openai_reply(tool_calls=[{"id": str(i), "function": fn}])
 
         receipt = json.dumps({"memory_review": {"outcome": "no_change", "reason": "已核对各页"}})
-        finish = {"choices": [{"message": {"content": receipt}}]}
-        with patch("superagent_gateway.resolve_superagent_llm", return_value={"dsh_provider": "antigravity", "model_id": "mock"}):
-            with patch("antigravity_bridge.run_antigravity_completion", side_effect=[page(i, 0) for i in range(14)]) as model:
+        finish = self._mock_openai_reply(content=receipt)
+        with patch("superagent_gateway.resolve_superagent_llm", return_value=self._mock_custom_llm()):
+            model = Mock(side_effect=[page(i, 0) for i in range(14)])
+            with patch("openai.OpenAI", return_value=self._mock_openai_client(model)):
                 with self.assertRaises(RepeatedToolRead):
                     gateway._call_configured_llm_memory_review(session, "review")
                 self.assertEqual(model.call_count, 3)
             progress = Mock()
-            with patch("antigravity_bridge.run_antigravity_completion", side_effect=[page(i, i*5) for i in range(20)] + [finish]) as model:
+            model = Mock(side_effect=[page(i, i*5) for i in range(20)] + [finish])
+            with patch("openai.OpenAI", return_value=self._mock_openai_client(model)):
                 output = gateway._call_configured_llm_memory_review(session, "review", heartbeat=progress)
                 self.assertEqual(review.outcome(self.data / "hermes", session, output)["outcome"], "no_change")
                 self.assertEqual(model.call_count, 21)
@@ -535,6 +572,7 @@ class MemoryReviewTests(unittest.TestCase):
 
     def test_unverified_update_can_finish_its_write_in_the_same_run(self):
         from superagent_gateway import SuperAgentGateway
+        from unittest.mock import Mock
         gateway = SuperAgentGateway.__new__(SuperAgentGateway)
         gateway.data = self.data
         session = "momo-review-correct-update"
@@ -542,23 +580,23 @@ class MemoryReviewTests(unittest.TestCase):
         write = {"id": "write", "function": {"name": "notebook", "arguments": json.dumps({
             "action": "write", "path": "projects/receipt.md", "content": "# 已核对",
         })}}
-        def reply(message):
-            return {"choices": [{"message": message}]}
         def completion(*, messages, **kwargs):
             if messages[-1]["role"] == "tool":
                 self.assertTrue(json.loads(messages[-1]["content"])["success"])
-                return reply({"content": updated})
+                return self._mock_openai_reply(content=updated)
             if len(messages) == 2:
-                return reply({"content": updated})
+                return self._mock_openai_reply(content=updated)
             self.assertEqual(messages[-2]["content"], updated)
             self.assertIn("without a successful native write", messages[-1]["content"])
-            return reply({"tool_calls": [write]})
-        with patch("superagent_gateway.resolve_superagent_llm", return_value={"dsh_provider":"antigravity","model_id":"mock"}):
-            with patch("antigravity_bridge.run_antigravity_completion", side_effect=completion) as model:
+            return self._mock_openai_reply(tool_calls=[write])
+        with patch("superagent_gateway.resolve_superagent_llm", return_value=self._mock_custom_llm()):
+            model = Mock(side_effect=completion)
+            with patch("openai.OpenAI", return_value=self._mock_openai_client(model)):
                 output = gateway._call_configured_llm_memory_review(session, "review")
                 self.assertEqual(model.call_count, 3)
                 self.assertEqual(review.outcome(self.data/"hermes", session, output)["native_writes"], 1)
-            with patch("antigravity_bridge.run_antigravity_completion", return_value=reply({"content": updated})) as model:
+            model = Mock(return_value=self._mock_openai_reply(content=updated))
+            with patch("openai.OpenAI", return_value=self._mock_openai_client(model)):
                 with self.assertRaises(review.InvalidReviewReceipt):
                     gateway._call_configured_llm_memory_review("momo-review-no-write", "review")
                 self.assertEqual(model.call_count, 2)
@@ -591,9 +629,9 @@ class MemoryReviewTests(unittest.TestCase):
         from provider_notice import record_provider_issue, clear_provider_notice
         from unittest.mock import Mock
         now = 30000
-        (self.data/"hermes/config.yaml").write_text('{"model":{"provider":"antigravity"}}')
+        (self.data/"hermes/config.yaml").write_text('{"model":{"provider":"openai-codex"}}')
         self.source()
-        record_provider_issue(self.data, "insufficient_quota", provider="antigravity", now=now)
+        record_provider_issue(self.data, "insufficient_quota", provider="openai-codex", now=now)
         service = ContextService.__new__(ContextService)
         service.data = self.data
         service.directory = self.data/"context"

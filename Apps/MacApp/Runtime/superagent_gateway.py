@@ -536,8 +536,6 @@ class SuperAgentGateway:
         app.router.add_post("/momo/internal/superagent/outbound", self.handle_internal_outbound)
         app.router.add_post("/momo/internal/superagent/computer", self.handle_internal_computer)
         app.router.add_post("/momo/internal/superagent/pim", self.handle_internal_pim)
-        app.router.add_get("/momo/internal/antigravity/v1/models", self.handle_internal_antigravity_models)
-        app.router.add_post("/momo/internal/antigravity/v1/chat/completions", self.handle_internal_antigravity_completions)
         app.on_startup.append(self.on_startup)
         app.on_cleanup.append(self.on_cleanup)
         return app
@@ -558,131 +556,6 @@ class SuperAgentGateway:
         if not self.bridge_secret or not provided or not hmac.compare_digest(provided, self.bridge_secret):
             return web.json_response({"error": "forbidden"}, status=403)
         return None
-
-    def _check_internal_antigravity_auth(self, request: web.Request) -> web.Response | None:
-        header = request.headers.get("Authorization", "")
-        if not header.startswith("Bearer "):
-            return web.json_response({"error": {"code": "unauthorized", "message": "Missing bearer token"}}, status=401)
-        provided = header[len("Bearer ") :].strip()
-        if not provided:
-            return web.json_response({"error": {"code": "unauthorized", "message": "Empty bearer token"}}, status=401)
-        if self.bridge_secret and hmac.compare_digest(provided, self.bridge_secret):
-            return None
-        if self.api_key and hmac.compare_digest(provided, self.api_key):
-            return None
-        return web.json_response({"error": {"code": "unauthorized", "message": "Invalid bearer token"}}, status=401)
-
-    async def handle_internal_antigravity_models(self, request: web.Request) -> web.Response:
-        if refused := self._check_internal_antigravity_auth(request):
-            return refused
-        from antigravity_bridge import list_antigravity_models
-
-        _, models = await asyncio.to_thread(list_antigravity_models)
-        return web.json_response(
-            {
-                "object": "list",
-                "data": [{"id": mid, "object": "model", "owned_by": "antigravity"} for mid in models],
-            }
-        )
-
-    def _is_interactive_orchestrator_turn(self, tools: list[dict] | None) -> bool:
-        if not tools:
-            return False
-        has_orch_reply = False
-        for item in tools:
-            if not isinstance(item, dict):
-                continue
-            fn = item.get("function") if isinstance(item.get("function"), dict) else item
-            if fn.get("name") == "orchestrator_reply":
-                has_orch_reply = True
-                break
-        if not has_orch_reply:
-            return False
-        row = self.bridge.db.execute(
-            "SELECT 1 FROM chat_runs WHERE status IN ('queued', 'started') AND cancel_requested=0 AND updated_at > ? LIMIT 1",
-            (time.time() - 300.0,),
-        ).fetchone()
-        return row is not None
-
-    async def handle_internal_antigravity_completions(self, request: web.Request) -> web.StreamResponse:
-        if refused := self._check_internal_antigravity_auth(request):
-            return refused
-        from antigravity_bridge import format_sse_chunks_from_completion, run_antigravity_completion_async
-
-        try:
-            payload = await request.json()
-        except Exception:
-            return web.json_response({"error": {"message": "Invalid JSON body", "type": "invalid_request_error"}}, status=400)
-        if not isinstance(payload, dict):
-            return web.json_response({"error": {"message": "Expected JSON object", "type": "invalid_request_error"}}, status=400)
-
-        model = str(payload.get("model") or self.model_name or "").strip()
-        messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
-        tools = payload.get("tools") if isinstance(payload.get("tools"), list) else None
-        tool_choice = payload.get("tool_choice")
-        response_format = payload.get("response_format") if isinstance(payload.get("response_format"), dict) else None
-        stream_requested = bool(payload.get("stream"))
-        is_background = not self._is_interactive_orchestrator_turn(tools)
-
-        try:
-            check_read_progress(messages)
-        except RepeatedToolRead as exc:
-            return web.json_response({"error": {"code": STALLED_REVIEW, "message": str(exc)}}, status=422)
-        try:
-            completion = await run_antigravity_completion_async(
-                model=model,
-                messages=messages,
-                tools=tools,
-                tool_choice=tool_choice,
-                response_format=response_format,
-                data_dir=self.data,
-                timeout=180.0,
-                background=is_background,
-            )
-        except Exception as err:
-            notice = self._record_provider_issue(err, provider="antigravity")
-            if notice is not None:
-                with suppress(Exception):
-                    self.publish_live_state()
-                kind = notice["kind"]
-                http_status = 401 if kind == "auth" else 429
-                err_type = (
-                    "authentication_error"
-                    if kind == "auth"
-                    else ("insufficient_quota" if kind == "quota" else "rate_limit_error")
-                )
-                err_code = (
-                    "invalid_api_key"
-                    if kind == "auth"
-                    else ("insufficient_quota" if kind == "quota" else "rate_limit_exceeded")
-                )
-                return web.json_response(
-                    {"error": {"message": str(err)[:400], "type": err_type, "code": err_code}},
-                    status=http_status,
-                )
-            return web.json_response(
-                {"error": {"message": str(err)[:400], "type": "server_error"}},
-                status=502,
-            )
-
-        self._clear_provider_notice_if_recovered("antigravity")
-
-        if not stream_requested:
-            return web.json_response(completion)
-
-        resp = web.StreamResponse(
-            status=200,
-            headers={
-                "Content-Type": "text/event-stream; charset=utf-8",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-            },
-        )
-        with suppress(ConnectionError, web.HTTPException, Exception):
-            await resp.prepare(request)
-            await resp.write(format_sse_chunks_from_completion(completion))
-            await resp.write_eof()
-        return resp
 
     # ── Lifecycle & dsh supervision ─────────────────────────────────────────────
 
@@ -721,10 +594,6 @@ class SuperAgentGateway:
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
         await asyncio.to_thread(self._stop_dsh_process)
-        with suppress(Exception):
-            from antigravity_bridge import shutdown_antigravity_daemon
-
-            await asyncio.to_thread(shutdown_antigravity_daemon)
         self.bridge.close()
         self.store.db.close()
 
@@ -2865,48 +2734,6 @@ class SuperAgentGateway:
                 return None
             return output
 
-        if provider == "antigravity":
-            from antigravity_bridge import run_antigravity_completion
-
-            while True:
-                check_round()
-                resp = run_antigravity_completion(
-                    model=model_id,
-                    messages=messages,
-                    tools=openai_tools,
-                    data_dir=self.data,
-                    timeout=150.0,
-                    background=True,
-                    cancel_event=stop,
-                )
-                msg = ((resp.get("choices") or [{}])[0]).get("message") or {}
-                tool_calls = msg.get("tool_calls") or []
-                if not tool_calls:
-                    output = verified_output(str(msg.get("content") or "").strip())
-                    if output is not None:
-                        return output
-                    continue
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": msg.get("content"),
-                        "tool_calls": tool_calls,
-                    }
-                )
-                for tc in tool_calls:
-                    fn = tc.get("function") or {}
-                    tc_name = str(fn.get("name") or "")
-                    tc_args = str(fn.get("arguments") or "{}")
-                    result_str = execute_tool(tc_name, tc_args)
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tc.get("id") or "",
-                            "name": tc_name,
-                            "content": result_str,
-                        }
-                    )
-
         if provider == "anthropic":
             from agent.anthropic_adapter import build_anthropic_client, build_anthropic_kwargs, create_anthropic_message
             from agent.anthropic_credentials import _is_oauth_token
@@ -3050,20 +2877,6 @@ class SuperAgentGateway:
                         if event.type == "response.output_text.delta":
                             chunks.append(event.delta)
                     return "".join(chunks).strip()
-        if provider == "antigravity":
-            from antigravity_bridge import run_antigravity_completion
-
-            resp = run_antigravity_completion(
-                model=model_id,
-                messages=[{"role": "user", "content": prompt}],
-                data_dir=self.data,
-                timeout=90.0,
-                background=True,
-                oneshot=True,
-                cancel_event=stop,
-            )
-            msg = ((resp.get("choices") or [{}])[0]).get("message") or {}
-            return str(msg.get("content") or "").strip()
 
         if provider == "anthropic":
             from agent.anthropic_adapter import build_anthropic_client, build_anthropic_kwargs
@@ -5217,12 +5030,8 @@ class SuperAgentGateway:
                 )
             return web.json_response({"status": "sent"})
 
-        # The Antigravity bridge already observes the actual model completion. Outbox
-        # messages may have been queued before a newer quota failure.
         if kind == "reply":
-            provider = self._active_provider_hint()
-            if canonical_provider(provider) != "antigravity":
-                self._clear_provider_notice_if_recovered(provider)
+            self._clear_provider_notice_if_recovered(self._active_provider_hint())
         if linked_run:
             run_id = linked_run["run_id"]
         else:

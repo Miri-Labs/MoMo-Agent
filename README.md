@@ -6,7 +6,7 @@
 
 **Make Life Your Context — An Open-Source, Self-Hosted 24/7 Personal Agent for Apple Watch, iPhone & Mac**
 
-*Free On-Device Speech Transcription · Powered by Your Codex, Claude, or Antigravity Subscription · Self-Organizing Living Memory*
+*Free On-Device Speech Transcription · Powered by Your Codex or Claude Subscription · Self-Organizing Living Memory*
 
 [![Version](https://img.shields.io/badge/version-v0.5.3-1A1A19?style=flat-square)](https://github.com/Miri-Labs/MoMo-Agent/releases)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--only-3B82F6?style=flat-square)](LICENSE)
@@ -22,7 +22,7 @@ MoMo Agent is fully open source, and we thank the people behind every project we
 
 **MoMo Agent** is an open-source, fully self-hosted **all-day personal agent** built natively for **Apple Watch, iPhone, and Mac**.
 
-Capture your day effortlessly from your **Apple Watch** or **Bluetooth earphones**, transcribe speech **100% locally on your device at $0 cost**, and let **Momo** on your Mac turn fleeting conversations into **self-organizing long-term memory**, **timely reminders & morning briefings**, and **illustrated daily life journals**—using the **Codex**, **Claude**, or **Antigravity** subscription you already have, without ever sending your life data to a third-party cloud.
+Capture your day effortlessly from your **Apple Watch** or **Bluetooth earphones**, transcribe speech **100% locally on your device at $0 cost**, and let **Momo** on your Mac turn fleeting conversations into **self-organizing long-term memory**, **timely reminders & morning briefings**, and **illustrated daily life journals**—using the **Codex** or **Claude** subscription you already have, without ever sending your life data to a third-party cloud.
 
 <p align="center">
   <img src="docs/assets/devices-3d-en.png" width="100%" alt="Apple Watch, iPhone, and Mac mini working together as your self-hosted personal agent." />
@@ -35,7 +35,7 @@ Capture your day effortlessly from your **Apple Watch** or **Bluetooth earphones
 - **A Living Memory That Organizes Itself**: Stop filing notes by hand. MoMo quietly distills your daily conversations into an Obsidian-style multi-level knowledge vault—connecting people, projects, and ideas automatically, keeping every memory one tap away from the original voice moment, and updating both notes and speaker names when you ask in plain language.
 - **A Proactive Butler That Only Acts for *You***: Wake up to a concise **Morning Briefing**, and let Momo turn *your* spoken commitments into Apple Reminders, Calendar events, and Notes—anchored to your voiceprint so another speaker's remarks never end up on your to-do list.
 - **Your Day as an Illustrated Visual Journal**: Turns meaningful moments and real places you visited into warm kiss-cut sticker illustrations and an interactive daily footprint map—making your life log something you genuinely enjoy looking back on, not a wall of raw transcripts.
-- **$0 Extra AI Bills — Reuse the Subscription You Already Own**: An all-day personal agent shouldn't rack up surprise API bills. Sign in with **OpenAI Codex**, **Claude**, or **Google Antigravity** (or any custom API), switch providers anytime in one click, and transcribe unlimited audio locally on-device for **$0**.
+- **$0 Extra AI Bills — Reuse the Subscription You Already Own**: An all-day personal agent shouldn't rack up surprise API bills. Sign in with **OpenAI Codex** or **Claude** (or any custom API), switch providers anytime in one click, and transcribe unlimited audio locally on-device for **$0**.
 - **100% Self-Hosted, Private & Effortless Capture**: Record naturally from your wrist on Apple Watch (with fast local Wi-Fi sync) or via Bluetooth earphones, and stay privately connected to your Mac from anywhere—your audio, voiceprints, and plain-Markdown memories never leave your own devices.
 
 ---
@@ -60,7 +60,7 @@ Capture your day effortlessly from your **Apple Watch** or **Bluetooth earphones
 </p>
 
 - **Left — Proactive Steward & Closed-Loop Actions**: Hear your spoken commitments turn into Apple Reminders automatically, or tell Momo in one sentence to split a note and sync a speaker voiceprint back to iPhone.
-- **Right — Multi-Level Memory Vault**: Browse your self-organized Markdown knowledge tree, follow bidirectional links and backlinks, replay cited voice clips, and switch across **Codex**, **Claude**, or **Antigravity** subscriptions anytime.
+- **Right — Multi-Level Memory Vault**: Browse your self-organized Markdown knowledge tree, follow bidirectional links and backlinks, replay cited voice clips, and switch across **Codex** or **Claude** subscriptions anytime.
 
 ---
 
@@ -70,7 +70,7 @@ Capture your day effortlessly from your **Apple Watch** or **Bluetooth earphones
 flowchart LR
     W["Apple Watch / Earphones\nAll-Day Hands-Free Capture"] --> P["iPhone\nFree On-Device Transcription\nJournal · Footprint Map · Mobile Memory"]
     P <-->|"Encrypted Private Mesh\n(Built-in Tailscale / Local Wi-Fi)"| M["Mac (Self-Hosted Hub)\nProactive Butler · Living Markdown Vault\nReminders / Calendar / Notes · Life Illustrations"]
-    M <--> AI["Your Existing Subscription\nCodex · Claude · Antigravity"]
+    M <--> AI["Your Existing Subscription\nCodex · Claude"]
 ```
 
 | Device / Layer | What It Does for You | Ongoing Cost |
@@ -78,7 +78,7 @@ flowchart LR
 | **Apple Watch & Earphones** | Continuous hands-free capture with mute, bookmark, and automatic high-speed sync | **$0** |
 | **iPhone** | Offline neural speech transcription, speaker recognition, illustrated timeline, footprint map & mobile memory vault | **$0** |
 | **Private Connectivity** | Built-in Tailscale peer-to-peer mesh—reach your home Mac securely over Wi-Fi or cellular with zero port forwarding | **$0** (Tailscale Free Plan) |
-| **Mac Hub & Living Vault** | Self-organizing Markdown memory, Morning Briefing, Apple Reminders / Calendar / Notes automation, remote desktop & daily life stamps | **Included in your Codex / Claude / Antigravity subscription** |
+| **Mac Hub & Living Vault** | Self-organizing Markdown memory, Morning Briefing, Apple Reminders / Calendar / Notes automation, remote desktop & daily life stamps | **Included in your Codex / Claude subscription** |
 
 ---
 
@@ -89,7 +89,7 @@ For step-by-step signing, on-device speech model setup, and troubleshooting, see
 #### Prerequisites
 1. **Devices**: A Mac (`macOS 15.0+`, Apple Silicon recommended), an iPhone (`iOS 17.0+`), and an Apple Watch (`watchOS 10.0+`, or compatible Bluetooth earphones).
 2. **Build Tools**: Xcode 16+ and `xcodegen` (`brew install xcodegen`).
-3. **AI Subscription (Choose Any)**: **OpenAI Codex** (ChatGPT Plus / Pro), **Claude** (Claude Pro / Max), **Google Antigravity**, or a custom OpenAI-compatible API.
+3. **AI Subscription (Choose Any)**: **OpenAI Codex** (ChatGPT Plus / Pro), **Claude** (Claude Pro / Max), or a custom OpenAI-compatible API.
 4. **Tailscale** *(Optional, for access outside home Wi-Fi)*: A free [Tailscale](https://tailscale.com) account.
 
 #### 1. Clone & Configure Signing
@@ -116,7 +116,7 @@ xcodegen generate
 xcodebuild -project MoMoAgent.xcodeproj -scheme MoMoAgentMac -configuration Release build
 ```
 
-Open **MoMo Agent** on your Mac, sign in with **Codex**, **Claude**, **Antigravity**, or **Custom API**, and display your **Pairing QR Code**.
+Open **MoMo Agent** on your Mac, sign in with **Codex**, **Claude**, or **Custom API**, and display your **Pairing QR Code**.
 
 #### 3. Install on iPhone & Apple Watch (`MoMoAgent`)
 

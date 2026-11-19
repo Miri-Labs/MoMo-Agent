@@ -6,7 +6,7 @@
 
 **让生活成为你的上下文 —— 全天候无感记录 · 完全自托管（Self-Hosted）的开源个人智能体**
 
-*端侧语音转录永久免费 · 直接复用 Codex / Claude / Antigravity 订阅 · 会自己生长与整理的长期记忆*
+*端侧语音转录永久免费 · 直接复用 Codex / Claude 订阅 · 会自己生长与整理的长期记忆*
 
 [![Version](https://img.shields.io/badge/version-v0.5.3-1A1A19?style=flat-square)](https://github.com/Miri-Labs/MoMo-Agent/releases)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--only-3B82F6?style=flat-square)](LICENSE)
@@ -22,7 +22,7 @@ MoMo Agent 是一个纯开源项目，感谢所有我们借鉴过的项目及其
 
 **MoMo Agent** 是专为 **Apple Watch、iPhone 与 Mac** 原生打造的开源、完全自托管（Self-Hosted）**全天候个人智能体**。
 
-戴上手表或蓝牙耳机自然度过每一天：iPhone 在本地**永久免费**完成语音转写与说话人识别，并通过内置加密私网同步到你的 **Mac**。在那里，贴心管家 **Momo** 直接复用你已有的 **Codex**、**Claude** 或 **Antigravity** 订阅，把散落的对话沉淀为**会自己整理的长期记忆库**、生成**晨间简报与每日手账插画**，并替你打理提醒事项、日历与备忘录——**不经过任何第三方云端，也没有额外 API Token 账单。**
+戴上手表或蓝牙耳机自然度过每一天：iPhone 在本地**永久免费**完成语音转写与说话人识别，并通过内置加密私网同步到你的 **Mac**。在那里，贴心管家 **Momo** 直接复用你已有的 **Codex** 或 **Claude** 订阅，把散落的对话沉淀为**会自己整理的长期记忆库**、生成**晨间简报与每日手账插画**，并替你打理提醒事项、日历与备忘录——**不经过任何第三方云端，也没有额外 API Token 账单。**
 
 <p align="center">
   <img src="docs/assets/devices-3d-zh.png" width="100%" alt="Apple Watch、iPhone 与 Mac mini 协同工作的自托管个人智能体。" />
@@ -35,7 +35,7 @@ MoMo Agent 是一个纯开源项目，感谢所有我们借鉴过的项目及其
 - **不用手动记笔记，记忆会自己生长与归档**：告别建文件夹和整理会议纪要的负担。MoMo 会在后台把每天的对话自动提炼为像 Obsidian 一样清晰的多级知识库，自动串联人物、项目与想法；每条记忆点一下就能听回当时的原音，说一句话就能同时改好笔记和说话人声纹。
 - **懂分寸的主动式管家，只为你本人的承诺行动**：每天早上送上一份清爽的**晨间简报**；平时听到*你本人*亲口答应的待办与日程，自动帮你记进 Apple 提醒事项、日历和备忘录——依托你的个人声纹识别，绝不会把同事或旁人的话误记成你的任务。
 - **把每一天变成有温度的插画手账与足迹**：不只是冷冰冰的文字流水账。MoMo 会结合你当天真实走过的停留点与难忘片段，自动绘制温暖的模切贴纸插画与今日足迹地图，让日常回看真正成为一种享受。
-- **零额外 AI 账单，复用已有订阅随心切换**：全天候运行个人智能体，不该变成昂贵的按量计费黑洞。直接登录你已有的 **OpenAI Codex**、**Claude** 或 **Google Antigravity** 订阅（也支持自定义 API），在设置里一键随时切换；手机端语音转写更是 **100% 本地免费**。
+- **零额外 AI 账单，复用已有订阅随心切换**：全天候运行个人智能体，不该变成昂贵的按量计费黑洞。直接登录你已有的 **OpenAI Codex** 或 **Claude** 订阅（也支持自定义 API），在设置里一键随时切换；手机端语音转写更是 **100% 本地免费**。
 - **100% 自托管隐私与无感随身采集**：抬腕用 Apple Watch 持续记录（同网自动走高速 Wi-Fi 秒传），没戴手表也能用蓝牙耳机采集；内置私网让你在外网也能安全直连家中 Mac，所有原始录音、声纹与纯文本 Markdown 记忆永远只留在你自己的设备里。
 
 ---
@@ -60,7 +60,7 @@ MoMo Agent 是一个纯开源项目，感谢所有我们借鉴过的项目及其
 </p>
 
 - **左 — 主动式管家与一句话闭环修订**：自动听懂你的口头待办并写入 Apple 提醒事项；说一句话即可同时拆分多级笔记并将说话人声纹同步回手机。
-- **右 — 多级记忆阅读器与三大订阅**：三栏式浏览模型自主整理的多级目录树、双向关联与原音引用，并支持随时热切换 **Codex**、**Claude** 或 **Antigravity** 订阅。
+- **右 — 多级记忆阅读器与多订阅切换**：三栏式浏览模型自主整理的多级目录树、双向关联与原音引用，并支持随时热切换 **Codex** 或 **Claude** 订阅。
 
 ---
 
@@ -70,7 +70,7 @@ MoMo Agent 是一个纯开源项目，感谢所有我们借鉴过的项目及其
 flowchart LR
     W["Apple Watch / 蓝牙耳机\n全天候无感采集"] --> P["iPhone\n本地免费语音转写与声纹识别\n插画手账 · 足迹地图 · 随身记忆"]
     P <-->|"内置加密私网直连\n(Tailscale / 局域网高速通道)"| M["Mac 自托管中枢\n主动式管家 · 多级 Markdown 记忆库\n提醒事项 / 日历 / 备忘录 · 每日手账插画"]
-    M <--> AI["直接复用已有订阅\nCodex · Claude · Antigravity"]
+    M <--> AI["直接复用已有订阅\nCodex · Claude"]
 ```
 
 | 终端 / 层级 | 为你解决什么问题 | 持续使用成本 |
@@ -78,7 +78,7 @@ flowchart LR
 | **Apple Watch 与耳机** | 全天候免提无感采集，随时静音、打标记，回传省心快速 | **免费 ($0)** |
 | **iPhone 随身端** | 本地离线高精度语音转写、说话人区分、手账时间轴、足迹地图与随身知识库 | **免费 ($0)** |
 | **跨网私密互联** | 应用内置 Tailscale 加密直连，无需公网 IP 或端口转发，在外也能安全连回家中 Mac | **免费**（Tailscale 个人免费版） |
-| **Mac 管家与记忆中枢** | 自主整理多级记忆、晨间简报、自动同步 Apple 提醒事项/日历/备忘录、远程桌面与手账插画 | **直接复用已有 Codex / Claude / Antigravity 订阅** |
+| **Mac 管家与记忆中枢** | 自主整理多级记忆、晨间简报、自动同步 Apple 提醒事项/日历/备忘录、远程桌面与手账插画 | **直接复用已有 Codex / Claude 订阅** |
 
 ---
 
@@ -89,7 +89,7 @@ flowchart LR
 #### 准备条件
 1. **设备**：一台 Mac（`macOS 15.0+`，推荐 Apple Silicon）、一部 iPhone（`iOS 17.0+`），以及一块 Apple Watch（`watchOS 10.0+`，或蓝牙耳机）。
 2. **构建工具**：Xcode 16+ 与 `xcodegen`（`brew install xcodegen`）。
-3. **AI 订阅（任选其一）**：**OpenAI Codex**（ChatGPT Plus / Pro）、**Claude**（Claude Pro / Max）、**Google Antigravity**，或任意兼容自定义 API。
+3. **AI 订阅（任选其一）**：**OpenAI Codex**（ChatGPT Plus / Pro）、**Claude**（Claude Pro / Max），或任意兼容自定义 API。
 4. **Tailscale** *(可选，外网直连推荐)*：免费注册 [Tailscale](https://tailscale.com) 账号。
 
 #### 1. 克隆仓库并配置签名
@@ -116,7 +116,7 @@ xcodegen generate
 xcodebuild -project MoMoAgent.xcodeproj -scheme MoMoAgentMac -configuration Release build
 ```
 
-打开 Mac 上的 **MoMo Agent**，选择 **Codex**、**Claude**、**Antigravity** 或 **自定义 API** 完成登录，并展示 **配对二维码**。
+打开 Mac 上的 **MoMo Agent**，选择 **Codex**、**Claude** 或 **自定义 API** 完成登录，并展示 **配对二维码**。
 
 #### 3. 安装 iPhone 与 Apple Watch 端 (`MoMoAgent`)
 

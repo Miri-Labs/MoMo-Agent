@@ -210,7 +210,7 @@ class HolisticLifeContextTests(unittest.TestCase):
         )
 
         slot_ts = datetime(2026, 11, 17, 9, 48, 0, tzinfo=self.tz).timestamp()
-        ready_avail = {"supported": True, "reason": None, "provider": "antigravity"}
+        ready_avail = {"supported": True, "reason": None, "provider": "openai-codex"}
         store = ContextStore(self.data / "context")
         queue = LifeIllustrations(self.data)
         try:
@@ -245,51 +245,67 @@ class HolisticLifeContextTests(unittest.TestCase):
             queue.close()
             store.close()
 
+        from types import SimpleNamespace
+
         gen = CodexIllustrationGenerator(self.data)
         captured_prompts: list[str] = []
         fake_llm = {
-            "dsh_provider": "antigravity",
-            "model_id": "gemini-test",
+            "dsh_provider": "openai-codex",
+            "model_id": "gpt-5.4",
             "base_url": "http://127.0.0.1:9",
+            "env": {"MOMO_LLM_API_KEY": "test-token"},
         }
         # Verify agentic tool call (`search_memory`) + final brief extraction
         responses = [
-            {
-                "choices": [
-                    {
-                        "message": {
-                            "content": "",
-                            "tool_calls": [
-                                {
-                                    "id": "call_search_1",
-                                    "type": "function",
-                                    "function": {
-                                        "name": "search_memory",
-                                        "arguments": json.dumps({"query": "皮皮 品种 猫"}, ensure_ascii=False),
-                                    },
-                                }
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content="",
+                            tool_calls=[
+                                SimpleNamespace(
+                                    id="call_search_1",
+                                    function=SimpleNamespace(
+                                        name="search_memory",
+                                        arguments=json.dumps({"query": "皮皮 品种 猫"}, ensure_ascii=False),
+                                    ),
+                                )
                             ],
-                        }
-                    }
+                        )
+                    )
                 ]
-            },
-            {
-                "choices": [
-                    {
-                        "message": {
-                            "content": (
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=(
                                 "SUMMARY: 说话人在室内轻声唤着猫咪“皮皮”，逗弄正低头啃脚的猫咪。\n"
                                 "BRIEF: 画面聚焦说话人俯身逗弄家猫“皮皮”的安静瞬间：有着竖立尖三角猫耳、细胡须与细长弯尾的猫咪皮皮正低头舔啃后脚，说话人在旁注视并轻声呼唤它，室内保持最简居家背景。"
-                            )
-                        }
-                    }
+                            ),
+                            tool_calls=[],
+                        )
+                    )
                 ]
-            },
+            ),
         ]
 
-        def fake_completion(*, messages, **kwargs):
-            captured_prompts.append(json.dumps(messages, ensure_ascii=False))
-            return responses.pop(0)
+        class _FakeClient:
+            post = object()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class _FakeAdapter:
+            def __init__(self, client, model_id):
+                pass
+
+            def create(self, *, messages, **kwargs):
+                captured_prompts.append(json.dumps(messages, ensure_ascii=False))
+                return responses.pop(0)
 
         evidence = {
             "window_start": slot_ts,
@@ -302,9 +318,9 @@ class HolisticLifeContextTests(unittest.TestCase):
                 }
             ],
         }
-        with patch.object(gen, "resolve", return_value=fake_llm), patch(
-            "antigravity_bridge.run_antigravity_completion", side_effect=fake_completion
-        ):
+        with patch.object(gen, "resolve", return_value=fake_llm), patch.object(
+            gen, "client", return_value=_FakeClient()
+        ), patch("agent.auxiliary_client._CodexCompletionsAdapter", _FakeAdapter):
             out = gen.prepare(evidence)
 
         self.assertIn("猫咪“皮皮”", out)

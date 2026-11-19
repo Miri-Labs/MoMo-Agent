@@ -48,9 +48,6 @@ struct ModelConnectionFields: View {
                 if model.modelProvider == .claude, model.modelAccount?.loginAvailable == false {
                     Link("安装 Claude Code", destination: URL(string: "https://code.claude.com/docs/en/setup")!)
                         .font(.callout)
-                } else if model.modelProvider == .antigravity, model.modelAccount?.loginAvailable == false {
-                    Link("安装 Antigravity CLI (agy)", destination: URL(string: "https://antigravity.google/docs")!)
-                        .font(.callout)
                 }
             case .api:
                 if continueSetup {
@@ -316,7 +313,6 @@ struct ModelConnectionFields: View {
         switch provider {
         case .codex: Image("OpenAIMark").renderingMode(.template).resizable().scaledToFit()
         case .claude: Image("AnthropicMark").renderingMode(.template).resizable().scaledToFit()
-        case .antigravity: Image("AntigravityMark").renderingMode(.template).resizable().scaledToFit()
         case .api: Image(systemName: "key.horizontal").font(.system(size: 24, weight: .regular))
         }
     }

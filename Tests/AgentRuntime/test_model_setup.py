@@ -247,94 +247,22 @@ class ModelSetupTests(unittest.TestCase):
         self.assertIn('error', json.loads(output.getvalue()))
         self.assertNotIn('access-token-secret', output.getvalue())
 
-    def test_antigravity_authorization_url_and_catalog_parsing(self):
-        import antigravity_bridge as agy_bridge
-
-        self.assertTrue(setup.authorization_url('https://accounts.google.com/o/oauth2/v2/auth?client_id=abc', 'antigravity'))
-        self.assertFalse(setup.authorization_url('http://accounts.google.com/o/oauth2/v2/auth', 'antigravity'))
-        self.assertFalse(setup.authorization_url('https://evil.example.com/o/oauth2/v2/auth', 'antigravity'))
-
-        raw = (
-            '\x1b[2K\rFetching available models...\n'
-            'gemini-4-carbon-medium\tGemini 4 Carbon (Medium)\n'
-            'claude-opus-5-5-high\tClaude Opus 5.5 (High)\n'
-            'gemini-4-carbon-high  Gemini 4 Carbon (High)\n'
-        )
-        models = agy_bridge.parse_antigravity_models_output(raw)
-        self.assertEqual(models[:3], ['gemini-4-carbon-high', 'claude-opus-5-5-high', 'gemini-4-carbon-medium'])
-
-    def test_antigravity_tool_envelope_and_sse_serialization(self):
-        import antigravity_bridge as agy_bridge
-
-        cli_json = json.dumps({
-            'status': 'SUCCESS',
-            'structured_output': {
-                'content': '',
-                'tool_calls': [{'name': 'write_memory_notebook', 'arguments_json': '{"path":"projects/AI访谈/架构.md"}'}],
-            },
-            'usage': {'input_tokens': 120, 'output_tokens': 24, 'total_tokens': 144},
-        })
-        parsed = agy_bridge.parse_antigravity_cli_response(
-            cli_json,
-            expect_tool_envelope=True,
-            declared_names={'write_memory_notebook'},
-        )
-        self.assertEqual(len(parsed['tool_calls']), 1)
-        self.assertEqual(parsed['tool_calls'][0]['function']['name'], 'write_memory_notebook')
-        self.assertEqual(json.loads(parsed['tool_calls'][0]['function']['arguments']), {'path': 'projects/AI访谈/架构.md'})
-
-        completion = {
-            'id': 'chatcmpl-test',
-            'object': 'chat.completion',
-            'created': 1700000000,
-            'model': 'gemini-4-carbon-high',
-            'choices': [{
-                'index': 0,
-                'message': {'role': 'assistant', 'content': None, 'tool_calls': parsed['tool_calls']},
-                'finish_reason': 'tool_calls',
-            }],
-            'usage': parsed['usage'],
-        }
-        sse_text = agy_bridge.format_sse_chunks_from_completion(completion).decode('utf-8')
-        self.assertIn('write_memory_notebook', sse_text)
-        self.assertIn('"finish_reason": "tool_calls"', sse_text)
-        self.assertTrue(sse_text.endswith('data: [DONE]\n\n'))
-
-    def test_antigravity_verify_and_save_commits_provider(self):
-        with patch.object(setup, 'resolve_credentials', return_value={'provider': 'antigravity', 'api_key': 'antigravity-cli'}), \
-                patch.object(setup, 'probe') as probe:
-            result = setup.verify_and_save(self.data, 'antigravity', 'gemini-4-carbon-high')
-        probe.assert_called_once()
-        config = json.loads(self.file.read_text())
-        self.assertEqual(config['model'], {'provider': 'antigravity', 'default': 'gemini-4-carbon-high'})
-        self.assertTrue(result['connected'])
-
     def test_provider_notice_classifies_quota_auth_and_rate_limit_without_secret_leakage(self):
         import provider_notice as pn
 
         secret_url = 'https://secret-gateway.internal/v1?key=sk-secret-999'
 
-        # 1. Antigravity quota exhaustion
-        agy_quota = pn.classify_provider_issue(
-            f'Antigravity CLI failed: RESOURCE_EXHAUSTED: You have exhausted your capacity on this model ({secret_url})',
-            provider='antigravity',
-        )
-        self.assertIsNotNone(agy_quota)
-        self.assertEqual(agy_quota['kind'], 'quota')
-        self.assertEqual(agy_quota['provider'], 'antigravity')
-        self.assertIn('Antigravity 当前额度已用完', agy_quota['title'])
-        self.assertNotIn('sk-secret-999', json.dumps(agy_quota, ensure_ascii=False))
-        self.assertNotIn('secret-gateway', json.dumps(agy_quota, ensure_ascii=False))
-
-        # 2. Codex usage / quota limit
+        # 1. Codex usage / quota limit (without secret leakage)
         codex_quota = pn.classify_provider_issue(
-            'Error code: 429 - {"error": {"code": "usage_limit_reached", "message": "You have hit your usage limit"}}',
+            f'Error code: 429 - {{"error": {{"code": "usage_limit_reached", "message": "You have hit your usage limit ({secret_url})"}}}}',
             provider='codex',
         )
         self.assertIsNotNone(codex_quota)
         self.assertEqual(codex_quota['kind'], 'quota')
         self.assertEqual(codex_quota['provider'], 'openai-codex')
         self.assertIn('Codex 当前额度已用完', codex_quota['title'])
+        self.assertNotIn('sk-secret-999', json.dumps(codex_quota, ensure_ascii=False))
+        self.assertNotIn('secret-gateway', json.dumps(codex_quota, ensure_ascii=False))
 
         # 3. Claude credit balance / auth expiration
         claude_quota = pn.classify_provider_issue(
@@ -394,9 +322,9 @@ class ModelSetupTests(unittest.TestCase):
         )
         self.assertEqual(first['id'], later['id'])
 
-        with patch.object(setup, 'resolve_credentials', return_value={'provider': 'antigravity', 'api_key': 'antigravity-cli'}), \
+        with patch.object(setup, 'resolve_credentials', return_value={'api_key': 'sk-ant-oat01-x', 'base_url': 'https://api.anthropic.com'}), \
                 patch.object(setup, 'probe'):
-            setup.verify_and_save(self.data, 'antigravity', 'gemini-4-carbon-low')
+            setup.verify_and_save(self.data, 'claude', 'claude-sonnet-4-6')
         self.assertIsNone(pn.read_provider_notice(self.data, now=1705.0))
         fresh = pn.record_provider_issue(self.data, 'insufficient_quota', provider='codex', now=1710.0)
         self.assertNotEqual(first['id'], fresh['id'])
@@ -404,23 +332,23 @@ class ModelSetupTests(unittest.TestCase):
     def test_dismissed_quota_survives_expiry_upgrade_and_interleaved_failures(self):
         import provider_notice as pn
 
-        original = pn.build_provider_notice('quota', provider='antigravity', now=1000)
+        original = pn.build_provider_notice('quota', provider='anthropic', now=1000)
         path = self.data / pn.PROVIDER_NOTICE_REL
         path.parent.mkdir(exist_ok=True)
         path.write_text(json.dumps(original))  # Installed version before quota episode tracking.
         tomorrow = 1000 + 86400
         self.assertIsNone(pn.read_provider_notice(self.data, now=tomorrow))
         other = pn.record_provider_issue(self.data, 'insufficient_quota', provider='codex', now=tomorrow)
-        pn.record_provider_issue(self.data, 'rate limit', provider='agy', now=tomorrow)
-        retry = pn.record_provider_issue(self.data, 'RESOURCE_EXHAUSTED', provider='agy', now=tomorrow + 1)
+        pn.record_provider_issue(self.data, 'rate limit', provider='claude', now=tomorrow)
+        retry = pn.record_provider_issue(self.data, 'insufficient_quota', provider='claude', now=tomorrow + 1)
         self.assertEqual((retry['id'], retry['created_at']), (original['id'], original['created_at']))
         self.assertEqual(pn.read_provider_notice(self.data, now=tomorrow + 1), retry)
 
-        self.assertTrue(pn.clear_provider_notice(self.data, provider='antigravity'))
+        self.assertTrue(pn.clear_provider_notice(self.data, provider='anthropic'))
         self.assertIsNone(pn.read_provider_notice(self.data, now=tomorrow + 1))
         other_retry = pn.record_provider_issue(self.data, 'insufficient_quota', provider='codex', now=tomorrow + 2)
         self.assertEqual(other['id'], other_retry['id'])
-        new = pn.record_provider_issue(self.data, 'RESOURCE_EXHAUSTED', provider='agy', now=tomorrow + 3)
+        new = pn.record_provider_issue(self.data, 'insufficient_quota', provider='claude', now=tomorrow + 3)
         self.assertNotEqual(new['id'], original['id'])
 
     def test_concurrent_quota_reports_share_one_notice(self):
@@ -431,7 +359,7 @@ class ModelSetupTests(unittest.TestCase):
         start = Barrier(8)
         def report(_):
             start.wait(timeout=5)
-            return pn.record_provider_issue(self.data, 'insufficient_quota', provider='agy')['id']
+            return pn.record_provider_issue(self.data, 'insufficient_quota', provider='codex')['id']
 
         with ThreadPoolExecutor(max_workers=8) as pool:
             self.assertEqual(set(pool.map(report, range(8))), {pn.read_provider_notice(self.data)['id']})
@@ -439,458 +367,22 @@ class ModelSetupTests(unittest.TestCase):
     def test_intermittent_model_success_cannot_repeat_the_quota_alert_within_a_day(self):
         import provider_notice as pn
 
-        first = pn.record_provider_issue(self.data, 'insufficient_quota', provider='agy', now=1000)
-        self.assertTrue(pn.clear_provider_notice(self.data, provider='agy'))
+        first = pn.record_provider_issue(self.data, 'insufficient_quota', provider='codex', now=1000)
+        self.assertTrue(pn.clear_provider_notice(self.data, provider='codex'))
         self.assertIsNone(pn.read_provider_notice(self.data, now=2000))
-        retry = pn.record_provider_issue(self.data, 'RESOURCE_EXHAUSTED', provider='agy', now=2000)
+        retry = pn.record_provider_issue(self.data, 'insufficient_quota', provider='codex', now=2000)
         self.assertEqual(first['id'], retry['id'])
-        self.assertTrue(pn.clear_provider_notice(self.data, provider='agy'))
-        self.assertFalse(pn.clear_provider_notice(self.data, provider='agy'))
-        next_day = pn.record_provider_issue(self.data, 'RESOURCE_EXHAUSTED', provider='agy', now=1000 + 86400)
+        self.assertTrue(pn.clear_provider_notice(self.data, provider='codex'))
+        self.assertFalse(pn.clear_provider_notice(self.data, provider='codex'))
+        next_day = pn.record_provider_issue(self.data, 'insufficient_quota', provider='codex', now=1000 + 86400)
         self.assertNotEqual(first['id'], next_day['id'])
 
-    def test_oversize_latest_recording_page_keeps_cursor_and_tool_identity(self):
-        from antigravity_bridge import build_antigravity_prompt, MAX_PROMPT_UTF8_BYTES
-        messages = [
-            {"role": "user", "content": "read pages"},
-            {"role": "assistant", "tool_calls": [{"id": "page", "function": {"name": "read_recording"}}]},
-            {"role": "tool", "tool_call_id": "page", "name": "read_recording",
-             "content": json.dumps({"next_offset": 12000, "spans": "x" * (MAX_PROMPT_UTF8_BYTES * 2), "end": "last-span"})},
-        ]
-        prompt, _, _ = build_antigravity_prompt(messages)
-        self.assertIn("name='read_recording'", prompt)
-        self.assertIn('"next_offset": 12000', prompt)
-        self.assertIn('last-span', prompt)
+    def test_legacy_antigravity_config_is_rejected_cleanly(self):
+        from superagent_runtime import resolve_superagent_llm
 
-    def test_antigravity_prompt_compaction_preserves_instructions_tools_and_endpoints(self):
-        import antigravity_bridge as ab
-
-        messages = [
-            {'role': 'system', 'content': 'SYSTEM_GUARDRAIL_MUST_SURVIVE'},
-            {'role': 'user', 'content': 'INITIAL_TASK_MERGE_YUESE_TO_OWNER'},
-        ]
-        for idx in range(60):
-            messages.append(
-                {
-                    'role': 'assistant',
-                    'content': '',
-                    'tool_calls': [{'id': f'call_{idx}', 'function': {'name': 'read_memory_notebook', 'arguments': '{"path":"people/约瑟.md"}'}}],
-                }
-            )
-            messages.append(
-                {
-                    'role': 'tool',
-                    'tool_call_id': f'call_{idx}',
-                    'name': 'read_memory_notebook',
-                    'content': f'STEP_{idx}_PAYLOAD:' + ('很长的历史录音转写片段与核查输出' * 900),
-                }
-            )
-        messages.append({'role': 'user', 'content': 'FINAL_TURN_FINISH_AND_REPORT'})
-        tools = [
-            {
-                'type': 'function',
-                'function': {
-                    'name': 'read_memory_notebook',
-                    'description': 'Read memory file',
-                    'parameters': {'type': 'object', 'properties': {'path': {'type': 'string'}}},
-                },
-            }
-        ]
-        prompt, schema, declared = ab.build_antigravity_prompt(messages, tools=tools)
-        self.assertIsNotNone(schema)
-        self.assertIn('read_memory_notebook', declared)
-        self.assertLessEqual(len(prompt.encode('utf-8')), ab.MAX_PROMPT_UTF8_BYTES + 2048)
-        self.assertIn('<available_functions>', prompt)
-        self.assertIn('SYSTEM_GUARDRAIL_MUST_SURVIVE', prompt)
-        self.assertIn('INITIAL_TASK_MERGE_YUESE_TO_OWNER', prompt)
-        self.assertIn('FINAL_TURN_FINISH_AND_REPORT', prompt)
-        self.assertIn('历史工具步骤已自动折叠', prompt)
-
-    def test_antigravity_acp_daemon_reuses_session_kv_cache_and_eliminates_subprocess_churn(self):
-        import antigravity_bridge as ab
-        import stat
-
-        ab.shutdown_antigravity_daemon()
-        ab.clear_antigravity_caches()
-        self.addCleanup(ab.shutdown_antigravity_daemon)
-        self.addCleanup(ab.clear_antigravity_caches)
-
-        state_file = self.data / 'fake-acp-metrics.json'
-        fake_cli = self.data / 'fake-agy'
-        fake_cli.write_text(
-            '#!/usr/bin/env python3\n'
-            'import json, os, sys\n'
-            f'METRICS = {str(state_file)!r}\n'
-            'def bump(key, extra=None):\n'
-            '    data = json.loads(open(METRICS).read()) if os.path.exists(METRICS) else {"acp_starts": 0, "models_cli": 0, "session_new": 0, "prompts": [], "closed": [], "perm_cancelled": 0}\n'
-            '    if isinstance(data.get(key), int):\n'
-            '        data[key] += 1\n'
-            '    elif isinstance(data.get(key), list) and extra is not None:\n'
-            '        data[key].append(extra)\n'
-            '    open(METRICS, "w").write(json.dumps(data))\n'
-            'if len(sys.argv) > 1 and sys.argv[1] == "models":\n'
-            '    bump("models_cli")\n'
-            '    print("gemini-4-carbon-medium\\tGemini 4 Carbon (Medium)")\n'
-            '    sys.exit(0)\n'
-            'assert len(sys.argv) > 1 and sys.argv[1] == "acp", sys.argv\n'
-            'bump("acp_starts")\n'
-            'turn = 0\n'
-            'for raw in sys.stdin:\n'
-            '    msg = json.loads(raw)\n'
-            '    if "result" in msg and msg.get("id") == 999:\n'
-            '        if msg["result"].get("outcome", {}).get("outcome") == "cancelled":\n'
-            '            bump("perm_cancelled")\n'
-            '        continue\n'
-            '    mid, rid, params = msg.get("method"), msg.get("id"), msg.get("params") or {}\n'
-            '    if mid == "initialize":\n'
-            '        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": 1}}) + "\\n")\n'
-            '    elif mid == "session/new":\n'
-            '        bump("session_new")\n'
-            '        sid = f"sess-{rid}"\n'
-            '        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "models": {"currentModelId": "gemini-4-carbon-medium", "availableModels": [{"modelId": "gemini-4-carbon-high"}, {"modelId": "gemini-4-carbon-medium"}]}}}) + "\\n")\n'
-            '    elif mid == "session/set_model":\n'
-            '        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {}}) + "\\n")\n'
-            '    elif mid == "session/prompt":\n'
-            '        turn += 1\n'
-            '        sid = params["sessionId"]\n'
-            '        ptext = params["prompt"][0]["text"]\n'
-            '        bump("prompts", {"sid": sid, "text": ptext})\n'
-            '        if turn == 1:\n'
-            '            # Simulate accidental host tool permission request; bridge must reject without hanging.\n'
-            '            sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": 999, "method": "session/request_permission", "params": {"sessionId": sid}}) + "\\n")\n'
-            '            sys.stdout.flush()\n'
-            '            out = \'```json\\n{"content": "", "tool_calls": [{"name": "read_memory_notebook", "arguments_json": "{\\\\\\"path\\\\\\":\\\\\\"USER.md\\\\\\"}"}]}\\n```\'\n'
-            '            cached = 0\n'
-            '        else:\n'
-            '            out = \'{"content": "已完成核对。", "tool_calls": []}\'\n'
-            '            cached = 8192\n'
-            '        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": sid, "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": out}}}}) + "\\n")\n'
-            '        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn", "usage": {"inputTokens": 200, "outputTokens": 30, "cachedReadTokens": cached, "totalTokens": 230 + cached}}}) + "\\n")\n'
-            '    elif mid == "session/close":\n'
-            '        bump("closed", params["sessionId"])\n'
-            '        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {}}) + "\\n")\n'
-            '    sys.stdout.flush()\n',
-            encoding='utf-8',
-        )
-        fake_cli.chmod(fake_cli.stat().st_mode | stat.S_IXUSR)
-
-        tools = [{
-            'type': 'function',
-            'function': {
-                'name': 'read_memory_notebook',
-                'description': 'Read notebook',
-                'parameters': {'type': 'object', 'properties': {'path': {'type': 'string'}}},
-            },
-        }]
-        with patch.dict(os.environ, {'MOMO_ANTIGRAVITY_CLI': str(fake_cli)}):
-            messages = [
-                {'role': 'system', 'content': 'Always verify USER.md first.'},
-                {'role': 'user', 'content': 'INITIAL_UNIQUE_USER_TURN_PAYLOAD'},
-            ]
-            r1 = ab.run_antigravity_completion(
-                model='gemini-4-carbon-high',
-                messages=messages,
-                tools=tools,
-                data_dir=self.data,
-            )
-            msg1 = r1['choices'][0]['message']
-            self.assertEqual(len(msg1['tool_calls']), 1)
-            self.assertEqual(msg1['tool_calls'][0]['function']['name'], 'read_memory_notebook')
-
-            # Turn 2 appends assistant tool_call + tool result; must reuse same ACP session and send ONLY delta.
-            messages.append(msg1)
-            messages.append({
-                'role': 'tool',
-                'tool_call_id': msg1['tool_calls'][0]['id'],
-                'name': 'read_memory_notebook',
-                'content': 'USER_PROFILE_CONTENT_OK',
-            })
-            r2 = ab.run_antigravity_completion(
-                model='gemini-4-carbon-high',
-                messages=messages,
-                tools=tools,
-                data_dir=self.data,
-            )
-            self.assertEqual(r2['choices'][0]['message']['content'], '已完成核对。')
-            self.assertEqual(r2['usage']['prompt_tokens_details']['cached_tokens'], 8192)
-
-            # Repeated model catalog checks must hit cache without spawning `agy models`.
-            for _ in range(5):
-                connected, catalog_ids = ab.list_antigravity_models()
-                self.assertTrue(connected)
-                self.assertEqual(catalog_ids[0], 'gemini-4-carbon-high')
-
-            # Oneshot call reuses the same ACP daemon process and immediately closes its session.
-            ab.run_antigravity_completion(
-                model='gemini-4-carbon-medium',
-                messages=[{'role': 'user', 'content': 'Summarize briefly.'}],
-                data_dir=self.data,
-                oneshot=True,
-            )
-
-        metrics = json.loads(state_file.read_text(encoding='utf-8'))
-        self.assertEqual(metrics['acp_starts'], 1)
-        self.assertEqual(metrics['models_cli'], 0)
-        self.assertEqual(metrics['session_new'], 2)  # 1 multi-turn session + 1 oneshot session
-        self.assertEqual(metrics['perm_cancelled'], 1)
-        self.assertIn('INITIAL_UNIQUE_USER_TURN_PAYLOAD', metrics['prompts'][0]['text'])
-        self.assertNotIn('INITIAL_UNIQUE_USER_TURN_PAYLOAD', metrics['prompts'][1]['text'])
-        self.assertIn('USER_PROFILE_CONTENT_OK', metrics['prompts'][1]['text'])
-        self.assertEqual(metrics['prompts'][0]['sid'], metrics['prompts'][1]['sid'])
-
-    def test_antigravity_swallowed_stream_errors_fallback_and_daemon_recycle(self):
-        import antigravity_bridge as ab
-
-        self.assertIsNotNone(ab._detect_agy_stream_error(
-            "⚠ API error (attempt 1): RESOURCE_EXHAUSTED (code 429): Resource has been exhausted.\n\n"
-            "⚠ RESOURCE_EXHAUSTED (code 429): Resource has been exhausted."
-        ))
-        self.assertIsNotNone(ab._detect_agy_stream_error(
-            "⚠ There was a network issue connecting to the server, please try again."
-        ))
-        self.assertIsNone(ab._detect_agy_stream_error(
-            "⚠ 注意：以下为正常回答内容\n第一条结论：一切正常。"
-        ))
-
-        ab.clear_antigravity_caches()
-        state_file = self.data / 'acp-fallback-state.json'
-        state_file.write_text(json.dumps({
-            'acp_starts': 0,
-            'attempted_models': [],
-            'fail_network_once': True,
-        }), encoding='utf-8')
-        fake_agy = self.data / 'fake-agy-fallback'
-        fake_agy.write_text(
-            "#!/usr/bin/env python3\n"
-            "import json, sys\n"
-            "from pathlib import Path\n"
-            f"STATE = Path({str(state_file)!r})\n"
-            "def bump(fn):\n"
-            "    d = json.loads(STATE.read_text(encoding='utf-8'))\n"
-            "    fn(d)\n"
-            "    STATE.write_text(json.dumps(d), encoding='utf-8')\n"
-            "    return d\n"
-            "bump(lambda d: d.__setitem__('acp_starts', d['acp_starts'] + 1))\n"
-            "models_by_sid = {}\n"
-            "seq = 0\n"
-            "for line in sys.stdin:\n"
-            "    msg = json.loads(line)\n"
-            "    mid = msg.get('id')\n"
-            "    method = msg.get('method')\n"
-            "    params = msg.get('params') or {}\n"
-            "    if method == 'initialize':\n"
-            "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {'protocolVersion': 1}}), flush=True)\n"
-            "    elif method == 'session/new':\n"
-            "        seq += 1\n"
-            "        sid = f'sid-{seq}'\n"
-            "        models_by_sid[sid] = 'vendorx-9-beta-high'\n"
-            "        avail = [{'modelId': m} for m in ('vendorx-9-alpha-medium', 'vendorx-9-alpha-high', 'vendorx-9-beta-medium', 'vendory-2-pro-medium')]\n"
-            "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {'sessionId': sid, 'models': {'currentModelId': 'vendorx-9-beta-high', 'availableModels': avail}}}), flush=True)\n"
-            "    elif method == 'session/set_model':\n"
-            "        models_by_sid[params['sessionId']] = params['modelId']\n"
-            "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {}}), flush=True)\n"
-            "    elif method == 'session/close':\n"
-            "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {}}), flush=True)\n"
-            "    elif method == 'session/prompt':\n"
-            "        sid = params['sessionId']\n"
-            "        cur = models_by_sid.get(sid, '')\n"
-            "        state = bump(lambda d: d['attempted_models'].append(cur))\n"
-            "        if cur == 'vendorx-9-alpha-medium':\n"
-            "            txt = '⚠ API error (attempt 1): RESOURCE_EXHAUSTED (code 429): retry in 30s.'\n"
-            "        elif state.get('fail_network_once'):\n"
-            "            bump(lambda d: d.__setitem__('fail_network_once', False))\n"
-            "            txt = '⚠ There was a network issue connecting to the server, please try again.'\n"
-            "        else:\n"
-            "            txt = f'FALLBACK_OK_FROM_{cur}'\n"
-            "        print(json.dumps({'jsonrpc': '2.0', 'method': 'session/update', 'params': {'sessionId': sid, 'update': {'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': txt}}}}), flush=True)\n"
-            "        print(json.dumps({'jsonrpc': '2.0', 'id': mid, 'result': {'stopReason': 'end_turn', 'usage': {'inputTokens': 10, 'outputTokens': 0 if txt.startswith('⚠') else 5, 'totalTokens': 15}}}), flush=True)\n",
-            encoding='utf-8',
-        )
-        fake_agy.chmod(0o755)
-
-        old_cli = os.environ.get('MOMO_ANTIGRAVITY_CLI')
-        os.environ['MOMO_ANTIGRAVITY_CLI'] = str(fake_agy)
-        try:
-            res = ab.run_antigravity_completion(
-                model='vendorx-9-alpha-medium',
-                messages=[{'role': 'user', 'content': 'Ping'}],
-                data_dir=self.data,
-            )
-            self.assertEqual(res['model'], 'vendorx-9-alpha-medium')
-            self.assertEqual(res['choices'][0]['message']['content'], 'FALLBACK_OK_FROM_vendorx-9-beta-medium')
-
-            # Second turn within dynamic retry-after window skips exhausted alpha-medium and uses discovered beta-medium.
-            res2 = ab.run_antigravity_completion(
-                model='vendorx-9-alpha-medium',
-                messages=[{'role': 'user', 'content': 'Ping 2'}],
-                data_dir=self.data,
-            )
-            self.assertEqual(res2['choices'][0]['message']['content'], 'FALLBACK_OK_FROM_vendorx-9-beta-medium')
-        finally:
-            ab.shutdown_antigravity_daemon()
-            ab.clear_antigravity_caches()
-            if old_cli is None:
-                os.environ.pop('MOMO_ANTIGRAVITY_CLI', None)
-            else:
-                os.environ['MOMO_ANTIGRAVITY_CLI'] = old_cli
-
-        final_state = json.loads(state_file.read_text(encoding='utf-8'))
-        self.assertEqual(final_state['attempted_models'], [
-            'vendorx-9-alpha-medium',
-            'vendorx-9-beta-medium',
-            'vendorx-9-beta-medium',
-            'vendorx-9-beta-medium',
-        ])
-        self.assertGreaterEqual(final_state['acp_starts'], 2)
-
-    def test_antigravity_priority_gate_serializes_background_and_preempts_for_interactive(self):
-        import threading
-        import time
-        import antigravity_bridge as ab
-
-        gate = ab._AgyPriorityGate(max_total=2, max_background=1, background_pace_seconds=0.02)
-        order: list[str] = []
-        bg_in_flight = 0
-        max_bg_in_flight = 0
-        lock = threading.Lock()
-        bg1_entered = threading.Event()
-        release_bg1 = threading.Event()
-        bg2_queued = threading.Event()
-
-        def run_bg1():
-            nonlocal bg_in_flight, max_bg_in_flight
-            with gate.acquire(background=True):
-                with lock:
-                    bg_in_flight += 1
-                    max_bg_in_flight = max(max_bg_in_flight, bg_in_flight)
-                    order.append('bg1-start')
-                bg1_entered.set()
-                release_bg1.wait(timeout=2.0)
-                with lock:
-                    order.append('bg1-end')
-                    bg_in_flight -= 1
-
-        def run_bg2():
-            nonlocal bg_in_flight, max_bg_in_flight
-            bg2_queued.set()
-            with gate.acquire(background=True):
-                with lock:
-                    bg_in_flight += 1
-                    max_bg_in_flight = max(max_bg_in_flight, bg_in_flight)
-                    order.append('bg2-start')
-                with lock:
-                    bg_in_flight -= 1
-
-        def run_interactive():
-            with gate.acquire(background=False):
-                with lock:
-                    order.append('interactive')
-
-        t1 = threading.Thread(target=run_bg1)
-        t1.start()
-        self.assertTrue(bg1_entered.wait(timeout=1.0))
-
-        t2 = threading.Thread(target=run_bg2)
-        t2.start()
-        self.assertTrue(bg2_queued.wait(timeout=1.0))
-        time.sleep(0.03)
-
-        # Cancelled background waiter must abort immediately without running.
-        cancelled_ev = threading.Event()
-        cancelled_ev.set()
-        with self.assertRaises(RuntimeError):
-            with gate.acquire(background=True, cancel_event=cancelled_ev):
-                order.append('should-not-run')
-
-        # Interactive request uses reserved slot immediately even while bg1 is still running and bg2 is queued!
-        ti = threading.Thread(target=run_interactive)
-        ti.start()
-        ti.join(timeout=1.0)
-        self.assertFalse(ti.is_alive())
-
-        release_bg1.set()
-        t1.join(timeout=1.0)
-        t2.join(timeout=1.0)
-
-        self.assertEqual(max_bg_in_flight, 1)
-        self.assertEqual(order, ['bg1-start', 'interactive', 'bg1-end', 'bg2-start'])
-
-    def test_antigravity_seeding_caps_max_workers_and_classifies_interactive_turns(self):
-        import sqlite3
-        import time
-        from types import SimpleNamespace
-        from unittest.mock import patch
-        from superagent_gateway import SuperAgentGateway
-        from superagent_runtime import DEFAULT_PROACTIVE_RULES, seed_superagent_orchestrator
-
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp) / 'work'
-            work.mkdir()
-            settings = {
-                'sources': [
-                    {'id': 'momo', 'revision': 3, 'installed': True, 'value': {'enabled': True, 'config': {
-                        'bridgeUrl': 'http://127.0.0.1:5678', 'pollIntervalMs': 250}}},
-                ],
-                'blocks': {
-                    'policy': {'revision': 1, 'value': {'rules': DEFAULT_PROACTIVE_RULES, 'sources': {'momo': {
-                        'allowed': [{'id': 'owner'}], 'bots': [{'id': 'recorder'}], 'admission': {}}}}},
-                    'eval': {'revision': 1, 'value': {'mode': 'observe', 'timeoutSeconds': 180, 'model': {'provider': 'antigravity', 'model': 'm1'}}},
-                    'executor': {'revision': 1, 'value': {'directory': str(work), 'maxWorkers': 3, 'model': {'provider': 'antigravity', 'model': 'm1'}}},
-                },
-            }
-            writes = []
-
-            def request(port, method, path, payload=None, **kwargs):
-                if method == 'PUT':
-                    writes.append((path, payload))
-                    if path == '/orchestrator/api/settings/executor':
-                        settings['blocks']['executor']['value'] = dict(payload['value'])
-                        settings['blocks']['executor']['revision'] += 1
-                    return {}
-                return {
-                    '/orchestrator/api/settings': settings,
-                    '/orchestrator/api/prompts': {'current': {'revision': 4}},
-                    '/orchestrator/api/state': {'health': {'runtime': {'state': 'ready'}}},
-                }[path]
-
-            with patch('superagent_runtime.dsh_api_request', side_effect=request):
-                seed_superagent_orchestrator(
-                    dsh_port=1235,
-                    gateway_port=5678,
-                    work_dir=work,
-                    proactive_mode='observe',
-                    dsh_provider='antigravity',
-                    model_id='m1',
-                )
-            self.assertEqual(settings['blocks']['executor']['value']['maxWorkers'], 1)
-
-            with patch('superagent_runtime.dsh_api_request', side_effect=request):
-                seed_superagent_orchestrator(
-                    dsh_port=1235,
-                    gateway_port=5678,
-                    work_dir=work,
-                    proactive_mode='observe',
-                    dsh_provider='anthropic',
-                    model_id='m1',
-                )
-            self.assertEqual(settings['blocks']['executor']['value']['maxWorkers'], 3)
-
-        conn = sqlite3.connect(':memory:')
-        conn.execute('CREATE TABLE chat_runs (status TEXT, cancel_requested INTEGER, updated_at REAL)')
-        fake_gw = SimpleNamespace(bridge=SimpleNamespace(db=conn))
-        orch_tools = [{'type': 'function', 'function': {'name': 'orchestrator_reply'}}]
-        worker_tools = [{'type': 'function', 'function': {'name': 'bash'}}]
-
-        # Proactive orchestrator wakeup with no active chat_runs is background:
-        self.assertFalse(SuperAgentGateway._is_interactive_orchestrator_turn(fake_gw, orch_tools))
-
-        # Active user chat run with orchestrator_reply is interactive:
-        conn.execute('INSERT INTO chat_runs VALUES (?, ?, ?)', ('started', 0, time.time()))
-        self.assertTrue(SuperAgentGateway._is_interactive_orchestrator_turn(fake_gw, orch_tools))
-
-        # Background worker turn during an active user chat run stays background:
-        self.assertFalse(SuperAgentGateway._is_interactive_orchestrator_turn(fake_gw, worker_tools))
-        conn.close()
+        self.file.write_text(json.dumps({'model': {'provider': 'antigravity', 'default': 'gemini-4-hydrogen-medium'}}))
+        with self.assertRaises(ValueError):
+            resolve_superagent_llm(self.data)
 
 
 if __name__ == '__main__':

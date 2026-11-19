@@ -479,7 +479,6 @@ final class DesktopModel {
             modelProvider = switch model["provider"] {
             case "openai-codex", "codex": .codex
             case "anthropic", "claude": .claude
-            case "antigravity", "google-antigravity": .antigravity
             default: .api
             }
             providerURL = model["base_url"] ?? ""; modelName = name
