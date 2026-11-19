@@ -50,7 +50,9 @@ FEISHU_DOMAINS = {
 FEISHU_READONLY_SCOPES = (
     "im:chat:readonly "
     "im:message:readonly "
-    "im:message.group_msg "
+    "im:message.group_msg:get_as_user "
+    "im:message.p2p_msg:get_as_user "
+    "search:message "
     "docx:document:readonly "
     "drive:drive:readonly "
     "offline_access"
@@ -831,19 +833,80 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
         token = _refresh_feishu_token(data_dir, cfg, http_fn=http_fn)
         headers = {"Authorization": f"Bearer {token}"}
 
-        # 1. Sync recent chats & messages (read-only)
-        chats_res = http_fn(
-            f"{ep['api_base']}/open-apis/im/v1/chats?page_size={DEFAULT_MAX_FEISHU_CHATS}",
-            headers=headers,
-        )
-        chats = ((chats_res.get("data") or {}).get("items") or [])[:DEFAULT_MAX_FEISHU_CHATS]
+        # 1. Sync recent group chats + discovered P2P (private) chats & messages (read-only)
         start_sec = int(time.time() - DEFAULT_SYNC_DAYS * 86400)
+        chat_entries: list[tuple[str, str]] = []
+        seen_chat_ids: set[str] = set()
 
-        for chat in chats:
-            chat_id = str(chat.get("chat_id") or "").strip()
-            if not chat_id:
-                continue
-            chat_name = str(chat.get("name") or chat.get("description") or "飞书会话").strip()
+        try:
+            chats_res = http_fn(
+                f"{ep['api_base']}/open-apis/im/v1/chats?page_size={DEFAULT_MAX_FEISHU_CHATS}",
+                headers=headers,
+            )
+            for chat in ((chats_res.get("data") or {}).get("items") or [])[:DEFAULT_MAX_FEISHU_CHATS]:
+                cid = str(chat.get("chat_id") or "").strip()
+                if cid and cid not in seen_chat_ids:
+                    seen_chat_ids.add(cid)
+                    cname = str(chat.get("name") or chat.get("description") or "飞书群聊").strip()
+                    chat_entries.append((cid, cname))
+        except ConnectorError:
+            pass
+
+        # 1b. Discover private (P2P) chats via user-scoped message search + persisted known_p2p_chat_ids
+        known_p2p = [str(c).strip() for c in (cfg.get("known_p2p_chat_ids") or []) if str(c).strip()]
+        discovered_p2p: list[str] = []
+        try:
+            search_msg_ids: list[str] = []
+            for query_seed in ("", "的", "好"):
+                try:
+                    search_res = http_fn(
+                        f"{ep['api_base']}/open-apis/search/v2/message?page_size=50",
+                        method="POST",
+                        headers=headers,
+                        body={
+                            "query": query_seed,
+                            "from_types": ["user"],
+                            "start_time": str(start_sec),
+                        },
+                    )
+                    found_ids = (search_res.get("data") or {}).get("items") or []
+                    for mid in found_ids:
+                        mid_str = str(mid).strip()
+                        if mid_str and mid_str not in search_msg_ids:
+                            search_msg_ids.append(mid_str)
+                    if search_msg_ids:
+                        break
+                except ConnectorError:
+                    continue
+            for mid in search_msg_ids[:25]:
+                try:
+                    m_detail = http_fn(
+                        f"{ep['api_base']}/open-apis/im/v1/messages/{mid}",
+                        headers=headers,
+                    )
+                    m_items = (m_detail.get("data") or {}).get("items") or []
+                    for m_obj in m_items:
+                        cid = str(m_obj.get("chat_id") or "").strip()
+                        if cid and cid not in seen_chat_ids and cid not in discovered_p2p:
+                            discovered_p2p.append(cid)
+                except ConnectorError:
+                    continue
+        except ConnectorError:
+            pass
+
+        merged_p2p: list[str] = []
+        for cid in [*discovered_p2p, *known_p2p]:
+            if cid and cid not in seen_chat_ids and cid not in merged_p2p:
+                merged_p2p.append(cid)
+        merged_p2p = merged_p2p[:30]
+        if merged_p2p != known_p2p:
+            _update_connector_section(data_dir, "feishu", {"known_p2p_chat_ids": merged_p2p})
+
+        for cid in merged_p2p:
+            seen_chat_ids.add(cid)
+            chat_entries.append((cid, f"飞书私聊 ({cid[-6:]})"))
+
+        for chat_id, chat_name in chat_entries:
             try:
                 msg_res = http_fn(
                     f"{ep['api_base']}/open-apis/im/v1/messages?"
