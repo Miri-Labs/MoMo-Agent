@@ -239,7 +239,11 @@ def _cmd_connectors(data: Path, args: argparse.Namespace) -> dict:
         connectors_status,
         disconnect_connector,
         list_connector_items,
+        mute_connector_channel,
         read_connector_item,
+        read_feishu_doc_live,
+        read_feishu_thread_live,
+        search_feishu_live,
         sync_connectors,
     )
     action = str(getattr(args, "action", "") or "").strip()
@@ -307,6 +311,30 @@ def _cmd_connectors(data: Path, args: argparse.Namespace) -> dict:
         store = _open_context(data)
         try:
             return sync_connectors(data, store, target=args.connector)
+        finally:
+            store.close()
+    if action == "live-doc":
+        return read_feishu_doc_live(data, args.url or args.target)
+    if action == "live-thread":
+        return read_feishu_thread_live(
+            data,
+            args.chat_id or args.target,
+            limit=args.limit,
+            include_bots=bool(getattr(args, "include_bots", False)),
+        )
+    if action == "live-search":
+        return search_feishu_live(data, args.query or args.target, limit=args.limit)
+    if action in ("mute", "unmute"):
+        conn_target = args.connector if args.connector in ("feishu", "email") else "feishu"
+        store = _open_context(data)
+        try:
+            return mute_connector_channel(
+                data,
+                store,
+                conn_target,
+                args.target or args.chat_id,
+                mute=(action == "mute"),
+            )
         finally:
             store.close()
     if action == "disconnect":
@@ -770,7 +798,20 @@ def main() -> int:
     conn_p = sub.add_parser("connectors", help="Read and configure read-only external connectors (Feishu personal OAuth & IMAP Email)")
     conn_p.add_argument(
         "--action",
-        choices=("status", "items", "item", "sync", "configure-email", "start-feishu-oauth", "disconnect"),
+        choices=(
+            "status",
+            "items",
+            "item",
+            "sync",
+            "configure-email",
+            "start-feishu-oauth",
+            "disconnect",
+            "live-doc",
+            "live-thread",
+            "live-search",
+            "mute",
+            "unmute",
+        ),
         default="status",
         help="Action to perform on connectors",
     )
@@ -789,6 +830,11 @@ def main() -> int:
     conn_p.add_argument("--app-secret", default="", help="Feishu app_secret for start-feishu-oauth")
     conn_p.add_argument("--domain", choices=("feishu", "lark"), default="feishu", help="Feishu or Lark domain")
     conn_p.add_argument("--open", dest="open_browser", action="store_true", help="Open Feishu OAuth authorize URL in default browser")
+    conn_p.add_argument("--url", default="", help="Feishu document URL or token for live-doc")
+    conn_p.add_argument("--chat-id", default="", help="Feishu chat_id for live-thread or mute/unmute")
+    conn_p.add_argument("--query", default="", help="Keyword for live-search")
+    conn_p.add_argument("--target", default="", help="Target chat_id/channel name for mute/unmute")
+    conn_p.add_argument("--include-bots", action="store_true", help="Include bot/app messages in live-thread")
 
     sub.add_parser("situation", help="Read unified situational context across devices, mobility, sleep/vitals, and schedule")
 

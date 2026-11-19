@@ -345,6 +345,59 @@
     }
   }
 
+  function choiceCardId(spec) {
+    const raw = JSON.stringify([spec.title || '', !!spec.multi, (spec.options || []).map(o => [o.label, o.detail, o.reply])]);
+    let hash = 2166136261;
+    for (let i = 0; i < raw.length; i++) {
+      hash ^= raw.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return 'choice-' + (hash >>> 0).toString(36);
+  }
+
+  function parseChoiceSpec(rawText) {
+    if (typeof rawText !== 'string' || !rawText.trim()) return null;
+    let parsed;
+    try { parsed = JSON.parse(rawText.trim()); } catch { return null; }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const rawOptions = Array.isArray(parsed.options) ? parsed.options : [];
+    const options = [];
+    for (const entry of rawOptions) {
+      if (options.length >= 12) break;
+      if (typeof entry === 'string') {
+        const label = entry.trim();
+        if (label) options.push({ label, detail: '', reply: label });
+      } else if (entry && typeof entry === 'object') {
+        const label = String(entry.label || entry.title || entry.text || '').trim();
+        if (!label) continue;
+        const detail = String(entry.detail || entry.subtitle || entry.meta || '').trim();
+        const reply = String(entry.reply || label).trim() || label;
+        options.push({ label, detail, reply });
+      }
+    }
+    if (!options.length) return null;
+    const spec = {
+      title: String(parsed.title || parsed.question || '').trim(),
+      multi: parsed.multi !== false && parsed.multi_select !== false && parsed.single !== true,
+      options,
+      submitLabel: String(parsed.submit_label || parsed.submitLabel || '').trim() || t('发送回复'),
+      dismissLabel: String(parsed.dismiss_label || parsed.dismissLabel || '').trim() || t('先不用')
+    };
+    spec.id = choiceCardId(spec);
+    return spec;
+  }
+
+  function formatChoiceReply(spec, indices) {
+    if (!spec || !Array.isArray(spec.options)) return '';
+    const picked = [...new Set((indices || []).map(Number))]
+      .filter(i => Number.isInteger(i) && i >= 0 && i < spec.options.length)
+      .sort((a, b) => a - b)
+      .map(i => spec.options[i]);
+    if (!picked.length) return '';
+    if (picked.length === 1) return picked[0].reply || picked[0].label;
+    return picked.map((opt, idx) => `${idx + 1}. ${opt.reply || opt.label}`).join('\n');
+  }
+
   function setLocale(locale) {
     globalThis.MoMoChatLocalization?.setLocale(locale);
     const language = String(locale || 'en').toLowerCase().split(/[-_]/)[0];
@@ -352,5 +405,5 @@
       (language === 'zh' ? 'zh-Hans' : ['en', 'ja', 'ko'].includes(language) ? language : 'en');
     segmenter = new Intl.Segmenter(locale || 'en', {granularity:'grapheme'});
   }
-  globalThis.MoMoChatCore = { setLocale, advance, stablePrefix, graphemes, PinState, turns, shouldShowTimestampMarker, formatTimestampMarker, toolLabel, toolPreview, toolOutcome, responseActivity, contextActivityLabel, actionReceipt, actionCard, toolDisplayState, processSummary, replyFinished, MarkdownStream, isRecordingSourceURL, installRecordingSourceLinks };
+  globalThis.MoMoChatCore = { setLocale, advance, stablePrefix, graphemes, PinState, turns, shouldShowTimestampMarker, formatTimestampMarker, toolLabel, toolPreview, toolOutcome, responseActivity, contextActivityLabel, actionReceipt, actionCard, toolDisplayState, processSummary, replyFinished, MarkdownStream, isRecordingSourceURL, installRecordingSourceLinks, parseChoiceSpec, formatChoiceReply, choiceCardId };
 })();

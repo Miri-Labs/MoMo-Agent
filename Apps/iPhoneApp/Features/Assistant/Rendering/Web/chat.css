@@ -589,3 +589,159 @@ input[type=checkbox] { accent-color: var(--ink); }
 @keyframes user-enter { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 :root[data-reduce-motion=true] * { animation: none !important; transition: none !important; }
+
+/* Inline interactive choice / multi-select form card */
+.momo-choice-card {
+  margin: 10px 0 4px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  box-shadow: var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.momo-choice-title {
+  font-size: calc(var(--chat-font-size) * 0.92);
+  font-weight: 600;
+  color: var(--ink);
+  padding: 0 2px;
+}
+.momo-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.momo-choice-opt {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  color: var(--ink);
+  font-family: var(--ui);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.momo-choice-opt:hover {
+  background: var(--surface);
+}
+.momo-choice-opt.selected {
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
+.momo-choice-box,
+.momo-choice-radio {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border: 1.5px solid var(--line-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--paper);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.momo-choice-box { border-radius: 5px; }
+.momo-choice-radio { border-radius: 999px; }
+.momo-choice-opt.selected .momo-choice-box,
+.momo-choice-opt.selected .momo-choice-radio {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.momo-choice-opt.selected .momo-choice-radio::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--paper);
+}
+.momo-choice-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.momo-choice-label {
+  font-size: calc(var(--chat-font-size) * 0.94);
+  line-height: 1.4;
+  color: var(--ink);
+  word-break: break-word;
+}
+.momo-choice-detail {
+  font-size: calc(var(--chat-font-size) * 0.8);
+  line-height: 1.35;
+  color: var(--muted);
+}
+.momo-choice-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+}
+.momo-choice-submit {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--ui);
+  font-size: calc(var(--chat-font-size) * 0.86);
+  font-weight: 500;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+.momo-choice-submit:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+.momo-choice-dismiss {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--ui);
+  font-size: calc(var(--chat-font-size) * 0.84);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.momo-choice-dismiss:hover { color: var(--ink); }
+.momo-choice-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: calc(var(--chat-font-size) * 0.84);
+  color: var(--muted);
+}
+.momo-choice-done-badge {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 500;
+}
+.momo-choice-done-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.momo-choice-dismissed {
+  font-size: calc(var(--chat-font-size) * 0.84);
+  color: var(--muted);
+}

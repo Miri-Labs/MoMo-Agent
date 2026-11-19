@@ -821,14 +821,56 @@ def _extract_feishu_message_text(msg_type: str, raw_content: str) -> str:
     return f"[{msg_type}] {str(parsed.get('file_name') or parsed.get('title') or '').strip()}".strip()
 
 
+def _is_feishu_bot_message(msg: dict[str, Any]) -> bool:
+    """Return True for Feishu bot/app/system/interactive-card messages."""
+    mtype = str(msg.get("msg_type") or "").strip().lower()
+    if mtype in ("interactive", "system"):
+        return True
+    sender = msg.get("sender") if isinstance(msg.get("sender"), dict) else {}
+    stype = str(sender.get("sender_type") or "").strip().lower()
+    if stype and stype != "user":
+        return True
+    sid = str(sender.get("id") or "").strip().lower()
+    if sid.startswith("cli_"):
+        return True
+    return False
+
+
+def _purge_feishu_bot_items(store) -> int:
+    """Remove previously cached Feishu bot/app/interactive alert messages."""
+    ensure_connector_tables(store.db)
+    rows = store.db.execute(
+        "SELECT id, sender, metadata FROM connector_items WHERE connector='feishu' AND item_type='feishu_message'"
+    ).fetchall()
+    to_delete: list[str] = []
+    for r in rows:
+        sid = str(r["sender"] or "").strip().lower()
+        try:
+            meta = json.loads(r["metadata"] or "{}")
+        except ValueError:
+            meta = {}
+        mtype = str(meta.get("msg_type") or "").strip().lower()
+        stype = str(meta.get("sender_type") or "").strip().lower()
+        if sid.startswith("cli_") or mtype in ("interactive", "system") or (stype and stype != "user"):
+            to_delete.append(r["id"])
+    if not to_delete:
+        return 0
+    with store.write():
+        store.db.executemany("DELETE FROM connector_items WHERE id=?", [(i,) for i in to_delete])
+    return len(to_delete)
+
+
 def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[str, Any]:
     cfg = load_connectors_config(data_dir).get("feishu") or {}
     if not cfg.get("enabled") or not cfg.get("connected"):
         return {"connector": "feishu", "skipped": True, "synced": 0}
     domain = str(cfg.get("domain") or "feishu").strip()
     ep = _feishu_endpoints(domain)
+    ignore_bots = bool(cfg.get("ignore_bots", True))
+    muted_chats = {str(x).strip().lower() for x in (cfg.get("muted_chats") or []) if str(x).strip()}
     synced = 0
     changed = 0
+    purged_bots = _purge_feishu_bot_items(store) if ignore_bots else 0
     try:
         token = _refresh_feishu_token(data_dir, cfg, http_fn=http_fn)
         headers = {"Authorization": f"Bearer {token}"}
@@ -838,6 +880,13 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
         chat_entries: list[tuple[str, str]] = []
         seen_chat_ids: set[str] = set()
 
+        def _is_muted(cid: str, cname: str) -> bool:
+            if not muted_chats:
+                return False
+            c_low = cid.lower()
+            n_low = cname.lower()
+            return any(m == c_low or m == n_low or (len(m) >= 2 and m in n_low) for m in muted_chats)
+
         try:
             chats_res = http_fn(
                 f"{ep['api_base']}/open-apis/im/v1/chats?page_size={DEFAULT_MAX_FEISHU_CHATS}",
@@ -845,10 +894,11 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
             )
             for chat in ((chats_res.get("data") or {}).get("items") or [])[:DEFAULT_MAX_FEISHU_CHATS]:
                 cid = str(chat.get("chat_id") or "").strip()
+                cname = str(chat.get("name") or chat.get("description") or "飞书群聊").strip()
                 if cid and cid not in seen_chat_ids:
                     seen_chat_ids.add(cid)
-                    cname = str(chat.get("name") or chat.get("description") or "飞书群聊").strip()
-                    chat_entries.append((cid, cname))
+                    if not _is_muted(cid, cname):
+                        chat_entries.append((cid, cname))
         except ConnectorError:
             pass
 
@@ -886,8 +936,10 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
                     )
                     m_items = (m_detail.get("data") or {}).get("items") or []
                     for m_obj in m_items:
+                        if ignore_bots and _is_feishu_bot_message(m_obj):
+                            continue
                         cid = str(m_obj.get("chat_id") or "").strip()
-                        if cid and cid not in seen_chat_ids and cid not in discovered_p2p:
+                        if cid and cid not in seen_chat_ids and cid not in discovered_p2p and not _is_muted(cid, ""):
                             discovered_p2p.append(cid)
                 except ConnectorError:
                     continue
@@ -896,7 +948,7 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
 
         merged_p2p: list[str] = []
         for cid in [*discovered_p2p, *known_p2p]:
-            if cid and cid not in seen_chat_ids and cid not in merged_p2p:
+            if cid and cid not in seen_chat_ids and cid not in merged_p2p and not _is_muted(cid, ""):
                 merged_p2p.append(cid)
         merged_p2p = merged_p2p[:30]
         if merged_p2p != known_p2p:
@@ -907,6 +959,8 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
             chat_entries.append((cid, f"飞书私聊 ({cid[-6:]})"))
 
         for chat_id, chat_name in chat_entries:
+            if _is_muted(chat_id, chat_name):
+                continue
             try:
                 msg_res = http_fn(
                     f"{ep['api_base']}/open-apis/im/v1/messages?"
@@ -927,6 +981,8 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
             for m in items:
                 if m.get("deleted"):
                     continue
+                if ignore_bots and _is_feishu_bot_message(m):
+                    continue
                 mid = str(m.get("message_id") or "").strip()
                 if not mid:
                     continue
@@ -936,7 +992,8 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
                 if not text:
                     continue
                 sender_obj = m.get("sender") if isinstance(m.get("sender"), dict) else {}
-                sender_id = str(sender_obj.get("id") or sender_obj.get("sender_type") or "unknown")
+                sender_type = str(sender_obj.get("sender_type") or "user").strip().lower()
+                sender_id = str(sender_obj.get("id") or sender_type or "unknown")
                 create_ms = float(m.get("create_time") or 0)
                 occurred_at = (create_ms / 1000.0) if create_ms > 1e11 else (create_ms or time.time())
                 title = f"{chat_name} · {text.splitlines()[0][:60]}"
@@ -951,7 +1008,12 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
                     channel=chat_name,
                     content=f"[{chat_name}] {text}",
                     occurred_at=occurred_at,
-                    metadata={"chat_id": chat_id, "message_id": mid, "msg_type": mtype},
+                    metadata={
+                        "chat_id": chat_id,
+                        "message_id": mid,
+                        "msg_type": mtype,
+                        "sender_type": sender_type,
+                    },
                 ):
                     changed += 1
                 synced += 1
@@ -1022,7 +1084,7 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
             pass
 
         _update_connector_section(data_dir, "feishu", {"last_synced": time.time(), "last_error": None})
-        return {"connector": "feishu", "synced": synced, "changed": changed}
+        return {"connector": "feishu", "synced": synced, "changed": changed, "purged_bots": purged_bots}
     except Exception as exc:
         err_msg = str(exc)[:300]
         _update_connector_section(data_dir, "feishu", {"last_error": err_msg})
@@ -1173,19 +1235,298 @@ def read_connector_item(store, item_id: str) -> dict[str, Any] | None:
 
 
 def recent_connector_digest(store, *, hours: float = 24.0, limit: int = 12) -> list[dict[str, Any]]:
-    """Compact recent Feishu & Email items for Morning Briefing and Dream context."""
+    """Compact, thread-grouped recent Feishu & Email items for Life Pulse, Morning Briefing, and Dream.
+
+    Bot/app alert messages are excluded, and fragmented Feishu messages in the same chat thread
+    are grouped into a single readable conversation entry so chatty threads don't crowd out other items.
+    """
+    ensure_connector_tables(store.db)
     since = time.time() - max(1.0, hours) * 3600.0
-    items = list_connector_items(store, connector="all", limit=limit, since=since)
-    return [
-        {
-            "id": it["id"],
-            "connector": it["connector"],
-            "type": it["item_type"],
-            "channel": it["channel"],
-            "sender": it["sender"],
-            "title": it["title"],
-            "preview": it["preview"],
-            "occurred_at": it["occurred_at"],
-        }
-        for it in items
-    ]
+    raw_limit = max(24, min(200, int(limit) * 6))
+    rows = store.db.execute(
+        "SELECT id, connector, item_type, thread_id, title, sender, channel, substr(content, 1, 320) AS preview, occurred_at, metadata "
+        "FROM connector_items WHERE occurred_at>=? ORDER BY occurred_at DESC LIMIT ?",
+        (since, raw_limit),
+    ).fetchall()
+
+    digest: list[dict[str, Any]] = []
+    feishu_threads: dict[str, dict[str, Any]] = {}
+
+    for r in rows:
+        it = dict(r)
+        try:
+            meta = json.loads(it.get("metadata") or "{}")
+        except ValueError:
+            meta = {}
+        if it["connector"] == "feishu" and it["item_type"] == "feishu_message":
+            sid = str(it.get("sender") or "").strip().lower()
+            mtype = str(meta.get("msg_type") or "").strip().lower()
+            stype = str(meta.get("sender_type") or "").strip().lower()
+            if sid.startswith("cli_") or mtype in ("interactive", "system") or (stype and stype != "user"):
+                continue
+            tid = str(it.get("thread_id") or "").strip()
+            if tid and tid in feishu_threads:
+                entry = feishu_threads[tid]
+                entry["message_count"] += 1
+                if len(entry["_snippets"]) < 4:
+                    clean_line = str(it["preview"] or "").strip()
+                    prefix = f"[{it['channel']}] "
+                    if clean_line.startswith(prefix):
+                        clean_line = clean_line[len(prefix):].strip()
+                    if clean_line:
+                        entry["_snippets"].append(clean_line[:110])
+                continue
+            if len(digest) >= limit:
+                continue
+            first_line = str(it["preview"] or "").strip()
+            prefix = f"[{it['channel']}] "
+            if first_line.startswith(prefix):
+                first_line = first_line[len(prefix):].strip()
+            entry = {
+                "id": it["id"],
+                "connector": it["connector"],
+                "type": it["item_type"],
+                "thread_id": tid,
+                "channel": it["channel"],
+                "sender": it["sender"],
+                "title": it["title"],
+                "preview": first_line[:220],
+                "occurred_at": it["occurred_at"],
+                "message_count": 1,
+                "_snippets": [first_line[:110]] if first_line else [],
+            }
+            if tid:
+                feishu_threads[tid] = entry
+            digest.append(entry)
+        else:
+            if len(digest) >= limit:
+                continue
+            digest.append(
+                {
+                    "id": it["id"],
+                    "connector": it["connector"],
+                    "type": it["item_type"],
+                    "thread_id": it.get("thread_id") or "",
+                    "channel": it["channel"],
+                    "sender": it["sender"],
+                    "title": it["title"],
+                    "preview": str(it["preview"] or "")[:240],
+                    "occurred_at": it["occurred_at"],
+                }
+            )
+
+    for entry in digest:
+        snippets = entry.pop("_snippets", None)
+        if snippets and entry.get("message_count", 1) > 1:
+            # Show chronological order (oldest -> newest) for multi-message thread context.
+            ordered = list(reversed(snippets))
+            entry["preview"] = " / ".join(ordered)[:260]
+    return digest
+
+
+# ── Live Read-Only Agent Tools & Channel Muting ──────────────────────────────
+
+
+_FEISHU_DOC_URL_RE = re.compile(r"/(?:docx|docs|wiki)/([A-Za-z0-9_-]{8,})")
+
+
+def extract_feishu_doc_token(url_or_token: str) -> str:
+    raw = str(url_or_token or "").strip()
+    if not raw:
+        raise ConnectorError("请提供飞书文档链接或 document_id。")
+    match = _FEISHU_DOC_URL_RE.search(raw)
+    if match:
+        return match.group(1)
+    if re.fullmatch(r"[A-Za-z0-9_-]{8,}", raw):
+        return raw
+    raise ConnectorError(f"无法从输入中识别飞书文档 token：{raw[:80]}")
+
+
+def read_feishu_doc_live(data_dir: Path, url_or_token: str, *, http_fn=_http_json) -> dict[str, Any]:
+    """Read a Feishu cloud document directly in real time via personal read-only OAuth."""
+    cfg = load_connectors_config(data_dir).get("feishu") or {}
+    if not cfg.get("connected"):
+        raise ConnectorError("飞书连接器尚未授权连接。")
+    domain = str(cfg.get("domain") or "feishu").strip()
+    ep = _feishu_endpoints(domain)
+    token = _refresh_feishu_token(data_dir, cfg, http_fn=http_fn)
+    headers = {"Authorization": f"Bearer {token}"}
+    doc_token = extract_feishu_doc_token(url_or_token)
+
+    title = ""
+    try:
+        meta_res = http_fn(f"{ep['api_base']}/open-apis/docx/v1/documents/{doc_token}", headers=headers)
+        title = str((((meta_res.get("data") or {}).get("document")) or {}).get("title") or "").strip()
+    except ConnectorError:
+        title = ""
+
+    raw_res = http_fn(
+        f"{ep['api_base']}/open-apis/docx/v1/documents/{doc_token}/raw_content",
+        headers=headers,
+    )
+    content = str(((raw_res.get("data") or {}).get("content")) or "").strip()
+    return {
+        "connector": "feishu",
+        "document_id": doc_token,
+        "title": title or doc_token,
+        "content": content,
+        "length": len(content),
+    }
+
+
+def read_feishu_thread_live(
+    data_dir: Path,
+    chat_id: str,
+    *,
+    limit: int = 30,
+    include_bots: bool = False,
+    http_fn=_http_json,
+) -> dict[str, Any]:
+    """Read recent messages in a Feishu chat thread live (chronological order, bots filtered by default)."""
+    cfg = load_connectors_config(data_dir).get("feishu") or {}
+    if not cfg.get("connected"):
+        raise ConnectorError("飞书连接器尚未授权连接。")
+    cid = str(chat_id or "").strip()
+    if not cid:
+        raise ConnectorError("请提供飞书会话 chat_id。")
+    domain = str(cfg.get("domain") or "feishu").strip()
+    ep = _feishu_endpoints(domain)
+    token = _refresh_feishu_token(data_dir, cfg, http_fn=http_fn)
+    headers = {"Authorization": f"Bearer {token}"}
+    page_size = max(1, min(50, int(limit)))
+
+    msg_res = http_fn(
+        f"{ep['api_base']}/open-apis/im/v1/messages?"
+        + urlencode(
+            {
+                "container_id_type": "chat",
+                "container_id": cid,
+                "sort_type": "ByCreateTimeDesc",
+                "page_size": str(page_size),
+            }
+        ),
+        headers=headers,
+    )
+    raw_items = (msg_res.get("data") or {}).get("items") or []
+    messages: list[dict[str, Any]] = []
+    for m in reversed(raw_items):
+        if m.get("deleted"):
+            continue
+        if not include_bots and _is_feishu_bot_message(m):
+            continue
+        mtype = str(m.get("msg_type") or "text")
+        text = _extract_feishu_message_text(mtype, str(((m.get("body") or {}).get("content")) or ""))
+        if not text:
+            continue
+        sender_obj = m.get("sender") if isinstance(m.get("sender"), dict) else {}
+        create_ms = float(m.get("create_time") or 0)
+        occurred_at = (create_ms / 1000.0) if create_ms > 1e11 else (create_ms or time.time())
+        messages.append(
+            {
+                "message_id": str(m.get("message_id") or ""),
+                "sender_id": str(sender_obj.get("id") or ""),
+                "sender_type": str(sender_obj.get("sender_type") or "user"),
+                "msg_type": mtype,
+                "text": text,
+                "occurred_at": occurred_at,
+            }
+        )
+    return {"connector": "feishu", "chat_id": cid, "count": len(messages), "messages": messages}
+
+
+def search_feishu_live(
+    data_dir: Path,
+    query: str,
+    *,
+    limit: int = 15,
+    http_fn=_http_json,
+) -> dict[str, Any]:
+    """Live-search Feishu human messages using user_access_token and hydrate message text."""
+    cfg = load_connectors_config(data_dir).get("feishu") or {}
+    if not cfg.get("connected"):
+        raise ConnectorError("飞书连接器尚未授权连接。")
+    q = str(query or "").strip()
+    if not q:
+        raise ConnectorError("请提供搜索关键词。")
+    domain = str(cfg.get("domain") or "feishu").strip()
+    ep = _feishu_endpoints(domain)
+    token = _refresh_feishu_token(data_dir, cfg, http_fn=http_fn)
+    headers = {"Authorization": f"Bearer {token}"}
+    cap = max(1, min(25, int(limit)))
+
+    search_res = http_fn(
+        f"{ep['api_base']}/open-apis/search/v2/message?page_size={cap}",
+        method="POST",
+        headers=headers,
+        body={"query": q, "from_types": ["user"]},
+    )
+    msg_ids = [str(mid).strip() for mid in ((search_res.get("data") or {}).get("items") or []) if str(mid).strip()][:cap]
+    hits: list[dict[str, Any]] = []
+    for mid in msg_ids:
+        try:
+            detail = http_fn(f"{ep['api_base']}/open-apis/im/v1/messages/{mid}", headers=headers)
+            for m in (detail.get("data") or {}).get("items") or []:
+                if _is_feishu_bot_message(m):
+                    continue
+                mtype = str(m.get("msg_type") or "text")
+                text = _extract_feishu_message_text(mtype, str(((m.get("body") or {}).get("content")) or ""))
+                if not text:
+                    continue
+                sender_obj = m.get("sender") if isinstance(m.get("sender"), dict) else {}
+                create_ms = float(m.get("create_time") or 0)
+                occurred_at = (create_ms / 1000.0) if create_ms > 1e11 else (create_ms or time.time())
+                hits.append(
+                    {
+                        "message_id": mid,
+                        "chat_id": str(m.get("chat_id") or ""),
+                        "sender_id": str(sender_obj.get("id") or ""),
+                        "text": text,
+                        "occurred_at": occurred_at,
+                    }
+                )
+        except ConnectorError:
+            continue
+    return {"connector": "feishu", "query": q, "count": len(hits), "matches": hits}
+
+
+def mute_connector_channel(
+    data_dir: Path,
+    store,
+    connector: str,
+    target: str,
+    *,
+    mute: bool = True,
+    clear_cached: bool = True,
+) -> dict[str, Any]:
+    """Add or remove a chat_id / channel name in the connector's local mute list."""
+    if connector not in CONNECTOR_KINDS:
+        raise ConnectorError("未知的连接器类型")
+    key = str(target or "").strip()
+    if not key:
+        raise ConnectorError("请提供要静音的会话 ID 或名称。")
+    cfg = load_connectors_config(data_dir).get(connector) or {}
+    existing = [str(x).strip() for x in (cfg.get("muted_chats") or []) if str(x).strip()]
+    lower_map = {x.lower(): x for x in existing}
+    if mute:
+        lower_map[key.lower()] = key
+    else:
+        lower_map.pop(key.lower(), None)
+    updated = list(lower_map.values())
+    _update_connector_section(data_dir, connector, {"muted_chats": updated})
+
+    removed = 0
+    if mute and clear_cached and store is not None:
+        ensure_connector_tables(store.db)
+        with store.write():
+            cur = store.db.execute(
+                "DELETE FROM connector_items WHERE connector=? AND (lower(thread_id)=? OR lower(channel)=? OR lower(channel) LIKE ?)",
+                (connector, key.lower(), key.lower(), f"%{key.lower()}%"),
+            )
+            removed = cur.rowcount
+    return {
+        "connector": connector,
+        "target": key,
+        "muted": mute,
+        "muted_chats": updated,
+        "removed_items": removed,
+    }

@@ -24,6 +24,7 @@ struct ChatRendererView: View {
     var onSystemAction: (UUID) -> Void = { _ in }
     var onAttachment: (UUID) -> Void = { _ in }
     var onRetryMessage: (UUID) -> Void = { _ in }
+    var onQuickReply: (String) -> Void = { _ in }
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var openURL
@@ -52,7 +53,7 @@ struct ChatRendererView: View {
                         failed: { renderingFailed = true }, rendered: { rendererReady = true },
                         recovering: { rendererReady = false },
                         open: { openURL($0) }, regenerate: onRegenerate,
-                        readingPosition: onReadingPosition, systemAction: onSystemAction, attachment: onAttachment, retryMessage: onRetryMessage)
+                        readingPosition: onReadingPosition, systemAction: onSystemAction, attachment: onAttachment, retryMessage: onRetryMessage, quickReply: onQuickReply)
                         .opacity(rendererReady ? 1 : 0)
                         .accessibilityHidden(!rendererReady)
                         .accessibilityIdentifier("assistant.transcript")
@@ -327,6 +328,7 @@ private struct ChatWebSurface: ChatWebRepresentable {
     let systemAction: (UUID) -> Void
     let attachment: (UUID) -> Void
     let retryMessage: (UUID) -> Void
+    let quickReply: (String) -> Void
 
     func makeCoordinator() -> ChatWebCoordinator {
         let coordinator = ChatWebCoordinator(failed: failed, open: open, regenerate: regenerate, readingPosition: readingPosition, systemAction: systemAction)
@@ -335,6 +337,7 @@ private struct ChatWebSurface: ChatWebRepresentable {
         coordinator.setActive(active)
         coordinator.attachment = attachment
         coordinator.retryMessage = retryMessage
+        coordinator.quickReply = quickReply
         return coordinator
     }
 
@@ -408,6 +411,7 @@ private struct ChatWebSurface: ChatWebRepresentable {
         context.coordinator.systemAction = systemAction
         context.coordinator.attachment = attachment
         context.coordinator.retryMessage = retryMessage
+        context.coordinator.quickReply = quickReply
         if !active { context.coordinator.setActive(false) }
         context.coordinator.update(.init(snapshot: snapshot, appearance: .init(dark: dark, reduceMotion: reduceMotion, scale: scale, headerInset: headerInset)), scrollRequest: scrollRequest)
         if active { context.coordinator.setActive(true) }
@@ -508,6 +512,7 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
     var systemAction: (UUID) -> Void
     var attachment: (UUID) -> Void = { _ in }
     var retryMessage: (UUID) -> Void = { _ in }
+    var quickReply: (String) -> Void = { _ in }
     var rendered: () -> Void = {}
     var recovering: () -> Void = {}
     var bubbleRegions: [ChatBubbleRegion] = []
@@ -807,6 +812,14 @@ final class ChatWebCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDe
         case "copy": if let text = body["value"] as? String {
             Self.copyTextToPasteboard(text)
         }
+        case "quickReply":
+            if let value = body["value"] as? [String: String],
+               let rawText = value["text"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !rawText.isEmpty, rawText.count <= 2000,
+               let snapshot = pending?.snapshot ?? sent?.snapshot,
+               value["sessionID"] == snapshot.sessionID {
+                quickReply(rawText)
+            }
         case "link":
             if let text = body["value"] as? String, let url = URL(string: text) {
                 // Source/version authorization is still performed by RecordingSourceLinks.

@@ -20,6 +20,7 @@
   let cachedScrollHeight = 0;
   let bubbleSyncFrame = null, lastBubbleRegionsSig = null;
   let referenceNowMs = Date.now(), previousTurnCount = -1;
+  const choiceSpecs = new Map(), choiceStates = new Map();
   const post = (type, value) => window.webkit?.messageHandlers?.chat?.postMessage({ type, value });
   const escape = text => text.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   core.installRecordingSourceLinks(marked);
@@ -79,6 +80,68 @@
     document.documentElement.dataset.activityAnimating = String(active);
     brandMotion.update(visibleActivity && phase !== 'waiting', reduced || motionPreference.matches);
   }
+  function getChoiceState(id) {
+    let state = choiceStates.get(id);
+    if (!state) { state = { selected: new Set(), status: 'open', sentText: '' }; choiceStates.set(id, state); }
+    return state;
+  }
+  function renderChoiceCard(card, spec) {
+    const state = getChoiceState(spec.id);
+    card.dataset.choiceId = spec.id;
+    card.dataset.multi = spec.multi ? 'true' : 'false';
+    card.dataset.status = state.status;
+    card.replaceChildren();
+    if (spec.title) card.append(element('div', 'momo-choice-title', spec.title));
+    if (state.status === 'submitted') {
+      const done = element('div', 'momo-choice-done');
+      done.append(element('span', 'momo-choice-done-badge', t('已发送')));
+      done.append(element('span', 'momo-choice-done-text', state.sentText.replace(/\n+/g, ' · ')));
+      card.append(done);
+      return;
+    }
+    if (state.status === 'dismissed') {
+      card.append(element('div', 'momo-choice-dismissed', t('已跳过')));
+      return;
+    }
+    const list = element('div', 'momo-choice-list');
+    spec.options.forEach((opt, idx) => {
+      const picked = state.selected.has(idx);
+      const row = element('button', 'momo-choice-opt');
+      row.type = 'button';
+      row.dataset.action = 'choiceToggle';
+      row.dataset.choiceId = spec.id;
+      row.dataset.index = String(idx);
+      row.setAttribute('aria-pressed', picked ? 'true' : 'false');
+      if (picked) row.classList.add('selected');
+      const box = element('span', spec.multi ? 'momo-choice-box' : 'momo-choice-radio', picked && spec.multi ? '✓' : '');
+      const copy = element('span', 'momo-choice-copy');
+      copy.append(element('span', 'momo-choice-label', opt.label));
+      if (opt.detail) copy.append(element('span', 'momo-choice-detail', opt.detail));
+      row.append(box, copy);
+      list.append(row);
+    });
+    card.append(list);
+    const actions = element('div', 'momo-choice-actions');
+    const count = state.selected.size;
+    const submitText = spec.multi && count > 0 ? `${spec.submitLabel} (${count})` : spec.submitLabel;
+    const submitBtn = element('button', 'momo-choice-submit', submitText);
+    submitBtn.type = 'button';
+    submitBtn.dataset.action = 'choiceSubmit';
+    submitBtn.dataset.choiceId = spec.id;
+    submitBtn.disabled = count === 0;
+    const dismissBtn = element('button', 'momo-choice-dismiss', spec.dismissLabel);
+    dismissBtn.type = 'button';
+    dismissBtn.dataset.action = 'choiceDismiss';
+    dismissBtn.dataset.choiceId = spec.id;
+    actions.append(submitBtn, dismissBtn);
+    card.append(actions);
+  }
+  function buildChoiceCard(spec) {
+    choiceSpecs.set(spec.id, spec);
+    const card = element('div', 'momo-choice-card');
+    renderChoiceCard(card, spec);
+    return card;
+  }
   function sanitized(html) {
     const template = document.createElement('template');
     template.innerHTML = DOMPurify.sanitize(html, {
@@ -93,8 +156,15 @@
       table.replaceWith(wrapper); wrapper.append(table);
     });
     template.content.querySelectorAll('pre').forEach(pre => {
+      const code = pre.querySelector('code'), language = (code?.className.replace('language-','') || 'text').trim();
+      if (language.toLowerCase() === 'momo-choices' && code) {
+        const spec = core.parseChoiceSpec(code.textContent || '');
+        if (spec) {
+          pre.replaceWith(buildChoiceCard(spec));
+          return;
+        }
+      }
       const wrapper = element('div','code-wrap'), header = element('div','code-head');
-      const code = pre.querySelector('code'), language = code?.className.replace('language-','') || 'text';
       if (code && hljs.getLanguage(language)) {
         code.innerHTML = DOMPurify.sanitize(hljs.highlight(code.textContent,{ language,ignoreIllegals:true }).value,
           { USE_PROFILES:{ html:true } });
@@ -1000,6 +1070,43 @@
     if (!action) return;
     if (action.dataset.action === 'regenerate') {
       if (!latest.busy) post('regenerate',{ sessionID:session, messageID:action.closest('.actions')?.dataset.message });
+      return;
+    }
+    if (action.dataset.action === 'choiceToggle') {
+      const cid = action.dataset.choiceId, idx = Number(action.dataset.index);
+      const spec = choiceSpecs.get(cid), card = action.closest('.momo-choice-card');
+      if (!spec || !card || !Number.isInteger(idx)) return;
+      const state = getChoiceState(cid);
+      if (state.status !== 'open') return;
+      if (spec.multi) {
+        if (state.selected.has(idx)) state.selected.delete(idx);
+        else state.selected.add(idx);
+      } else {
+        state.selected = new Set([idx]);
+      }
+      renderChoiceCard(card, spec);
+      return;
+    }
+    if (action.dataset.action === 'choiceSubmit') {
+      const cid = action.dataset.choiceId, spec = choiceSpecs.get(cid), card = action.closest('.momo-choice-card');
+      if (!spec || !card) return;
+      const state = getChoiceState(cid);
+      if (state.status !== 'open' || state.selected.size === 0) return;
+      const text = core.formatChoiceReply(spec, [...state.selected]);
+      if (!text) return;
+      state.status = 'submitted';
+      state.sentText = text;
+      renderChoiceCard(card, spec);
+      post('quickReply', { sessionID: session, text });
+      return;
+    }
+    if (action.dataset.action === 'choiceDismiss') {
+      const cid = action.dataset.choiceId, spec = choiceSpecs.get(cid), card = action.closest('.momo-choice-card');
+      if (!spec || !card) return;
+      const state = getChoiceState(cid);
+      state.status = 'dismissed';
+      renderChoiceCard(card, spec);
+      return;
     }
   });
   function scrollToBottom(animate = false) {
