@@ -316,17 +316,26 @@ DREAM_INSTRUCTION = """
    - 将稳定确认的家庭/宠物/常驻地/偏好画像维护进 `USER.md`；将活跃生活与工作索引维护进 `MEMORY.md`；需要展开的生活、家庭、地点或人物背景自然沉淀到对应活页（用温暖干净的管家笔触书写，清除冷冰冰的长篇免责套话或连篇“已撤回归因”流水账）。
    - 若用户在聊天中明确表达了对主动提醒的话题、时机或打扰分寸偏好，将其整理保存至 `PROACTIVE_PREFERENCES.md`（单次说“这次不用”不视为长期退订）。
    - 对确有长期价值的候选说话人用 relabel_speakers 提交精确片段建议；仅在收到 applied 回执后按已确认身份记述。
-2. 【知识库有机归整与断舍离（`notebook(action='list'/'read'/'write'/'move'/'remove')` + `memory`）】
+2. 【知识库有机归整、自动 Compact 与 COLD 归档（`notebook(action='list'/'read'/'write'/'move'/'remove')` + `memory`）】
    - 先用 `notebook(action='list')` 审视相关目录与字数，保持知识库精悍清晰：
-     a) **自然分层归档**：按主题聚合度用合理目录组织笔记（如项目专题子目录、按月归档的 `journal/YYYY-MM/YYYY-MM-DD.md`、人物/生活/空间活页），并用 `move` 迁移散落旧页、同步引用路径，不为单篇短文硬套空壳层级；
-     b) **合并冗余与清理陈旧**：将细碎重叠笔记的有效结论并入主活页后 `remove` 碎片文件（保留 `PROACTIVE_PREFERENCES.md`）；任何缺 `# 一级标题` 或残留裸 UUID / 内部审计套话的笔记，用 `mode='replace'` 重写为干净手记；在 `MEMORY.md` 中及时移除已办结或过期的条目。
-3. 【全天时空拼图、原音脉络与生理节律对账（`notebook` 每日日志）】
+     a) **自然分层与 COLD 归档**：按主题聚合度用合理目录组织笔记（如项目专题子目录、按月归档的 `journal/YYYY-MM/YYYY-MM-DD.md`、人物/生活/空间活页），并用 `move` 迁移散落旧页、同步引用路径，不为单篇短文硬套空壳层级；超过 30 天未再活跃或已完结的阶段性项目/旧专题可归档至 `archive/`（COLD 层，不污染常规自动召回但仍可被 `search_memory` 检索）。
+     b) **定期 Compact & Summary（防核心记忆膨胀）**：`MEMORY.md`（上限 10,000 字符）和 `USER.md`（上限 4,000 字符）是常驻 HOT 索引，不是长篇日记。每当 `MEMORY.md` 或 `USER.md` 使用率接近或超过 **80%**（或系统注入了 `CORE MEMORY COMPACTION REQUIRED` 提示）时，**必须先将详细背景、历史过程与已完成阶段总结下沉到对应活页（`projects/`、`topics/`、`people/` 或 `archive/`）**，再用 `memory` 的批量 `operations` 把 `MEMORY.md` / `USER.md` 压缩成高密度状态索引 + 活页路径指针，将其使用率压回 **65% 以下**，同时不丢失有效线索。
+     c) **合并冗余与清理陈旧**：将细碎重叠笔记的有效结论并入主活页后 `remove` 碎片文件（保留 `PROACTIVE_PREFERENCES.md` 与 `LEARNINGS.md`）；任何缺 `# 一级标题` 或残留裸 UUID / 内部审计套话的笔记，用 `mode='replace'` 重写为干净手记；在 `MEMORY.md` 中及时移除已办结或过期的条目。
+3. 【Self-Improving 纠偏与高频流程沉淀（`LEARNINGS.md` → 晋升机制）】
+   - 从本批真实聊天与近期任务反馈中，识别两类高价值信号并维护进 `LEARNINGS.md`（按条目记录：`场景`、`问题/纠偏`、`正确做法`、`命中次数 count`、`状态: observing | promoted`）：
+     a) **用户显式纠偏或持续偏好**（如回复风格、格式、工具使用顺序、称呼与边界）；
+     b) **反复出现的同类多步工作流或踩坑经验**（如某类周报/调研固定结构、特定工具排障经验）。
+   - **晋升门槛（Promotion）**：单次随口要求记为 `count: 1 (observing)` 观察，避免把偶发要求变成死板铁律；当同类规则跨对话命中 **≥ 2 次**，或用户明确要求“以后都这样”时，将其**自动晋升**：
+     - 沟通/习惯/打扰边界类 → 晋升入 `USER.md` 或 `PROACTIVE_PREFERENCES.md`；
+     - 可复用多步操作/报告模板类 → 沉淀到 `topics/skill-proposals.md`（作为个人 Skill 草案供用户或创作模式采纳）；
+     并在 `LEARNINGS.md` 中将该条标记为 `promoted`（定期清理已过时或久未命中的旧条目）。
+4. 【全天时空拼图、原音脉络与生理节律对账（`notebook` 每日日志）】
    - 通过 `phone_context(kind='all')` 与 `phone_context(kind='health')`（及页面附带的 `health_and_activity_summary`）核对到访地点（`visits`）、出行姿态（`motion`）、日程（`calendar`）、待办（`reminders`）以及睡眠阶段、HRV/静息心率恢复趋势与运动消耗；有 `next_cursor` 时按需续读。牢记视野谦逊：日程只代表计划，待办从快照消失或未打勾都不单独证明已完成或未完成（用户可能在线下办妥）；结合当天全部录音（`list_recordings` / `read_recording`）与聊天（`session_search`）客观更新当日日志（若该月份已有 `journal/YYYY-MM/` 子目录则统一写入 `journal/YYYY-MM/YYYY-MM-DD.md`）。瞬时电量等临时数值留在资料层，不写入 `MEMORY.md` / `USER.md`。
    - 包含：`# YYYY-MM-DD · <当日主线标题>`、`## 时空与事件脉络`（融合真实会议/对话与日常生活关键脉络并附 `[HH:MM 原音](momoagent://source/...)` 锚点，同时简记当日睡眠/运动/精力节律）、`## 思考火花与决策演变`、`## 承诺与待办对账`。
-4. 【在研项目盘点与边界隔离（`projects/` + `topics/`）】
+5. 【在研项目盘点与边界隔离（`projects/` + `topics/`）】
    - 按业务域、核心术语与参与人区分独立项目，不将不同项目的排期、规则或人物串写混同。
    - 维护 `projects/overview.md`（`# 在研项目总览`）及各活跃项目活页 `projects/<项目短名>.md`（或项目子目录），清晰呈现项目目标、当前定案结论、核心相关人与下一步杠杆点；`topics/` 仅保留跨项目或需独立沉淀的方法论专题。
-5. 【晨间简报昼夜分工与全景合成（`BRIEFING.md` + `memory`）】
+6. 【晨间简报昼夜分工与全景合成（`BRIEFING.md` + `memory`）】
    - **凌晨睡眠前不预写死次日简报**：若 `Current Local Time` 处于每日分界线之前的凌晨时段（如 `00:00–07:59`，用户尚未睡醒、当晚睡眠与晨间 HRV 尚未出炉），本轮专注把 `journal`、项目/人物/生活活页、`MEMORY.md` 与 `USER.md` 沉淀扎实，**不要提前把次日日期写入 `BRIEFING.md`**（系统会在早晨醒后结合整晚睡眠恢复、全天录音脉络与今日日程实时生成晨间简报）。
    - **白天触发整理时（如 `08:00` 及之后手动运行 Dream）**：先回读最新 `journal`、`list_recordings`、`phone_context(kind='health')` 与 `phone_context(kind='all')`，撰写融合 **「状态与节律（睡眠/HRV/心率恢复）+ 昨日原音与推进脉络（优先真实会议与生活脉络，主动降权在聊天框里调试 MoMo 自身的元对话）+ 今日焦点与必办（对齐日程待办）+ 底部可执行 `## 卡片：`」** 的 `# 晨间简报 · YYYY-MM-DD` 写入 `BRIEFING.md`（可见正文约 220–320 字）。
    - 最后用 `memory` 工具精炼校准 `USER.md` 与 `MEMORY.md`。若所有来源与笔记均已整洁最新且无需任何调整，返回 `no_change`。"""
@@ -356,7 +365,7 @@ def format_briefing_chat_message(markdown: str) -> str:
             encoded = "/".join(quote(part, safe="") for part in rel.split("/"))
             return f"[📔 {rel}](momoagent://memory/{encoded})"
         return re.sub(
-            r"`((?:[\w\u4e00-\u9fff.-]+/)+[\w\u4e00-\u9fff.-]+\.md|BRIEFING\.md|MEMORY\.md|USER\.md)`",
+            r"`((?:[\w\u4e00-\u9fff.-]+/)+[\w\u4e00-\u9fff.-]+\.md|BRIEFING\.md|MEMORY\.md|USER\.md|PROACTIVE_PREFERENCES\.md|LEARNINGS\.md)`",
             _repl,
             line,
         )

@@ -2200,7 +2200,20 @@ class SuperAgentGateway:
         momo_mem = MoMoMemory(self.data)
         with momo_mem.store() as mem_store:
             blocks = [b for t in ("user", "memory") if (b := mem_store.format_for_system_prompt(t))]
+            compaction_alerts = mem_store.compaction_needed()
         memory_context = "\n\n".join(blocks) if blocks else "(Current USER.md and MEMORY.md are both empty.)"
+        if compaction_alerts:
+            alert_lines = [
+                f"- `{a['file']}` is at {int(a['ratio'] * 100)}% ({a['chars']:,}/{a['limit']:,} chars) — "
+                f"MUST summarize/offload details into notebook pages or `archive/` and compact `{a['file']}` below {a['target_chars']:,} chars."
+                for a in compaction_alerts
+            ]
+            memory_context = (
+                "⚠️ CORE MEMORY COMPACTION REQUIRED (HIGH WATERMARK >= 80%):\n"
+                + "\n".join(alert_lines)
+                + "\n\n"
+                + memory_context
+            )
 
         notebook_entries = momo_mem.list_notebook()
         if notebook_entries:

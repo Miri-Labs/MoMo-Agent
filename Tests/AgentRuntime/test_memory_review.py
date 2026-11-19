@@ -1021,6 +1021,48 @@ class MorningChatBriefingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, len(self.messages()))
         self.assertEqual(1, self.gateway._call_configured_llm_oneshot.call_count)
 
+    def test_core_memory_limits_compaction_watermark_learnings_and_cold_archive(self):
+        from momo_memory import (
+            DEFAULT_MEMORY_CHAR_LIMIT,
+            DEFAULT_USER_CHAR_LIMIT,
+            MoMoMemory,
+        )
+        import life_context
+
+        self.assertEqual(DEFAULT_MEMORY_CHAR_LIMIT, 10_000)
+        self.assertEqual(DEFAULT_USER_CHAR_LIMIT, 4_000)
+
+        mem = MoMoMemory(self.gateway.data)
+        with mem.store() as store:
+            self.assertEqual(store.memory_char_limit, 10_000)
+            self.assertEqual(store.user_char_limit, 4_000)
+            self.assertEqual(store.compaction_needed(), [])
+            # Fill MEMORY.md to >80% (8,200 chars) and verify compaction watermark alert triggers.
+            store.add("memory", "核心记忆条目 " + ("甲" * 4090))
+            store.add("memory", "第二条索引 " + ("乙" * 4100))
+            alerts = store.compaction_needed()
+            self.assertEqual(len(alerts), 1)
+            self.assertEqual(alerts[0]["file"], "MEMORY.md")
+            self.assertEqual(alerts[0]["target_chars"], 6500)
+
+        sys_prompt, _, _ = self.gateway._build_memory_review_session("momo-review-compact")
+        self.assertIn("CORE MEMORY COMPACTION REQUIRED", sys_prompt)
+        self.assertIn("MEMORY.md", sys_prompt)
+        self.assertIn("6,500", sys_prompt)
+
+        # Verify LEARNINGS.md and COLD archive/ resolve cleanly and archive/ is excluded from default recall.
+        res_learn = mem.write_notebook("note", "# 学习日志\n\n- 场景：周报，count: 2\n", path="LEARNINGS.md", mode="replace")
+        self.assertEqual(res_learn["path"], "LEARNINGS.md")
+        res_arc = mem.write_notebook("note", "# 旧项目归档\n\n独一无二的冷归档关键词XYZ999\n", path="archive/old-proj.md", mode="replace")
+        self.assertEqual(res_arc["path"], "archive/old-proj.md")
+        res_warm = mem.write_notebook("note", "# 活跃专题\n\n独一无二的冷归档关键词XYZ999 活跃版本\n", path="topics/active.md", mode="replace")
+        self.assertEqual(res_warm["path"], "topics/active.md")
+
+        recalled = life_context.contextual_memory_recall(self.gateway.data, texts=["独一无二的冷归档关键词XYZ999"], limit=6)
+        recalled_paths = [r.get("path") for r in recalled if r.get("kind") == "note"]
+        self.assertIn("topics/active.md", recalled_paths)
+        self.assertNotIn("archive/old-proj.md", recalled_paths)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -163,7 +163,8 @@ def contextual_memory_recall(
     note_Quota = max(2, limit // 2)
     ordered_raw: list[dict] = []
     for m in note_res.get("matches") or []:
-        if m.get("path") not in ("USER.md", "MEMORY.md", "BRIEFING.md"):
+        m_path = str(m.get("path") or "")
+        if m_path not in ("USER.md", "MEMORY.md", "BRIEFING.md") and not m_path.startswith("archive/"):
             ordered_raw.append(m)
             if len(ordered_raw) >= note_Quota:
                 break
@@ -181,7 +182,8 @@ def contextual_memory_recall(
         if not doc_id or doc_id in seen_ids:
             continue
         kind = match.get("kind")
-        if kind == "note" and match.get("path") in ("USER.md", "MEMORY.md"):
+        match_path = str(match.get("path") or "")
+        if kind == "note" and (match_path in ("USER.md", "MEMORY.md") or match_path.startswith("archive/")):
             continue
         if kind == "recording":
             sid = str(match.get("source_id") or "")
