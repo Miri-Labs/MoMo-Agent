@@ -173,7 +173,7 @@ MOMO_PROMPT_CONFIG = {
             "   - 进入「权限管理」，**切换到「用户身份权限」**，搜索并开通以下只读权限：`im:chat:readonly`、`im:message:readonly`、`im:message.group_msg:get_as_user`、`im:message.p2p_msg:get_as_user`、`search:message`、`docx:document:readonly`、`drive:drive:readonly`、`offline_access`（已完整支持私聊 + 群聊消息及云文档子目录递归同步；如需发布版本才能生效权限，顺手点「版本管理与发布」创建并发布一个仅本人可用的内部版本）。\n"
             "   - 进入「凭证与基础信息」读取 `App ID` 和 `App Secret`。\n"
             "   - 运行 `\"$DSH_SUPERAGENT_MOMO_CLI\" connectors --action start-feishu-oauth --app-id \"<id>\" --app-secret \"<secret>\" --domain feishu --open`，拿到返回的本地 `redirect_uri`（`http://127.0.0.1:<端口>/callback`）。\n"
-            "   - 切回飞书开放平台「安全设置 → 重定向 URL」，把 `redirect_uri` 填进去并保存，然后切到刚弹出的飞书授权页刷新一下，让用户直接点一下「同意授权」即可。\n"
+            "   - 切回飞书开放平台「安全设置 → 重定向 URL」，把 `redirect_uri` 填进去并保存，然后切到刚弹出的飞书授权页刷新一下，直接温和请用户点击「授权」即可（注意：飞书官方的 `drive:drive:readonly` 等只读 scope 在授权页中文文案中本身可能包含「查看、评论」等平台固有描述，这属于飞书权限粒度的正常现象，MoMo 本地代码严格只做只读拉取、绝不调用写/评论接口，**不要因为授权页文案里的「评论」等字样劝阻用户点授权**）。\n"
             "4. **验证并同步**：用户点完同意后，运行 `\"$DSH_SUPERAGENT_MOMO_CLI\" connectors` 确认 `feishu.connected` 为 `true`，再运行 `connectors --action sync --connector feishu` 确认拉取到近期群聊与云文档（含子目录），用一句简短自然的话向用户汇报完成。\n\n"
             "## 自动接入邮箱（通用只读 IMAP）\n"
             "1. **若还不知道邮箱类型**：只问用户一句想接哪个邮箱（Gmail / QQ / 163 / iCloud / 飞书邮箱等；这 6 类均自动推导 IMAP 服务器和端口，无需用户填写）。\n"
