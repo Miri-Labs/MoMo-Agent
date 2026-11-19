@@ -126,13 +126,6 @@ def compute_semantic_vector(situation: dict, now: float | None = None) -> dict:
     )[:16]
     has_schedule = bool(upcoming or extended or reminders)
 
-    connector_items = situation.get("recent_connectors") or []
-    connector_sig = (
-        digest(canonical([(c.get("id"), c.get("occurred_at")) for c in connector_items]))[:16]
-        if connector_items
-        else None
-    )
-
     return {
         "structural": {
             "sleep_id": sleep_id,
@@ -140,7 +133,6 @@ def compute_semantic_vector(situation: dict, now: float | None = None) -> dict:
             "workout_id": workout_id,
             "visit": visit_vec,
             "schedule_sig": schedule_sig,
-            "connector_sig": connector_sig,
         },
         "quantized": {
             "phone": phone_vec,
@@ -223,8 +215,6 @@ def describe_deltas(prev_vector: dict | None, curr_vector: dict) -> list[str]:
             deltas.append("离开上一个停留地点")
     if c_struct.get("schedule_sig") != p_struct.get("schedule_sig"):
         deltas.append("未来 12 小时日历日程或待办提醒发生变更")
-    if c_struct.get("connector_sig") and c_struct.get("connector_sig") != p_struct.get("connector_sig"):
-        deltas.append("收到新的飞书消息/文档或邮件更新")
 
     if c_quant.get("motion") != p_quant.get("motion"):
         deltas.append(f"出行/运动姿态变化：{p_quant.get('motion') or '无'} -> {c_quant.get('motion') or '无'}")
