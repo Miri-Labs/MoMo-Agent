@@ -478,15 +478,15 @@ import XCTest
         await wire.pushProviderNotice([
             "id": noticeID,
             "kind": "quota",
-            "provider": "antigravity",
-            "provider_label": "Antigravity",
-            "title": "Antigravity 当前额度已用完",
+            "provider": "openai-codex",
+            "provider_label": "Codex",
+            "title": "Codex 当前额度已用完",
             "message": "可在设置中切换到其他模型服务继续使用。",
-            "short_error": "Antigravity 当前额度已用完。",
+            "short_error": "Codex 当前额度已用完。",
             "created_at": 1762070400.0,
         ])
         try await eventually { store.activeProviderNotice?.id == noticeID }
-        XCTAssertEqual(store.activeProviderNotice?.title, "Antigravity 当前额度已用完")
+        XCTAssertEqual(store.activeProviderNotice?.title, "Codex 当前额度已用完")
 
         store.dismissProviderNotice(noticeID)
         XCTAssertNil(store.activeProviderNotice)
@@ -496,9 +496,9 @@ import XCTest
         await wire.pushProviderNotice([
             "id": noticeID,
             "kind": "quota",
-            "provider": "antigravity",
-            "provider_label": "Antigravity",
-            "title": "Antigravity 当前额度已用完",
+            "provider": "openai-codex",
+            "provider_label": "Codex",
+            "title": "Codex 当前额度已用完",
             "message": "可在设置中切换到其他模型服务继续使用。",
             "created_at": 1762070400.0,
             "updated_at": 1762070405.0,

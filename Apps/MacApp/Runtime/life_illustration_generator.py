@@ -1,4 +1,4 @@
-"""Private background scene extraction and subscription image generation (Codex & Antigravity Nano Banana)."""
+"""Private background scene extraction and subscription image generation (Codex)."""
 from collections import deque
 import base64
 import io
@@ -161,7 +161,7 @@ class ImageRejected(Exception):
 
 
 class CodexIllustrationGenerator:
-    SUPPORTED_PROVIDERS = ('openai-codex', 'antigravity')
+    SUPPORTED_PROVIDERS = ('openai-codex',)
 
     def __init__(self, data):
         self.data = Path(data)
@@ -172,8 +172,6 @@ class CodexIllustrationGenerator:
         raw = str(((config.get('model') or {}) if isinstance(config, dict) else {}).get('provider') or '').strip()
         if raw in ('codex', 'openai-codex'):
             return 'openai-codex'
-        if raw in ('antigravity', 'google-antigravity'):
-            return 'antigravity'
         if raw in ('claude', 'anthropic'):
             return 'anthropic'
         if raw:
@@ -184,8 +182,6 @@ class CodexIllustrationGenerator:
                 active = str((json.loads(auth_file.read_text(encoding='utf-8')) or {}).get('active_provider') or '').strip()
                 if active in ('codex', 'openai-codex'):
                     return 'openai-codex'
-                if active in ('antigravity', 'google-antigravity'):
-                    return 'antigravity'
                 if active in ('claude', 'anthropic'):
                     return 'anthropic'
                 if active:
@@ -212,25 +208,10 @@ class CodexIllustrationGenerator:
         try:
             llm = resolve_superagent_llm(self.data)
             if llm['dsh_provider'] not in self.SUPPORTED_PROVIDERS:
-                raise ValueError('Life illustrations require a signed-in Codex or Antigravity subscription')
+                raise ValueError('Life illustrations require a signed-in Codex subscription')
             return llm
         except ValueError:
             provider = self._configured_provider()
-            if provider == 'antigravity':
-                from model_setup import catalog, load_config, resolve_credentials
-                config = load_config(self.data)
-                model_cfg = (config.get('model') or {}) if isinstance(config, dict) else {}
-                model_id = str(model_cfg.get('default') or '').strip()
-                creds = resolve_credentials('antigravity', model_id or 'gemini-4-carbon-high')
-                if not model_id:
-                    models = catalog('antigravity', creds)
-                    model_id = models[0] if models else 'gemini-4-carbon-high'
-                return {
-                    'dsh_provider': 'antigravity',
-                    'model_id': model_id,
-                    'base_url': '',
-                    'env': {},
-                }
             if provider != 'openai-codex':
                 raise
             from model_setup import catalog, load_config, resolve_credentials
@@ -307,54 +288,6 @@ class CodexIllustrationGenerator:
         llm = self.resolve()
         use_tools = bool(allow_memory_tools and self._has_local_memory_index())
         openai_tools, run_tool = self._memory_tool_specs_and_runner() if use_tools else (None, None)
-
-        if llm['dsh_provider'] == 'antigravity':
-            from antigravity_bridge import run_antigravity_completion
-            from provider_notice import record_provider_issue
-
-            messages = [
-                {'role': 'system', 'content': SCENE_POLICY},
-                {'role': 'user', 'content': evidence},
-            ]
-            result = ''
-            for step in range(4 if use_tools else 1):
-                try:
-                    completion = run_antigravity_completion(
-                        model=llm['model_id'],
-                        messages=messages,
-                        tools=openai_tools if use_tools else None,
-                        tool_choice='none' if (use_tools and step >= 3) else None,
-                        data_dir=self.data,
-                        timeout=120.0,
-                        background=True,
-                        oneshot=not use_tools,
-                    )
-                except Exception as err:
-                    record_provider_issue(self.data, err, provider='antigravity')
-                    raise
-                msg = ((completion.get('choices') or [{}])[0]).get('message') or {}
-                tcalls = msg.get('tool_calls') or []
-                if not tcalls or not use_tools or step >= 3:
-                    result = str(msg.get('content') or '').strip()
-                    break
-                messages.append({
-                    'role': 'assistant',
-                    'content': msg.get('content') or '',
-                    'tool_calls': tcalls,
-                })
-                for tc in tcalls[:3]:
-                    fn = tc.get('function') or {}
-                    t_name = str(fn.get('name') or '')
-                    t_args = str(fn.get('arguments') or '{}')
-                    messages.append({
-                        'role': 'tool',
-                        'tool_call_id': str(tc.get('id') or 'call_1'),
-                        'name': t_name,
-                        'content': run_tool(t_name, t_args),
-                    })
-            if not result or len(result.encode()) > 24_000:
-                raise ValueError('Scene extraction did not return a complete bounded brief')
-            return result
 
         if use_tools:
             from agent.auxiliary_client import _CodexCompletionsAdapter
@@ -461,82 +394,9 @@ class CodexIllustrationGenerator:
             combined = '\n\n'.join(self.text('汇总以下全部场景摘录：\n' + part, allow_memory_tools=False) for part in chunks(combined, 48_000))
         return self.text('从全部摘录选一个有证据的具体瞬间，提炼单幅小插画简报：\n' + combined, allow_memory_tools=True)
 
-    def _generate_antigravity_nano_banana(self, llm, brief, request_id, remember_response):
-        from antigravity_bridge import _agy_env, find_antigravity_cli
-
-        cli = find_antigravity_cli()
-        if not cli:
-            raise RuntimeError('Antigravity CLI (agy) is not installed')
-        remember_response(f'agy-nanobanana-{request_id}')
-
-        ref_src = Path(__file__).with_name('momo_character_reference.png')
-        with tempfile.TemporaryDirectory(prefix='momo-nanobanana-') as tmp:
-            tmp_dir = Path(tmp)
-            ref_copy = tmp_dir / 'momo_style_reference.png'
-            out_png = tmp_dir / 'illustration.png'
-            shutil.copy2(ref_src, ref_copy)
-
-            prompt = (
-                "First read the visual style & canonical MoMo silhouette reference image at "
-                f"`{ref_copy}` using read_file, then call `invoke_subagent` with `TypeName='image-generator'` "
-                "(Nano Banana) to generate ONE 1024x1024 PNG illustration following EVERY rule below, "
-                f"and copy/save the final generated PNG file to the exact path `{out_png}`.\n\n"
-                "IMPORTANT FOR BACKGROUND: Use a completely solid pure white (#FFFFFF) outer margin on all four sides "
-                "with generous empty white padding around the central cut-paper cluster (no border, frame, or card), "
-                "and keep MoMo's warm-ivory body and props enclosed by crisp charcoal-black (#161514) fluid brush-ink lines "
-                "or resting on the solid mineral accent spot.\n\n"
-                f"<art_policy>\n{ART_POLICY}\n</art_policy>\n\n"
-                f"<scene_brief>\n{brief}\n</scene_brief>\n\n"
-                f"When `{out_png}` exists on disk, reply with DONE."
-            )
-            proc = subprocess.run(
-                [
-                    cli,
-                    '--model',
-                    llm['model_id'],
-                    '--disable-slash-commands',
-                    '--dangerously-skip-permissions',
-                    '--output-format',
-                    'json',
-                    '-p',
-                    prompt,
-                ],
-                cwd=str(tmp_dir),
-                env=_agy_env(),
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=240,
-                check=False,
-            )
-            if not out_png.is_file():
-                # Fallback: pick up any generated .png in tmp_dir other than the reference sheet, or path mentioned in output.
-                combined_out = (proc.stdout or '') + '\n' + (proc.stderr or '')
-                for candidate_path in re.findall(r'(/[^\s"\'`<>()]+?\.png)', combined_out):
-                    cp = Path(candidate_path)
-                    if cp.is_file() and cp.resolve() != ref_copy.resolve():
-                        shutil.copy2(cp, out_png)
-                        break
-            if not out_png.is_file():
-                for cp in sorted(tmp_dir.rglob('*.png')):
-                    if cp.resolve() != ref_copy.resolve():
-                        out_png = cp
-                        break
-            if not out_png.is_file():
-                combined_err = (proc.stdout or '') + '\n' + (proc.stderr or '')
-                if '429' in combined_err or 'quota' in combined_err.lower() or 'exhausted' in combined_err.lower():
-                    from provider_notice import record_provider_issue
-                    record_provider_issue(self.data, combined_err, provider='antigravity')
-                    raise ImageRejected('Nano Banana image service temporarily rate-limited')
-                raise RuntimeError('Antigravity Nano Banana returned no PNG file')
-            raw_bytes = out_png.read_bytes()
-        return ensure_transparent_sticker_ground(raw_bytes)
-
     def generate(self, brief, request_id, remember_response):
         from openai import APIStatusError
         llm = self.resolve()
-        if llm['dsh_provider'] == 'antigravity':
-            return self._generate_antigravity_nano_banana(llm, brief, request_id, remember_response)
         reference = base64.b64encode(Path(__file__).with_name('momo_character_reference.png').read_bytes()).decode('ascii')
         result = None
         try:

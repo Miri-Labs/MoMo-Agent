@@ -523,37 +523,7 @@ def resolve_superagent_llm(data: Path) -> dict:
             }
 
         if provider in {"antigravity", "google-antigravity"}:
-            resolve_credentials("antigravity", model_id)
-            from momo_agent import read_connection
-
-            conn_port = int(read_connection(data).get("port") or 8765)
-            state_dir = Path(data) / "superagent/state"
-            state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-            bridge_secret_file = state_dir / "momo-bridge.json"
-            bridge_secret = ""
-            if bridge_secret_file.is_file():
-                try:
-                    bridge_secret = str(json.loads(bridge_secret_file.read_text(encoding="utf-8")).get("secret") or "").strip()
-                except ValueError:
-                    bridge_secret = ""
-            if len(bridge_secret) < 24:
-                bridge_secret = secrets.token_urlsafe(32)
-                _atomic_private(bridge_secret_file, json.dumps({"secret": bridge_secret}, indent=2) + "\n", 0o600)
-            base_url = f"http://127.0.0.1:{conn_port}/momo/internal/antigravity/v1"
-            return {
-                "dsh_provider": "antigravity",
-                "model_id": model_id,
-                "base_url": base_url,
-                "env": {"MOMO_LLM_API_KEY": bridge_secret},
-                "providers_config": {
-                    "antigravity": {
-                        "api": "openai-completions",
-                        "baseURL": base_url,
-                        "apiKeyEnv": "MOMO_LLM_API_KEY",
-                        "models": [{"id": model_id, "input": ["text"]}],
-                    }
-                },
-            }
+            raise ValueError("Antigravity provider is no longer supported; please switch to Codex, Claude, or Custom API")
 
         if provider == "anthropic":
             creds = resolve_credentials("claude", model_id)
@@ -890,10 +860,7 @@ def seed_superagent_orchestrator(
     if desired_role_model and exec_val.get("model") != desired_role_model:
         exec_val["model"] = desired_role_model
         exec_dirty = True
-    if dsh_provider == "antigravity" and exec_val.get("maxWorkers") != 1:
-        exec_val["maxWorkers"] = 1
-        exec_dirty = True
-    elif dsh_provider and dsh_provider != "antigravity" and exec_val.get("maxWorkers") == 1:
+    if exec_val.get("maxWorkers") == 1:
         exec_val["maxWorkers"] = 3
         exec_dirty = True
     if exec_dirty:

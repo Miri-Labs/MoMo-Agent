@@ -27,8 +27,6 @@ private struct ModelAuthorization: Decodable {
         case .codex: return host == "auth.openai.com" && ["/codex/device", "/oauth/authorize"].contains(url.path)
         case .claude: return ["claude.ai", "console.anthropic.com", "platform.claude.com"].contains(host)
                 && url.path == "/oauth/authorize"
-        case .antigravity: return host == "accounts.google.com"
-                && (url.path.hasPrefix("/o/oauth2") || url.path.hasPrefix("/signin") || url.path.hasPrefix("/v3/signin"))
         case .api: return false
         }
     }
@@ -44,13 +42,12 @@ private nonisolated func stopModelProcess(_ process: Process) {
 }
 
 enum DesktopModelProvider: String, CaseIterable, Identifiable, Sendable {
-    case codex, claude, antigravity, api
+    case codex, claude, api
     var id: String { rawValue }
     var label: String {
         switch self {
         case .codex: String(localized: "Codex 订阅")
         case .claude: String(localized: "Claude 订阅")
-        case .antigravity: String(localized: "Antigravity 订阅")
         case .api: "API"
         }
     }
@@ -58,7 +55,6 @@ enum DesktopModelProvider: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .codex: "Codex"
         case .claude: "Claude"
-        case .antigravity: "Antigravity"
         case .api: "API"
         }
     }
@@ -66,7 +62,6 @@ enum DesktopModelProvider: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .codex: String(localized: "登录 ChatGPT 账号，让 MoMo 使用你的 Codex 订阅。")
         case .claude: String(localized: "通过 Claude Code 登录，让 MoMo 使用你的 Claude 订阅。")
-        case .antigravity: String(localized: "通过 Antigravity CLI (agy) 登录 Google 账号，使用你的 Antigravity 订阅。")
         case .api: String(localized: "填写兼容 OpenAI 的 API 地址、模型和密钥。")
         }
     }
@@ -163,7 +158,7 @@ extension DesktopModel {
 
     func applyModelAccount(_ account: DesktopModelAccount, updateSelection: Bool = true) {
         modelAccount = account
-        if ![.codex, .antigravity].contains(account.provider) || !account.connected {
+        if account.provider != .codex || !account.connected {
             lifeIllustrations.invalidateSupport()
         } else {
             Task { [weak self] in await self?.lifeIllustrations.refresh() }

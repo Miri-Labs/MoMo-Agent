@@ -25,8 +25,6 @@ _PROVIDER_CANONICAL = {
     "openai-codex": "openai-codex",
     "claude": "anthropic",
     "anthropic": "anthropic",
-    "antigravity": "antigravity",
-    "agy": "antigravity",
     "custom": "custom",
     "openai": "custom",
     "api": "custom",
@@ -35,7 +33,6 @@ _PROVIDER_CANONICAL = {
 _PROVIDER_LABELS = {
     "openai-codex": "Codex",
     "anthropic": "Claude",
-    "antigravity": "Antigravity",
     "custom": "自定义 API",
 }
 
@@ -224,19 +221,13 @@ def classify_provider_issue(
     # Infer provider from error text if caller didn't pass a specific one.
     canon = canonical_provider(provider)
     if canon == "unknown":
-        if "antigravity" in lowered or "agy" in lowered or "googleapis" in lowered:
-            canon = "antigravity"
-        elif "anthropic" in lowered or "claude" in lowered:
+        if "anthropic" in lowered or "claude" in lowered:
             canon = "anthropic"
         elif "codex" in lowered or "chatgpt" in lowered:
             canon = "openai-codex"
 
     # 1. Quota / billing / usage cap exhaustion (check before generic 429 rate-limit!)
     if status == 402 or any(re.search(pat, text, re.IGNORECASE) for pat in _QUOTA_PATTERNS):
-        return build_provider_notice("quota", provider=canon, now=now)
-
-    # Antigravity CLI surfaces quota limits as RESOURCE_EXHAUSTED / 429 on the selected model.
-    if canon == "antigravity" and re.search(r"\bresource[_\s-]*exhausted\b", text, re.IGNORECASE):
         return build_provider_notice("quota", provider=canon, now=now)
 
     # 2. Authentication / login expiration
