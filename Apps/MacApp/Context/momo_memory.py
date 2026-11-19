@@ -21,6 +21,10 @@ from typing import Any
 from context_store import Conflict
 
 ENTRY_DELIMITER = "\n§\n"
+DEFAULT_MEMORY_CHAR_LIMIT = 10_000
+DEFAULT_USER_CHAR_LIMIT = 4_000
+COMPACT_HIGH_WATERMARK = 0.80
+COMPACT_TARGET_WATERMARK = 0.65
 MEMORY_BLOCK_HEADERS = {
     "memory": "MEMORY (your personal notes)",
     "user": "USER PROFILE (who the user is)",
@@ -78,8 +82,9 @@ MEMORY_SCHEMA = {
         "TARGETS: 'user' = who the user is (name, role, enduring preferences, communication style). "
         "'memory' = shared core index (active goals, standing commitments, key conventions, cross-session anchors). "
         "Put detailed daily logs, project hierarchies, person profiles, proactive preferences (`PROACTIVE_PREFERENCES.md`), "
+        "self-improving correction/workflow learnings (`LEARNINGS.md`), cold archived notes (`archive/...`), "
         "and domain notes into the `notebook` tool "
-        "(supporting multi-level folders like `projects/<project>/<doc>.md`, `journal/YYYY-MM/YYYY-MM-DD.md`, `people/...`, or custom directories) rather than overflowing `MEMORY.md`."
+        "(supporting multi-level folders like `projects/<project>/<doc>.md`, `journal/YYYY-MM/YYYY-MM-DD.md`, `people/...`, `archive/...`, or custom directories) rather than overflowing `MEMORY.md`."
     ),
     "parameters": {
         "type": "object",
@@ -253,8 +258,8 @@ class MoMoMemoryStore:
     def __init__(
         self,
         memories_dir: Path,
-        memory_char_limit: int = 3600,
-        user_char_limit: int = 1800,
+        memory_char_limit: int = DEFAULT_MEMORY_CHAR_LIMIT,
+        user_char_limit: int = DEFAULT_USER_CHAR_LIMIT,
         *,
         memory_enabled: bool = True,
         user_profile_enabled: bool = True,
@@ -296,6 +301,33 @@ class MoMoMemoryStore:
     def _usage_pct(self, target: str, current: int) -> str:
         limit = self._char_limit(target)
         return f"{min(100, int((current / limit) * 100)) if limit > 0 else 0}% — {current:,}/{limit:,} chars"
+
+    def compaction_needed(
+        self,
+        *,
+        high_watermark: float = COMPACT_HIGH_WATERMARK,
+        target_watermark: float = COMPACT_TARGET_WATERMARK,
+    ) -> list[dict[str, Any]]:
+        """Return core memory targets whose current size reached or exceeded `high_watermark`."""
+        alerts: list[dict[str, Any]] = []
+        for target in ("memory", "user"):
+            limit = self._char_limit(target)
+            if limit <= 0:
+                continue
+            current = self._char_count(target)
+            ratio = current / limit
+            if ratio >= high_watermark:
+                alerts.append(
+                    {
+                        "target": target,
+                        "file": "USER.md" if target == "user" else "MEMORY.md",
+                        "chars": current,
+                        "limit": limit,
+                        "ratio": round(ratio, 3),
+                        "target_chars": int(limit * target_watermark),
+                    }
+                )
+        return alerts
 
     def _render_block(self, target: str, entries: list[str]) -> str:
         if not entries:
@@ -898,6 +930,8 @@ class MoMoMemory:
                 return "briefing", "BRIEFING", "BRIEFING.md", self.memories_dir / "BRIEFING.md"
             if upper_single in {"PROACTIVE_PREFERENCES.MD", "PROACTIVE_PREFERENCES", "PROACTIVE-PREFERENCES.MD", "PROACTIVE-PREFERENCES"}:
                 return "note", "PROACTIVE_PREFERENCES", "PROACTIVE_PREFERENCES.md", self.memories_dir / "PROACTIVE_PREFERENCES.md"
+            if upper_single in {"LEARNINGS.MD", "LEARNINGS"}:
+                return "note", "LEARNINGS", "LEARNINGS.md", self.memories_dir / "LEARNINGS.md"
             raw_parts = [p for p in raw_path.split("/") if p.strip()]
             if not raw_parts or len(raw_parts) > _MAX_NOTEBOOK_DEPTH:
                 raise ValueError(f"Notebook path must have 1..{_MAX_NOTEBOOK_DEPTH} segments")
@@ -911,6 +945,8 @@ class MoMoMemory:
                 return "briefing", "BRIEFING", "BRIEFING.md", self.memories_dir / "BRIEFING.md"
             if len(clean_parts) == 1 and clean_parts[0].upper() in {"PROACTIVE_PREFERENCES", "PROACTIVE-PREFERENCES"}:
                 return "note", "PROACTIVE_PREFERENCES", "PROACTIVE_PREFERENCES.md", self.memories_dir / "PROACTIVE_PREFERENCES.md"
+            if len(clean_parts) == 1 and clean_parts[0].upper() == "LEARNINGS":
+                return "note", "LEARNINGS", "LEARNINGS.md", self.memories_dir / "LEARNINGS.md"
             if len(clean_parts) >= 2 and clean_parts[0].lower() in _STANDARD_ROOT_FOLDERS:
                 kind = _STANDARD_ROOT_FOLDERS[clean_parts[0].lower()]
                 clean_parts[0] = _CANONICAL_FOLDER_FOR_KIND[kind]
@@ -930,6 +966,8 @@ class MoMoMemory:
             return "briefing", "BRIEFING", "BRIEFING.md", self.memories_dir / "BRIEFING.md"
         if norm_cat in ("proactive_preferences", "proactive-preferences") and not raw_slug:
             return "note", "PROACTIVE_PREFERENCES", "PROACTIVE_PREFERENCES.md", self.memories_dir / "PROACTIVE_PREFERENCES.md"
+        if norm_cat == "learnings" and not raw_slug:
+            return "note", "LEARNINGS", "LEARNINGS.md", self.memories_dir / "LEARNINGS.md"
         if norm_cat in ("memory", "user"):
             raise ValueError("Use the 'memory' / 'update_core_memory' tool to edit MEMORY.md or USER.md.")
 
