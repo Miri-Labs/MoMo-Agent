@@ -22,13 +22,14 @@
   --chat-font-size: 1rem;
   --chat-code-size: .875rem;
   --chat-weight: 400;
-  --ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+  --ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
   --response: var(--ui);
 }
 :root[data-desktop] {
-  --chat-font-size: .875rem;
-  --chat-code-size: .79rem;
-  --chat-weight: 420;
+  --paper: #ffffff;
+  --chat-font-size: .9375rem;
+  --chat-code-size: .84375rem;
+  --chat-weight: 500;
 }
 /* First paint happens before the native bridge supplies data-dark. */
 @media (prefers-color-scheme: dark) {
@@ -53,7 +54,8 @@
     --failure: #ff6463;
   }
   :root[data-desktop]:not([data-dark=false]) {
-    --chat-weight: 425;
+    --paper: #171719;
+    --chat-weight: 500;
   }
 }
 :root[data-dark=true] {
@@ -77,7 +79,8 @@
   --failure: #ff6463;
 }
 :root[data-desktop][data-dark=true] {
-  --chat-weight: 425;
+  --paper: #171719;
+  --chat-weight: 500;
 }
 * { box-sizing: border-box; }
 html {
@@ -160,13 +163,13 @@ button[hidden], [hidden] { display: none !important; }
   font-family: var(--ui);
   font-size: var(--chat-font-size);
   font-weight: var(--chat-weight);
-  line-height: 1.55;
-  letter-spacing: -.003em;
+  line-height: 1.6;
+  letter-spacing: 0;
   white-space: pre-wrap;
   min-width: 0;
   min-height: 36px;
-  padding: 8px 15px;
-  border-radius: 18px;
+  padding: 10px 16px;
+  border-radius: 16px;
   background: var(--user-bubble-bg);
   color: var(--user-bubble-fg);
   box-shadow: inset 0 0 0 .5px var(--user-bubble-ring);
@@ -229,10 +232,10 @@ button[hidden], [hidden] { display: none !important; }
   max-width: 100%;
   min-height: 36px;
   box-sizing: border-box;
-  padding: 8px 15px;
+  padding: 11px 16px;
   background: var(--assistant-bubble-bg);
   color: var(--ink);
-  border-radius: 18px;
+  border-radius: 16px;
   box-shadow: inset 0 0 0 .5px var(--assistant-bubble-ring);
 }
 .assistant .prose .code-wrap {
@@ -266,18 +269,18 @@ button[hidden], [hidden] { display: none !important; }
   font-family: var(--response);
   font-size: var(--chat-font-size);
   font-weight: var(--chat-weight);
-  line-height: 1.58;
-  letter-spacing: -.002em;
+  line-height: 1.62;
+  letter-spacing: 0;
   min-width: 0;
   word-wrap: break-word;
 }
-:root[data-desktop] .prose { line-height: 1.58; }
-.prose strong, .prose b { font-weight: 540; }
+:root[data-desktop] .prose { line-height: 1.62; }
+.prose strong, .prose b { font-weight: 600; }
 .md-chunk, .code-wrap, .table-scroll { min-width: 0; max-width: 100%; }
 .md-chunk > :first-child { margin-top: 0; }
 .md-chunk > :last-child { margin-bottom: 0; }
 .md-chunk + .md-chunk { margin-top: 12px; }
-p { margin: 0 0 11px; }
+p { margin: 0 0 12px; }
 h1, h2, h3, h4, h5, h6 { font-family: var(--ui); font-weight: 560; line-height: 1.38; margin: 20px 0 7px; }
 h1 { font-size: 1.22em; letter-spacing: -.016em; }
 h2 { font-size: 1.11em; letter-spacing: -.011em; }

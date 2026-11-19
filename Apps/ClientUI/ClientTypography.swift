@@ -6,14 +6,14 @@ enum PhoneTextStyle: Equatable {
     var size: CGFloat {
         #if os(macOS)
         switch self {
-        case .body, .transcript: 14
-        case .navigation, .menu: 13.5
-        case .history, .code: 12.5
-        case .brand, .subheading: 15
-        case .title, .heading: 19
-        case .section: 13.5
-        case .metadata: 11.5
-        case .caption: 11
+        case .body, .transcript: 15
+        case .navigation, .menu: 14
+        case .history, .code: 13
+        case .brand, .subheading: 15.5
+        case .title, .heading: 19.5
+        case .section: 14
+        case .metadata: 12
+        case .caption: 11.5
         }
         #else
         switch self {
@@ -54,8 +54,8 @@ enum PhoneTextStyle: Equatable {
     var extraLeading: CGFloat {
         #if os(macOS)
         switch self {
-        case .body, .transcript: size * 0.42
-        case .code: size * 0.34
+        case .body, .transcript: size * 0.48
+        case .code: size * 0.36
         default: 0
         }
         #else
