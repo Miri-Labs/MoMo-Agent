@@ -100,10 +100,7 @@ struct DesktopConnectorsView: View {
         let fs = status?.connectors.feishu
         let connected = fs?.connected == true
         return HStack(spacing: 12) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 16))
-                .foregroundStyle(connected ? Color.green : .secondary)
-                .frame(width: 24)
+            FeishuConnectorIcon(connected: connected)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("飞书")
@@ -209,10 +206,7 @@ struct DesktopConnectorsView: View {
         let em = status?.connectors.email
         let connected = em?.connected == true
         return HStack(spacing: 12) {
-            Image(systemName: "envelope")
-                .font(.system(size: 16))
-                .foregroundStyle(connected ? Color.green : .secondary)
-                .frame(width: 24)
+            MailConnectorIcon(connected: connected)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("邮件")
@@ -449,5 +443,149 @@ struct DesktopConnectorsView: View {
             parts.append(fmt.string(from: Date(timeIntervalSince1970: synced)))
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+// MARK: - Apple Settings-Style Connector Icons
+
+private struct FeishuConnectorIcon: View {
+    let connected: Bool
+
+    private static let installedAppIcon: NSImage? = {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let candidates = [
+            "/Applications/Feishu.app",
+            "/Applications/Lark.app",
+            "\(home)/Applications/Feishu.app",
+            "\(home)/Applications/Lark.app",
+        ]
+        for path in candidates where FileManager.default.fileExists(atPath: path) {
+            return NSWorkspace.shared.icon(forFile: path)
+        }
+        return nil
+    }()
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            if let appIcon = Self.installedAppIcon {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 28, height: 28)
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+                        .fill(Color.white)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+                                .strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5)
+                        )
+                        .shadow(color: .black.opacity(0.08), radius: 1, y: 0.5)
+
+                    Canvas { context, size in
+                        let w = size.width
+                        let h = size.height
+
+                        // Upper teal-green Feishu/Lark wing
+                        var upper = Path()
+                        upper.move(to: CGPoint(x: w * 0.20, y: h * 0.22))
+                        upper.addLine(to: CGPoint(x: w * 0.80, y: h * 0.45))
+                        upper.addLine(to: CGPoint(x: w * 0.48, y: h * 0.62))
+                        upper.addLine(to: CGPoint(x: w * 0.20, y: h * 0.48))
+                        upper.closeSubpath()
+                        context.fill(
+                            upper,
+                            with: .linearGradient(
+                                Gradient(colors: [
+                                    Color(red: 0.00, green: 0.84, blue: 0.73),
+                                    Color(red: 0.00, green: 0.75, blue: 0.67),
+                                ]),
+                                startPoint: CGPoint(x: w * 0.2, y: h * 0.2),
+                                endPoint: CGPoint(x: w * 0.8, y: h * 0.5)
+                            )
+                        )
+
+                        // Lower signature blue Feishu/Lark wing
+                        var lower = Path()
+                        lower.move(to: CGPoint(x: w * 0.20, y: h * 0.48))
+                        lower.addLine(to: CGPoint(x: w * 0.82, y: h * 0.52))
+                        lower.addLine(to: CGPoint(x: w * 0.36, y: h * 0.80))
+                        lower.addLine(to: CGPoint(x: w * 0.20, y: h * 0.68))
+                        lower.closeSubpath()
+                        context.fill(
+                            lower,
+                            with: .linearGradient(
+                                Gradient(colors: [
+                                    Color(red: 0.20, green: 0.44, blue: 1.00),
+                                    Color(red: 0.08, green: 0.34, blue: 0.94),
+                                ]),
+                                startPoint: CGPoint(x: w * 0.2, y: h * 0.5),
+                                endPoint: CGPoint(x: w * 0.8, y: h * 0.8)
+                            )
+                        )
+
+                        // Inner overlap fold
+                        var fold = Path()
+                        fold.move(to: CGPoint(x: w * 0.20, y: h * 0.48))
+                        fold.addLine(to: CGPoint(x: w * 0.56, y: h * 0.50))
+                        fold.addLine(to: CGPoint(x: w * 0.44, y: h * 0.61))
+                        fold.closeSubpath()
+                        context.fill(fold, with: .color(Color(red: 0.07, green: 0.24, blue: 0.61)))
+                    }
+                    .frame(width: 24, height: 24)
+                }
+                .frame(width: 28, height: 28)
+            }
+
+            if connected {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 8, height: 8)
+                    .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5))
+                    .offset(x: 2, y: 2)
+            }
+        }
+        .frame(width: 28, height: 28)
+    }
+}
+
+private struct MailConnectorIcon: View {
+    let connected: Bool
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.29, green: 0.71, blue: 1.00),
+                                Color(red: 0.09, green: 0.41, blue: 0.95),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+                    )
+                    .shadow(color: .black.opacity(0.10), radius: 1, y: 0.5)
+
+                Image(systemName: "envelope.fill")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 28, height: 28)
+
+            if connected {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 8, height: 8)
+                    .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5))
+                    .offset(x: 2, y: 2)
+            }
+        }
+        .frame(width: 28, height: 28)
     }
 }

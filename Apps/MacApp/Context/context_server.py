@@ -169,8 +169,6 @@ class ContextService:
                         elif url.path == "/v1/connectors/sync":
                             target = str(body.get("connector") or "all").strip()
                             result = sync_connectors(service.data, store, target)
-                            if any((v or {}).get("changed", 0) > 0 for v in (result.get("results") or {}).values()):
-                                service.maybe_emit_life_pulse(store)
                         elif url.path == "/v1/connectors/disconnect":
                             target = str(body.get("connector") or "").strip()
                             clear_data = bool(body.get("clear_data", False))
@@ -272,9 +270,7 @@ class ContextService:
             try:
                 store = ContextStore(self.directory)
                 try:
-                    res = sync_connectors(self.data, store, connector)
-                    if any((v or {}).get("changed", 0) > 0 for v in (res.get("results") or {}).values()):
-                        self.maybe_emit_life_pulse(store)
+                    sync_connectors(self.data, store, connector)
                 finally:
                     store.close()
             except Exception:
