@@ -162,25 +162,19 @@ struct RemoteMemoryView: View {
                 }
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
+                    LazyVStack(alignment: .leading, spacing: 20) {
                         if !visibleTree.rootItems.isEmpty {
-                            LazyVStack(alignment: .leading, spacing: 0) {
+                            LazyVStack(alignment: .leading, spacing: 2) {
                                 ForEach(Array(visibleTree.rootItems.enumerated()), id: \.element.id) { idx, memory in
                                     VStack(alignment: .leading, spacing: 0) {
                                         if idx > 0 {
                                             Divider()
-                                                .overlay(colors.line.opacity(0.55))
-                                                .padding(.leading, 34)
+                                                .overlay(colors.line.opacity(0.45))
+                                                .padding(.horizontal, 12)
                                         }
                                         directoryNoteRow(memory, colors: colors)
                                     }
                                 }
-                            }
-                            .padding(.vertical, 2)
-                            .background(colors.paper, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                    .strokeBorder(colors.line.opacity(0.8), lineWidth: 0.7)
                             }
                         }
 
@@ -189,7 +183,7 @@ struct RemoteMemoryView: View {
                             let expanded = !showHeader || isFolderExpanded(rootFolder.id)
                             let childRows = expanded ? flattenedSubtreeRows(under: rootFolder, baseDepth: showHeader ? 1 : 0) : []
 
-                            VStack(alignment: .leading, spacing: 0) {
+                            VStack(alignment: .leading, spacing: 4) {
                                 if showHeader {
                                     VaultFolderHeaderRow(
                                         node: rootFolder,
@@ -199,59 +193,41 @@ struct RemoteMemoryView: View {
                                 }
 
                                 if expanded {
-                                    LazyVStack(alignment: .leading, spacing: 0) {
+                                    LazyVStack(alignment: .leading, spacing: 2) {
                                         ForEach(Array(childRows.enumerated()), id: \.element.id) { idx, row in
                                             VStack(alignment: .leading, spacing: 0) {
                                                 switch row {
                                                 case let .subfolder(subNode, expandedSub, indentLevel):
-                                                    if idx > 0 {
-                                                        Divider()
-                                                            .overlay(colors.line.opacity(0.45))
-                                                            .padding(.leading, CGFloat(indentLevel) * 14 + 12)
-                                                    }
                                                     VaultFolderHeaderRow(
                                                         node: subNode,
                                                         isExpanded: expandedSub,
                                                         onToggle: { toggleFolder(subNode.id) }
                                                     )
-                                                    .padding(.leading, CGFloat(indentLevel) * 14)
-                                                    .overlay(alignment: .leading) {
-                                                        treeGuideLines(levels: indentLevel, colors: colors)
-                                                    }
+                                                    .padding(.top, idx > 0 ? 6 : 2)
+                                                    .padding(.leading, CGFloat(max(0, indentLevel - 1)) * 12)
 
                                                 case let .note(memory, indentLevel, isFirstInGroup):
                                                     if idx > 0 && !isFirstInGroup {
                                                         Divider()
-                                                            .overlay(colors.line.opacity(0.55))
-                                                            .padding(.leading, CGFloat(indentLevel) * 14 + 34)
-                                                    } else if idx > 0 {
-                                                        Divider()
                                                             .overlay(colors.line.opacity(0.45))
-                                                            .padding(.leading, CGFloat(indentLevel) * 14 + 12)
+                                                            .padding(.leading, 12 + CGFloat(max(0, indentLevel - 1)) * 12)
+                                                            .padding(.trailing, 12)
                                                     }
                                                     directoryNoteRow(memory, colors: colors)
-                                                        .padding(.leading, CGFloat(indentLevel) * 14)
-                                                        .overlay(alignment: .leading) {
-                                                            treeGuideLines(levels: indentLevel, colors: colors)
-                                                        }
+                                                        .padding(.leading, CGFloat(max(0, indentLevel - 1)) * 12)
                                                 }
                                             }
                                         }
                                     }
                                 }
                             }
-                            .padding(.vertical, 2)
-                            .background(colors.paper, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                    .strokeBorder(colors.line.opacity(0.8), lineWidth: 0.7)
-                            }
                         }
                         syncStatusFooter
+                            .padding(.horizontal, 12)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 6)
-                    .padding(.bottom, 16)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .refreshable {
@@ -259,11 +235,11 @@ struct RemoteMemoryView: View {
                 }
             }
         }
-        .background(colors.desk.ignoresSafeArea())
+        .background(colors.paper.ignoresSafeArea())
         .tint(colors.ink)
         .navigationTitle("记忆")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(colors.desk, for: .navigationBar)
+        .toolbarBackground(colors.paper, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .searchable(
             text: $searchQuery,
@@ -296,49 +272,64 @@ struct RemoteMemoryView: View {
         }
     }
 
+    private static func cleanExcerpt(_ raw: String) -> String {
+        // Strip [[path/to/note.md]] wiki-links down to clean readable names
+        let regex = try? NSRegularExpression(pattern: #"\[\[([^\]]+)\]\]"#)
+        let ns = raw as NSString
+        var output = raw
+        if let regex {
+            let matches = regex.matches(in: raw, range: NSRange(location: 0, length: ns.length))
+            for match in matches.reversed() {
+                guard match.numberOfRanges > 1 else { continue }
+                let inner = ns.substring(with: match.range(at: 1))
+                let display = inner
+                    .components(separatedBy: "|").last?
+                    .components(separatedBy: "/").last?
+                    .replacingOccurrences(of: ".md", with: "") ?? inner
+                if let range = Range(match.range, in: output) {
+                    output.replaceSubrange(range, with: display)
+                }
+            }
+        }
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     @ViewBuilder
     private func directoryNoteRow(_ memory: ContextMemory, colors: MemoryNotebookPalette) -> some View {
         let matchedSnippet = searchSnippet(for: memory, query: trimmedQuery)
+        let digest = MemoryCardDigest.cached(for: memory)
+        let rawExcerpt = matchedSnippet ?? digest.highlights.first
+        let excerpt = rawExcerpt.map(Self.cleanExcerpt)
 
         NavigationLink {
             RemoteMemoryDetail(sync: sync, taskStore: taskStore, memoryID: memory.id)
         } label: {
-            if let matchedSnippet {
-                let digest = MemoryCardDigest.cached(for: memory)
-                HStack(alignment: .center, spacing: 9) {
-                    Image(systemName: digest.badge.symbol)
-                        .font(.system(size: 12.5, weight: .regular))
-                        .foregroundStyle(colors.tabAccent(memory.kind))
-                        .frame(width: 14)
-                        .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: 2.5) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(digest.title)
-                                .font(.system(size: 14.5, weight: .regular))
-                                .foregroundStyle(colors.ink)
-                                .lineLimit(1)
-                            Spacer(minLength: 4)
-                            if let date = digest.dateBadge {
-                                Text(date)
-                                    .font(.system(size: 11, weight: .regular))
-                                    .monospacedDigit()
-                                    .foregroundStyle(colors.secondaryInk)
-                            }
-                        }
-                        Text(matchedSnippet)
-                            .font(.system(size: 12))
-                            .foregroundStyle(colors.secondaryInk)
-                            .lineLimit(1)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(digest.title)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(colors.ink)
+                        .lineLimit(1)
+                    Spacer(minLength: 6)
+                    if let date = digest.dateBadge {
+                        Text(date)
+                            .font(.system(size: 11.5, weight: .regular))
+                            .monospacedDigit()
+                            .foregroundStyle(colors.secondaryInk.opacity(0.75))
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
-            } else {
-                MemoryCardView(memory: memory)
+                if let excerpt, !excerpt.isEmpty {
+                    Text(excerpt)
+                        .font(.system(size: 13))
+                        .foregroundStyle(colors.secondaryInk)
+                        .lineLimit(2)
+                        .lineSpacing(2)
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("remote.memoryRow." + memory.id)
@@ -439,34 +430,28 @@ private struct VaultFolderHeaderRow: View {
     var body: some View {
         let colors = MemoryNotebookPalette(scheme: scheme)
         Button(action: onToggle) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(colors.secondaryInk)
-                    .frame(width: 13)
-                    .accessibilityHidden(true)
-
-                Image(systemName: DreamMemoryCategory.folderSymbol(for: node.id, depth: node.depth))
-                    .font(.system(size: node.depth == 0 ? 13 : 12.5, weight: .medium))
-                    .foregroundStyle(colors.tabAccent(node.accentKind))
-                    .frame(width: 16)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(colors.secondaryInk.opacity(0.8))
+                    .frame(width: 12)
                     .accessibilityHidden(true)
 
                 Text(node.name)
-                    .font(.system(size: node.depth == 0 ? 14 : 13.5, weight: node.depth == 0 ? .semibold : .medium))
-                    .foregroundStyle(colors.ink)
+                    .font(.system(size: node.depth == 0 ? 12.5 : 12, weight: .semibold))
+                    .foregroundStyle(colors.secondaryInk)
                     .lineLimit(1)
 
                 Spacer(minLength: 6)
 
                 Text("\(node.totalItemCount)")
-                    .font(.system(size: 11.5, weight: .regular))
+                    .font(.system(size: 11, weight: .regular))
                     .monospacedDigit()
-                    .foregroundStyle(colors.secondaryInk)
+                    .foregroundStyle(colors.secondaryInk.opacity(0.65))
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, node.depth == 0 ? 9 : 8)
-            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
