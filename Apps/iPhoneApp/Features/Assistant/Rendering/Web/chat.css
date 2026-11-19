@@ -29,7 +29,7 @@
   --paper: #ffffff;
   --chat-font-size: .9375rem;
   --chat-code-size: .84375rem;
-  --chat-weight: 400;
+  --chat-weight: 500;
 }
 /* First paint happens before the native bridge supplies data-dark. */
 @media (prefers-color-scheme: dark) {
@@ -55,7 +55,7 @@
   }
   :root[data-desktop]:not([data-dark=false]) {
     --paper: #171719;
-    --chat-weight: 400;
+    --chat-weight: 500;
   }
 }
 :root[data-dark=true] {
@@ -80,7 +80,7 @@
 }
 :root[data-desktop][data-dark=true] {
   --paper: #171719;
-  --chat-weight: 400;
+  --chat-weight: 500;
 }
 * { box-sizing: border-box; }
 html {
@@ -275,7 +275,7 @@ button[hidden], [hidden] { display: none !important; }
   word-wrap: break-word;
 }
 :root[data-desktop] .prose { line-height: 1.62; }
-.prose strong, .prose b { font-weight: 560; }
+.prose strong, .prose b { font-weight: 600; }
 .md-chunk, .code-wrap, .table-scroll { min-width: 0; max-width: 100%; }
 .md-chunk > :first-child { margin-top: 0; }
 .md-chunk > :last-child { margin-bottom: 0; }
