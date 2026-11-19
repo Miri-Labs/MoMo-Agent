@@ -333,7 +333,7 @@ DREAM_INSTRUCTION = """
    - 通过 `phone_context(kind='all')` 与 `phone_context(kind='health')`（及页面附带的 `health_and_activity_summary`）核对到访地点（`visits`）、出行姿态（`motion`）、日程（`calendar`）、待办（`reminders`）以及睡眠阶段、HRV/静息心率恢复趋势与运动消耗；有 `next_cursor` 时按需续读。牢记视野谦逊：日程只代表计划，待办从快照消失或未打勾都不单独证明已完成或未完成（用户可能在线下办妥）；结合当天全部录音（`list_recordings` / `read_recording`）与聊天（`session_search`）客观更新当日日志（若该月份已有 `journal/YYYY-MM/` 子目录则统一写入 `journal/YYYY-MM/YYYY-MM-DD.md`）。瞬时电量等临时数值留在资料层，不写入 `MEMORY.md` / `USER.md`。
    - 包含：`# YYYY-MM-DD · <当日主线标题>`、`## 时空与事件脉络`（融合真实会议/对话与日常生活关键脉络并附 `[HH:MM 原音](momoagent://source/...)` 锚点，同时简记当日睡眠/运动/精力节律）、`## 思考火花与决策演变`、`## 承诺与待办对账`。
 5. 【在研项目盘点与边界隔离（`projects/` + `topics/`）】
-   - 按业务域、核心术语与参与人区分独立项目，不将不同项目的排期、规则或人物串写混同。
+   - 按业务域、核心术语与参与人区分独立项目，不将不同项目的排期、规则或人物串写混同；可结合 `search_memory(kind='connector')` 核对已同步的飞书消息/文档与重要邮件脉络，提取关键结论沉淀至对应活页。
    - 维护 `projects/overview.md`（`# 在研项目总览`）及各活跃项目活页 `projects/<项目短名>.md`（或项目子目录），清晰呈现项目目标、当前定案结论、核心相关人与下一步杠杆点；`topics/` 仅保留跨项目或需独立沉淀的方法论专题。
 6. 【晨间简报昼夜分工与全景合成（`BRIEFING.md` + `memory`）】
    - **凌晨睡眠前不预写死次日简报**：若 `Current Local Time` 处于每日分界线之前的凌晨时段（如 `00:00–07:59`，用户尚未睡醒、当晚睡眠与晨间 HRV 尚未出炉），本轮专注把 `journal`、项目/人物/生活活页、`MEMORY.md` 与 `USER.md` 沉淀扎实，**不要提前把次日日期写入 `BRIEFING.md`**（系统会在早晨醒后结合整晚睡眠恢复、全天录音脉络与今日日程实时生成晨间简报）。

@@ -249,6 +249,7 @@
 		B7CCB4FADB057CC2D2A8767E /* SettingsHierarchyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF08489359FDA59EF92F662D /* SettingsHierarchyTests.swift */; };
 		B86DBF147EEEE632E64C797A /* TailnetHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85F2C4D69A9620E278965CE8 /* TailnetHelp.swift */; };
 		B8862B23C79B4C02CE769519 /* MoMoAgentRTC in Frameworks */ = {isa = PBXBuildFile; productRef = BB0512C74F5869A62ADD69D7 /* MoMoAgentRTC */; };
+		C044EC702918ED9C2963F001 /* DesktopConnectors.swift in Sources */ = {isa = PBXBuildFile; fileRef = C044EC702918ED9C2963F002 /* DesktopConnectors.swift */; };
 		B9603BCE27F1E872C7E0C0D6 /* DesktopOnboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48F5DAA22918ED9C2963F989 /* DesktopOnboarding.swift */; };
 		BB3B7B010386D2816F3943A8 /* PhoneConnectionOnboardingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD47AD83F58AE3494D08F171 /* PhoneConnectionOnboardingTests.swift */; };
 		BD6D951554F6F1351E60F255 /* PhoneHealthReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC12A67C17710BBB8FEBB125 /* PhoneHealthReader.swift */; };
@@ -586,6 +587,7 @@
 		471268805A21B6F3A02FF67F /* MoMoAgentWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MoMoAgentWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		484492ACE9377B645A3AD4D4 /* MoMoAgentWatchIntegrationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoMoAgentWatchIntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		48D6931E9E783AB003F5D3B0 /* PhoneHistoryDrawerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneHistoryDrawerTests.swift; sourceTree = "<group>"; };
+		C044EC702918ED9C2963F002 /* DesktopConnectors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopConnectors.swift; sourceTree = "<group>"; };
 		48F5DAA22918ED9C2963F989 /* DesktopOnboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopOnboarding.swift; sourceTree = "<group>"; };
 		4EDFE80B44C8266004905235 /* PhoneComposition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneComposition.swift; sourceTree = "<group>"; };
 		4F38AF37111A8018C2D0A456 /* MoMoAgentLocal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MoMoAgentLocal.entitlements; sourceTree = "<group>"; };
@@ -898,6 +900,7 @@
 				E9A6E6A572686753246ADE84 /* DesktopNotchCompanion.swift */,
 				66A3BFE3730CBCC365395191 /* DesktopNotchLayout.swift */,
 				F3F76F1FD6043C77A898EA64 /* DesktopNotchSurface.swift */,
+				C044EC702918ED9C2963F002 /* DesktopConnectors.swift */,
 				48F5DAA22918ED9C2963F989 /* DesktopOnboarding.swift */,
 				2E816FDE8DED5885B7E48949 /* DesktopOnboardingPairing.swift */,
 				8E5852B94CFA7899145136DC /* DesktopPermissions.swift */,
@@ -2203,6 +2206,7 @@
 				6984126C03E14E3407768200 /* DesktopNotchCompanion.swift in Sources */,
 				A710F41BDF0E256FC49F8875 /* DesktopNotchLayout.swift in Sources */,
 				D8CBA6D34DCE2DB95C9FCE8A /* DesktopNotchSurface.swift in Sources */,
+				C044EC702918ED9C2963F001 /* DesktopConnectors.swift in Sources */,
 				B9603BCE27F1E872C7E0C0D6 /* DesktopOnboarding.swift in Sources */,
 				8AFA0B1BE905E1F82ED3BC73 /* DesktopOnboardingPairing.swift in Sources */,
 				C7B98389A76E02412671E7E6 /* DesktopPIMDriver.swift in Sources */,

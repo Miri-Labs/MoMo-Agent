@@ -16,11 +16,11 @@ from memory_review import eligible_chat_messages, readonly
 from momo_memory import MoMoMemory, _file_lock
 from transcript_speakers import classify_transcript_span
 
-KINDS = ("note", "recording", "chat")
+KINDS = ("note", "recording", "chat", "connector")
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 160
 QUERY_HELP = (
-    "Search shared Markdown memory, original recording spans and chat by relevance. "
+    "Search shared Markdown memory, original recording spans, chat, and synced external connector items (Feishu messages/docs & Email) by relevance. "
     "For vague wording, supply up to 3 focused alternative_queries (synonyms, names, technical terms, "
     "or separate missing aspects). Query variants are search hypotheses, never evidence. "
     "Read relevant hits with read_memory_evidence; if an aspect is missing, search again using grounded clues. "
@@ -195,6 +195,40 @@ class MemorySearch:
                                  "speaker_attribution_excluded": span.get("speaker_attribution_excluded") is True,
                                  "title": payload.get("title") or row["id"], "basis": "transcript"}, speaker or ""))
                         updates.append((group, signature, documents))
+                has_connector_tbl = store.db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='connector_items'"
+                ).fetchone()
+                if has_connector_tbl:
+                    c_rows = store.db.execute(
+                        "SELECT id, connector, item_type, thread_id, title, sender, channel, content, occurred_at, updated_at FROM connector_items"
+                    ).fetchall()
+                    for crow in c_rows:
+                        cid = str(crow["id"])
+                        group = "connector:" + cid
+                        sig = digest(canonical([crow["updated_at"], crow["occurred_at"], crow["title"]]))
+                        live.add(group)
+                        if known.get(group) != sig:
+                            header_title = " ".join(
+                                p for p in (crow["connector"], crow["channel"], crow["sender"], crow["title"]) if p
+                            )
+                            doc = _document(
+                                group,
+                                "connector",
+                                str(crow["content"] or ""),
+                                {
+                                    "connector": crow["connector"],
+                                    "item_type": crow["item_type"],
+                                    "item_id": cid,
+                                    "thread_id": crow["thread_id"],
+                                    "title": crow["title"],
+                                    "sender": crow["sender"],
+                                    "channel": crow["channel"],
+                                    "occurred_at": crow["occurred_at"],
+                                    "basis": "external_connector",
+                                },
+                                header_title,
+                            )
+                            updates.append((group, sig, [doc]))
             finally:
                 store.close()
             for group, signature, documents in updates:

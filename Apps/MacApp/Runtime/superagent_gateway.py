@@ -2235,6 +2235,7 @@ class SuperAgentGateway:
             notebook_summary = "Current Markdown Notebook (`memories/`): (No BRIEFING.md, journal/*.md, people/*.md, or topics/*.md written yet.)"
 
         recent_rec_lines: list[str] = []
+        recent_conn_lines: list[str] = []
         ctx_dir = self.data / "context"
         if ctx_dir.exists():
             store = ContextStore(ctx_dir)
@@ -2247,6 +2248,14 @@ class SuperAgentGateway:
                     recent_rec_lines.append(
                         f"- source_id=`{item['id']}` rev=`{item['revision']}` time=`{dt_str}` chars={item.get('total_characters', 0)} preview: {preview}"
                     )
+                with suppress(Exception):
+                    from connectors import recent_connector_digest
+                    for citem in recent_connector_digest(store, hours=72.0, limit=12):
+                        c_dt = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(citem["occurred_at"])))
+                        c_prev = " ".join(str(citem.get("preview") or "").split())[:100]
+                        recent_conn_lines.append(
+                            f"- [{citem['connector']}/{citem['channel']}] `{citem['id']}` time=`{c_dt}` {citem['title']} — {c_prev}"
+                        )
             except Exception:
                 pass
             finally:
@@ -2256,6 +2265,12 @@ class SuperAgentGateway:
             + "\n".join(recent_rec_lines)
             if recent_rec_lines
             else "Recent Recordings Snapshot: (No recordings synced yet.)"
+        )
+        recent_connectors_summary = (
+            "Recent External Connector Snapshot (Feishu & Email, use `search_memory(kind='connector')` + `read_memory_evidence` for full text):\n"
+            + "\n".join(recent_conn_lines)
+            if recent_conn_lines
+            else ""
         )
         now_ts = time.time()
         day_hour = read_day_start_hour(self.data)
@@ -2278,6 +2293,7 @@ class SuperAgentGateway:
             "- `list_recordings`, `read_recording`, `search_recordings`, `phone_context`, and `session_search` to gather grounded evidence.\n"
             "Never claim `outcome: \"updated\"` unless at least one `memory`, `notebook` (write/remove/move), or `relabel_speakers` call confirmed a persisted change (`success: true`, `changed: true`).\n\n"
             f"{memory_context}\n\n{notebook_summary}\n\n{recent_recordings_summary}"
+            + (f"\n\n{recent_connectors_summary}" if recent_connectors_summary else "")
         )
         tool_specs = [
             copy.deepcopy(SEARCH_SCHEMA),
