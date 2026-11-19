@@ -23,40 +23,40 @@ enum MoMoPalette {
     static let failure = Color("PhoneFailure")
     static let failureBackground = Color("PhoneFailureBackground")
 
-    /// Grok Bot (sand) neutral/3 outer shell & sidebar (#F5F5F5 Light / #0E0E0E Dark).
-    static var sidebar: Color {
+    /// Outer gray shell & sidebar (#F2F2F4 Light / #0D0D0F Dark).
+    static let sidebar: Color = {
         #if os(macOS)
         Color(nsColor: NSColor(name: nil) { appearance in
             let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             return dark
-                ? NSColor(srgbRed: 14.0 / 255, green: 14.0 / 255, blue: 14.0 / 255, alpha: 1.0)
-                : NSColor(srgbRed: 245.0 / 255, green: 245.0 / 255, blue: 245.0 / 255, alpha: 1.0)
+                ? NSColor(srgbRed: 13.0 / 255, green: 13.0 / 255, blue: 15.0 / 255, alpha: 1.0)
+                : NSColor(srgbRed: 242.0 / 255, green: 242.0 / 255, blue: 244.0 / 255, alpha: 1.0)
         })
         #else
         Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
-                ? UIColor(red: 14.0 / 255, green: 14.0 / 255, blue: 14.0 / 255, alpha: 1.0)
-                : UIColor(red: 245.0 / 255, green: 245.0 / 255, blue: 245.0 / 255, alpha: 1.0)
+                ? UIColor(red: 13.0 / 255, green: 13.0 / 255, blue: 15.0 / 255, alpha: 1.0)
+                : UIColor(red: 242.0 / 255, green: 242.0 / 255, blue: 244.0 / 255, alpha: 1.0)
         })
         #endif
-    }
+    }()
 
-    /// Grok Bot (sand) neutral/1 editorial document pane (#FFFFFF Light / #161616 Dark).
-    static var pane: Color {
+    /// Floating white stage card & editorial document pane (#FFFFFF Light / #171719 Dark).
+    static let pane: Color = {
         #if os(macOS)
         Color(nsColor: NSColor(name: nil) { appearance in
             let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             return dark
-                ? NSColor(srgbRed: 22.0 / 255, green: 22.0 / 255, blue: 22.0 / 255, alpha: 1.0)
+                ? NSColor(srgbRed: 23.0 / 255, green: 23.0 / 255, blue: 25.0 / 255, alpha: 1.0)
                 : NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
         })
         #else
         paper
         #endif
-    }
+    }()
 
     /// Subtle secondary split sub-pane (#F8F8F8 Light / #121212 Dark).
-    static var subpane: Color {
+    static let subpane: Color = {
         #if os(macOS)
         Color(nsColor: NSColor(name: nil) { appearance in
             let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -67,7 +67,7 @@ enum MoMoPalette {
         #else
         canvas
         #endif
-    }
+    }()
 
     static var tertiaryInk: Color { ink.opacity(0.42) }
     static var hoverFill: Color { ink.opacity(0.05) }
@@ -90,7 +90,17 @@ private struct MoMoElevatedCardModifier: ViewModifier {
         let isDark = colorScheme == .dark
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
-            .background(MoMoPalette.paper, in: shape)
+            .background {
+                // Apply shadow ONLY to the static card shape (never to `content`), avoiding offscreen alpha compositing passes on every frame.
+                shape
+                    .fill(MoMoPalette.paper)
+                    .shadow(
+                        color: isDark || shadowStrength <= 0 ? .clear : Color.black.opacity(0.035 * shadowStrength),
+                        radius: 7,
+                        x: 0,
+                        y: 2
+                    )
+            }
             .overlay {
                 shape.strokeBorder(
                     isFocused
@@ -100,40 +110,38 @@ private struct MoMoElevatedCardModifier: ViewModifier {
                 )
                 .allowsHitTesting(false)
             }
-            // Sand elevation law: Light mode uses a single whisper-soft ambient shadow; Dark mode uses 0% black shadow.
-            .shadow(
-                color: isDark || shadowStrength <= 0 ? .clear : Color.black.opacity(0.035 * shadowStrength),
-                radius: 7,
-                x: 0,
-                y: 2
-            )
     }
 }
 
 private struct SandInsetStageModifier: ViewModifier {
     let cornerRadius: CGFloat
-    var fill: Color = MoMoPalette.canvas
+    var fill: Color = MoMoPalette.pane
     @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
         let isDark = colorScheme == .dark
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
-            .background(fill)
             .clipShape(shape)
+            .background {
+                // Keep the ambient shadow strictly on the static backdrop shape so live-scrolling
+                // WKWebView / NSTableView children inside `content` never trigger offscreen shadow passes.
+                shape
+                    .fill(fill)
+                    .shadow(
+                        color: isDark ? .clear : Color.black.opacity(0.032),
+                        radius: 10,
+                        x: 0,
+                        y: 3
+                    )
+            }
             .overlay {
                 shape.strokeBorder(
-                    isDark ? Color.white.opacity(0.07) : Color.black.opacity(0.065),
+                    isDark ? Color.white.opacity(0.085) : Color.black.opacity(0.07),
                     lineWidth: 0.5
                 )
                 .allowsHitTesting(false)
             }
-            .shadow(
-                color: isDark ? .clear : Color.black.opacity(0.024),
-                radius: 6,
-                x: 0,
-                y: 1.5
-            )
     }
 }
 
@@ -150,8 +158,8 @@ extension View {
         ))
     }
 
-    /// Grok Bot / Anysphere inset rounded workspace stage framed against the recessed sidebar shell.
-    func sandInsetStage(cornerRadius: CGFloat = 12, fill: Color = MoMoPalette.canvas) -> some View {
+    /// Floating white workspace stage card framed against the outer gray desktop shell.
+    func sandInsetStage(cornerRadius: CGFloat = 16, fill: Color = MoMoPalette.pane) -> some View {
         modifier(SandInsetStageModifier(cornerRadius: cornerRadius, fill: fill))
     }
 

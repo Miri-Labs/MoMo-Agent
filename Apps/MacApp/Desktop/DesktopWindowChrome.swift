@@ -55,3 +55,76 @@ struct DesktopWindowDragRegion: NSViewRepresentable {
     func makeNSView(context: Context) -> DragView { DragView() }
     func updateNSView(_ nsView: DragView, context: Context) {}
 }
+
+/// Expands the macOS window rightward when the right detail inspector opens (if screen space allows),
+/// and smoothly restores the previous width when it closes. Falls back to compressing the left pane
+/// when the window is full-screen or already near the screen's right edge.
+struct DesktopWindowInspectorExpander: NSViewRepresentable {
+    let isOpen: Bool
+    let inspectorWidth: CGFloat
+
+    final class Host: NSView {
+        private var initialized = false
+        private var lastOpen = false
+        private var expandedDelta: CGFloat = 0
+
+        func needsSync(isOpen: Bool) -> Bool {
+            !initialized || isOpen != lastOpen
+        }
+
+        func sync(isOpen: Bool, inspectorWidth: CGFloat) {
+            guard let window else { return }
+            if !initialized {
+                initialized = true
+                lastOpen = isOpen
+                return
+            }
+            guard isOpen != lastOpen else { return }
+            lastOpen = isOpen
+
+            guard !window.styleMask.contains(.fullScreen) else {
+                if !isOpen { expandedDelta = 0 }
+                return
+            }
+
+            if isOpen {
+                let visible = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+                guard let visible else { return }
+                let rightRoom = max(0, visible.maxX - window.frame.maxX)
+                let delta = min(inspectorWidth, rightRoom)
+                if delta >= 12 {
+                    var nextFrame = window.frame
+                    nextFrame.size.width += delta
+                    expandedDelta = delta
+                    animateWindowFrame(window, to: nextFrame)
+                } else {
+                    expandedDelta = 0
+                }
+            } else {
+                guard expandedDelta > 0 else { return }
+                var nextFrame = window.frame
+                let minWidth = max(window.minSize.width, 820)
+                nextFrame.size.width = max(minWidth, nextFrame.size.width - expandedDelta)
+                expandedDelta = 0
+                animateWindowFrame(window, to: nextFrame)
+            }
+        }
+
+        /// Non-blocking CoreAnimation frame transition (avoids `NSWindow.setFrame(..., animate: true)`'s synchronous modal loop).
+        private func animateWindowFrame(_ window: NSWindow, to frame: NSRect) {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.20
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                window.animator().setFrame(frame, display: false)
+            }
+        }
+    }
+
+    func makeNSView(context: Context) -> Host { Host() }
+    func updateNSView(_ nsView: Host, context: Context) {
+        guard nsView.needsSync(isOpen: isOpen) else { return }
+        DispatchQueue.main.async {
+            nsView.sync(isOpen: isOpen, inspectorWidth: inspectorWidth)
+        }
+    }
+}

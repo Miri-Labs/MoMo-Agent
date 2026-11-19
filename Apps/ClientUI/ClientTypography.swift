@@ -6,11 +6,11 @@ enum PhoneTextStyle: Equatable {
     var size: CGFloat {
         #if os(macOS)
         switch self {
-        case .body, .transcript: 13.8
-        case .navigation, .menu: 13
+        case .body, .transcript: 14
+        case .navigation, .menu: 13.5
         case .history, .code: 12.5
         case .brand, .subheading: 15
-        case .title, .heading: 18.5
+        case .title, .heading: 19
         case .section: 13.5
         case .metadata: 11.5
         case .caption: 11
