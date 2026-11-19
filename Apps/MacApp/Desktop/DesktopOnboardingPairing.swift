@@ -20,7 +20,7 @@ struct DesktopOnboardingPairing: View {
                     .multilineTextAlignment(.leading)
                 HStack {
                     if onFinish == nil {
-                        Button { model.advanceSetup(.permissions) } label: {
+                        Button { model.advanceSetup(.connectors) } label: {
                             Label("返回", systemImage: "chevron.left").padding(.vertical, 6)
                         }.disabled(model.busy != nil).accessibilityIdentifier("pairing.back")
                     }
@@ -53,7 +53,7 @@ struct DesktopOnboardingPairing: View {
                     }.buttonStyle(.plain).font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 if onFinish == nil {
-                    Button("返回") { model.advanceSetup(.permissions) }
+                    Button("返回") { model.advanceSetup(.connectors) }
                         .buttonStyle(.plain).font(.system(size: 13)).foregroundStyle(.secondary)
                         .disabled(model.busy != nil).accessibilityIdentifier("pairing.back")
                 }
