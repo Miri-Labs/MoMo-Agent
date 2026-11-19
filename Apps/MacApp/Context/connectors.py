@@ -50,6 +50,7 @@ FEISHU_DOMAINS = {
 FEISHU_READONLY_SCOPES = (
     "im:chat:readonly "
     "im:message:readonly "
+    "im:message.group_msg "
     "docx:document:readonly "
     "drive:drive:readonly "
     "offline_access"
@@ -892,49 +893,67 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
                     changed += 1
                 synced += 1
 
-        # 2. Sync recent personal cloud docs (read-only)
+        # 2. Sync recent personal cloud docs across root and subfolders (read-only, up to depth 2)
         try:
-            files_res = http_fn(
-                f"{ep['api_base']}/open-apis/drive/v1/files?page_size={DEFAULT_MAX_FEISHU_DOCS}&order_by=EditedTime&direction=DESC",
-                headers=headers,
-            )
-            files = ((files_res.get("data") or {}).get("files") or [])[:DEFAULT_MAX_FEISHU_DOCS]
-            for f in files:
-                ftype = str(f.get("type") or "").lower()
-                if ftype not in ("docx", "doc"):
+            doc_count = 0
+            seen_folders: set[str] = {""}
+            queue: list[tuple[str, int, str]] = [("", 0, "飞书云文档")]
+            while queue and doc_count < DEFAULT_MAX_FEISHU_DOCS:
+                folder_token, depth, folder_label = queue.pop(0)
+                params = {"page_size": str(DEFAULT_MAX_FEISHU_DOCS), "order_by": "EditedTime", "direction": "DESC"}
+                if folder_token:
+                    params["folder_token"] = folder_token
+                try:
+                    files_res = http_fn(
+                        f"{ep['api_base']}/open-apis/drive/v1/files?{urlencode(params)}",
+                        headers=headers,
+                    )
+                except ConnectorError:
+                    if depth == 0:
+                        raise
                     continue
-                doc_token = str(f.get("token") or "").strip()
-                if not doc_token:
-                    continue
-                doc_name = str(f.get("name") or "飞书文档").strip()
-                doc_url = str(f.get("url") or "").strip()
-                raw_text = ""
-                if ftype == "docx":
-                    try:
-                        doc_res = http_fn(
-                            f"{ep['api_base']}/open-apis/docx/v1/documents/{doc_token}/raw_content",
-                            headers=headers,
-                        )
-                        raw_text = str(((doc_res.get("data") or {}).get("content")) or "").strip()
-                    except ConnectorError:
-                        raw_text = ""
-                mod_ts = float(f.get("modified_time") or time.time())
-                content = f"# {doc_name}\n\n{raw_text}" if raw_text else f"# {doc_name}\n\n(飞书文档链接: {doc_url})"
-                if _upsert_connector_item(
-                    store,
-                    item_id=f"feishu:doc:{doc_token}",
-                    connector="feishu",
-                    item_type="feishu_doc",
-                    thread_id=doc_token,
-                    title=doc_name,
-                    sender=str(cfg.get("user_name") or ""),
-                    channel="飞书云文档",
-                    content=content,
-                    occurred_at=mod_ts,
-                    metadata={"token": doc_token, "type": ftype, "url": doc_url},
-                ):
-                    changed += 1
-                synced += 1
+                files = (files_res.get("data") or {}).get("files") or []
+                for f in files:
+                    if doc_count >= DEFAULT_MAX_FEISHU_DOCS:
+                        break
+                    ftype = str(f.get("type") or "").lower()
+                    ftoken = str(f.get("token") or "").strip()
+                    fname = str(f.get("name") or "飞书文档").strip()
+                    if ftype == "folder" and ftoken and depth < 2 and ftoken not in seen_folders:
+                        seen_folders.add(ftoken)
+                        queue.append((ftoken, depth + 1, f"{folder_label}/{fname}"))
+                        continue
+                    if ftype not in ("docx", "doc") or not ftoken:
+                        continue
+                    doc_url = str(f.get("url") or "").strip()
+                    raw_text = ""
+                    if ftype == "docx":
+                        try:
+                            doc_res = http_fn(
+                                f"{ep['api_base']}/open-apis/docx/v1/documents/{ftoken}/raw_content",
+                                headers=headers,
+                            )
+                            raw_text = str(((doc_res.get("data") or {}).get("content")) or "").strip()
+                        except ConnectorError:
+                            raw_text = ""
+                    mod_ts = float(f.get("modified_time") or time.time())
+                    content = f"# {fname}\n\n{raw_text}" if raw_text else f"# {fname}\n\n(飞书文档链接: {doc_url})"
+                    if _upsert_connector_item(
+                        store,
+                        item_id=f"feishu:doc:{ftoken}",
+                        connector="feishu",
+                        item_type="feishu_doc",
+                        thread_id=ftoken,
+                        title=fname,
+                        sender=str(cfg.get("user_name") or ""),
+                        channel=folder_label,
+                        content=content,
+                        occurred_at=mod_ts,
+                        metadata={"token": ftoken, "type": ftype, "url": doc_url, "folder": folder_label},
+                    ):
+                        changed += 1
+                    synced += 1
+                    doc_count += 1
         except ConnectorError:
             # Drive scope is optional if the user only granted IM scopes.
             pass
