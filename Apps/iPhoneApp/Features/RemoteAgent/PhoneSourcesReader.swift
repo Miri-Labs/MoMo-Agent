@@ -147,7 +147,14 @@ import MoMoAgentClient
         case .visits:
             pruneVisits()
             try saveVisits()
-            values = visits
+            let minTime = from.timeIntervalSince1970
+            let maxTime = to.timeIntervalSince1970 + 250
+            var seenIDs = Set<String>()
+            values = visits.filter { record in
+                guard seenIDs.insert(record.id).inserted else { return false }
+                let latest = max(record.start ?? 0, record.end ?? 0)
+                return latest >= minTime && latest <= maxTime
+            }
         case .calendar:
             let predicate = events.predicateForEvents(withStart: from, end: to, calendars: nil)
             values = events.events(matching: predicate).map { event in
