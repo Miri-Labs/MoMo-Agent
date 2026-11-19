@@ -170,7 +170,7 @@ MOMO_PROMPT_CONFIG = {
             "2. **若页面停留在登录/扫码页**：暂停并温和告诉用户一句：「我已经在浏览器帮你打开飞书开放平台了，麻烦用手机飞书扫一下码登录，登完回我一声，后面的建应用、勾权限和配回调我直接帮你点完～」。\n"
             "3. **用户登录后，由你通过浏览器/桌面控制自动完成**：\n"
             "   - 创建企业自建应用（如命名 `MoMo Agent`，若已有现成个人 MoMo 应用可直接复用）。\n"
-            "   - 进入「权限管理」，搜索并开通以下只读权限：`im:chat:readonly`、`im:message:readonly`、`im:message.group_msg`、`docx:document:readonly`、`drive:drive:readonly`、`offline_access`（如需发布版本才能生效权限，顺手点「版本管理与发布」创建并发布一个内部版本）。\n"
+            "   - 进入「权限管理」，**切换到「用户身份权限」**，搜索并开通以下只读权限：`im:chat:readonly`、`im:message:readonly`、`im:message.group_msg:get_as_user`、`im:message.p2p_msg:get_as_user`、`search:message`、`docx:document:readonly`、`drive:drive:readonly`、`offline_access`（已完整支持私聊 + 群聊消息及云文档子目录递归同步；如需发布版本才能生效权限，顺手点「版本管理与发布」创建并发布一个仅本人可用的内部版本）。\n"
             "   - 进入「凭证与基础信息」读取 `App ID` 和 `App Secret`。\n"
             "   - 运行 `\"$DSH_SUPERAGENT_MOMO_CLI\" connectors --action start-feishu-oauth --app-id \"<id>\" --app-secret \"<secret>\" --domain feishu --open`，拿到返回的本地 `redirect_uri`（`http://127.0.0.1:<端口>/callback`）。\n"
             "   - 切回飞书开放平台「安全设置 → 重定向 URL」，把 `redirect_uri` 填进去并保存，然后切到刚弹出的飞书授权页刷新一下，让用户直接点一下「同意授权」即可。\n"

@@ -141,6 +141,9 @@ class ConnectorsTests(unittest.TestCase):
         qs = parse_qs(parsed.query)
         self.assertEqual(qs["client_id"], ["cli_test_app"])
         self.assertIn("im:message:readonly", qs["scope"][0])
+        self.assertIn("im:message.group_msg:get_as_user", qs["scope"][0])
+        self.assertIn("im:message.p2p_msg:get_as_user", qs["scope"][0])
+        self.assertIn("search:message", qs["scope"][0])
         self.assertIn("docx:document:readonly", qs["scope"][0])
         connectors._FEISHU_OAUTH.stop()
 
@@ -170,7 +173,26 @@ class ConnectorsTests(unittest.TestCase):
             self.assertEqual(headers["Authorization"], "Bearer fresh_tok_2")
             if "/open-apis/im/v1/chats" in url:
                 return {"code": 0, "data": {"items": [{"chat_id": "oc_1", "name": "产品核心群"}]}}
+            if "/open-apis/search/v2/message" in url:
+                return {"code": 0, "data": {"items": ["om_p2p_1"]}}
+            if url.endswith("/open-apis/im/v1/messages/om_p2p_1"):
+                return {"code": 0, "data": {"items": [{"message_id": "om_p2p_1", "chat_id": "oc_p2p_9"}]}}
             if "/open-apis/im/v1/messages" in url:
+                if "container_id=oc_p2p_9" in url:
+                    return {
+                        "code": 0,
+                        "data": {
+                            "items": [
+                                {
+                                    "message_id": "om_p2p_1",
+                                    "msg_type": "text",
+                                    "create_time": str(int(time.time() * 1000)),
+                                    "sender": {"id": "ou_boss"},
+                                    "body": {"content": json.dumps({"text": "私聊同步验证：明天下午三点单聊对齐"})},
+                                }
+                            ]
+                        },
+                    }
                 return {
                     "code": 0,
                     "data": {
@@ -186,6 +208,21 @@ class ConnectorsTests(unittest.TestCase):
                     },
                 }
             if "/open-apis/drive/v1/files" in url:
+                if "folder_token=fld_sub" in url:
+                    return {
+                        "code": 0,
+                        "data": {
+                            "files": [
+                                {
+                                    "token": "doxcn_sub",
+                                    "type": "docx",
+                                    "name": "子目录需求文档",
+                                    "url": "https://feishu.cn/docx/doxcn_sub",
+                                    "modified_time": str(int(time.time())),
+                                }
+                            ]
+                        },
+                    }
                 return {
                     "code": 0,
                     "data": {
@@ -196,17 +233,24 @@ class ConnectorsTests(unittest.TestCase):
                                 "name": "Q4 Roadmap",
                                 "url": "https://feishu.cn/docx/doxcn_abc",
                                 "modified_time": str(int(time.time())),
-                            }
+                            },
+                            {
+                                "token": "fld_sub",
+                                "type": "folder",
+                                "name": "产品资料",
+                            },
                         ]
                     },
                 }
             if "/open-apis/docx/v1/documents/doxcn_abc/raw_content" in url:
                 return {"code": 0, "data": {"content": "核心里程碑：飞书个人只读同步上线。"}}
+            if "/open-apis/docx/v1/documents/doxcn_sub/raw_content" in url:
+                return {"code": 0, "data": {"content": "子目录文档正文：支持私聊与子目录。"}}
             raise AssertionError(f"Unexpected URL: {url}")
 
         res = connectors.sync_feishu_connector(self.data, self.store, http_fn=fake_http)
-        self.assertEqual(res["synced"], 2)
-        self.assertEqual(res["changed"], 2)
+        self.assertEqual(res["synced"], 4)
+        self.assertEqual(res["changed"], 4)
 
         # Verify secrets are redacted from status
         st = connectors.connectors_status(self.data, self.store)
@@ -214,18 +258,21 @@ class ConnectorsTests(unittest.TestCase):
         self.assertNotIn("sec_test_secret", raw_st)
         self.assertNotIn("fresh_tok_2", raw_st)
         self.assertNotIn("ref_tok_2", raw_st)
-        self.assertEqual(st["connectors"]["feishu"]["item_count"], 2)
+        self.assertEqual(st["connectors"]["feishu"]["item_count"], 4)
 
-        # Verify digest & search
+        # Verify digest & search (group + P2P private chat + root doc + subfolder doc)
         digest = connectors.recent_connector_digest(self.store, hours=24.0, limit=10)
-        self.assertEqual(len(digest), 2)
+        self.assertEqual(len(digest), 4)
         searcher = MemorySearch(self.data)
         self.assertEqual(len(searcher.search("Connectors 首期", kind="connector")["matches"]), 1)
+        self.assertEqual(len(searcher.search("单聊对齐", kind="connector")["matches"]), 1)
         self.assertEqual(len(searcher.search("Q4 Roadmap", kind="connector")["matches"]), 1)
+        sub_hits = searcher.search("子目录需求", kind="connector")["matches"]
+        self.assertTrue(any("doxcn_sub" in m["id"] for m in sub_hits))
 
         # Disconnect with clear_data removes mirrored items
         disc = connectors.disconnect_connector(self.data, self.store, "feishu", clear_data=True)
-        self.assertEqual(disc["removed_items"], 2)
+        self.assertEqual(disc["removed_items"], 4)
         self.assertEqual(connectors.connectors_status(self.data, self.store)["connectors"]["feishu"]["item_count"], 0)
 
 
