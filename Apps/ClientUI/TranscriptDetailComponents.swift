@@ -140,9 +140,9 @@ struct TimelineSummaryView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 18)
-        .recapCardSurface(cornerRadius: 22)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 22)
+        .recapCardSurface(cornerRadius: 28)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("timeline.summary")
         #else

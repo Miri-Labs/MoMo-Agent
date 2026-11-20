@@ -234,7 +234,7 @@ struct TimelineRow: View {
     var continuesFromPrevious = false
     var includeUTCOffset = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .body) private var excerptSize: CGFloat = 15
+    @ScaledMetric(relativeTo: .body) private var excerptSize: CGFloat = 16
 
     private var recap: TranscriptRecapContent? {
         guard window.canSummarize, let summary else { return nil }
@@ -251,7 +251,7 @@ struct TimelineRow: View {
         let parsedRecap = recap
         let hasSummary = parsedRecap != nil
 
-        VStack(alignment: .leading, spacing: 11) {
+        VStack(alignment: .leading, spacing: 14) {
             metadataRow(timeText: timeText, hasSummary: hasSummary)
 
             if let parsedRecap {
@@ -262,25 +262,19 @@ struct TimelineRow: View {
                 if !preview.isEmpty {
                     Text(preview)
                         .font(.system(size: excerptSize, weight: .regular))
-                        .lineSpacing(4.5)
-                        .foregroundStyle(hasReadableText ? MoMoPalette.ink.opacity(0.88) : MoMoPalette.muted)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 4)
+                        .lineSpacing(5)
+                        .foregroundStyle(hasReadableText ? MoMoPalette.ink.opacity(0.90) : MoMoPalette.muted)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 5)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if window.speechDuration > 0, window.state == .complete {
-                    TimelineActivityStrip(window: window)
-                        .frame(height: 6)
-                        .padding(.top, 2)
-                        .accessibilityHidden(true)
-                }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 17)
-        .padding(.bottom, window.marks.isEmpty ? 19 : 14)
+        .padding(.horizontal, 22)
+        .padding(.top, 20)
+        .padding(.bottom, window.marks.isEmpty ? 24 : 18)
         .foregroundStyle(MoMoPalette.ink)
-        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
         .contentShape(Rectangle())
     }
 
@@ -292,8 +286,8 @@ struct TimelineRow: View {
 
         HStack(alignment: .center, spacing: 6) {
             Image(systemName: hasSummary ? "text.page" : "waveform")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(MoMoPalette.muted)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(MoMoPalette.muted.opacity(0.85))
                 .accessibilityHidden(true)
 
             HStack(spacing: 5) {
@@ -315,16 +309,27 @@ struct TimelineRow: View {
                         .lineLimit(1)
                         .accessibilityIdentifier("timeline.speechDuration")
                 }
+
+                if !hasSummary, hasReadableText, status == nil {
+                    Text("·")
+                        .phoneText(.metadata)
+                        .foregroundStyle(MoMoPalette.muted.opacity(0.6))
+                        .accessibilityHidden(true)
+                    Text("原文")
+                        .phoneText(.metadata)
+                        .foregroundStyle(MoMoPalette.muted)
+                        .lineLimit(1)
+                }
             }
 
             Spacer(minLength: 8)
 
-            trailingAccessory
+            trailingAccessory(hasSummary: hasSummary)
         }
     }
 
     @ViewBuilder
-    private var trailingAccessory: some View {
+    private func trailingAccessory(hasSummary: Bool) -> some View {
         if let status {
             HStack(spacing: 5) {
                 if status == String(localized: "正在整理") {
@@ -337,36 +342,23 @@ struct TimelineRow: View {
                     .fontWeight(.medium)
                     .foregroundStyle(MoMoPalette.muted)
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(MoMoPalette.ink.opacity(0.055), in: Capsule())
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(MoMoPalette.ink.opacity(0.05), in: Capsule())
         } else {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 if !window.isFinal {
                     Circle()
                         .fill(MoMoPalette.ink)
                         .frame(width: 6, height: 6)
                         .accessibilityHidden(true)
                 }
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(MoMoPalette.muted.opacity(0.45))
+                Image(systemName: hasSummary ? "waveform" : "arrow.up.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(MoMoPalette.muted.opacity(0.85))
+                    .frame(width: 30, height: 30)
+                    .background(MoMoPalette.ink.opacity(0.045), in: Circle())
                     .accessibilityHidden(true)
-            }
-        }
-    }
-}
-
-private struct TimelineActivityStrip: View {
-    let window: TimelineWindow
-    var body: some View {
-        let bins = TimelinePresentation.activity(window.speechIntervals, from: window.id.start, to: window.end, count: 36)
-        return Canvas { context, size in
-            for (index, activity) in bins.enumerated() {
-                let diameter = 2 + 3.5 * activity
-                let center = (Double(index) + 0.5) * size.width / Double(bins.count)
-                context.fill(Path(ellipseIn: CGRect(x: center - diameter / 2, y: (size.height - diameter) / 2,
-                    width: diameter, height: diameter)), with: .color(MoMoPalette.ink.opacity(0.10 + 0.55 * activity)))
             }
         }
     }

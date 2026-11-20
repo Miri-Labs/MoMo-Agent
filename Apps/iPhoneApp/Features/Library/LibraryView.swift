@@ -58,8 +58,8 @@ struct LibraryView: View {
     }
 
     var body: some View {
-        VStack(spacing: 10) {
-            dateBar.padding(.top, 2)
+        VStack(spacing: 8) {
+            dateBar
             if !searching, !selectedDayFileIssues.isEmpty {
                 fileIssueBanner(selectedDayFileIssues).padding(.horizontal, 16)
             }
@@ -72,7 +72,7 @@ struct LibraryView: View {
             else { dayPager }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .phonePageSurface(background: MoMoPalette.sidebar)
+        .phonePageSurface(background: MoMoPalette.sidebar, titleDisplayMode: .large)
         .watchStatusRefresh(requestWatchStatus)
         .navigationTitle("转录")
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -100,6 +100,16 @@ struct LibraryView: View {
                 requestWatchStatus: requestWatchStatus)
         }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    searching.toggle()
+                    if !searching { query = "" }
+                } label: {
+                    Image(systemName: searching ? "xmark" : "magnifyingglass")
+                }
+                .accessibilityLabel(searching ? String(localized: "关闭搜索") : String(localized: "搜索全部转录"))
+                .accessibilityIdentifier("timeline.search.toggle")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { sharingDay = timeline.selectedDay } label: {
                     Label("分享", systemImage: "square.and.arrow.up").labelStyle(.titleAndIcon)
@@ -215,13 +225,15 @@ struct LibraryView: View {
     }
 
     private var dateBar: some View {
-        HStack(spacing: 10) {
+        let windows = timeline.listWindows[timeline.selectedDay] ?? []
+        let totalSpeech = windows.reduce(0.0) { $0 + $1.speechDuration }
+        return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 0) {
                 Button { select(timeline.selectedDay.adding(days: -1)) } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(dateRange.canRequest(timeline.selectedDay.adding(days: -1)) ? MoMoPalette.ink : MoMoPalette.muted.opacity(0.35))
-                        .frame(width: 44, height: 44)
+                        .foregroundStyle(dateRange.canRequest(timeline.selectedDay.adding(days: -1)) ? MoMoPalette.muted : MoMoPalette.muted.opacity(0.3))
+                        .frame(width: 32, height: 44, alignment: .leading)
                         .contentShape(Rectangle())
                 }
                 .disabled(!dateRange.canRequest(timeline.selectedDay.adding(days: -1)))
@@ -231,16 +243,16 @@ struct LibraryView: View {
                     pendingDay = nil
                     dateDraft = timeline.selectedDay.date(); choosingDate = true
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         Text(TimelineDate.day(timeline.selectedDay))
-                            .phoneText(.metadata)
+                            .phoneText(.menu)
                             .fontWeight(.medium)
-                            .foregroundStyle(MoMoPalette.ink)
+                            .foregroundStyle(MoMoPalette.ink.opacity(0.85))
                         Image(systemName: "chevron.down")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(MoMoPalette.muted)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .frame(minHeight: 44)
                     .contentShape(Rectangle())
                 }
                 .accessibilityLabel("选择日期，\(TimelineDate.day(timeline.selectedDay))")
@@ -249,31 +261,30 @@ struct LibraryView: View {
                 Button { select(timeline.selectedDay.adding(days: 1)) } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(dateRange.canRequest(timeline.selectedDay.adding(days: 1)) ? MoMoPalette.ink : MoMoPalette.muted.opacity(0.35))
-                        .frame(width: 44, height: 44)
+                        .foregroundStyle(dateRange.canRequest(timeline.selectedDay.adding(days: 1)) ? MoMoPalette.muted : MoMoPalette.muted.opacity(0.3))
+                        .frame(width: 32, height: 44, alignment: .trailing)
                         .contentShape(Rectangle())
                 }
                 .disabled(!dateRange.canRequest(timeline.selectedDay.adding(days: 1)))
                 .accessibilityLabel("后一天").accessibilityIdentifier("timeline.nextDay")
-            }
-            .recapCardSurface(cornerRadius: 16)
 
-            Button {
-                searching.toggle()
-                if !searching { query = "" }
-            } label: {
-                Image(systemName: searching ? "xmark" : "magnifyingglass")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(MoMoPalette.ink)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Circle())
+                Spacer(minLength: 8)
+
+                if !windows.isEmpty {
+                    Text(totalSpeech > 0
+                        ? String(localized: "\(windows.count) 段 · \(TimelineDate.duration(totalSpeech))")
+                        : String(localized: "\(windows.count) 段"))
+                        .phoneText(.metadata)
+                        .monospacedDigit()
+                        .foregroundStyle(MoMoPalette.muted)
+                }
             }
-            .recapCardSurface(cornerRadius: 22)
-            .accessibilityLabel(searching ? String(localized: "关闭搜索") : String(localized: "搜索全部转录"))
-            .accessibilityIdentifier("timeline.search.toggle")
+            Text("浏览录音生成的 AI 要点总结与原音记录。")
+                .phoneText(.metadata)
+                .foregroundStyle(MoMoPalette.muted)
+                .padding(.top, -6)
         }
-        .foregroundStyle(MoMoPalette.ink)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 18)
     }
 
     private var isActivelyProcessingTranscription: Bool {
@@ -918,16 +929,8 @@ private struct TimelineDayPage: View {
                 .padding(.vertical, 2)
             }
         }
-        .recapCardSurface(cornerRadius: 22)
+        .recapCardSurface(cornerRadius: 28)
         .id(TimelineScrollItemID.window(window.id))
-    }
-
-    private func daySummaryCaption(for windows: [TimelineWindow]) -> String {
-        let totalSpeech = windows.reduce(0.0) { $0 + $1.speechDuration }
-        if totalSpeech > 0 {
-            return String(localized: "共 \(windows.count) 段记录 · 说话约 \(TimelineDate.duration(totalSpeech))")
-        }
-        return String(localized: "共 \(windows.count) 段记录")
     }
 
     var body: some View {
@@ -939,18 +942,12 @@ private struct TimelineDayPage: View {
             hasDaytime: !daytime.isEmpty, isToday: isToday, hour: earlyHour)
         let visible = expanded ? windows : daytime
         return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 16) {
                 Color.clear.frame(height: 1).id(TimelineScrollItemID.masthead)
                 if let illustrations, !dayIllustrations.isEmpty {
                     LifeIllustrationStripView(items: dayIllustrations, store: illustrations, horizontalMargin: 0,
                         backgroundColor: MoMoPalette.sidebar,
                         open: openIllustration, showSource: showIllustrationSource, failure: illustrationFailure)
-                }
-                if !windows.isEmpty {
-                    Text(daySummaryCaption(for: windows))
-                        .phoneText(.metadata)
-                        .foregroundStyle(MoMoPalette.muted)
-                        .padding(.horizontal, 4)
                 }
                 if !early.isEmpty {
                     Button {

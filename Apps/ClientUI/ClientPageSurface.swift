@@ -1,16 +1,27 @@
 import SwiftUI
 
 extension View {
+    #if os(iOS)
+    func phonePageSurface(
+        background: Color = MoMoPalette.canvas,
+        titleDisplayMode: NavigationBarItem.TitleDisplayMode = .inline
+    ) -> some View {
+        phoneText(.body)
+            .foregroundStyle(MoMoPalette.ink)
+            .tint(MoMoPalette.ink)
+            .background(background)
+            .phoneSoftTopEdge()
+            .navigationBarTitleDisplayMode(titleDisplayMode)
+    }
+    #else
     func phonePageSurface(background: Color = MoMoPalette.canvas) -> some View {
         phoneText(.body)
             .foregroundStyle(MoMoPalette.ink)
             .tint(MoMoPalette.ink)
             .background(background)
             .phoneSoftTopEdge()
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
     }
+    #endif
 }
 
 // Keep the top transition consistent across native phone reading and settings pages.

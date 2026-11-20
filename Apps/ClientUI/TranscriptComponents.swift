@@ -153,7 +153,7 @@ nonisolated struct TranscriptRecapContent: Equatable, Sendable {
 #if !os(watchOS)
 /// Floating white editorial card surface framed against the soft gray canvas (`MoMoPalette.sidebar`).
 private struct RecapCardSurfaceModifier: ViewModifier {
-    var cornerRadius: CGFloat = 22
+    var cornerRadius: CGFloat = 28
     @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
@@ -164,24 +164,23 @@ private struct RecapCardSurfaceModifier: ViewModifier {
                 shape
                     .fill(MoMoPalette.paper)
                     .shadow(
-                        color: isDark ? .clear : Color.black.opacity(0.045),
-                        radius: 12,
+                        color: isDark ? .clear : Color.black.opacity(0.055),
+                        radius: 18,
                         x: 0,
-                        y: 3
+                        y: 5
                     )
             }
             .overlay {
-                shape.strokeBorder(
-                    isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.045),
-                    lineWidth: 0.5
-                )
-                .allowsHitTesting(false)
+                if isDark {
+                    shape.strokeBorder(Color.white.opacity(0.075), lineWidth: 0.5)
+                        .allowsHitTesting(false)
+                }
             }
     }
 }
 
 extension View {
-    func recapCardSurface(cornerRadius: CGFloat = 22) -> some View {
+    func recapCardSurface(cornerRadius: CGFloat = 28) -> some View {
         modifier(RecapCardSurfaceModifier(cornerRadius: cornerRadius))
     }
 }
@@ -192,9 +191,9 @@ struct TranscriptRecapBody: View, Equatable {
     var compact: Bool = true
     var accessibilityID: String? = nil
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .title3) private var compactTitleSize: CGFloat = 19
-    @ScaledMetric(relativeTo: .title2) private var fullTitleSize: CGFloat = 21
-    @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 15
+    @ScaledMetric(relativeTo: .title2) private var compactTitleSize: CGFloat = 23
+    @ScaledMetric(relativeTo: .title2) private var fullTitleSize: CGFloat = 24
+    @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 16
     @ScaledMetric(relativeTo: .caption2) private var sectionHeaderSize: CGFloat = 11.5
 
     nonisolated static func == (lhs: TranscriptRecapBody, rhs: TranscriptRecapBody) -> Bool {
@@ -209,10 +208,10 @@ struct TranscriptRecapBody: View, Equatable {
             if let title = content.title {
                 Text(title)
                     .font(.system(size: compact ? compactTitleSize : fullTitleSize, weight: .bold))
-                    .tracking(-0.35)
-                    .lineSpacing(2)
+                    .tracking(-0.42)
+                    .lineSpacing(2.5)
                     .foregroundStyle(MoMoPalette.ink)
-                    .lineLimit(compact && !dynamicTypeSize.isAccessibilitySize ? 2 : nil)
+                    .lineLimit(compact && !dynamicTypeSize.isAccessibilitySize ? 3 : nil)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
             }
@@ -220,22 +219,22 @@ struct TranscriptRecapBody: View, Equatable {
             if let lead = content.lead {
                 Text(lead)
                     .font(.system(size: bodySize, weight: .regular))
-                    .lineSpacing(4.5)
-                    .foregroundStyle(MoMoPalette.ink.opacity(0.88))
-                    .lineLimit(compact && !dynamicTypeSize.isAccessibilitySize ? 3 : nil)
+                    .lineSpacing(5)
+                    .foregroundStyle(MoMoPalette.ink.opacity(0.90))
+                    .lineLimit(compact && !dynamicTypeSize.isAccessibilitySize ? 4 : nil)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, content.title == nil ? 0 : 8)
+                    .padding(.top, content.title == nil ? 0 : 11)
             }
 
             ForEach(visibleSections) { section in
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 10) {
                     if let heading = section.heading {
                         Text(heading.uppercased())
                             .font(.system(size: sectionHeaderSize, weight: .bold))
-                            .tracking(0.65)
-                            .foregroundStyle(MoMoPalette.ink.opacity(0.68))
+                            .tracking(0.8)
+                            .foregroundStyle(MoMoPalette.ink.opacity(0.76))
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 14)
+                            .padding(.top, 20)
                             .padding(.bottom, 1)
                             .accessibilityAddTraits(.isHeader)
                     }
@@ -244,14 +243,14 @@ struct TranscriptRecapBody: View, Equatable {
                         recapItemRow(item)
                     }
                 }
-                .padding(.top, section.heading == nil && (content.title != nil || content.lead != nil || section.id != visibleSections.first?.id) ? 10 : 0)
+                .padding(.top, section.heading == nil && (content.title != nil || content.lead != nil || section.id != visibleSections.first?.id) ? 14 : 0)
             }
 
             if hiddenItems > 0 {
                 Text("还有 \(hiddenItems) 条要点")
                     .phoneText(.caption)
                     .foregroundStyle(MoMoPalette.muted)
-                    .padding(.top, 10)
+                    .padding(.top, 14)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -261,23 +260,23 @@ struct TranscriptRecapBody: View, Equatable {
     @ViewBuilder
     private func recapItemRow(_ item: TranscriptRecapContent.Item) -> some View {
         if item.isBullet {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
                 if let marker = item.listMarker, marker != "•" {
                     Text(marker)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 13.5, weight: .medium))
                         .monospacedDigit()
-                        .foregroundStyle(MoMoPalette.muted.opacity(0.75))
+                        .foregroundStyle(MoMoPalette.muted.opacity(0.65))
                         .padding(.top, 2)
                 } else {
                     Circle()
-                        .fill(MoMoPalette.muted.opacity(0.42))
-                        .frame(width: 5, height: 5)
-                        .padding(.top, 8)
+                        .fill(MoMoPalette.muted.opacity(0.30))
+                        .frame(width: 5.5, height: 5.5)
+                        .padding(.top, 8.5)
                         .accessibilityHidden(true)
                 }
                 Text(item.text)
                     .font(.system(size: bodySize, weight: .regular))
-                    .lineSpacing(4)
+                    .lineSpacing(4.5)
                     .foregroundStyle(MoMoPalette.ink.opacity(0.90))
                     .lineLimit(compact && !dynamicTypeSize.isAccessibilitySize ? 3 : nil)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -286,7 +285,7 @@ struct TranscriptRecapBody: View, Equatable {
         } else if item.isQuote {
             Text(item.text)
                 .font(.system(size: bodySize, weight: .regular))
-                .lineSpacing(4)
+                .lineSpacing(4.5)
                 .foregroundStyle(MoMoPalette.muted)
                 .padding(.leading, 10)
                 .overlay(alignment: .leading) {
@@ -308,9 +307,9 @@ struct TranscriptRecapBody: View, Equatable {
         } else {
             Text(item.text)
                 .font(.system(size: bodySize, weight: .regular))
-                .lineSpacing(4.5)
-                .foregroundStyle(MoMoPalette.ink.opacity(0.88))
-                .lineLimit(compact && !dynamicTypeSize.isAccessibilitySize ? 3 : nil)
+                .lineSpacing(5)
+                .foregroundStyle(MoMoPalette.ink.opacity(0.90))
+                .lineLimit(compact && !dynamicTypeSize.isAccessibilitySize ? 4 : nil)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -318,7 +317,7 @@ struct TranscriptRecapBody: View, Equatable {
 
     private var resolvedSections: [TranscriptRecapContent.Section] {
         guard compact else { return content.sections }
-        var remaining = 3
+        var remaining = 6
         var result: [TranscriptRecapContent.Section] = []
         for section in content.sections {
             guard result.count < 2 else { break }
