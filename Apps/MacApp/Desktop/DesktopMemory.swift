@@ -187,21 +187,18 @@ struct DesktopMemory: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(MoMoPalette.pane)
 
-            if detailOpen {
-                DesktopRightInspectorContainer(width: $inspectorWidth) {
-                    documentWorkspacePane(
-                        active: active,
-                        tree: tree,
-                        wide: true,
-                        colors: colors,
-                        onClose: {
-                            withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
-                                detailOpen = false
-                            }
+            DesktopRightInspectorContainer(isOpen: $detailOpen, width: $inspectorWidth) {
+                documentWorkspacePane(
+                    active: active,
+                    tree: tree,
+                    wide: true,
+                    colors: colors,
+                    onClose: {
+                        withAnimation(reducedMotion ? nil : DesktopRightInspectorContainer<EmptyView>.toggleAnimation) {
+                            detailOpen = false
                         }
-                    )
-                }
-                .transition(.opacity)
+                    }
+                )
             }
         }
         .background(MoMoPalette.pane)
@@ -379,7 +376,7 @@ struct DesktopMemory: View {
                         readerBackStack.removeAll()
                         readerForwardStack.removeAll()
                         selectedMemoryID = memory.id
-                        withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                        withAnimation(reducedMotion ? nil : DesktopRightInspectorContainer<EmptyView>.toggleAnimation) {
                             detailOpen = true
                         }
                     },
