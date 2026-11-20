@@ -175,11 +175,18 @@ struct RemoteMemoryView: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             if showHeader {
-                                VaultFolderHeaderRow(
-                                    node: rootFolder,
-                                    isExpanded: expanded,
-                                    onToggle: { toggleFolder(rootFolder.id) }
-                                )
+                                VStack(alignment: .leading, spacing: 0) {
+                                    VaultFolderHeaderRow(
+                                        node: rootFolder,
+                                        isExpanded: expanded,
+                                        onToggle: { toggleFolder(rootFolder.id) }
+                                    )
+                                    if expanded && !childRows.isEmpty {
+                                        Divider()
+                                            .overlay(colors.line.opacity(0.6))
+                                            .padding(.horizontal, 12)
+                                    }
+                                }
                             }
 
                             if expanded {
@@ -193,18 +200,18 @@ struct RemoteMemoryView: View {
                                                     isExpanded: expandedSub,
                                                     onToggle: { toggleFolder(subNode.id) }
                                                 )
-                                                .padding(.top, idx > 0 ? 6 : 2)
-                                                .padding(.leading, CGFloat(max(0, indentLevel - 1)) * 12)
+                                                .padding(.top, idx > 0 ? 10 : 4)
+                                                .padding(.leading, CGFloat(indentLevel) * 14)
 
                                             case let .note(memory, indentLevel, isFirstInGroup):
                                                 if idx > 0 && !isFirstInGroup {
                                                     Divider()
                                                         .overlay(colors.line.opacity(0.45))
-                                                        .padding(.leading, 12 + CGFloat(max(0, indentLevel - 1)) * 12)
+                                                        .padding(.leading, 12 + CGFloat(indentLevel) * 14)
                                                         .padding(.trailing, 12)
                                                 }
                                                 directoryNoteRow(memory, colors: colors)
-                                                    .padding(.leading, CGFloat(max(0, indentLevel - 1)) * 12)
+                                                    .padding(.leading, CGFloat(indentLevel) * 14)
                                             }
                                         }
                                     }
@@ -296,8 +303,8 @@ struct RemoteMemoryView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(digest.title)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(colors.ink)
+                        .font(.system(size: 14.5, weight: .medium))
+                        .foregroundStyle(colors.ink.opacity(0.92))
                         .lineLimit(1)
                     Spacer(minLength: 6)
                     if let date = digest.dateBadge {
@@ -418,29 +425,38 @@ private struct VaultFolderHeaderRow: View {
 
     var body: some View {
         let colors = MemoryNotebookPalette(scheme: scheme)
+        let isRoot = node.depth == 0
         Button(action: onToggle) {
-            HStack(spacing: 7) {
+            HStack(spacing: isRoot ? 8 : 6) {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: node.depth == 0 ? 11.5 : 10.5, weight: .semibold))
-                    .foregroundStyle(colors.secondaryInk.opacity(0.85))
-                    .frame(width: 14)
+                    .font(.system(size: isRoot ? 12 : 10, weight: .bold))
+                    .foregroundStyle(isRoot ? colors.ink.opacity(0.7) : colors.secondaryInk.opacity(0.8))
+                    .frame(width: isRoot ? 14 : 12)
                     .accessibilityHidden(true)
 
+                if !isRoot {
+                    Image(systemName: "folder")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(colors.secondaryInk.opacity(0.85))
+                        .accessibilityHidden(true)
+                }
+
                 Text(node.name)
-                    .font(.system(size: node.depth == 0 ? 17 : 15.5, weight: .semibold))
-                    .foregroundStyle(node.depth == 0 ? colors.ink : colors.ink.opacity(0.88))
+                    .font(.system(size: isRoot ? 20 : 15.5, weight: isRoot ? .bold : .semibold))
+                    .tracking(isRoot ? -0.3 : -0.1)
+                    .foregroundStyle(isRoot ? colors.ink : colors.ink.opacity(0.82))
                     .lineLimit(1)
 
                 Spacer(minLength: 6)
 
                 Text("\(node.totalItemCount)")
-                    .font(.system(size: 12.5, weight: .regular))
+                    .font(.system(size: isRoot ? 13 : 12, weight: isRoot ? .medium : .regular))
                     .monospacedDigit()
-                    .foregroundStyle(colors.secondaryInk.opacity(0.75))
+                    .foregroundStyle(colors.secondaryInk.opacity(isRoot ? 0.8 : 0.65))
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+            .padding(.vertical, isRoot ? 9 : 6)
+            .frame(maxWidth: .infinity, minHeight: isRoot ? 44 : 34, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
