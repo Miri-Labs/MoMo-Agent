@@ -234,6 +234,7 @@ struct TimelineRow: View {
     var continuesFromPrevious = false
     var includeUTCOffset = false
     var illustrationURL: URL? = nil
+    var illustrationAngle: Double = 0
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .title3) private var titleSize: CGFloat = 19
     @ScaledMetric(relativeTo: .subheadline) private var excerptSize: CGFloat = 14
@@ -318,7 +319,7 @@ struct TimelineRow: View {
             .padding(.bottom, hasImage ? 10 : (window.marks.isEmpty ? 18 : 12))
 
             if let illustrationURL {
-                TimelineCardIllustration(url: illustrationURL)
+                TimelineCardIllustration(url: illustrationURL, angle: illustrationAngle)
                     .padding(.horizontal, 7)
                     .padding(.bottom, 7)
             }
@@ -382,27 +383,25 @@ struct TimelineRow: View {
 
 private struct TimelineCardIllustration: View {
     let url: URL
-    @State private var image: UIImage?
+    var angle: Double = 0
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
-            MoMoPalette.surface
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-            }
+            LifeIllustrationPaper.fill(for: colorScheme)
+            LifeIllustrationImageView(url: url, contentMode: .fit)
+                .padding(10)
+                .rotationEffect(.degrees(angle))
         }
         .aspectRatio(1.18, contentMode: .fit)
         .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
-        .accessibilityHidden(true)
-        .task(id: url) {
-            let loaded = await Task.detached(priority: .utility) {
-                UIImage(contentsOfFile: url.path)
-            }.value
-            image = loaded
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(MoMoPalette.borderSubtle, lineWidth: 0.5)
+                .allowsHitTesting(false)
         }
+        .accessibilityHidden(true)
     }
 }
 
