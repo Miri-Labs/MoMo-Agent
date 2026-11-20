@@ -43,6 +43,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSHealthShareUsageDescription</key>
+	<string>在手表连续录音期间同步读取实时心率，用于维持录音连续性并帮助 MoMo 理解你的状态。</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>在手表连续录音期间维护系统健康会话以防止通话等中断导致录音停止，结束时自动丢弃，不会写入你的体能训练记录。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>允许通过局域网校验通道直接与配对的 iPhone 高速同步录音。</string>
 	<key>NSMicrophoneUsageDescription</key>
@@ -50,6 +54,10 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
+	</array>
+	<key>WKBackgroundModes</key>
+	<array>
+		<string>workout-processing</string>
 	</array>
 	<key>WKApplication</key>
 	<true/>

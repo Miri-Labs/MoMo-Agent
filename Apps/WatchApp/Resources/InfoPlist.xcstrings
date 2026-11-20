@@ -98,25 +98,55 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "按你的选择只读心率、静息心率、睡眠、步数、活动能量和训练记录。开启后，健康摘要会发送到你选用的 AI 服务，帮助 MoMo 理解近期状态。"
+            "value": "在手表连续录音期间同步读取实时心率，用于维持录音连续性并帮助 MoMo 理解你的状态。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reads only heart rate, resting heart rate, sleep, step count, activity energy and training records according to your choice. When turned on, health summaries will be sent to the AI ​​service you choose to help MoMo understand recent status."
+            "value": "Reads live heart rate during continuous Apple Watch recording to keep recording uninterrupted across calls and help MoMo understand your state."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "選択に従って、心拍数、安静時心拍数、睡眠、歩数、活動エネルギー、トレーニング記録のみを読み取ります。オンにすると、健康状態の概要が選択した AI サービスに送信され、MoMo が最近の状態を把握できるようになります。"
+            "value": "Apple Watch での連続録音中にリアルタイム心拍数を読み取り、通話などの中断後も録音を継続して MoMo が状態を把握できるようにします。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "선택에 따라 심박수, 안정시 심박수, 수면, 걸음 수, 활동 에너지 및 훈련 기록만 읽습니다. 켜면 MoMo가 최근 상태를 이해할 수 있도록 건강 ​​요약이 선택한 AI 서비스로 전송됩니다."
+            "value": "Apple Watch 연속 녹음 중 실시간 심박수를 읽어 통화 등 중단 이후에도 녹음을 유지하고 MoMo가 상태를 이해하도록 돕습니다."
+          }
+        }
+      }
+    },
+    "NSHealthUpdateUsageDescription": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在手表连续录音期间维护系统健康会话以防止通话等中断导致录音停止，结束时自动丢弃，不会写入你的体能训练记录。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maintains a background HealthKit session during Apple Watch recording so phone calls do not stop capture. Sessions are always discarded on stop and never saved as workouts."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Watch 録音中にバックグラウンドの HealthKit セッションを維持し、通話による録音停止を防ぎます。終了時に自動破棄され、ワークアウト記録には保存されません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Watch 녹음 중 백그라운드 HealthKit 세션을 유지하여 통화로 인해 녹음이 중단되지 않도록 합니다. 종료 시 자동 폐기되며 운동 기록에 저장되지 않습니다."
           }
         }
       }

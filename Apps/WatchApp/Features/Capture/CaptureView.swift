@@ -123,6 +123,19 @@ struct CaptureView: View {
                 Circle().fill(isRecording ? Color.red : MoMoPalette.ink.opacity(0.4)).frame(width: 7, height: 7)
                 Text(status).font(.system(size: scaledStatusFontSize, weight: .medium))
                     .lineLimit(1).minimumScaleFactor(0.6)
+                if isRecording, let bpm = runtime.currentHeartRateBPM {
+                    HStack(spacing: 2) {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: max(9, scaledStatusFontSize - 2)))
+                            .foregroundStyle(.red.opacity(0.85))
+                        Text("\(Int(bpm.rounded()))")
+                            .font(.system(size: scaledStatusFontSize, weight: .medium, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    .lineLimit(1)
+                    .accessibilityLabel("心率 \(Int(bpm.rounded())) 次每分")
+                }
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("capture.status")
@@ -241,6 +254,17 @@ struct CaptureView: View {
                         .accessibilityLabel("本次录音时长")
                         .accessibilityValue(Duration.seconds(runtime.elapsedSeconds).formatted(.units(allowed: [.hours, .minutes, .seconds])))
                         .accessibilityIdentifier("capture.elapsed")
+                    if runtime.captureActivity == .recording || runtime.captureActivity == .interrupted {
+                        Text(runtime.continuityActive ? "通话防断保护：已开启" : "通话防断保护：未开启")
+                            .font(.footnote)
+                            .foregroundStyle(runtime.continuityActive ? Color.secondary : Color.orange)
+                            .accessibilityIdentifier("capture.continuity")
+                        if let bpm = runtime.currentHeartRateBPM {
+                            Text("实时心率：\(Int(bpm.rounded())) BPM")
+                                .font(.footnote).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("capture.heartRate")
+                        }
+                    }
                     if runtime.sessionID != nil && runtime.captureIntent != .stopped {
                         Button("结束录音", role: .destructive) {
                             markConfirmation = false
