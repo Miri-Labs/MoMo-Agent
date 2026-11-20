@@ -775,6 +775,30 @@ def _cmd_briefing(data: Path, args: argparse.Namespace) -> dict:
     return {"has_rich_context": bundle["has_rich_context"], "pack": bundle["pack"]}
 
 
+def _cmd_pulse_config(data: Path, args: argparse.Namespace) -> dict:
+    from life_pulse import ensure_proactive_preferences, read_pulse_config, write_pulse_config
+
+    updates: dict = {}
+    if getattr(args, "interval_minutes", None) is not None:
+        updates["interval_minutes"] = int(args.interval_minutes)
+    quiet_raw = getattr(args, "quiet_enabled", None)
+    if quiet_raw is not None:
+        updates["quiet_enabled"] = str(quiet_raw).strip().lower() in ("1", "true", "yes", "on")
+    if getattr(args, "quiet_start", None):
+        updates["quiet_start"] = str(args.quiet_start).strip()
+    if getattr(args, "quiet_end", None):
+        updates["quiet_end"] = str(args.quiet_end).strip()
+
+    cfg = write_pulse_config(data, updates) if updates else read_pulse_config(data)
+    pref_path = ensure_proactive_preferences(data)
+    return {
+        "ok": True,
+        "updated": bool(updates),
+        "config": cfg,
+        "preferences_path": str(pref_path),
+    }
+
+
 def main() -> int:
     default_data = Path(os.environ["MOMO_DATA_DIR"]) if os.environ.get("MOMO_DATA_DIR") else None
     parser = argparse.ArgumentParser(description="MoMo personal context & memory CLI")
@@ -943,6 +967,12 @@ def main() -> int:
     dream_cmd = sub.add_parser("dream", help="Inspect Dream memory curation status or enqueue a manual Dream run")
     dream_cmd.add_argument("--run", action="store_true", help="Enqueue immediate manual Dream curation via ContextService")
 
+    pulse_cmd = sub.add_parser("pulse-config", help="Read or update Life Pulse trigger interval and quiet hours")
+    pulse_cmd.add_argument("--interval-minutes", type=int, default=None, help="Minutes between Life Pulse runs (15..360)")
+    pulse_cmd.add_argument("--quiet-enabled", default=None, help="Enable or disable quiet hours (true|false)")
+    pulse_cmd.add_argument("--quiet-start", default=None, help="Quiet hours start in HH:MM (e.g. 23:00 or 00:00)")
+    pulse_cmd.add_argument("--quiet-end", default=None, help="Quiet hours end in HH:MM (e.g. 08:00 or 06:30)")
+
     args = parser.parse_args()
     data = args.data_dir.expanduser().resolve()
     handlers = {
@@ -970,6 +1000,7 @@ def main() -> int:
         "briefing": _cmd_briefing,
         "dream": _cmd_dream,
         "connectors": _cmd_connectors,
+        "pulse-config": _cmd_pulse_config,
     }
     try:
         output = handlers[args.command](data, args)

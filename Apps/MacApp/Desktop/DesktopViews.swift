@@ -1642,6 +1642,7 @@ struct DesktopSettings: View {
     @State private var search = ""
     @State private var permissions = DesktopPermissionsController()
     @State private var showingEngineTasks = false
+    @State private var showingProactivePromptEditor = false
     private var location: Location { history[index] }
     private var page: Page { location.page }
 
@@ -1704,8 +1705,12 @@ struct DesktopSettings: View {
         .frame(minWidth: 680, idealWidth: 790, minHeight: 450, idealHeight: 540)
         .environment(\.desktopSettingsDensity, true)
         .onAppear {
+            model.loadLifePulseConfiguration()
             if model.managingModel { open(.model); model.managingModel = false }
             else if model.managingConnection { open(.pairing); model.managingConnection = false }
+        }
+        .sheet(isPresented: $showingProactivePromptEditor) {
+            DesktopProactivePromptEditorSheet(model: model)
         }
         .onChange(of: model.managingConnection) { _, show in
             if show { open(.pairing); model.managingConnection = false }
@@ -1726,7 +1731,7 @@ struct DesktopSettings: View {
         return Page.allCases.filter { destination in
             let terms: [String]
             switch destination {
-            case .general: terms = [String(localized: "通用"), String(localized: "时间线"), String(localized: "凌晨记录默认折叠至"), String(localized: "生活插画")]
+            case .general: terms = [String(localized: "通用"), String(localized: "主动守护"), String(localized: "巡检频率"), String(localized: "勿扰时段"), String(localized: "守护规则"), "Life Pulse", String(localized: "提示词"), String(localized: "时间线"), String(localized: "凌晨记录默认折叠至"), String(localized: "生活插画")]
             case .controls: terms = [String(localized: "电脑控制"), String(localized: "屏幕与控制权限"), String(localized: "连接与权限")]
             case .runtime: terms = [String(localized: "运行环境"), String(localized: "智能体引擎"), String(localized: "应用更新"), String(localized: "结果文件夹"), "DeepSeek Harness", "SuperAgent", "Proactive"]
             case .model: terms = [String(localized: "模型"), String(localized: "聊天模式"), String(localized: "创作"), "Creator", "API", "Codex", "Claude"]
@@ -1804,6 +1809,111 @@ struct DesktopSettings: View {
     }
 
     @ViewBuilder private var dailyPreferences: some View {
+        Section("主动守护") {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("触发频率").font(.system(size: 14))
+                    Text("MoMo 后台综合日程、录音、飞书与状态主动评估的间隔。")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 16)
+                Picker("触发频率", selection: Binding(
+                    get: { model.lifePulseConfig.intervalMinutes },
+                    set: { mins in
+                        var next = model.lifePulseConfig
+                        next.intervalMinutes = mins
+                        model.updateLifePulseConfiguration(next)
+                    }
+                )) {
+                    let options = DesktopLifePulseConfig.intervalOptions.contains(model.lifePulseConfig.intervalMinutes)
+                        ? DesktopLifePulseConfig.intervalOptions
+                        : (DesktopLifePulseConfig.intervalOptions + [model.lifePulseConfig.intervalMinutes]).sorted()
+                    ForEach(options, id: \.self) { mins in
+                        Text(DesktopLifePulseConfig.intervalLabel(for: mins)).tag(mins)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("settings.lifePulse.interval")
+            }
+
+            Toggle(isOn: Binding(
+                get: { model.lifePulseConfig.quietEnabled },
+                set: { enabled in
+                    var next = model.lifePulseConfig
+                    next.quietEnabled = enabled
+                    model.updateLifePulseConfiguration(next)
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("勿扰时段").font(.system(size: 14))
+                    Text("该时段内默认静默，除非临近日程、运动或刚醒来。")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .accessibilityIdentifier("settings.lifePulse.quietEnabled")
+
+            if model.lifePulseConfig.quietEnabled {
+                HStack(spacing: 10) {
+                    Text("静默时间").font(.system(size: 13.5)).foregroundStyle(.secondary)
+                    Spacer(minLength: 12)
+                    Picker("开始", selection: Binding(
+                        get: { model.lifePulseConfig.quietStart },
+                        set: { value in
+                            var next = model.lifePulseConfig
+                            next.quietStart = value
+                            model.updateLifePulseConfiguration(next)
+                        }
+                    )) {
+                        let opts = DesktopLifePulseConfig.halfHourOptions.contains(model.lifePulseConfig.quietStart)
+                            ? DesktopLifePulseConfig.halfHourOptions
+                            : [model.lifePulseConfig.quietStart] + DesktopLifePulseConfig.halfHourOptions
+                        ForEach(opts, id: \.self) { hm in
+                            Text(hm).tag(hm)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityIdentifier("settings.lifePulse.quietStart")
+
+                    Text("至").font(.system(size: 13)).foregroundStyle(.secondary)
+
+                    Picker("结束", selection: Binding(
+                        get: { model.lifePulseConfig.quietEnd },
+                        set: { value in
+                            var next = model.lifePulseConfig
+                            next.quietEnd = value
+                            model.updateLifePulseConfiguration(next)
+                        }
+                    )) {
+                        let opts = DesktopLifePulseConfig.halfHourOptions.contains(model.lifePulseConfig.quietEnd)
+                            ? DesktopLifePulseConfig.halfHourOptions
+                            : [model.lifePulseConfig.quietEnd] + DesktopLifePulseConfig.halfHourOptions
+                        ForEach(opts, id: \.self) { hm in
+                            Text(hm).tag(hm)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityIdentifier("settings.lifePulse.quietEnd")
+                }
+            }
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("守护规则（Markdown）").font(.system(size: 14))
+                    Text("以 PROACTIVE_PREFERENCES.md 存储，你和 MoMo 都可直接编辑。")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 16)
+                Button("编辑规则") { showingProactivePromptEditor = true }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("settings.lifePulse.editPrompt")
+            }
+        }
+
         Section("时间线") {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -1984,5 +2094,74 @@ struct DesktopSettingsControlSurface: ViewModifier {
             }
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             .opacity(enabled ? 1 : 0.4)
+    }
+}
+
+/// Clean native Markdown editor sheet for `memories/PROACTIVE_PREFERENCES.md` (shared with MoMo AI).
+private struct DesktopProactivePromptEditorSheet: View {
+    @Bindable var model: DesktopModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("主动守护规则（PROACTIVE_PREFERENCES.md）")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("每次 Life Pulse 巡检都会直接读取这份 Markdown；在聊天里让 MoMo 调整也会同步更新此文件。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                Button("在 Finder 中显示") {
+                    if !FileManager.default.fileExists(atPath: model.proactivePreferencesURL.path) {
+                        try? model.saveProactivePreferencesMarkdown(draft)
+                    }
+                    NSWorkspace.shared.activateFileViewerSelecting([model.proactivePreferencesURL])
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            TextEditor(text: $draft)
+                .font(.system(size: 12.5, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                        .allowsHitTesting(false)
+                }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(MoMoPalette.failure)
+            }
+
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("保存") {
+                    do {
+                        try model.saveProactivePreferencesMarkdown(draft)
+                        dismiss()
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut("s", modifiers: .command)
+            }
+        }
+        .padding(18)
+        .frame(width: 600, height: 440)
+        .onAppear {
+            draft = model.readProactivePreferencesMarkdown()
+        }
     }
 }
