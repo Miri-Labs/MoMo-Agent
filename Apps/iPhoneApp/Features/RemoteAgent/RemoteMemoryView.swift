@@ -121,126 +121,114 @@ struct RemoteMemoryView: View {
 
     var body: some View {
         let colors = MemoryNotebookPalette(scheme: scheme)
-        VStack(alignment: .leading, spacing: 0) {
-            if sync.hasLegacyChanges {
-                Text("旧版待同步修改已保留，请核对当前记忆后重新修改。")
-                    .phoneText(.metadata)
-                    .foregroundStyle(colors.secondaryInk)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 4)
-            }
-            if let failure = sync.failure {
-                Text(failure)
-                    .phoneText(.metadata)
-                    .foregroundStyle(MoMoPalette.failure)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 4)
-            }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: visibleTree.isEmpty ? 16 : 20) {
+                if sync.hasLegacyChanges {
+                    Text("旧版待同步修改已保留，请核对当前记忆后重新修改。")
+                        .phoneText(.metadata)
+                        .foregroundStyle(colors.secondaryInk)
+                        .padding(.horizontal, 4)
+                }
+                if let failure = sync.failure {
+                    Text(failure)
+                        .phoneText(.metadata)
+                        .foregroundStyle(MoMoPalette.failure)
+                        .padding(.horizontal, 4)
+                }
 
-            if visibleTree.isEmpty {
-                ScrollView {
-                    VStack(spacing: 16) {
-                        ContentUnavailableView {
-                            Label(
-                                vaultTree.isEmpty ? "还没有记忆" : "没有匹配的笔记",
-                                systemImage: vaultTree.isEmpty ? "brain" : "magnifyingglass"
-                            )
-                        } description: {
-                            Text(
-                                vaultTree.isEmpty
-                                    ? (sync.isSyncing || projection.isLoading ? "正在读取记忆…" : "下拉即可同步记忆。")
-                                    : "试试其他关键词。"
-                            )
-                        }
-                        .accessibilityIdentifier("remote.memoryEmpty")
-                        syncStatusFooter
+                if visibleTree.isEmpty {
+                    ContentUnavailableView {
+                        Label(
+                            vaultTree.isEmpty ? "还没有记忆" : "没有匹配的笔记",
+                            systemImage: vaultTree.isEmpty ? "brain" : "magnifyingglass"
+                        )
+                    } description: {
+                        Text(
+                            vaultTree.isEmpty
+                                ? (sync.isSyncing || projection.isLoading ? "正在读取记忆…" : "下拉即可同步记忆。")
+                                : "试试其他关键词。"
+                        )
                     }
-                    .padding(16)
-                }
-                .refreshable {
-                    await sync.refreshMemories()
-                }
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 20) {
-                        if !visibleTree.rootItems.isEmpty {
-                            LazyVStack(alignment: .leading, spacing: 2) {
-                                ForEach(Array(visibleTree.rootItems.enumerated()), id: \.element.id) { idx, memory in
-                                    VStack(alignment: .leading, spacing: 0) {
-                                        if idx > 0 {
-                                            Divider()
-                                                .overlay(colors.line.opacity(0.45))
-                                                .padding(.horizontal, 12)
-                                        }
-                                        directoryNoteRow(memory, colors: colors)
+                    .accessibilityIdentifier("remote.memoryEmpty")
+                    syncStatusFooter
+                        .padding(.horizontal, 4)
+                } else {
+                    if !visibleTree.rootItems.isEmpty {
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(visibleTree.rootItems.enumerated()), id: \.element.id) { idx, memory in
+                                VStack(alignment: .leading, spacing: 0) {
+                                    if idx > 0 {
+                                        Divider()
+                                            .overlay(colors.line.opacity(0.45))
+                                            .padding(.horizontal, 12)
                                     }
+                                    directoryNoteRow(memory, colors: colors)
                                 }
                             }
                         }
+                    }
 
-                        ForEach(visibleTree.rootFolders) { rootFolder in
-                            let showHeader = !showsSingleFlatCoreOnly
-                            let expanded = !showHeader || isFolderExpanded(rootFolder.id)
-                            let childRows = expanded ? flattenedSubtreeRows(under: rootFolder, baseDepth: showHeader ? 1 : 0) : []
+                    ForEach(visibleTree.rootFolders) { rootFolder in
+                        let showHeader = !showsSingleFlatCoreOnly
+                        let expanded = !showHeader || isFolderExpanded(rootFolder.id)
+                        let childRows = expanded ? flattenedSubtreeRows(under: rootFolder, baseDepth: showHeader ? 1 : 0) : []
 
-                            VStack(alignment: .leading, spacing: 4) {
-                                if showHeader {
-                                    VaultFolderHeaderRow(
-                                        node: rootFolder,
-                                        isExpanded: expanded,
-                                        onToggle: { toggleFolder(rootFolder.id) }
-                                    )
-                                }
+                        VStack(alignment: .leading, spacing: 4) {
+                            if showHeader {
+                                VaultFolderHeaderRow(
+                                    node: rootFolder,
+                                    isExpanded: expanded,
+                                    onToggle: { toggleFolder(rootFolder.id) }
+                                )
+                            }
 
-                                if expanded {
-                                    LazyVStack(alignment: .leading, spacing: 2) {
-                                        ForEach(Array(childRows.enumerated()), id: \.element.id) { idx, row in
-                                            VStack(alignment: .leading, spacing: 0) {
-                                                switch row {
-                                                case let .subfolder(subNode, expandedSub, indentLevel):
-                                                    VaultFolderHeaderRow(
-                                                        node: subNode,
-                                                        isExpanded: expandedSub,
-                                                        onToggle: { toggleFolder(subNode.id) }
-                                                    )
-                                                    .padding(.top, idx > 0 ? 6 : 2)
-                                                    .padding(.leading, CGFloat(max(0, indentLevel - 1)) * 12)
+                            if expanded {
+                                LazyVStack(alignment: .leading, spacing: 2) {
+                                    ForEach(Array(childRows.enumerated()), id: \.element.id) { idx, row in
+                                        VStack(alignment: .leading, spacing: 0) {
+                                            switch row {
+                                            case let .subfolder(subNode, expandedSub, indentLevel):
+                                                VaultFolderHeaderRow(
+                                                    node: subNode,
+                                                    isExpanded: expandedSub,
+                                                    onToggle: { toggleFolder(subNode.id) }
+                                                )
+                                                .padding(.top, idx > 0 ? 6 : 2)
+                                                .padding(.leading, CGFloat(max(0, indentLevel - 1)) * 12)
 
-                                                case let .note(memory, indentLevel, isFirstInGroup):
-                                                    if idx > 0 && !isFirstInGroup {
-                                                        Divider()
-                                                            .overlay(colors.line.opacity(0.45))
-                                                            .padding(.leading, 12 + CGFloat(max(0, indentLevel - 1)) * 12)
-                                                            .padding(.trailing, 12)
-                                                    }
-                                                    directoryNoteRow(memory, colors: colors)
-                                                        .padding(.leading, CGFloat(max(0, indentLevel - 1)) * 12)
+                                            case let .note(memory, indentLevel, isFirstInGroup):
+                                                if idx > 0 && !isFirstInGroup {
+                                                    Divider()
+                                                        .overlay(colors.line.opacity(0.45))
+                                                        .padding(.leading, 12 + CGFloat(max(0, indentLevel - 1)) * 12)
+                                                        .padding(.trailing, 12)
                                                 }
+                                                directoryNoteRow(memory, colors: colors)
+                                                    .padding(.leading, CGFloat(max(0, indentLevel - 1)) * 12)
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                        syncStatusFooter
-                            .padding(.horizontal, 12)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-                    .padding(.bottom, 24)
-                }
-                .scrollDismissesKeyboard(.interactively)
-                .refreshable {
-                    await sync.refreshMemories()
+                    syncStatusFooter
+                        .padding(.horizontal, 12)
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .refreshable {
+            await sync.refreshMemories()
         }
         .background(colors.paper.ignoresSafeArea())
         .tint(colors.ink)
         .navigationTitle("记忆")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(colors.paper, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .searchable(
             text: $searchQuery,
             placement: .navigationBarDrawer(displayMode: .automatic),

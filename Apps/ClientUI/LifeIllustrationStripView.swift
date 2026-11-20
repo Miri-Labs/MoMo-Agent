@@ -46,7 +46,6 @@ struct LifeIllustrationStripView: View {
     let items: [LifeIllustration]
     let store: LifeIllustrationStore
     var horizontalMargin: CGFloat? = nil
-    var backgroundColor: Color = MoMoPalette.canvas
     let open: (LifeIllustration) -> Void
     let showSource: (LifeIllustration) -> Void
     let failure: (String) -> Void
@@ -94,7 +93,7 @@ struct LifeIllustrationStripView: View {
             .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity)
-        .background(backgroundColor, ignoresSafeAreaEdges: [])
+        .background(MoMoPalette.canvas, ignoresSafeAreaEdges: [])
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("lifeIllustration.strip")
     }
