@@ -227,8 +227,9 @@ struct RemoteMemoryView: View {
         .background(colors.paper.ignoresSafeArea())
         .tint(colors.ink)
         .navigationTitle("记忆")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(colors.paper, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .searchable(
             text: $searchQuery,
             placement: .navigationBarDrawer(displayMode: .automatic),
@@ -418,28 +419,28 @@ private struct VaultFolderHeaderRow: View {
     var body: some View {
         let colors = MemoryNotebookPalette(scheme: scheme)
         Button(action: onToggle) {
-            HStack(spacing: 6) {
+            HStack(spacing: 7) {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(colors.secondaryInk.opacity(0.8))
-                    .frame(width: 12)
+                    .font(.system(size: node.depth == 0 ? 11.5 : 10.5, weight: .semibold))
+                    .foregroundStyle(colors.secondaryInk.opacity(0.85))
+                    .frame(width: 14)
                     .accessibilityHidden(true)
 
                 Text(node.name)
-                    .font(.system(size: node.depth == 0 ? 12.5 : 12, weight: .semibold))
-                    .foregroundStyle(colors.secondaryInk)
+                    .font(.system(size: node.depth == 0 ? 17 : 15.5, weight: .semibold))
+                    .foregroundStyle(node.depth == 0 ? colors.ink : colors.ink.opacity(0.88))
                     .lineLimit(1)
 
                 Spacer(minLength: 6)
 
                 Text("\(node.totalItemCount)")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: 12.5, weight: .regular))
                     .monospacedDigit()
-                    .foregroundStyle(colors.secondaryInk.opacity(0.65))
+                    .foregroundStyle(colors.secondaryInk.opacity(0.75))
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
