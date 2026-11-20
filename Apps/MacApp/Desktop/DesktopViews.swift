@@ -258,7 +258,9 @@ private struct DesktopTopChromeBar: View {
                     }
 
                     DesktopRightPanelToggleButton(isOpen: activeDetailOpen) {
-                        withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
                             activeDetailOpen.toggle()
                         }
                     }
@@ -1128,7 +1130,9 @@ struct DesktopChat: View {
                                     .foregroundStyle(MoMoPalette.muted)
                             }
                             Button {
-                                withAnimation(reduced ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                                var transaction = Transaction()
+                                transaction.disablesAnimations = true
+                                withTransaction(transaction) {
                                     detailOpen = false
                                 }
                             } label: {
@@ -1522,7 +1526,9 @@ private struct DesktopActiveTasksBadgeButton: View {
     var body: some View {
         let tasksSnap = AgentActiveTasksSnapshot(store: store)
         Button {
-            withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
                 showingActiveTasks.toggle()
             }
         } label: {
