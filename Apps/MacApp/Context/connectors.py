@@ -885,41 +885,90 @@ def _purge_feishu_bot_items(store) -> int:
     return len(to_delete)
 
 
-def _backfill_feishu_self_attribution(store, owner_open_id: str, owner_name: str) -> int:
-    """Tag existing cached Feishu messages with is_self & [我（姓名）] when sender matches owner open_id."""
-    if not owner_open_id:
-        return 0
+def _fetch_feishu_chat_members(
+    ep: dict[str, str],
+    headers: dict[str, str],
+    chat_id: str,
+    *,
+    http_fn=_http_json,
+) -> dict[str, str]:
+    """Fetch open_id -> display name map for a Feishu chat (works with im:chat:readonly)."""
+    try:
+        res = http_fn(
+            f"{ep['api_base']}/open-apis/im/v1/chats/{chat_id}/members?member_id_type=open_id&page_size=100",
+            headers=headers,
+        )
+    except ConnectorError:
+        return {}
+    out: dict[str, str] = {}
+    for item in (res.get("data") or {}).get("items") or []:
+        mid = str(item.get("member_id") or "").strip()
+        name = str(item.get("name") or "").strip()
+        if mid and name:
+            out[mid] = name
+    return out
+
+
+def _backfill_feishu_self_attribution(
+    store,
+    owner_open_id: str,
+    owner_name: str,
+    member_names: dict[str, str] | None = None,
+    chat_names: dict[str, str] | None = None,
+) -> int:
+    """Tag existing cached Feishu messages with real sender names & [我（姓名）] / [对方姓名]."""
     ensure_connector_tables(store.db)
+    names = member_names or {}
+    cnames = chat_names or {}
     self_label = f"我（{owner_name}）" if owner_name else "我"
     rows = store.db.execute(
-        "SELECT id, sender, channel, content, metadata FROM connector_items WHERE connector='feishu' AND item_type='feishu_message'"
+        "SELECT id, thread_id, sender, channel, content, metadata FROM connector_items WHERE connector='feishu' AND item_type='feishu_message'"
     ).fetchall()
-    updates: list[tuple[str, str, str, str]] = []
+    updates: list[tuple[str, str, str, str, str]] = []
     for r in rows:
         try:
             meta = json.loads(r["metadata"] or "{}")
         except ValueError:
             meta = {}
         raw_sid = str(meta.get("sender_id") or r["sender"] or "").strip()
-        is_self = raw_sid == owner_open_id
-        if meta.get("is_self") is is_self and (not is_self or str(r["sender"] or "").startswith("我")):
-            continue
+        is_self = bool(owner_open_id and raw_sid == owner_open_id)
+        peer_name = names.get(raw_sid, "")
+        new_sender = self_label if is_self else (peer_name or raw_sid)
+        old_channel = str(r["channel"] or "")
+        new_channel = cnames.get(str(r["thread_id"] or ""), old_channel) or old_channel
+        role_tag = self_label if is_self else (peer_name or "对方")
+
+        content = str(r["content"] or "")
+        # Strip leading [old_channel] and optional [我...]/[对方]/[old_sender] to rebuild cleanly.
+        body = content
+        if body.startswith(f"[{old_channel}] "):
+            body = body[len(old_channel) + 3:]
+        elif body.startswith(f"[{new_channel}] "):
+            body = body[len(new_channel) + 3:]
+        for old_tag in (f"[{self_label}] ", "[我] ", "[对方] ", f"[{peer_name}] " if peer_name else ""):
+            if old_tag and body.startswith(old_tag):
+                body = body[len(old_tag):]
+                break
+        new_content = f"[{new_channel}] [{role_tag}] {body}"
+
         meta["sender_id"] = raw_sid
         meta["is_self"] = is_self
-        new_sender = self_label if is_self else raw_sid
-        content = str(r["content"] or "")
-        prefix = f"[{r['channel']}] "
-        if content.startswith(prefix):
-            rest = content[len(prefix):]
-            if not rest.startswith("[我") and not rest.startswith("[对方"):
-                tag = f"[{self_label}] " if is_self else "[对方] "
-                content = prefix + tag + rest
-        updates.append((new_sender, content, json.dumps(meta, ensure_ascii=False, sort_keys=True), r["id"]))
+        if peer_name:
+            meta["sender_name"] = peer_name
+        meta_json = json.dumps(meta, ensure_ascii=False, sort_keys=True)
+        if (
+            new_sender == r["sender"]
+            and new_channel == old_channel
+            and new_content == content
+            and meta_json == (r["metadata"] or "")
+        ):
+            continue
+        updates.append((new_sender, new_channel, new_content, meta_json, r["id"]))
     if not updates:
         return 0
     with store.write():
         store.db.executemany(
-            "UPDATE connector_items SET sender=?, content=?, metadata=? WHERE id=?",
+            "UPDATE connector_items SET sender=?, channel=?, content=?, metadata=? WHERE id=?",
             updates,
         )
     return len(updates)
@@ -939,7 +988,8 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
     synced = 0
     changed = 0
     purged_bots = _purge_feishu_bot_items(store) if ignore_bots else 0
-    _backfill_feishu_self_attribution(store, owner_open_id, owner_name)
+    member_names: dict[str, str] = dict(cfg.get("member_names") or {})
+    p2p_chat_names: dict[str, str] = {}
     try:
         token = _refresh_feishu_token(data_dir, cfg, http_fn=http_fn)
         headers = {"Authorization": f"Bearer {token}"}
@@ -1025,11 +1075,23 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
 
         for cid in merged_p2p:
             seen_chat_ids.add(cid)
-            chat_entries.append((cid, f"飞书私聊 ({cid[-6:]})"))
+            members = _fetch_feishu_chat_members(ep, headers, cid, http_fn=http_fn)
+            if members:
+                member_names.update(members)
+                peers = [name for mid, name in members.items() if mid != owner_open_id]
+                cname = f"飞书私聊 ({peers[0]})" if peers else f"飞书私聊 ({cid[-6:]})"
+            else:
+                cname = f"飞书私聊 ({cid[-6:]})"
+            p2p_chat_names[cid] = cname
+            chat_entries.append((cid, cname))
 
         for chat_id, chat_name in chat_entries:
             if _is_muted(chat_id, chat_name):
                 continue
+            if chat_id not in p2p_chat_names:
+                members = _fetch_feishu_chat_members(ep, headers, chat_id, http_fn=http_fn)
+                if members:
+                    member_names.update(members)
             try:
                 msg_res = http_fn(
                     f"{ep['api_base']}/open-apis/im/v1/messages?"
@@ -1064,8 +1126,9 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
                 sender_type = str(sender_obj.get("sender_type") or "user").strip().lower()
                 sender_id = str(sender_obj.get("id") or sender_type or "unknown")
                 is_self = bool(owner_open_id and sender_id == owner_open_id)
-                sender_display = self_label if is_self else sender_id
-                role_tag = self_label if is_self else "对方"
+                peer_name = member_names.get(sender_id, "")
+                sender_display = self_label if is_self else (peer_name or sender_id)
+                role_tag = self_label if is_self else (peer_name or "对方")
                 create_ms = float(m.get("create_time") or 0)
                 occurred_at = (create_ms / 1000.0) if create_ms > 1e11 else (create_ms or time.time())
                 title = f"{chat_name} · {text.splitlines()[0][:60]}"
@@ -1177,7 +1240,11 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
             # Drive scope is optional if the user only granted IM scopes.
             pass
 
-        _update_connector_section(data_dir, "feishu", {"last_synced": time.time(), "last_error": None})
+        _backfill_feishu_self_attribution(store, owner_open_id, owner_name, member_names=member_names, chat_names=p2p_chat_names)
+        updates: dict[str, Any] = {"last_synced": time.time(), "last_error": None}
+        if member_names != (cfg.get("member_names") or {}):
+            updates["member_names"] = member_names
+        _update_connector_section(data_dir, "feishu", updates)
         return {"connector": "feishu", "synced": synced, "changed": changed, "purged_bots": purged_bots}
     except Exception as exc:
         err_msg = str(exc)[:300]
@@ -1515,6 +1582,11 @@ def read_feishu_thread_live(
     )
     raw_items = (msg_res.get("data") or {}).get("items") or []
     owner_open_id = str(cfg.get("open_id") or "").strip()
+    owner_name = str(cfg.get("user_name") or "").strip()
+    member_names: dict[str, str] = dict(cfg.get("member_names") or {})
+    live_members = _fetch_feishu_chat_members(ep, headers, cid, http_fn=http_fn)
+    if live_members:
+        member_names.update(live_members)
     messages: list[dict[str, Any]] = []
     for m in reversed(raw_items):
         if m.get("deleted"):
@@ -1528,12 +1600,14 @@ def read_feishu_thread_live(
         sender_obj = m.get("sender") if isinstance(m.get("sender"), dict) else {}
         sid = str(sender_obj.get("id") or "")
         is_self = bool(owner_open_id and sid == owner_open_id)
+        sname = (f"我（{owner_name}）" if owner_name else "我") if is_self else (member_names.get(sid) or sid)
         create_ms = float(m.get("create_time") or 0)
         occurred_at = (create_ms / 1000.0) if create_ms > 1e11 else (create_ms or time.time())
         messages.append(
             {
                 "message_id": str(m.get("message_id") or ""),
                 "sender_id": sid,
+                "sender_name": sname,
                 "sender_role": "self" if is_self else "other",
                 "is_self": is_self,
                 "sender_type": str(sender_obj.get("sender_type") or "user"),
@@ -1573,6 +1647,8 @@ def search_feishu_live(
     )
     msg_ids = [str(mid).strip() for mid in ((search_res.get("data") or {}).get("items") or []) if str(mid).strip()][:cap]
     owner_open_id = str(cfg.get("open_id") or "").strip()
+    owner_name = str(cfg.get("user_name") or "").strip()
+    member_names: dict[str, str] = dict(cfg.get("member_names") or {})
     hits: list[dict[str, Any]] = []
     for mid in msg_ids:
         try:
@@ -1587,6 +1663,7 @@ def search_feishu_live(
                 sender_obj = m.get("sender") if isinstance(m.get("sender"), dict) else {}
                 sid = str(sender_obj.get("id") or "")
                 is_self = bool(owner_open_id and sid == owner_open_id)
+                sname = (f"我（{owner_name}）" if owner_name else "我") if is_self else (member_names.get(sid) or sid)
                 create_ms = float(m.get("create_time") or 0)
                 occurred_at = (create_ms / 1000.0) if create_ms > 1e11 else (create_ms or time.time())
                 hits.append(
@@ -1594,6 +1671,7 @@ def search_feishu_live(
                         "message_id": mid,
                         "chat_id": str(m.get("chat_id") or ""),
                         "sender_id": sid,
+                        "sender_name": sname,
                         "sender_role": "self" if is_self else "other",
                         "is_self": is_self,
                         "text": text,
