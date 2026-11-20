@@ -238,7 +238,7 @@ struct RemoteMemoryView: View {
         .background(colors.paper.ignoresSafeArea())
         .tint(colors.ink)
         .navigationTitle("记忆")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(colors.paper, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .searchable(
