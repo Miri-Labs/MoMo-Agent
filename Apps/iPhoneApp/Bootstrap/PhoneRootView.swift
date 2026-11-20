@@ -116,8 +116,9 @@ struct PhoneRootView: View {
                             .buttonStyle(ClientPrimaryButton())
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .phonePageSurface(titleDisplayMode: .large)
+                        .phonePageSurface()
                         .navigationTitle("记忆")
+                        .navigationBarTitleDisplayMode(.inline)
                     }
                 }
             }
