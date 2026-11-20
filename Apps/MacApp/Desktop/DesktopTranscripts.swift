@@ -297,59 +297,56 @@ struct DesktopSources: View {
                     timeline
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    if detailOpen {
-                        DesktopRightInspectorContainer(width: $inspectorWidth) {
-                            if let activeWindow = activeDetailWindow {
-                                DesktopSourceReader(
-                                    model: model,
-                                    source: activeWindow.source,
-                                    window: activeWindow.window,
-                                    initialSpanID: selectedSpanID,
-                                    close: {
-                                        withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                    DesktopRightInspectorContainer(isOpen: $detailOpen, width: $inspectorWidth) {
+                        if let activeWindow = activeDetailWindow {
+                            DesktopSourceReader(
+                                model: model,
+                                source: activeWindow.source,
+                                window: activeWindow.window,
+                                initialSpanID: selectedSpanID,
+                                close: {
+                                    withAnimation(reducedMotion ? nil : DesktopRightInspectorContainer<EmptyView>.toggleAnimation) {
+                                        detailOpen = false
+                                    }
+                                }
+                            )
+                            .id(activeWindow.id)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            VStack(spacing: 10) {
+                                HStack {
+                                    Text("转录详情")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(MoMoPalette.ink)
+                                    Spacer()
+                                    Button {
+                                        withAnimation(reducedMotion ? nil : DesktopRightInspectorContainer<EmptyView>.toggleAnimation) {
                                             detailOpen = false
                                         }
+                                    } label: {
+                                        Image(systemName: "xmark")
+                                            .font(.system(size: 11.5, weight: .medium))
+                                            .foregroundStyle(MoMoPalette.muted)
+                                            .frame(width: 26, height: 26)
+                                            .contentShape(Rectangle())
                                     }
-                                )
-                                .id(activeWindow.id)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            } else {
-                                VStack(spacing: 10) {
-                                    HStack {
-                                        Text("转录详情")
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .foregroundStyle(MoMoPalette.ink)
-                                        Spacer()
-                                        Button {
-                                            withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
-                                                detailOpen = false
-                                            }
-                                        } label: {
-                                            Image(systemName: "xmark")
-                                                .font(.system(size: 11.5, weight: .medium))
-                                                .foregroundStyle(MoMoPalette.muted)
-                                                .frame(width: 26, height: 26)
-                                                .contentShape(Rectangle())
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                    .padding(.leading, 16)
-                                    .padding(.trailing, 10)
-                                    .frame(height: 44)
-                                    .overlay(alignment: .bottom) {
-                                        Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
-                                    }
-
-                                    Spacer()
-                                    Text("选择左侧任意转录片段查看原文")
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(MoMoPalette.muted)
-                                    Spacer()
+                                    .buttonStyle(.plain)
                                 }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .padding(.leading, 16)
+                                .padding(.trailing, 10)
+                                .frame(height: 44)
+                                .overlay(alignment: .bottom) {
+                                    Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
+                                }
+
+                                Spacer()
+                                Text("选择左侧任意转录片段查看原文")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(MoMoPalette.muted)
+                                Spacer()
                             }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
-                        .transition(.opacity)
                     }
                 }
             }
@@ -359,7 +356,7 @@ struct DesktopSources: View {
             if selectedIllustrationID != nil {
                 selectedIllustrationID = nil
             } else if detailOpen {
-                withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                withAnimation(reducedMotion ? nil : DesktopRightInspectorContainer<EmptyView>.toggleAnimation) {
                     detailOpen = false
                 }
             }
@@ -606,7 +603,7 @@ struct DesktopSources: View {
                             expandedDays[item.logicalDayKey] = true
                         }
                         selectedID = item.id
-                        withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+                        withAnimation(reducedMotion ? nil : DesktopRightInspectorContainer<EmptyView>.toggleAnimation) {
                             detailOpen = true
                         }
                     }
@@ -647,7 +644,7 @@ struct DesktopSources: View {
         expandedDays[key] = true
         selectedSpanID = anchor?.spanId
         selectedID = source.id
-        withAnimation(reducedMotion ? nil : .spring(duration: 0.24, bounce: 0.0)) {
+        withAnimation(reducedMotion ? nil : DesktopRightInspectorContainer<EmptyView>.toggleAnimation) {
             detailOpen = true
         }
     }

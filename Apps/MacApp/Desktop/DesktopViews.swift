@@ -131,7 +131,6 @@ struct DesktopRoot: View {
         }
         .background(MoMoPalette.sidebar)
         .background(DesktopWindowChrome())
-        .background(DesktopWindowInspectorExpander(isOpen: activeDetailOpen, inspectorWidth: inspectorWidth))
         .ignoresSafeArea(.container)
         .environment(\.openURL, OpenURLAction { url in
             guard url.scheme?.lowercased() == "momoagent" else { return .systemAction }
@@ -244,7 +243,7 @@ private struct DesktopTopChromeBar: View {
                     .allowsHitTesting(false)
 
                 DesktopSidebarToggleButton(sidebarVisible: sidebarVisible) {
-                    withAnimation(reducedMotion ? nil : .spring(duration: 0.22, bounce: 0.0)) {
+                    withAnimation(reducedMotion ? nil : .spring(duration: 0.3, bounce: 0.1)) {
                         sidebarVisible.toggle()
                     }
                 }
@@ -258,9 +257,7 @@ private struct DesktopTopChromeBar: View {
                     }
 
                     DesktopRightPanelToggleButton(isOpen: activeDetailOpen) {
-                        var transaction = Transaction()
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
+                        withAnimation(reducedMotion ? nil : DesktopRightInspectorContainer<EmptyView>.toggleAnimation) {
                             activeDetailOpen.toggle()
                         }
                     }
@@ -272,20 +269,51 @@ private struct DesktopTopChromeBar: View {
     }
 }
 
-/// Reusable right detail inspector container with leading 0.5pt divider and draggable resize handle (290–480pt).
+/// Codex-aligned collapsible right inspector (`E.m9` spring 0.5s bounce 0.1, fixed inner frame so content never squishes during reveal, leading 0.5pt border + subtle elevation shadow, 320–520pt drag resize with 160pt collapse hysteresis).
 struct DesktopRightInspectorContainer<Content: View>: View {
+    static var toggleAnimation: Animation { .spring(duration: 0.5, bounce: 0.1) }
+    private static var minWidth: CGFloat { 320 }
+    private static var maxWidth: CGFloat { 520 }
+    private static var collapseThreshold: CGFloat { 160 } // Codex B7: 0.5 * 320
+
+    @Binding var isOpen: Bool
     @Binding var width: CGFloat
     @ViewBuilder var content: () -> Content
     @State private var dragStartWidth: CGFloat?
+    @State private var dragCollapsePreview = false
     @State private var handleHovered = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
 
     var body: some View {
-        content()
-            .frame(width: width)
-            .frame(maxHeight: .infinity)
-            .background(MoMoPalette.pane)
-            .overlay(alignment: .leading) {
+        let clampedWidth = min(Self.maxWidth, max(Self.minWidth, width))
+        let visibleWidth: CGFloat = isOpen ? clampedWidth : 0
+
+        ZStack(alignment: .leading) {
+            content()
+                .frame(width: clampedWidth)
+                .frame(maxHeight: .infinity)
+                .background(MoMoPalette.pane)
+        }
+        .frame(width: visibleWidth, alignment: .leading)
+        .frame(maxHeight: .infinity)
+        .clipped()
+        .allowsHitTesting(isOpen)
+        .accessibilityHidden(!isOpen)
+        .overlay(alignment: .leading) {
+            if isOpen {
                 ZStack(alignment: .leading) {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(width: 1)
+                        .shadow(
+                            color: Color.black.opacity(colorScheme == .dark ? 0.30 : 0.08),
+                            radius: 8,
+                            x: -4,
+                            y: 0
+                        )
+                        .allowsHitTesting(false)
+
                     Rectangle()
                         .fill(handleHovered || dragStartWidth != nil ? MoMoPalette.borderFocus : MoMoPalette.borderSubtle)
                         .frame(width: handleHovered || dragStartWidth != nil ? 1.0 : 0.5)
@@ -302,18 +330,32 @@ struct DesktopRightInspectorContainer<Content: View>: View {
                         .gesture(
                             DragGesture(minimumDistance: 2, coordinateSpace: .global)
                                 .onChanged { value in
-                                    let base = dragStartWidth ?? width
+                                    let base = dragStartWidth ?? clampedWidth
                                     if dragStartWidth == nil { dragStartWidth = base }
                                     let proposed = base - value.translation.width
-                                    width = min(480, max(290, proposed))
+                                    if proposed < Self.collapseThreshold {
+                                        dragCollapsePreview = true
+                                    } else {
+                                        dragCollapsePreview = false
+                                        width = min(Self.maxWidth, max(Self.minWidth, proposed))
+                                    }
                                 }
                                 .onEnded { _ in
+                                    let shouldCollapse = dragCollapsePreview
                                     dragStartWidth = nil
+                                    dragCollapsePreview = false
+                                    if shouldCollapse {
+                                        withAnimation(reducedMotion ? nil : Self.toggleAnimation) {
+                                            isOpen = false
+                                        }
+                                    }
                                 }
                         )
                 }
                 .accessibilityHidden(true)
             }
+        }
+        .animation(dragStartWidth != nil || reducedMotion ? nil : Self.toggleAnimation, value: isOpen)
     }
 }
 
@@ -1115,49 +1157,44 @@ struct DesktopChat: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(MoMoPalette.pane)
 
-            if detailOpen {
-                DesktopRightInspectorContainer(width: $inspectorWidth) {
-                    VStack(spacing: 0) {
-                        let tasksSnap = AgentActiveTasksSnapshot(store: model.taskStore)
-                        HStack(spacing: 8) {
-                            Text("任务")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(MoMoPalette.ink)
-                            Spacer(minLength: 8)
-                            if tasksSnap.count > 0 {
-                                Text("\(tasksSnap.count) 项进行中")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(MoMoPalette.muted)
-                            }
-                            Button {
-                                var transaction = Transaction()
-                                transaction.disablesAnimations = true
-                                withTransaction(transaction) {
-                                    detailOpen = false
-                                }
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 11.5, weight: .medium))
-                                    .foregroundStyle(MoMoPalette.muted)
-                                    .frame(width: 26, height: 26)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .help("收起任务栏")
-                            .accessibilityLabel("收起任务栏")
+            DesktopRightInspectorContainer(isOpen: $detailOpen, width: $inspectorWidth) {
+                VStack(spacing: 0) {
+                    let tasksSnap = AgentActiveTasksSnapshot(store: model.taskStore)
+                    HStack(spacing: 8) {
+                        Text("任务")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(MoMoPalette.ink)
+                        Spacer(minLength: 8)
+                        if tasksSnap.count > 0 {
+                            Text("\(tasksSnap.count) 项进行中")
+                                .font(.system(size: 11))
+                                .foregroundStyle(MoMoPalette.muted)
                         }
-                        .padding(.leading, 16)
-                        .padding(.trailing, 10)
-                        .frame(height: 44)
-                        .overlay(alignment: .bottom) {
-                            Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
+                        Button {
+                            withAnimation(reduced ? nil : DesktopRightInspectorContainer<EmptyView>.toggleAnimation) {
+                                detailOpen = false
+                            }
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(MoMoPalette.muted)
+                                .frame(width: 26, height: 26)
+                                .contentShape(Rectangle())
                         }
-
-                        AgentActiveTasksSheet(store: model.taskStore, isPopover: true)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .buttonStyle(.plain)
+                        .help("收起任务栏")
+                        .accessibilityLabel("收起任务栏")
                     }
+                    .padding(.leading, 16)
+                    .padding(.trailing, 10)
+                    .frame(height: 44)
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
+                    }
+
+                    AgentActiveTasksSheet(store: model.taskStore, isPopover: true)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1526,9 +1563,7 @@ private struct DesktopActiveTasksBadgeButton: View {
     var body: some View {
         let tasksSnap = AgentActiveTasksSnapshot(store: store)
         Button {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
+            withAnimation(reducedMotion ? nil : DesktopRightInspectorContainer<EmptyView>.toggleAnimation) {
                 showingActiveTasks.toggle()
             }
         } label: {
