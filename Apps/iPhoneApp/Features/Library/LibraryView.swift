@@ -868,7 +868,7 @@ private struct TimelineDayPage: View {
         TranscriptReadingBoundary.isEarly(window.id.start, offset: window.id.timezoneOffset, hour: earlyHour)
     }
 
-    private func illustrationURL(for window: TimelineWindow) -> URL? {
+    private func matchedIllustration(for window: TimelineWindow) -> (url: URL, angle: Double)? {
         guard let illustrations, !dayIllustrations.isEmpty else { return nil }
         let start = window.id.start.timeIntervalSince1970
         let end = window.end.timeIntervalSince1970
@@ -881,7 +881,8 @@ private struct TimelineDayPage: View {
             }
             return start < item.windowEnd && end > item.windowStart
         }
-        return match.flatMap { illustrations.imageURL(for: $0) }
+        guard let match, let url = illustrations.imageURL(for: match) else { return nil }
+        return (url, match.stickerAngle)
     }
 
     private func scrollToMasthead() {
@@ -896,14 +897,16 @@ private struct TimelineDayPage: View {
         windows: [TimelineWindow],
         repeatedClockRanges: Set<TimelineWindowID>
     ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let sticker = matchedIllustration(for: window)
+        return VStack(alignment: .leading, spacing: 0) {
             Button { open(TimelineDestination(windowID: window.id)) } label: {
                 TimelineRow(window: window, summary: timeline.summary(for: window),
                     status: TimelinePresentation.status(window, transcription: transcription, speechFailure: speechFailure),
                     connected: window.id != windows.last?.id,
                     continuesFromPrevious: window.id != windows.first?.id,
                     includeUTCOffset: repeatedClockRanges.contains(window.id),
-                    illustrationURL: illustrationURL(for: window))
+                    illustrationURL: sticker?.url,
+                    illustrationAngle: sticker?.angle ?? 0)
             }
             .buttonStyle(MoMoPressableButtonStyle(scale: 0.98))
             .accessibilityIdentifier("timeline.window.\(window.id.key)")
