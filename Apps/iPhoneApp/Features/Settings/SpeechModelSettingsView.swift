@@ -7,7 +7,9 @@ struct SpeechModelSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                modelCard(.senseVoice, subtitle: "默认 · 神经网络引擎加速，约 2–3 分钟 / 1 小时录音") {
+                modelCard(.senseVoice, subtitle: "默认 · 速度快，适合全天候实时与后台整理") {
+                    Text("离线识别中、英、粤、日、韩（约 2–3 分钟可转完 1 小时录音），轻量省电，后台唤醒即可快速出稿、不易积压。")
+                        .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
                     if settings.choice != .senseVoice {
                         Button("使用 SenseVoice") { settings.select(.senseVoice) }
                             .disabled(busy)
@@ -18,8 +20,8 @@ struct SpeechModelSettingsView: View {
                         .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
                     download(.xASR, use: "使用 X-ASR")
                 }
-                modelCard(.funASRNano, subtitle: "神经网络引擎加速 · 0.6B 大模型推理") {
-                    Text("离线识别中文及方言、英文、日文；完整 Encoder + Adaptor + Qwen3-0.6B 运行于 Apple 神经网络引擎。")
+                modelCard(.funASRNano, subtitle: "高精度 · 0.6B 大模型推理，速度较慢") {
+                    Text("识别更准（支持中文及方言、英文、日文），但大模型计算开销大，可能无法实时跟上连续对话；长时间录音在后台容易积压，需要打开 App 或插电整理。")
                         .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
                     download(.funASRNano, use: "使用 FunASR Nano")
                 }
