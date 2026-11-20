@@ -59,27 +59,29 @@ struct LibraryView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            dateBar.padding(.top, 4)
+            dateBar.padding(.top, 2)
             if !searching, !selectedDayFileIssues.isEmpty {
-                fileIssueBanner(selectedDayFileIssues).padding(.horizontal, 24)
+                fileIssueBanner(selectedDayFileIssues).padding(.horizontal, 16)
             }
             if !searching, let progress = timeline.processingProgress[timeline.selectedDay], progress.received > 0,
                progress.processed == nil || (progress.remaining ?? 0) >= 0.01 || progress.awaitingSync > 0 {
-                processingProgress(progress).padding(.horizontal, 24)
+                processingProgress(progress).padding(.horizontal, 16)
             }
-            if searching { searchField.padding(.horizontal, 24) }
+            if searching { searchField.padding(.horizontal, 16) }
             if searching && !query.isEmpty { searchResults }
             else { dayPager }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .phonePageSurface()
+        .background(MoMoPalette.sidebar)
+        .navigationBarTitleDisplayMode(.large)
         .watchStatusRefresh(requestWatchStatus)
         .navigationTitle("转录")
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if playback.activeTarget != nil {
                 AudioMiniPlayer(playback: playback, openRecording: { id in openRecording(id) },
                     openWindow: { recordingID = nil; selectedWindow = TimelineDestination(windowID: $0) })
-                    .padding(.horizontal, 12).padding(.vertical, 8).background(MoMoPalette.canvas)
+                    .padding(.horizontal, 12).padding(.vertical, 8).background(MoMoPalette.sidebar)
             }
         }
         .navigationDestination(item: $selectedWindow) { destination in
@@ -215,36 +217,65 @@ struct LibraryView: View {
     }
 
     private var dateBar: some View {
-        HStack(spacing: 0) {
-            Button { select(timeline.selectedDay.adding(days: -1)) } label: {
-                Image(systemName: "chevron.left").frame(width: 44, height: 44)
+        HStack(spacing: 10) {
+            HStack(spacing: 0) {
+                Button { select(timeline.selectedDay.adding(days: -1)) } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(dateRange.canRequest(timeline.selectedDay.adding(days: -1)) ? MoMoPalette.ink : MoMoPalette.muted.opacity(0.35))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .disabled(!dateRange.canRequest(timeline.selectedDay.adding(days: -1)))
+                .accessibilityLabel("前一天").accessibilityIdentifier("timeline.previousDay")
+
+                Button {
+                    pendingDay = nil
+                    dateDraft = timeline.selectedDay.date(); choosingDate = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(TimelineDate.day(timeline.selectedDay))
+                            .phoneText(.metadata)
+                            .fontWeight(.medium)
+                            .foregroundStyle(MoMoPalette.ink)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(MoMoPalette.muted)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel("选择日期，\(TimelineDate.day(timeline.selectedDay))")
+                .accessibilityIdentifier("timeline.datePicker")
+
+                Button { select(timeline.selectedDay.adding(days: 1)) } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(dateRange.canRequest(timeline.selectedDay.adding(days: 1)) ? MoMoPalette.ink : MoMoPalette.muted.opacity(0.35))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .disabled(!dateRange.canRequest(timeline.selectedDay.adding(days: 1)))
+                .accessibilityLabel("后一天").accessibilityIdentifier("timeline.nextDay")
             }
-            .disabled(!dateRange.canRequest(timeline.selectedDay.adding(days: -1)))
-            .accessibilityLabel("前一天").accessibilityIdentifier("timeline.previousDay")
-            Button {
-                pendingDay = nil
-                dateDraft = timeline.selectedDay.date(); choosingDate = true
-            } label: {
-                HStack(spacing: 5) {
-                    Text(TimelineDate.day(timeline.selectedDay)).phoneText(.metadata)
-                    Image(systemName: "chevron.down").font(.caption2)
-                }.frame(maxWidth: .infinity, minHeight: 44)
-            }
-            .accessibilityLabel("选择日期，\(TimelineDate.day(timeline.selectedDay))")
-            .accessibilityIdentifier("timeline.datePicker")
-            Button { select(timeline.selectedDay.adding(days: 1)) } label: {
-                Image(systemName: "chevron.right").frame(width: 44, height: 44)
-            }
-            .disabled(!dateRange.canRequest(timeline.selectedDay.adding(days: 1)))
-            .accessibilityLabel("后一天").accessibilityIdentifier("timeline.nextDay")
+            .recapCardSurface(cornerRadius: 16)
+
             Button {
                 searching.toggle()
                 if !searching { query = "" }
-            } label: { Image(systemName: searching ? "xmark" : "magnifyingglass").frame(width: 44, height: 44) }
-                .accessibilityLabel(searching ? String(localized: "关闭搜索") : String(localized: "搜索全部转录"))
-                .accessibilityIdentifier("timeline.search.toggle")
+            } label: {
+                Image(systemName: searching ? "xmark" : "magnifyingglass")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(MoMoPalette.ink)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+            }
+            .recapCardSurface(cornerRadius: 22)
+            .accessibilityLabel(searching ? String(localized: "关闭搜索") : String(localized: "搜索全部转录"))
+            .accessibilityIdentifier("timeline.search.toggle")
         }
-        .foregroundStyle(MoMoPalette.ink).padding(.horizontal, 16)
+        .foregroundStyle(MoMoPalette.ink)
+        .padding(.horizontal, 16)
     }
 
     private var isActivelyProcessingTranscription: Bool {
@@ -323,7 +354,11 @@ struct LibraryView: View {
                 Text(continuationFailure).phoneText(.caption).foregroundStyle(MoMoPalette.failure)
                     .accessibilityIdentifier("timeline.continueInBackground.status")
             }
-        }.accessibilityElement(children: .contain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .recapCardSurface(cornerRadius: 16)
+        .accessibilityElement(children: .contain)
     }
 
     private func processingSummary(_ progress: TimelineDayProgress) -> Text {
@@ -407,9 +442,9 @@ struct LibraryView: View {
                 Text(fileResolutionFailure).phoneText(.caption).foregroundStyle(MoMoPalette.failure)
             }
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(MoMoPalette.surface, in: RoundedRectangle(cornerRadius: 14))
+        .recapCardSurface(cornerRadius: 18)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("timeline.fileIssues")
     }
@@ -554,14 +589,33 @@ struct LibraryView: View {
     }
 
     private var searchField: some View {
-        TextField("搜索全部转录内容", text: $query).phoneText(.menu).submitLabel(.search)
-            .padding(12).background(MoMoPalette.surface, in: RoundedRectangle(cornerRadius: 16))
-            .accessibilityIdentifier("library.search")
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(MoMoPalette.muted)
+                .accessibilityHidden(true)
+            TextField("搜索全部转录内容", text: $query)
+                .phoneText(.menu)
+                .submitLabel(.search)
+                .accessibilityIdentifier("library.search")
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(MoMoPalette.muted.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("清除搜索")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .recapCardSurface(cornerRadius: 16)
     }
 
     private var searchResults: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(model.searchResults) { result in
                     Button {
                         Task {
@@ -575,20 +629,52 @@ struct LibraryView: View {
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(RecordingDatePresentation.title(result.recordedAt ?? result.recording.recordedAt, offset: result.timezoneOffset ?? 0)).phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
-                            Text(result.hit.text).phoneText(.body).foregroundStyle(MoMoPalette.ink).lineLimit(3)
-                        }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    }.accessibilityIdentifier("library.search.result.\(result.id)")
+                            HStack(spacing: 6) {
+                                Image(systemName: "waveform")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(MoMoPalette.muted)
+                                    .accessibilityHidden(true)
+                                Text(RecordingDatePresentation.title(result.recordedAt ?? result.recording.recordedAt, offset: result.timezoneOffset ?? 0))
+                                    .phoneText(.metadata)
+                                    .monospacedDigit()
+                                    .foregroundStyle(MoMoPalette.muted)
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(MoMoPalette.muted.opacity(0.45))
+                                    .accessibilityHidden(true)
+                            }
+                            Text(result.hit.text)
+                                .phoneText(.menu)
+                                .lineSpacing(4)
+                                .foregroundStyle(MoMoPalette.ink)
+                                .lineLimit(3)
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 15)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .recapCardSurface(cornerRadius: 18)
+                    }
+                    .buttonStyle(MoMoPressableButtonStyle(scale: 0.985))
+                    .accessibilityIdentifier("library.search.result.\(result.id)")
                 }
                 if let failure = model.searchFailure { Text(failure).phoneText(.metadata).foregroundStyle(MoMoPalette.failure) }
                 else if model.isSearching, !model.searchResults.isEmpty {
                     ProgressView("正在搜索…").frame(maxWidth: .infinity).padding(.vertical, 12)
                 }
-                else if !model.isSearching, model.searchResults.isEmpty { Text("没有找到相关转录，试试其他关键词。").phoneText(.metadata) }
+                else if !model.isSearching, model.searchResults.isEmpty {
+                    Text("没有找到相关转录，试试其他关键词。")
+                        .phoneText(.metadata)
+                        .foregroundStyle(MoMoPalette.muted)
+                        .padding(.horizontal, 4)
+                }
                 if model.hasMoreSearchResults {
                     Button("查看更多搜索结果") { Task { await model.search(query, loadMore: true) } }.frame(minHeight: 44)
                 }
-            }.padding(.horizontal, 24)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 24)
         }
         .modifier(TimelineReadingEdge())
         .overlay {
@@ -798,34 +884,52 @@ private struct TimelineDayPage: View {
                     continuesFromPrevious: window.id != windows.first?.id,
                     includeUTCOffset: repeatedClockRanges.contains(window.id))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(MoMoPressableButtonStyle(scale: 0.985))
             .accessibilityIdentifier("timeline.window.\(window.id.key)")
             if !window.marks.isEmpty {
+                Rectangle()
+                    .fill(MoMoPalette.borderSubtle)
+                    .frame(height: 0.5)
+                    .padding(.horizontal, 20)
+                    .accessibilityHidden(true)
                 ScrollView(.horizontal) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 8) {
                         ForEach(window.marks) { mark in
                             let timeLabel = TimelineDate.time(mark.recordedAt, offset: window.id.timezoneOffset, seconds: true)
                             Button {
                                 open(TimelineDestination(windowID: window.id, markID: mark.id))
                             } label: {
                                 Label(timeLabel, systemImage: "flag.fill")
-                                    .phoneText(.caption).monospacedDigit().frame(minHeight: 44)
+                                    .phoneText(.caption)
+                                    .monospacedDigit()
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(MoMoPalette.ink.opacity(0.055), in: Capsule())
+                                    .frame(minHeight: 44)
+                                    .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain).foregroundStyle(MoMoPalette.ink)
+                            .buttonStyle(.plain)
+                            .foregroundStyle(MoMoPalette.ink)
                             .accessibilityLabel("查看 \(timeLabel) 的标记")
                             .accessibilityIdentifier("timeline.mark.\(mark.id)")
                         }
                     }
-                }.scrollIndicators(.hidden).padding(.leading, 26).padding(.bottom, 16)
-                    .overlay(alignment: .leading) {
-                        if window.id != windows.last?.id {
-                            Rectangle().fill(MoMoPalette.line).frame(width: 1)
-                                .frame(width: 12).accessibilityHidden(true)
-                        }
-                    }
+                    .padding(.horizontal, 20)
+                }
+                .scrollIndicators(.hidden)
+                .padding(.vertical, 2)
             }
         }
+        .recapCardSurface(cornerRadius: 22)
         .id(TimelineScrollItemID.window(window.id))
+    }
+
+    private func daySummaryCaption(for windows: [TimelineWindow]) -> String {
+        let totalSpeech = windows.reduce(0.0) { $0 + $1.speechDuration }
+        if totalSpeech > 0 {
+            return String(localized: "共 \(windows.count) 段记录 · 说话约 \(TimelineDate.duration(totalSpeech))")
+        }
+        return String(localized: "共 \(windows.count) 段记录")
     }
 
     var body: some View {
@@ -837,12 +941,18 @@ private struct TimelineDayPage: View {
             hasDaytime: !daytime.isEmpty, isToday: isToday, hour: earlyHour)
         let visible = expanded ? windows : daytime
         return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 Color.clear.frame(height: 1).id(TimelineScrollItemID.masthead)
                 if let illustrations, !dayIllustrations.isEmpty {
                     LifeIllustrationStripView(items: dayIllustrations, store: illustrations, horizontalMargin: 0,
+                        backgroundColor: MoMoPalette.sidebar,
                         open: openIllustration, showSource: showIllustrationSource, failure: illustrationFailure)
-                        .padding(.bottom, 8)
+                }
+                if !windows.isEmpty {
+                    Text(daySummaryCaption(for: windows))
+                        .phoneText(.metadata)
+                        .foregroundStyle(MoMoPalette.muted)
+                        .padding(.horizontal, 4)
                 }
                 if !early.isEmpty {
                     Button {
@@ -850,10 +960,22 @@ private struct TimelineDayPage: View {
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
                             Text("凌晨记录 · \(early.count) 段")
+                                .fontWeight(.medium)
                             Spacer()
                             Text("00:00–" + TranscriptReadingBoundary.label(for: earlyHour)).monospacedDigit()
-                        }.phoneText(.caption).foregroundStyle(MoMoPalette.muted).frame(minHeight: 44)
+                        }
+                        .phoneText(.caption)
+                        .foregroundStyle(MoMoPalette.muted)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 44)
+                        .background(MoMoPalette.paper.opacity(0.75), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(MoMoPalette.borderSubtle, lineWidth: 0.5)
+                                .allowsHitTesting(false)
+                        }
                     }
                     .buttonStyle(.plain).accessibilityIdentifier("timeline.early.toggle")
                     .accessibilityValue(expanded ? "已展开" : "已折叠")
@@ -865,10 +987,12 @@ private struct TimelineDayPage: View {
                 if !early.isEmpty, daytime.isEmpty {
                     Text("当天暂无 \(TranscriptReadingBoundary.label(for: earlyHour)) 后记录")
                         .phoneText(.caption).foregroundStyle(MoMoPalette.muted)
+                        .padding(.horizontal, 4)
                         .accessibilityIdentifier("timeline.early.only")
                 }
                 if let failure = timeline.failures[day] {
                     Text(failure).phoneText(.metadata).foregroundStyle(MoMoPalette.failure)
+                        .padding(.horizontal, 4)
                     Button("重试") { Task { await timeline.load(day) } }.frame(minHeight: 44)
                 } else if windows.isEmpty, timeline.snapshots[day] != nil,
                           !timeline.loading.contains(day), !dateRange.isUnknown {
@@ -880,7 +1004,7 @@ private struct TimelineDayPage: View {
                 }
             }
             .scrollTargetLayout()
-            .padding(.bottom, 24)
+            .padding(.bottom, 28)
         }
         .overlay {
             if windows.isEmpty, timeline.failures[day] == nil,
@@ -925,8 +1049,8 @@ private struct TimelineDayPage: View {
         .modifier(TimelineReadingEdge())
         // Keep the gutter outside the scrollable coordinate space. When archive
         // regrouping replaces a row ID, scrollTo(id:) can otherwise align that
-        // inset target horizontally and consume the 24pt page margin.
-        .padding(.horizontal, 24)
+        // inset target horizontally and consume the page margin.
+        .padding(.horizontal, 16)
     }
 }
 
@@ -945,7 +1069,7 @@ private struct TimelineReadingEdge: ViewModifier {
             }
             .overlay(alignment: .top) {
                 if pastTop && !reduceTransparency {
-                    LinearGradient(colors: [MoMoPalette.canvas, MoMoPalette.canvas.opacity(0)],
+                    LinearGradient(colors: [MoMoPalette.sidebar, MoMoPalette.sidebar.opacity(0)],
                         startPoint: .top, endPoint: .bottom)
                         .frame(height: 16)
                         .allowsHitTesting(false)

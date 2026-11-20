@@ -62,25 +62,40 @@ struct TimelineDetailView: View {
         let renderedPendingRestore = pendingReadingRestore
         let renderedIssuedRestore = issuedReadingRestore
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22, pinnedViews: [.sectionHeaders]) {
-                VStack(alignment: .leading, spacing: 10) {
+            LazyVStack(alignment: .leading, spacing: 20, pinnedViews: [.sectionHeaders]) {
+                VStack(alignment: .leading, spacing: 12) {
                     TranscriptDetailDateHeader(date: TimelineDate.day(id.day),
                         time: window.map { TimelineDate.range($0.id, end: $0.end) },
                         duration: window.flatMap { $0.speechDuration > 0 ? String(localized: "说话约 \(TimelineDate.duration($0.speechDuration))") : nil })
+                        .padding(.horizontal, 4)
                     if let window, let summary = library.timeline.summary(for: window) {
-                        TimelineSummaryView(text: summary).padding(.top, 10)
+                        let meta: String = window.speechDuration > 0
+                            ? String(localized: "AI 总结 · \(TimelineDate.duration(window.speechDuration))")
+                            : String(localized: "AI 总结")
+                        TimelineSummaryView(text: summary, metadata: meta).padding(.top, 4)
                     }
                     if let window, !window.marks.isEmpty {
                         markPicker(window)
                         if let mark = selectedMark, mark.nearbyParagraphID == nil {
                             Text(window.state == .complete ? String(localized: "标记附近没有识别到文字。") : String(localized: "标记附近的文字还在整理。"))
                                 .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
+                                .padding(.horizontal, 4)
                             markPlayback(mark, in: window)
+                                .padding(.horizontal, 4)
                         }
                     }
-                }.padding(.top, 20)
+                }.padding(.top, 16)
                 if let window {
                     Section {
+                        if !readableSpans.isEmpty {
+                            Text("原音转录")
+                                .font(.system(size: 11.5, weight: .bold))
+                                .tracking(0.65)
+                                .foregroundStyle(MoMoPalette.ink.opacity(0.62))
+                                .padding(.horizontal, 4)
+                                .padding(.top, 2)
+                                .accessibilityAddTraits(.isHeader)
+                        }
                         ForEach(entries) { entry in
                             VStack(alignment: .leading, spacing: 0) {
                                 switch entry {
@@ -88,47 +103,54 @@ struct TimelineDetailView: View {
                                 case .issue(let issue): issueView(issue, in: window)
                                 }
                             }
+                            .padding(.horizontal, 4)
                         }
                         if readableSpans.isEmpty {
                             Text(window.state == .complete ? (window.speechDuration > 0 ? String(localized: "暂无可读文字，原音仍可回听。") : String(localized: "未识别到语音")) : String(localized: "文字整理好后会显示在这里。"))
                                 .phoneText(.body).foregroundStyle(MoMoPalette.muted)
+                                .padding(.horizontal, 4)
                                 .accessibilityIdentifier("timeline.detail.empty")
                         }
                         if let explanation = TimelinePresentation.explanation(window, transcription: transcription, speechFailure: speechFailure) {
                             Text(explanation).phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
+                                .padding(.horizontal, 4)
                         }
                         if window.unavailableAudio {
                             Text("部分原音尚不可用或已清理，播放器中的断点不可定位，文字仍可阅读。")
                                 .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
+                                .padding(.horizontal, 4)
                         }
                         if window.sources.count > 1 {
                             Text("按说话片段连接回听，跳过长静默和未录音的间隔。")
                                 .phoneText(.caption).foregroundStyle(MoMoPalette.muted)
+                                .padding(.horizontal, 4)
                         }
                         if window.hasUnknownTail {
                             Text(window.state == .complete ? String(localized: "已处理完当前收到的音频。结束回执尚未同步，不影响现有文字和回听。") : String(localized: "已收到的原音会先处理，不等待结束回执。"))
                                 .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
+                                .padding(.horizontal, 4)
                                 .accessibilityIdentifier("timeline.detail.unknownTail")
                         }
                         if window.issues.isEmpty,
                            TimelinePresentation.hasRetryableFailure(window, transcription: transcription, speechFailure: speechFailure), retryTimeline != nil {
                             Button(retrying ? String(localized: "正在重新整理…") : String(localized: "重新整理这部分")) { retry(TimelineRetryRequest(window: window)) }
                                 .phoneText(.menu).frame(minHeight: 44).disabled(retrying)
+                                .padding(.horizontal, 4)
                                 .accessibilityIdentifier("timeline.detail.retry")
                         }
-                        if let failure { Text(failure).phoneText(.metadata).foregroundStyle(MoMoPalette.failure) }
+                        if let failure { Text(failure).phoneText(.metadata).foregroundStyle(MoMoPalette.failure).padding(.horizontal, 4) }
                     } header: {
                         if let target {
                             AudioPlayerCard(playback: playback, target: target, playLabel: String(localized: "播放这一时段的原音"),
                                 actionIdentifier: "transcript.recording.play")
-                                .padding(.vertical, 6).background(MoMoPalette.canvas)
+                                .padding(.vertical, 6).background(MoMoPalette.sidebar)
                                 .readingViewportHeader()
                         }
                     }
-                } else if let failure { Text(failure).phoneText(.metadata) }
+                } else if let failure { Text(failure).phoneText(.metadata).padding(.horizontal, 4) }
             }
             .scrollTargetLayout()
-            .padding(.horizontal, 24).padding(.bottom, 24)
+            .padding(.horizontal, 16).padding(.bottom, 24)
         }
         .overlay {
             if window == nil, failure == nil {
@@ -188,11 +210,13 @@ struct TimelineDetailView: View {
         }
         .accessibilityIdentifier("timeline.detail.scroll")
         .phonePageSurface()
+        .background(MoMoPalette.sidebar)
         .watchStatusRefresh(requestWatchStatus)
         .navigationTitle("转录详情").navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             if let window, !references.isEmpty {
-                TranscriptDiscussAction(title: String(localized: "围绕这段时间提问"), enabled: canDiscuss) { discuss(references, window) }
+                TranscriptDiscussAction(title: String(localized: "围绕这段时间提问"), enabled: canDiscuss,
+                    backgroundColor: MoMoPalette.sidebar) { discuss(references, window) }
             }
         }
         .task(id: loadIdentity) { await load() }

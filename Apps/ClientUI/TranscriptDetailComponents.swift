@@ -15,7 +15,11 @@ struct TranscriptAudioCardSurface<Playback: View, Times: View>: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
         .frame(minHeight: 88, alignment: .top)
+        #if os(iOS)
+        .recapCardSurface(cornerRadius: 22)
+        #else
         .background(MoMoPalette.surface, in: RoundedRectangle(cornerRadius: 22))
+        #endif
         .accessibilityElement(children: .contain)
     }
 }
@@ -65,6 +69,7 @@ struct TranscriptParagraphText: View, Equatable {
 struct TranscriptDiscussAction: View {
     let title: String
     let enabled: Bool
+    var backgroundColor: Color = MoMoPalette.canvas
     let action: () -> Void
     #if os(macOS)
     @State private var hovered = false
@@ -104,13 +109,43 @@ struct TranscriptDiscussAction: View {
         #else
         .padding(.vertical, 12)
         #endif
-        .background(MoMoPalette.canvas, ignoresSafeAreaEdges: [])
+        .background(backgroundColor, ignoresSafeAreaEdges: [])
     }
 }
 
 struct TimelineSummaryView: View {
     let text: String
+    var metadata: String? = nil
     var body: some View {
+        #if os(iOS)
+        let recap = TranscriptRecapContent.parse(text)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "text.page")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(MoMoPalette.muted)
+                    .accessibilityHidden(true)
+                Text(metadata ?? String(localized: "AI 总结"))
+                    .phoneText(.metadata)
+                    .monospacedDigit()
+                    .foregroundStyle(MoMoPalette.muted)
+                Spacer(minLength: 0)
+            }
+            if !recap.isEmpty {
+                TranscriptRecapBody(content: recap, compact: false, accessibilityID: "timeline.summary.content")
+                    .equatable()
+                    .textSelection(.enabled)
+            } else {
+                MarkdownReadingView(markdown: text, accessibilityID: "timeline.summary.content").equatable()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        .recapCardSurface(cornerRadius: 22)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("timeline.summary")
+        #else
         VStack(alignment: .leading, spacing: 12) {
             Label("总结", systemImage: "text.alignleft").phoneText(.menu).fontWeight(.semibold)
             MarkdownReadingView(markdown: text, accessibilityID: "timeline.summary.content").equatable()
@@ -120,6 +155,7 @@ struct TimelineSummaryView: View {
         .background(MoMoPalette.surface, in: RoundedRectangle(cornerRadius: 16))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("timeline.summary")
+        #endif
     }
 }
 

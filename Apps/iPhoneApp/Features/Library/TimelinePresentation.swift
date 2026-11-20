@@ -233,16 +233,125 @@ struct TimelineRow: View {
     let connected: Bool
     var continuesFromPrevious = false
     var includeUTCOffset = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .body) private var excerptSize: CGFloat = 15
+
+    private var recap: TranscriptRecapContent? {
+        guard window.canSummarize, let summary else { return nil }
+        let parsed = TranscriptRecapContent.parse(summary)
+        return parsed.isEmpty ? nil : parsed
+    }
+
+    private var hasReadableText: Bool {
+        window.paragraphs.contains(where: \.hasReadableText)
+    }
+
     var body: some View {
-        ClientTranscriptRow(time: TimelineDate.range(window.id, end: window.end, includeUTCOffset: includeUTCOffset),
-            preview: TimelinePresentation.preview(window, summary: summary), status: status,
-            connected: connected, isFinal: window.isFinal, continuesFromPrevious: continuesFromPrevious,
-            bottomSpacing: window.marks.isEmpty ? 26 : 2) {
-            if window.speechDuration > 0, window.state == .complete {
-                TimelineActivityStrip(window: window).frame(height: 8).accessibilityHidden(true)
-                Text("说话约 \(TimelineDate.duration(window.speechDuration))")
-                    .phoneText(.caption).foregroundStyle(MoMoPalette.muted)
-                    .accessibilityIdentifier("timeline.speechDuration")
+        let timeText = TimelineDate.range(window.id, end: window.end, includeUTCOffset: includeUTCOffset)
+        let parsedRecap = recap
+        let hasSummary = parsedRecap != nil
+
+        VStack(alignment: .leading, spacing: 11) {
+            metadataRow(timeText: timeText, hasSummary: hasSummary)
+
+            if let parsedRecap {
+                TranscriptRecapBody(content: parsedRecap, compact: true)
+                    .equatable()
+            } else {
+                let preview = TimelinePresentation.preview(window, summary: nil)
+                if !preview.isEmpty {
+                    Text(preview)
+                        .font(.system(size: excerptSize, weight: .regular))
+                        .lineSpacing(4.5)
+                        .foregroundStyle(hasReadableText ? MoMoPalette.ink.opacity(0.88) : MoMoPalette.muted)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if window.speechDuration > 0, window.state == .complete {
+                    TimelineActivityStrip(window: window)
+                        .frame(height: 6)
+                        .padding(.top, 2)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 17)
+        .padding(.bottom, window.marks.isEmpty ? 19 : 14)
+        .foregroundStyle(MoMoPalette.ink)
+        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func metadataRow(timeText: String, hasSummary: Bool) -> some View {
+        let durationText: String? = (window.speechDuration > 0 && window.state == .complete)
+            ? TimelineDate.duration(window.speechDuration)
+            : nil
+
+        HStack(alignment: .center, spacing: 6) {
+            Image(systemName: hasSummary ? "text.page" : "waveform")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(MoMoPalette.muted)
+                .accessibilityHidden(true)
+
+            HStack(spacing: 5) {
+                Text(timeText)
+                    .phoneText(.metadata)
+                    .monospacedDigit()
+                    .foregroundStyle(MoMoPalette.muted)
+                    .lineLimit(1)
+
+                if let durationText {
+                    Text("·")
+                        .phoneText(.metadata)
+                        .foregroundStyle(MoMoPalette.muted.opacity(0.6))
+                        .accessibilityHidden(true)
+                    Text(durationText)
+                        .phoneText(.metadata)
+                        .monospacedDigit()
+                        .foregroundStyle(MoMoPalette.muted)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("timeline.speechDuration")
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            trailingAccessory
+        }
+    }
+
+    @ViewBuilder
+    private var trailingAccessory: some View {
+        if let status {
+            HStack(spacing: 5) {
+                if status == String(localized: "正在整理") {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .accessibilityHidden(true)
+                }
+                Text(status)
+                    .phoneText(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(MoMoPalette.muted)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(MoMoPalette.ink.opacity(0.055), in: Capsule())
+        } else {
+            HStack(spacing: 6) {
+                if !window.isFinal {
+                    Circle()
+                        .fill(MoMoPalette.ink)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(MoMoPalette.muted.opacity(0.45))
+                    .accessibilityHidden(true)
             }
         }
     }
@@ -254,10 +363,10 @@ private struct TimelineActivityStrip: View {
         let bins = TimelinePresentation.activity(window.speechIntervals, from: window.id.start, to: window.end, count: 36)
         return Canvas { context, size in
             for (index, activity) in bins.enumerated() {
-                let diameter = 2 + 4 * activity
+                let diameter = 2 + 3.5 * activity
                 let center = (Double(index) + 0.5) * size.width / Double(bins.count)
                 context.fill(Path(ellipseIn: CGRect(x: center - diameter / 2, y: (size.height - diameter) / 2,
-                    width: diameter, height: diameter)), with: .color(MoMoPalette.ink.opacity(0.12 + 0.7 * activity)))
+                    width: diameter, height: diameter)), with: .color(MoMoPalette.ink.opacity(0.10 + 0.55 * activity)))
             }
         }
     }

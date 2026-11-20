@@ -501,8 +501,8 @@ final class TimelineDateNavigationTests: XCTestCase {
                 if let pager = horizontalPager(in: window),
                    model.timeline.days.count == 26,
                    panes.count == 1,
-                   abs(panes[0].minX - 24) <= 1,
-                   abs(panes[0].maxX - (window.bounds.width - 24)) <= 1 {
+                   abs(panes[0].minX - 16) <= 1,
+                   abs(panes[0].maxX - (window.bounds.width - 16)) <= 1 {
                     return pager
                 }
                 try await Task.sleep(for: .milliseconds(30))
