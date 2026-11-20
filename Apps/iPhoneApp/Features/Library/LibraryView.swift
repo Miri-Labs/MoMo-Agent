@@ -72,7 +72,7 @@ struct LibraryView: View {
             else { dayPager }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .phonePageSurface(background: MoMoPalette.sidebar, titleDisplayMode: .large)
+        .phonePageSurface(background: MoMoPalette.sidebar, titleDisplayMode: .inline)
         .watchStatusRefresh(requestWatchStatus)
         .navigationTitle("转录")
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -227,62 +227,56 @@ struct LibraryView: View {
     private var dateBar: some View {
         let windows = timeline.listWindows[timeline.selectedDay] ?? []
         let totalSpeech = windows.reduce(0.0) { $0 + $1.speechDuration }
-        return VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 0) {
-                Button { select(timeline.selectedDay.adding(days: -1)) } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(dateRange.canRequest(timeline.selectedDay.adding(days: -1)) ? MoMoPalette.muted : MoMoPalette.muted.opacity(0.3))
-                        .frame(width: 32, height: 44, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .disabled(!dateRange.canRequest(timeline.selectedDay.adding(days: -1)))
-                .accessibilityLabel("前一天").accessibilityIdentifier("timeline.previousDay")
-
-                Button {
-                    pendingDay = nil
-                    dateDraft = timeline.selectedDay.date(); choosingDate = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(TimelineDate.day(timeline.selectedDay))
-                            .phoneText(.menu)
-                            .fontWeight(.medium)
-                            .foregroundStyle(MoMoPalette.ink.opacity(0.85))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(MoMoPalette.muted)
-                    }
-                    .frame(minHeight: 44)
+        return HStack(spacing: 0) {
+            Button { select(timeline.selectedDay.adding(days: -1)) } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(dateRange.canRequest(timeline.selectedDay.adding(days: -1)) ? MoMoPalette.muted : MoMoPalette.muted.opacity(0.3))
+                    .frame(width: 32, height: 44, alignment: .leading)
                     .contentShape(Rectangle())
-                }
-                .accessibilityLabel("选择日期，\(TimelineDate.day(timeline.selectedDay))")
-                .accessibilityIdentifier("timeline.datePicker")
+            }
+            .disabled(!dateRange.canRequest(timeline.selectedDay.adding(days: -1)))
+            .accessibilityLabel("前一天").accessibilityIdentifier("timeline.previousDay")
 
-                Button { select(timeline.selectedDay.adding(days: 1)) } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(dateRange.canRequest(timeline.selectedDay.adding(days: 1)) ? MoMoPalette.muted : MoMoPalette.muted.opacity(0.3))
-                        .frame(width: 32, height: 44, alignment: .trailing)
-                        .contentShape(Rectangle())
-                }
-                .disabled(!dateRange.canRequest(timeline.selectedDay.adding(days: 1)))
-                .accessibilityLabel("后一天").accessibilityIdentifier("timeline.nextDay")
-
-                Spacer(minLength: 8)
-
-                if !windows.isEmpty {
-                    Text(totalSpeech > 0
-                        ? String(localized: "\(windows.count) 段 · \(TimelineDate.duration(totalSpeech))")
-                        : String(localized: "\(windows.count) 段"))
-                        .phoneText(.metadata)
-                        .monospacedDigit()
+            Button {
+                pendingDay = nil
+                dateDraft = timeline.selectedDay.date(); choosingDate = true
+            } label: {
+                HStack(spacing: 4) {
+                    Text(TimelineDate.day(timeline.selectedDay))
+                        .phoneText(.menu)
+                        .fontWeight(.medium)
+                        .foregroundStyle(MoMoPalette.ink.opacity(0.85))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(MoMoPalette.muted)
                 }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
-            Text("浏览录音生成的 AI 要点总结与原音记录。")
-                .phoneText(.metadata)
-                .foregroundStyle(MoMoPalette.muted)
-                .padding(.top, -6)
+            .accessibilityLabel("选择日期，\(TimelineDate.day(timeline.selectedDay))")
+            .accessibilityIdentifier("timeline.datePicker")
+
+            Button { select(timeline.selectedDay.adding(days: 1)) } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(dateRange.canRequest(timeline.selectedDay.adding(days: 1)) ? MoMoPalette.muted : MoMoPalette.muted.opacity(0.3))
+                    .frame(width: 32, height: 44, alignment: .trailing)
+                    .contentShape(Rectangle())
+            }
+            .disabled(!dateRange.canRequest(timeline.selectedDay.adding(days: 1)))
+            .accessibilityLabel("后一天").accessibilityIdentifier("timeline.nextDay")
+
+            Spacer(minLength: 8)
+
+            if !windows.isEmpty {
+                Text(totalSpeech > 0
+                    ? String(localized: "\(windows.count) 段 · \(TimelineDate.duration(totalSpeech))")
+                    : String(localized: "\(windows.count) 段"))
+                    .phoneText(.metadata)
+                    .monospacedDigit()
+                    .foregroundStyle(MoMoPalette.muted)
+            }
         }
         .padding(.horizontal, 18)
     }
@@ -866,11 +860,28 @@ private struct TimelineDayPage: View {
     let illustrationFailure: (String) -> Void
 
     @AppStorage(TranscriptReadingBoundary.defaultsKey) private var earlyHour = TranscriptReadingBoundary.defaultHour
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var isToday: Bool { day == TimelineDay(Date()) }
     private var hasIllustrations: Bool { illustrations != nil && !dayIllustrations.isEmpty }
     private func isEarly(_ window: TimelineWindow) -> Bool {
         TranscriptReadingBoundary.isEarly(window.id.start, offset: window.id.timezoneOffset, hour: earlyHour)
+    }
+
+    private func illustrationURL(for window: TimelineWindow) -> URL? {
+        guard let illustrations, !dayIllustrations.isEmpty else { return nil }
+        let start = window.id.start.timeIntervalSince1970
+        let end = window.end.timeIntervalSince1970
+        let sessions = Set(window.sources.map(\.sessionID))
+        let match = dayIllustrations.first { item in
+            let itemSessions = Set(item.sourceIds.compactMap { UUID(uuidString: String($0.split(separator: "/").last ?? "")) })
+            if !itemSessions.isEmpty, !itemSessions.isDisjoint(with: sessions),
+               start < item.windowEnd, end > item.windowStart {
+                return true
+            }
+            return start < item.windowEnd && end > item.windowStart
+        }
+        return match.flatMap { illustrations.imageURL(for: $0) }
     }
 
     private func scrollToMasthead() {
@@ -891,18 +902,19 @@ private struct TimelineDayPage: View {
                     status: TimelinePresentation.status(window, transcription: transcription, speechFailure: speechFailure),
                     connected: window.id != windows.last?.id,
                     continuesFromPrevious: window.id != windows.first?.id,
-                    includeUTCOffset: repeatedClockRanges.contains(window.id))
+                    includeUTCOffset: repeatedClockRanges.contains(window.id),
+                    illustrationURL: illustrationURL(for: window))
             }
-            .buttonStyle(MoMoPressableButtonStyle(scale: 0.985))
+            .buttonStyle(MoMoPressableButtonStyle(scale: 0.98))
             .accessibilityIdentifier("timeline.window.\(window.id.key)")
             if !window.marks.isEmpty {
                 Rectangle()
                     .fill(MoMoPalette.borderSubtle)
                     .frame(height: 0.5)
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 16)
                     .accessibilityHidden(true)
                 ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         ForEach(window.marks) { mark in
                             let timeLabel = TimelineDate.time(mark.recordedAt, offset: window.id.timezoneOffset, seconds: true)
                             Button {
@@ -911,8 +923,8 @@ private struct TimelineDayPage: View {
                                 Label(timeLabel, systemImage: "flag.fill")
                                     .phoneText(.caption)
                                     .monospacedDigit()
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 5)
                                     .background(MoMoPalette.ink.opacity(0.055), in: Capsule())
                                     .frame(minHeight: 44)
                                     .contentShape(Rectangle())
@@ -923,10 +935,9 @@ private struct TimelineDayPage: View {
                             .accessibilityIdentifier("timeline.mark.\(mark.id)")
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 14)
                 }
                 .scrollIndicators(.hidden)
-                .padding(.vertical, 2)
             }
         }
         .recapCardSurface(cornerRadius: 28)
@@ -941,8 +952,11 @@ private struct TimelineDayPage: View {
         let expanded = reading.earlyExpanded ?? TranscriptReadingBoundary.initiallyExpanded(
             hasDaytime: !daytime.isEmpty, isToday: isToday, hour: earlyHour)
         let visible = expanded ? windows : daytime
+        let useTwoColumns = !dynamicTypeSize.isAccessibilitySize && visible.count >= 2
+        let leftWindows = visible.enumerated().compactMap { $0.offset.isMultiple(of: 2) ? $0.element : nil }
+        let rightWindows = visible.enumerated().compactMap { !$0.offset.isMultiple(of: 2) ? $0.element : nil }
         return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 Color.clear.frame(height: 1).id(TimelineScrollItemID.masthead)
                 if let illustrations, !dayIllustrations.isEmpty {
                     LifeIllustrationStripView(items: dayIllustrations, store: illustrations, horizontalMargin: 0,
@@ -976,8 +990,27 @@ private struct TimelineDayPage: View {
                     .accessibilityValue(expanded ? "已展开" : "已折叠")
                     .id(TimelineScrollItemID.early)
                 }
-                ForEach(visible) { window in
-                    windowItem(window, windows: visible, repeatedClockRanges: repeatedClockRanges)
+                if useTwoColumns {
+                    HStack(alignment: .top, spacing: 12) {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(leftWindows) { window in
+                                windowItem(window, windows: visible, repeatedClockRanges: repeatedClockRanges)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(rightWindows) { window in
+                                windowItem(window, windows: visible, repeatedClockRanges: repeatedClockRanges)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 26)
+                    }
+                } else {
+                    ForEach(visible) { window in
+                        windowItem(window, windows: visible, repeatedClockRanges: repeatedClockRanges)
+                    }
                 }
                 if !early.isEmpty, daytime.isEmpty {
                     Text("当天暂无 \(TranscriptReadingBoundary.label(for: earlyHour)) 后记录")
