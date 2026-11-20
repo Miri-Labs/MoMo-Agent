@@ -2820,7 +2820,6 @@ class SuperAgentGateway:
         from openai import OpenAI
 
         if provider == "openai-codex":
-            from agent.auxiliary_client import _CodexCompletionsAdapter
             from agent.codex_headers import apply_required_codex_headers
             from agent.process_bootstrap import build_keepalive_http_client
 
@@ -2841,11 +2840,12 @@ class SuperAgentGateway:
             or (urlsplit(str(llm.get("base_url") or "")).hostname or "").lower() == "api.openai.com"
         )
         with client_ctx as client:
-            completions = (
-                _CodexCompletionsAdapter(client, model_id)
-                if use_responses_api
-                else client.chat.completions
-            )
+            if use_responses_api:
+                from agent.auxiliary_client import _CodexCompletionsAdapter
+
+                completions = _CodexCompletionsAdapter(client, model_id)
+            else:
+                completions = client.chat.completions
             while True:
                 check_round()
                 resp = completions.create(model=model_id, messages=messages, tools=openai_tools, timeout=120)
