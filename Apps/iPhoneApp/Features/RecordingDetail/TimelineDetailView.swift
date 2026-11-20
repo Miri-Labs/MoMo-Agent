@@ -209,8 +209,7 @@ struct TimelineDetailView: View {
             }
         }
         .accessibilityIdentifier("timeline.detail.scroll")
-        .phonePageSurface()
-        .background(MoMoPalette.sidebar)
+        .phonePageSurface(background: MoMoPalette.sidebar)
         .watchStatusRefresh(requestWatchStatus)
         .navigationTitle("转录详情").navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {

@@ -1,11 +1,11 @@
 import SwiftUI
 
 extension View {
-    func phonePageSurface() -> some View {
+    func phonePageSurface(background: Color = MoMoPalette.canvas) -> some View {
         phoneText(.body)
             .foregroundStyle(MoMoPalette.ink)
             .tint(MoMoPalette.ink)
-            .background(MoMoPalette.canvas)
+            .background(background)
             .phoneSoftTopEdge()
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

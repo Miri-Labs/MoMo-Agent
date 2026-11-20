@@ -72,9 +72,7 @@ struct LibraryView: View {
             else { dayPager }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .phonePageSurface()
-        .background(MoMoPalette.sidebar)
-        .navigationBarTitleDisplayMode(.large)
+        .phonePageSurface(background: MoMoPalette.sidebar)
         .watchStatusRefresh(requestWatchStatus)
         .navigationTitle("转录")
         .safeAreaInset(edge: .bottom, spacing: 0) {
