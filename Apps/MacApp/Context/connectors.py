@@ -456,6 +456,23 @@ def sync_email_connector(data_dir: Path, store, *, imap_factory=None) -> dict[st
                 item_id = "email:" + hashlib.sha256(stable_key.encode("utf-8")).hexdigest()[:24]
                 thread_id = str(msg.get("In-Reply-To") or msg_id_hdr or item_id).strip()
                 header_summary = f"主题：{subject}\n发件人：{sender}\n收件人：{to_hdr}\n\n{body}".strip()
+                is_self = bool(username and username.lower() in sender.lower())
+                policy = load_connector_policy(data_dir)
+                p_action, p_rule = evaluate_connector_policy(
+                    policy,
+                    {
+                        "connector": "email",
+                        "sender": sender,
+                        "sender_type": "user",
+                        "channel": f"{username}/{folder}",
+                        "title": subject,
+                        "content": header_summary,
+                        "msg_type": "email",
+                        "is_self": is_self,
+                    },
+                )
+                if p_action == "drop":
+                    continue
                 if _upsert_connector_item(
                     store,
                     item_id=item_id,
@@ -467,7 +484,15 @@ def sync_email_connector(data_dir: Path, store, *, imap_factory=None) -> dict[st
                     channel=f"{username}/{folder}",
                     content=header_summary,
                     occurred_at=occurred_at,
-                    metadata={"folder": folder, "uid": uid_str, "to": to_hdr[:240], "account": username},
+                    metadata={
+                        "folder": folder,
+                        "uid": uid_str,
+                        "to": to_hdr[:240],
+                        "account": username,
+                        "is_self": is_self,
+                        "policy_action": p_action,
+                        "policy_rule": p_rule or "",
+                    },
                 ):
                     changed += 1
                 synced += 1
@@ -860,17 +885,61 @@ def _purge_feishu_bot_items(store) -> int:
     return len(to_delete)
 
 
+def _backfill_feishu_self_attribution(store, owner_open_id: str, owner_name: str) -> int:
+    """Tag existing cached Feishu messages with is_self & [我（姓名）] when sender matches owner open_id."""
+    if not owner_open_id:
+        return 0
+    ensure_connector_tables(store.db)
+    self_label = f"我（{owner_name}）" if owner_name else "我"
+    rows = store.db.execute(
+        "SELECT id, sender, channel, content, metadata FROM connector_items WHERE connector='feishu' AND item_type='feishu_message'"
+    ).fetchall()
+    updates: list[tuple[str, str, str, str]] = []
+    for r in rows:
+        try:
+            meta = json.loads(r["metadata"] or "{}")
+        except ValueError:
+            meta = {}
+        raw_sid = str(meta.get("sender_id") or r["sender"] or "").strip()
+        is_self = raw_sid == owner_open_id
+        if meta.get("is_self") is is_self and (not is_self or str(r["sender"] or "").startswith("我")):
+            continue
+        meta["sender_id"] = raw_sid
+        meta["is_self"] = is_self
+        new_sender = self_label if is_self else raw_sid
+        content = str(r["content"] or "")
+        prefix = f"[{r['channel']}] "
+        if content.startswith(prefix):
+            rest = content[len(prefix):]
+            if not rest.startswith("[我") and not rest.startswith("[对方"):
+                tag = f"[{self_label}] " if is_self else "[对方] "
+                content = prefix + tag + rest
+        updates.append((new_sender, content, json.dumps(meta, ensure_ascii=False, sort_keys=True), r["id"]))
+    if not updates:
+        return 0
+    with store.write():
+        store.db.executemany(
+            "UPDATE connector_items SET sender=?, content=?, metadata=? WHERE id=?",
+            updates,
+        )
+    return len(updates)
+
+
 def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[str, Any]:
     cfg = load_connectors_config(data_dir).get("feishu") or {}
     if not cfg.get("enabled") or not cfg.get("connected"):
         return {"connector": "feishu", "skipped": True, "synced": 0}
     domain = str(cfg.get("domain") or "feishu").strip()
     ep = _feishu_endpoints(domain)
+    owner_open_id = str(cfg.get("open_id") or "").strip()
+    owner_name = str(cfg.get("user_name") or "").strip()
+    self_label = f"我（{owner_name}）" if owner_name else "我"
     ignore_bots = bool(cfg.get("ignore_bots", True))
     muted_chats = {str(x).strip().lower() for x in (cfg.get("muted_chats") or []) if str(x).strip()}
     synced = 0
     changed = 0
     purged_bots = _purge_feishu_bot_items(store) if ignore_bots else 0
+    _backfill_feishu_self_attribution(store, owner_open_id, owner_name)
     try:
         token = _refresh_feishu_token(data_dir, cfg, http_fn=http_fn)
         headers = {"Authorization": f"Bearer {token}"}
@@ -994,9 +1063,30 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
                 sender_obj = m.get("sender") if isinstance(m.get("sender"), dict) else {}
                 sender_type = str(sender_obj.get("sender_type") or "user").strip().lower()
                 sender_id = str(sender_obj.get("id") or sender_type or "unknown")
+                is_self = bool(owner_open_id and sender_id == owner_open_id)
+                sender_display = self_label if is_self else sender_id
+                role_tag = self_label if is_self else "对方"
                 create_ms = float(m.get("create_time") or 0)
                 occurred_at = (create_ms / 1000.0) if create_ms > 1e11 else (create_ms or time.time())
                 title = f"{chat_name} · {text.splitlines()[0][:60]}"
+                policy = load_connector_policy(data_dir)
+                p_action, p_rule = evaluate_connector_policy(
+                    policy,
+                    {
+                        "connector": "feishu",
+                        "sender": sender_display,
+                        "sender_id": sender_id,
+                        "sender_type": sender_type,
+                        "channel": chat_name,
+                        "thread_id": chat_id,
+                        "title": title,
+                        "content": text,
+                        "msg_type": mtype,
+                        "is_self": is_self,
+                    },
+                )
+                if p_action == "drop":
+                    continue
                 if _upsert_connector_item(
                     store,
                     item_id=f"feishu:msg:{mid}",
@@ -1004,15 +1094,19 @@ def sync_feishu_connector(data_dir: Path, store, *, http_fn=_http_json) -> dict[
                     item_type="feishu_message",
                     thread_id=chat_id,
                     title=title,
-                    sender=sender_id,
+                    sender=sender_display,
                     channel=chat_name,
-                    content=f"[{chat_name}] {text}",
+                    content=f"[{chat_name}] [{role_tag}] {text}",
                     occurred_at=occurred_at,
                     metadata={
                         "chat_id": chat_id,
                         "message_id": mid,
                         "msg_type": mtype,
                         "sender_type": sender_type,
+                        "sender_id": sender_id,
+                        "is_self": is_self,
+                        "policy_action": p_action,
+                        "policy_rule": p_rule or "",
                     },
                 ):
                     changed += 1
@@ -1258,8 +1352,12 @@ def recent_connector_digest(store, *, hours: float = 24.0, limit: int = 12) -> l
             meta = json.loads(it.get("metadata") or "{}")
         except ValueError:
             meta = {}
+        policy_action = str(meta.get("policy_action") or "allow").strip().lower()
+        if policy_action in ("drop", "archive_only"):
+            continue
+        is_highlight = policy_action == "highlight"
         if it["connector"] == "feishu" and it["item_type"] == "feishu_message":
-            sid = str(it.get("sender") or "").strip().lower()
+            sid = str(meta.get("sender_id") or it.get("sender") or "").strip().lower()
             mtype = str(meta.get("msg_type") or "").strip().lower()
             stype = str(meta.get("sender_type") or "").strip().lower()
             if sid.startswith("cli_") or mtype in ("interactive", "system") or (stype and stype != "user"):
@@ -1268,6 +1366,8 @@ def recent_connector_digest(store, *, hours: float = 24.0, limit: int = 12) -> l
             if tid and tid in feishu_threads:
                 entry = feishu_threads[tid]
                 entry["message_count"] += 1
+                if is_highlight:
+                    entry["highlighted"] = True
                 if len(entry["_snippets"]) < 4:
                     clean_line = str(it["preview"] or "").strip()
                     prefix = f"[{it['channel']}] "
@@ -1276,7 +1376,7 @@ def recent_connector_digest(store, *, hours: float = 24.0, limit: int = 12) -> l
                     if clean_line:
                         entry["_snippets"].append(clean_line[:110])
                 continue
-            if len(digest) >= limit:
+            if len(digest) >= limit and not is_highlight:
                 continue
             first_line = str(it["preview"] or "").strip()
             prefix = f"[{it['channel']}] "
@@ -1289,6 +1389,8 @@ def recent_connector_digest(store, *, hours: float = 24.0, limit: int = 12) -> l
                 "thread_id": tid,
                 "channel": it["channel"],
                 "sender": it["sender"],
+                "is_self": bool(meta.get("is_self")),
+                "highlighted": is_highlight,
                 "title": it["title"],
                 "preview": first_line[:220],
                 "occurred_at": it["occurred_at"],
@@ -1299,7 +1401,7 @@ def recent_connector_digest(store, *, hours: float = 24.0, limit: int = 12) -> l
                 feishu_threads[tid] = entry
             digest.append(entry)
         else:
-            if len(digest) >= limit:
+            if len(digest) >= limit and not is_highlight:
                 continue
             digest.append(
                 {
@@ -1309,6 +1411,8 @@ def recent_connector_digest(store, *, hours: float = 24.0, limit: int = 12) -> l
                     "thread_id": it.get("thread_id") or "",
                     "channel": it["channel"],
                     "sender": it["sender"],
+                    "is_self": bool(meta.get("is_self")),
+                    "highlighted": is_highlight,
                     "title": it["title"],
                     "preview": str(it["preview"] or "")[:240],
                     "occurred_at": it["occurred_at"],
@@ -1321,7 +1425,9 @@ def recent_connector_digest(store, *, hours: float = 24.0, limit: int = 12) -> l
             # Show chronological order (oldest -> newest) for multi-message thread context.
             ordered = list(reversed(snippets))
             entry["preview"] = " / ".join(ordered)[:260]
-    return digest
+    # Boost highlighted VIP/priority items to the top while keeping recency order within each tier.
+    digest.sort(key=lambda e: (0 if e.get("highlighted") else 1, -float(e.get("occurred_at") or 0.0)))
+    return digest[:limit]
 
 
 # ── Live Read-Only Agent Tools & Channel Muting ──────────────────────────────
@@ -1408,6 +1514,7 @@ def read_feishu_thread_live(
         headers=headers,
     )
     raw_items = (msg_res.get("data") or {}).get("items") or []
+    owner_open_id = str(cfg.get("open_id") or "").strip()
     messages: list[dict[str, Any]] = []
     for m in reversed(raw_items):
         if m.get("deleted"):
@@ -1419,12 +1526,16 @@ def read_feishu_thread_live(
         if not text:
             continue
         sender_obj = m.get("sender") if isinstance(m.get("sender"), dict) else {}
+        sid = str(sender_obj.get("id") or "")
+        is_self = bool(owner_open_id and sid == owner_open_id)
         create_ms = float(m.get("create_time") or 0)
         occurred_at = (create_ms / 1000.0) if create_ms > 1e11 else (create_ms or time.time())
         messages.append(
             {
                 "message_id": str(m.get("message_id") or ""),
-                "sender_id": str(sender_obj.get("id") or ""),
+                "sender_id": sid,
+                "sender_role": "self" if is_self else "other",
+                "is_self": is_self,
                 "sender_type": str(sender_obj.get("sender_type") or "user"),
                 "msg_type": mtype,
                 "text": text,
@@ -1461,6 +1572,7 @@ def search_feishu_live(
         body={"query": q, "from_types": ["user"]},
     )
     msg_ids = [str(mid).strip() for mid in ((search_res.get("data") or {}).get("items") or []) if str(mid).strip()][:cap]
+    owner_open_id = str(cfg.get("open_id") or "").strip()
     hits: list[dict[str, Any]] = []
     for mid in msg_ids:
         try:
@@ -1473,13 +1585,17 @@ def search_feishu_live(
                 if not text:
                     continue
                 sender_obj = m.get("sender") if isinstance(m.get("sender"), dict) else {}
+                sid = str(sender_obj.get("id") or "")
+                is_self = bool(owner_open_id and sid == owner_open_id)
                 create_ms = float(m.get("create_time") or 0)
                 occurred_at = (create_ms / 1000.0) if create_ms > 1e11 else (create_ms or time.time())
                 hits.append(
                     {
                         "message_id": mid,
                         "chat_id": str(m.get("chat_id") or ""),
-                        "sender_id": str(sender_obj.get("id") or ""),
+                        "sender_id": sid,
+                        "sender_role": "self" if is_self else "other",
+                        "is_self": is_self,
                         "text": text,
                         "occurred_at": occurred_at,
                     }
@@ -1529,4 +1645,266 @@ def mute_connector_channel(
         "muted": mute,
         "muted_chats": updated,
         "removed_items": removed,
+    }
+
+
+# ── Agent-Managed Declarative Connector Policy Engine ────────────────────────
+
+POLICY_ACTIONS = ("drop", "archive_only", "highlight")
+
+DEFAULT_POLICY_RULES: list[dict[str, Any]] = [
+    {
+        "id": "drop-feishu-bots",
+        "connector": "feishu",
+        "action": "drop",
+        "match": {"sender_types": ["app", "bot", "system"], "msg_types": ["interactive", "system"]},
+        "reason": "默认过滤飞书机器人与应用告警卡片，保留真人沟通",
+        "created_by": "default",
+        "enabled": True,
+    },
+    {
+        "id": "archive-automated-noreply-emails",
+        "connector": "email",
+        "action": "archive_only",
+        "match": {"sender_contains": ["noreply@", "no-reply@", "donotreply@", "mailer-daemon@"]},
+        "reason": "自动通知邮件保留本地检索，不进入日常态势与晨间简报",
+        "created_by": "default",
+        "enabled": True,
+    },
+]
+
+
+def _policy_path(data_dir: Path) -> Path:
+    return Path(data_dir) / "connectors" / "policy.json"
+
+
+def load_connector_policy(data_dir: Path) -> dict[str, Any]:
+    path = _policy_path(data_dir)
+    if path.is_file():
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict) and isinstance(parsed.get("rules"), list):
+                return parsed
+        except (OSError, ValueError):
+            pass
+    return {"version": 1, "rules": [dict(r) for r in DEFAULT_POLICY_RULES]}
+
+
+def save_connector_policy(data_dir: Path, policy: dict[str, Any]) -> None:
+    with _CONFIG_LOCK:
+        _atomic_private_json(_policy_path(data_dir), policy)
+
+
+def _rule_matches_item(rule: dict[str, Any], item: dict[str, Any]) -> bool:
+    if not rule.get("enabled", True):
+        return False
+    r_conn = str(rule.get("connector") or "all").strip().lower()
+    i_conn = str(item.get("connector") or "").strip().lower()
+    if r_conn not in ("", "all") and r_conn != i_conn:
+        return False
+    match = rule.get("match") if isinstance(rule.get("match"), dict) else {}
+    if not match:
+        return False
+
+    sender = f"{item.get('sender') or ''} {item.get('sender_id') or ''}".lower()
+    sender_type = str(item.get("sender_type") or "").strip().lower()
+    channel = f"{item.get('channel') or ''} {item.get('thread_id') or ''}".lower()
+    title = str(item.get("title") or "").lower()
+    content = str(item.get("content") or "").lower()
+    msg_type = str(item.get("msg_type") or "").strip().lower()
+
+    # Every specified field in `match` must match (AND across fields, OR within list values),
+    # except for the built-in bot rule where sender_types/msg_types are checked cleanly.
+    checked = 0
+    if "is_self" in match and match["is_self"] is not None:
+        checked += 1
+        if bool(item.get("is_self")) != bool(match["is_self"]):
+            return False
+
+    def _any_substr(haystack: str, needles: Any) -> bool:
+        if not isinstance(needles, list) or not needles:
+            return False
+        return any(str(n).strip().lower() in haystack for n in needles if str(n).strip())
+
+    def _in_set(val: str, allowed: Any) -> bool:
+        if not isinstance(allowed, list) or not allowed:
+            return False
+        return val in {str(x).strip().lower() for x in allowed if str(x).strip()}
+
+    # Special convenience: if both sender_types and msg_types are provided on a drop-bots rule, match either.
+    if match.get("sender_types") and match.get("msg_types") and len(match) == 2:
+        return _in_set(sender_type, match["sender_types"]) or _in_set(msg_type, match["msg_types"])
+
+    if match.get("sender_types"):
+        checked += 1
+        if not _in_set(sender_type, match["sender_types"]):
+            return False
+    if match.get("msg_types"):
+        checked += 1
+        if not _in_set(msg_type, match["msg_types"]):
+            return False
+    if match.get("sender_contains"):
+        checked += 1
+        if not _any_substr(sender, match["sender_contains"]):
+            return False
+    if match.get("channel_contains"):
+        checked += 1
+        if not _any_substr(channel, match["channel_contains"]):
+            return False
+    if match.get("title_contains"):
+        checked += 1
+        if not _any_substr(title, match["title_contains"]):
+            return False
+    if match.get("content_contains"):
+        checked += 1
+        if not _any_substr(content, match["content_contains"]):
+            return False
+    return checked > 0
+
+
+def evaluate_connector_policy(policy: dict[str, Any], item: dict[str, Any]) -> tuple[str, str | None]:
+    """Evaluate declarative rules in priority order: highlight > drop > archive_only > allow."""
+    rules = policy.get("rules") if isinstance(policy, dict) else []
+    if not isinstance(rules, list):
+        return "allow", None
+    matched_by_action: dict[str, str] = {}
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        action = str(rule.get("action") or "").strip().lower()
+        if action not in POLICY_ACTIONS:
+            continue
+        if _rule_matches_item(rule, item):
+            matched_by_action.setdefault(action, str(rule.get("id") or ""))
+    for priority in ("highlight", "drop", "archive_only"):
+        if priority in matched_by_action:
+            return priority, matched_by_action[priority]
+    return "allow", None
+
+
+def upsert_connector_policy_rule(
+    data_dir: Path,
+    store,
+    rule: dict[str, Any],
+    *,
+    apply_retroactively: bool = True,
+) -> dict[str, Any]:
+    """Create or update a connector policy rule and optionally apply it to cached items."""
+    if not isinstance(rule, dict):
+        raise ConnectorError("规则必须是 JSON 对象。")
+    action = str(rule.get("action") or "").strip().lower()
+    if action not in POLICY_ACTIONS:
+        raise ConnectorError(f"不支持的策略动作 `{action}`，可选：drop / archive_only / highlight")
+    match = rule.get("match")
+    if not isinstance(match, dict) or not match:
+        raise ConnectorError("规则必须包含非空的 `match` 匹配条件。")
+    connector = str(rule.get("connector") or "all").strip().lower()
+    if connector not in ("all", *CONNECTOR_KINDS):
+        raise ConnectorError(f"不支持的连接器 `{connector}`")
+    rule_id = str(rule.get("id") or "").strip()
+    if not rule_id:
+        rule_id = f"{action}-{connector}-{secrets.token_hex(3)}"
+    clean_rule = {
+        "id": rule_id,
+        "connector": connector,
+        "action": action,
+        "match": match,
+        "reason": str(rule.get("reason") or "").strip(),
+        "created_by": str(rule.get("created_by") or "agent").strip(),
+        "enabled": bool(rule.get("enabled", True)),
+        "updated_at": time.time(),
+    }
+    policy = load_connector_policy(data_dir)
+    rules = [r for r in (policy.get("rules") or []) if isinstance(r, dict) and r.get("id") != rule_id]
+    rules.append(clean_rule)
+    policy["version"] = 1
+    policy["rules"] = rules
+    save_connector_policy(data_dir, policy)
+
+    affected = 0
+    if apply_retroactively and store is not None:
+        affected = _apply_policy_retroactively(store, policy)
+    return {"rule": clean_rule, "affected_cached_items": affected, "total_rules": len(rules)}
+
+
+def delete_connector_policy_rule(data_dir: Path, store, rule_id: str) -> dict[str, Any]:
+    rid = str(rule_id or "").strip()
+    if not rid:
+        raise ConnectorError("请提供要删除的规则 id。")
+    policy = load_connector_policy(data_dir)
+    before = len(policy.get("rules") or [])
+    policy["rules"] = [r for r in (policy.get("rules") or []) if isinstance(r, dict) and r.get("id") != rid]
+    removed = before - len(policy["rules"])
+    save_connector_policy(data_dir, policy)
+    if removed and store is not None:
+        _apply_policy_retroactively(store, policy)
+    return {"deleted": bool(removed), "rule_id": rid, "total_rules": len(policy["rules"])}
+
+
+def _apply_policy_retroactively(store, policy: dict[str, Any]) -> int:
+    ensure_connector_tables(store.db)
+    rows = store.db.execute(
+        "SELECT id, connector, item_type, thread_id, title, sender, channel, content, metadata FROM connector_items"
+    ).fetchall()
+    to_delete: list[str] = []
+    to_update: list[tuple[str, str]] = []
+    for r in rows:
+        try:
+            meta = json.loads(r["metadata"] or "{}")
+        except ValueError:
+            meta = {}
+        item_ctx = {
+            "connector": r["connector"],
+            "sender": r["sender"],
+            "sender_id": meta.get("sender_id") or "",
+            "sender_type": meta.get("sender_type") or "user",
+            "channel": r["channel"],
+            "thread_id": r["thread_id"],
+            "title": r["title"],
+            "content": r["content"],
+            "msg_type": meta.get("msg_type") or r["item_type"],
+            "is_self": bool(meta.get("is_self")),
+        }
+        p_action, p_rule = evaluate_connector_policy(policy, item_ctx)
+        if p_action == "drop":
+            to_delete.append(r["id"])
+        elif meta.get("policy_action") != p_action or meta.get("policy_rule") != (p_rule or ""):
+            meta["policy_action"] = p_action
+            meta["policy_rule"] = p_rule or ""
+            to_update.append((json.dumps(meta, ensure_ascii=False, sort_keys=True), r["id"]))
+    if to_delete or to_update:
+        with store.write():
+            if to_delete:
+                store.db.executemany("DELETE FROM connector_items WHERE id=?", [(i,) for i in to_delete])
+            if to_update:
+                store.db.executemany("UPDATE connector_items SET metadata=? WHERE id=?", to_update)
+    return len(to_delete) + len(to_update)
+
+
+def connector_policy_stats(data_dir: Path, store, *, days: int = 7, limit: int = 12) -> dict[str, Any]:
+    """Summarize top senders and channels over the last N days for noise auditing & policy proposals."""
+    ensure_connector_tables(store.db)
+    since = time.time() - max(1, min(30, int(days))) * 86400.0
+    top_senders = [
+        dict(r)
+        for r in store.db.execute(
+            "SELECT connector, sender, COUNT(*) AS count, MAX(occurred_at) AS latest_at "
+            "FROM connector_items WHERE occurred_at>=? GROUP BY connector, sender ORDER BY count DESC LIMIT ?",
+            (since, limit),
+        ).fetchall()
+    ]
+    top_channels = [
+        dict(r)
+        for r in store.db.execute(
+            "SELECT connector, channel, thread_id, COUNT(*) AS count, MAX(occurred_at) AS latest_at "
+            "FROM connector_items WHERE occurred_at>=? GROUP BY connector, thread_id ORDER BY count DESC LIMIT ?",
+            (since, limit),
+        ).fetchall()
+    ]
+    policy = load_connector_policy(data_dir)
+    return {
+        "days": days,
+        "rule_count": len(policy.get("rules") or []),
+        "top_senders": top_senders,
+        "top_channels": top_channels,
     }

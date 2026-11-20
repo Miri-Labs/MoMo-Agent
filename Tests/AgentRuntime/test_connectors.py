@@ -398,6 +398,122 @@ class ConnectorsTests(unittest.TestCase):
         res_after_mute = connectors.sync_feishu_connector(self.data, self.store, http_fn=fake_http)
         self.assertEqual(res_after_mute["synced"], 0)
 
+    def test_self_attribution_and_dynamic_connector_policy_engine(self):
+        now = time.time()
+        connectors.save_connectors_config(
+            self.data,
+            {
+                "email": {},
+                "feishu": {
+                    "domain": "feishu",
+                    "app_id": "cli_test",
+                    "app_secret": "sec_test",
+                    "access_token": "tok",
+                    "refresh_token": "ref",
+                    "expires_at": now + 3600,
+                    "open_id": "ou_owner_me",
+                    "user_name": "税昀昊",
+                    "enabled": True,
+                    "connected": True,
+                },
+            },
+        )
+        # Seed cached Feishu message sent by owner (before backfill) + marketing & VIP emails
+        connectors._upsert_connector_item(
+            self.store,
+            item_id="feishu:msg:om_self_1",
+            connector="feishu",
+            item_type="feishu_message",
+            thread_id="oc_dm_1",
+            title="飞书私聊 · 这是我自己发给同事的",
+            sender="ou_owner_me",
+            channel="飞书私聊",
+            content="[飞书私聊] 这是我自己发给同事的",
+            occurred_at=now - 60,
+            metadata={"chat_id": "oc_dm_1", "msg_type": "text", "sender_type": "user"},
+        )
+        connectors._upsert_connector_item(
+            self.store,
+            item_id="email:promo1",
+            connector="email",
+            item_type="email",
+            thread_id="t1",
+            title="限时折扣 5 折促销",
+            sender="deals@promo.example",
+            channel="me@gmail.com/INBOX",
+            content="退订请点这里",
+            occurred_at=now - 30,
+            metadata={"account": "me@gmail.com"},
+        )
+        connectors._upsert_connector_item(
+            self.store,
+            item_id="email:bill1",
+            connector="email",
+            item_type="email",
+            thread_id="t2",
+            title="本月云服务账单",
+            sender="billing@cloud.example",
+            channel="me@gmail.com/INBOX",
+            content="账单金额 100 元",
+            occurred_at=now - 20,
+            metadata={"account": "me@gmail.com"},
+        )
+        connectors._upsert_connector_item(
+            self.store,
+            item_id="email:vip1",
+            connector="email",
+            item_type="email",
+            thread_id="t3",
+            title="下周合作条款确认",
+            sender="vip@partner.example",
+            channel="me@gmail.com/INBOX",
+            content="请确认最终条款",
+            occurred_at=now - 100,
+            metadata={"account": "me@gmail.com"},
+        )
+
+        # Backfill self-attribution on existing Feishu cache
+        backfilled = connectors._backfill_feishu_self_attribution(self.store, "ou_owner_me", "税昀昊")
+        self.assertEqual(backfilled, 1)
+        item = connectors.read_connector_item(self.store, "feishu:msg:om_self_1")
+        self.assertTrue(item["metadata"]["is_self"])
+        self.assertEqual(item["sender"], "我（税昀昊）")
+        self.assertIn("[我（税昀昊）]", item["content"])
+
+        # Agent upserts 3 declarative policies: drop promo, archive_only billing, highlight VIP
+        r_drop = connectors.upsert_connector_policy_rule(
+            self.data,
+            self.store,
+            {"id": "drop-promo", "connector": "email", "action": "drop", "match": {"sender_contains": ["promo.example"]}},
+        )
+        self.assertGreaterEqual(r_drop["affected_cached_items"], 1)
+        self.assertIsNone(connectors.read_connector_item(self.store, "email:promo1"))
+
+        connectors.upsert_connector_policy_rule(
+            self.data,
+            self.store,
+            {"id": "archive-billing", "connector": "email", "action": "archive_only", "match": {"sender_contains": ["billing@"]}},
+        )
+        connectors.upsert_connector_policy_rule(
+            self.data,
+            self.store,
+            {"id": "vip-partner", "connector": "email", "action": "highlight", "match": {"sender_contains": ["vip@partner.example"]}},
+        )
+
+        # Digest excludes archive_only (bill1), excludes dropped (promo1), and boosts VIP (vip1) to #1 despite older timestamp!
+        digest = connectors.recent_connector_digest(self.store, hours=24.0, limit=10)
+        ids = [d["id"] for d in digest]
+        self.assertNotIn("email:promo1", ids)
+        self.assertNotIn("email:bill1", ids)
+        self.assertEqual(ids[0], "email:vip1")
+        self.assertTrue(digest[0]["highlighted"])
+
+        # Policy stats & delete work cleanly
+        stats = connectors.connector_policy_stats(self.data, self.store, days=7)
+        self.assertGreaterEqual(stats["rule_count"], 5)
+        deleted = connectors.delete_connector_policy_rule(self.data, self.store, "archive-billing")
+        self.assertTrue(deleted["deleted"])
+
 
 if __name__ == "__main__":
     unittest.main()

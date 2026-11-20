@@ -236,15 +236,19 @@ def _context_server_post(data: Path, path: str, body: dict) -> dict | None:
 def _cmd_connectors(data: Path, args: argparse.Namespace) -> dict:
     from connectors import (
         configure_email_connector,
+        connector_policy_stats,
         connectors_status,
+        delete_connector_policy_rule,
         disconnect_connector,
         list_connector_items,
+        load_connector_policy,
         mute_connector_channel,
         read_connector_item,
         read_feishu_doc_live,
         read_feishu_thread_live,
         search_feishu_live,
         sync_connectors,
+        upsert_connector_policy_rule,
     )
     action = str(getattr(args, "action", "") or "").strip()
     if args.item_id or action == "item":
@@ -335,6 +339,29 @@ def _cmd_connectors(data: Path, args: argparse.Namespace) -> dict:
                 args.target or args.chat_id,
                 mute=(action == "mute"),
             )
+        finally:
+            store.close()
+    if action == "policy-list":
+        return load_connector_policy(data)
+    if action == "policy-stats":
+        store = _open_context(data)
+        try:
+            return connector_policy_stats(data, store, days=args.sync_days or 7, limit=args.limit)
+        finally:
+            store.close()
+    if action == "policy-upsert":
+        if not args.rule_json:
+            raise ValueError("Provide --rule-json with the policy rule JSON object")
+        rule = json.loads(args.rule_json)
+        store = _open_context(data)
+        try:
+            return upsert_connector_policy_rule(data, store, rule)
+        finally:
+            store.close()
+    if action == "policy-delete":
+        store = _open_context(data)
+        try:
+            return delete_connector_policy_rule(data, store, args.rule_id or args.target)
         finally:
             store.close()
     if action == "disconnect":
@@ -811,6 +838,10 @@ def main() -> int:
             "live-search",
             "mute",
             "unmute",
+            "policy-list",
+            "policy-stats",
+            "policy-upsert",
+            "policy-delete",
         ),
         default="status",
         help="Action to perform on connectors",
@@ -835,6 +866,8 @@ def main() -> int:
     conn_p.add_argument("--query", default="", help="Keyword for live-search")
     conn_p.add_argument("--target", default="", help="Target chat_id/channel name for mute/unmute")
     conn_p.add_argument("--include-bots", action="store_true", help="Include bot/app messages in live-thread")
+    conn_p.add_argument("--rule-json", default="", help="JSON rule object for policy-upsert")
+    conn_p.add_argument("--rule-id", default="", help="Rule ID for policy-delete")
 
     sub.add_parser("situation", help="Read unified situational context across devices, mobility, sleep/vitals, and schedule")
 
