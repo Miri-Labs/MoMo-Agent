@@ -317,6 +317,9 @@ final class EarphoneCaptureRuntime {
             await finishEpoch(reason: .interrupted)
             stopEngine()
             target = nil
+            if case .interruptionEnded = event {
+                evaluate(trigger: "interruptionEnded")
+            }
         }
     }
 

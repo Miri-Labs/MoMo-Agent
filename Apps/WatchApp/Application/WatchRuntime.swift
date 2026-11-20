@@ -71,6 +71,8 @@ final class WatchRuntime {
     private(set) var pendingReceiver: ReceiverIdentity?
     private(set) var inputLevel: Float = 0
     private(set) var diagnostic: CaptureDiagnostic?
+    private(set) var continuityActive = false
+    private(set) var currentHeartRateBPM: Double?
     var elapsedSeconds: Double { completedSeconds + (epochID == nil ? 0 : Double(observedFrames) / 16_000) }
     private var observedFrames: Int64 {
         max(captureState.capturedFrames, progressDelivery?.latest?.frames ?? 0)
@@ -90,6 +92,7 @@ final class WatchRuntime {
     @ObservationIgnored private var inputSampleRate: Double?
     @ObservationIgnored private var engine = AudioCaptureEngine()
     @ObservationIgnored private let audioSession: WatchAudioSession
+    @ObservationIgnored private let continuitySession: any WatchContinuityManaging
     @ObservationIgnored private var startup: Task<Void, any Error>?
     @ObservationIgnored private var startupGeneration: UInt64?
     @ObservationIgnored private let diagnosticRunID = UUID()
@@ -190,9 +193,18 @@ final class WatchRuntime {
     }
     #endif
 
+    private var shouldUseContinuitySession: Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        return !simulatorTestCapture
+        #else
+        return true
+        #endif
+    }
+
     init(store: RecordingStore, encoderDirectory: URL, sourceDeviceID: UUID, sourceBuild: String,
          controls: ControlInbox, transport: WatchConnectivityTransport, capacityReader: CaptureCapacityReader = .live,
          audioSession: WatchAudioSession = WatchAudioSession(),
+         continuitySession: any WatchContinuityManaging = WatchContinuitySession(),
          archiveRecovery: @escaping @Sendable (RecordingStore) async throws -> RecordingRecoveryReport = { try await $0.recover() },
          recoverySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.store = store; self.encoderDirectory = encoderDirectory; self.sourceDeviceID = sourceDeviceID
@@ -201,11 +213,17 @@ final class WatchRuntime {
         energyLog = CaptureEnergyLog(url: encoderDirectory.deletingLastPathComponent().appendingPathComponent("energy-diagnostic.json"))
         WKInterfaceDevice.current().isBatteryMonitoringEnabled = true
         self.audioSession = audioSession
+        self.continuitySession = continuitySession
         self.statusPublisher = { snapshot in _ = try transport.updateStatus(snapshot) }
         self.archiveRecovery = archiveRecovery
         self.recoverySleep = recoverySleep
         captureMeter.setVisible(false)
         audioSession.onEvent = { [weak self] event in await self?.handleAudioEvent(event) }
+        continuitySession.onUpdate = { [weak self] in
+            guard let self else { return }
+            self.continuityActive = self.continuitySession.isActive
+            self.currentHeartRateBPM = self.continuitySession.currentHeartRateBPM
+        }
         let names: [Notification.Name] = [
             Notification.Name("WKInterfaceDeviceBatteryStateDidChangeNotification"),
             .NSProcessInfoPowerStateDidChange
@@ -338,6 +356,9 @@ final class WatchRuntime {
         controlCursors.removeAll()
         resetAutomaticRecovery()
         statusDirty = true
+        if captureReady, !requiresStartTap, captureState.intent == .recording, shouldUseContinuitySession {
+            await continuitySession.ensureActive()
+        }
         let gateInterrupted = audioInterruptionActive || audioSession.microphoneGate.interruptionActive
         if captureReady, !requiresStartTap, captureState.intent == .recording,
            (captureState.activity == .interrupted || captureState.activity == .failed || gateInterrupted) {
@@ -630,7 +651,15 @@ final class WatchRuntime {
         captureRecovery.cancel(resetBudget: true)
         audioInterruptionActive = false
         requiresStartTap = false
-        try await launchEpoch()
+        if shouldUseContinuitySession { await continuitySession.ensureActive() }
+        do {
+            try await launchEpoch()
+        } catch {
+            if captureState.intent != .recording || captureState.activity == .failed {
+                await continuitySession.stop()
+            }
+            throw error
+        }
     }
 
     func resume() async throws {
@@ -639,7 +668,15 @@ final class WatchRuntime {
         captureRecovery.cancel(resetBudget: true)
         audioInterruptionActive = false
         requiresStartTap = false
-        try await launchEpoch(resuming: true)
+        if shouldUseContinuitySession { await continuitySession.ensureActive() }
+        do {
+            try await launchEpoch(resuming: true)
+        } catch {
+            if captureState.intent != .recording || captureState.activity == .failed {
+                await continuitySession.stop()
+            }
+            throw error
+        }
     }
 
     func pause() async throws {
@@ -654,6 +691,7 @@ final class WatchRuntime {
         do { try await saveDiagnostic(event) } catch { firstError = error }
         do { try await store.saveIntent(.paused, sessionID: sessionID) } catch { if firstError == nil { firstError = error } }
         do { if !finalizing { try await finishEpoch(reason: .paused) } } catch { if firstError == nil { firstError = error } }
+        await continuitySession.stop()
         if let firstError { throw firstError }
     }
 
@@ -669,6 +707,7 @@ final class WatchRuntime {
         do { try await saveDiagnostic(event) } catch { firstError = error }
         do { try await store.saveIntent(.stopped, sessionID: sessionID) } catch { if firstError == nil { firstError = error } }
         do { if !finalizing { try await finishEpoch(reason: .stopped) } } catch { if firstError == nil { firstError = error } }
+        await continuitySession.stop()
         if let firstError { throw firstError }
     }
 
@@ -1055,6 +1094,7 @@ final class WatchRuntime {
         if keepAudioSessionActive {
             audioSession.microphoneGate.deactivate()
         } else {
+            await continuitySession.stop()
             do { try await audioSession.deactivate() }
             catch {
                 try await saveDiagnostic(completing: ending, code: .cleanupFailed,

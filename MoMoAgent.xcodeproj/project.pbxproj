@@ -64,6 +64,7 @@
 		25F8D7E68A25DDFCB6578CE8 /* NetworkSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE7184AF74701BC6CF9D64F /* NetworkSettingsTests.swift */; };
 		26857C75957B6EB5A4E51668 /* LifeIllustrationJourneyMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D338BBBB6CB4B72817BAAF1B /* LifeIllustrationJourneyMapView.swift */; };
 		26F79964C84F3DCC60CAA22D /* WatchAudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9390A9F9377D6FC261821F7 /* WatchAudioSession.swift */; };
+		26F79965C84F3DCC60CAA22E /* WatchContinuitySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9390AA09377D6FC261821F8 /* WatchContinuitySession.swift */; };
 		2724A12C8AB5D70026269C5A /* PhoneThroughputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50F599FA6E3A17CC1473DC78 /* PhoneThroughputTests.swift */; };
 		276E8A2A35EF6C1582E09FB4 /* MacAppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = B9AE3666B077EC5391711021 /* MacAppIcon.icon */; };
 		27ED59E502929F24D358F1C8 /* PhoneRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FD73C755F828AF1C356309E /* PhoneRuntime.swift */; };
@@ -154,6 +155,7 @@
 		69F6F223B40F5F15198A6A32 /* WebSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32FD907E9CAC46F1F28652CE /* WebSettingsView.swift */; };
 		6A1FACDC524C977312FA781B /* silero_vad.onnx in CopyFiles */ = {isa = PBXBuildFile; fileRef = 2CCA1D96821DCBA6DB65BFA7 /* silero_vad.onnx */; };
 		6C59B2459D61483C4AF67B39 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7C769EABD78F2A466F4F5BAE /* HealthKit.framework */; };
+		6C59B2469D61483C4AF67B3A /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7C769EABD78F2A466F4F5BAE /* HealthKit.framework */; };
 		6C6692B834EAB1C2F88C17ED /* ChatReadingPosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80E7F776DC70947B86852909 /* ChatReadingPosition.swift */; };
 		6CE727289FCF828E85E8D2D9 /* PhoneDesktopView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49D862FBFCFFA358C1953B6 /* PhoneDesktopView.swift */; };
 		6D9AC1484ABB3F016C6794E2 /* MoMoSpeech in Frameworks */ = {isa = PBXBuildFile; productRef = 8BEE05E7E20498134F2A56CF /* MoMoSpeech */; };
@@ -755,6 +757,7 @@
 		E8916A618ACFCE7A423E2E90 /* RemoteContextSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteContextSyncTests.swift; sourceTree = "<group>"; };
 		E936551795FF2C6637C957E7 /* TimelineDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineDetailView.swift; sourceTree = "<group>"; };
 		E9390A9F9377D6FC261821F7 /* WatchAudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchAudioSession.swift; sourceTree = "<group>"; };
+		E9390AA09377D6FC261821F8 /* WatchContinuitySession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContinuitySession.swift; sourceTree = "<group>"; };
 		E99994ADD5EAF1D1B707ECE8 /* PhoneStorageJourneyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneStorageJourneyTests.swift; sourceTree = "<group>"; };
 		E9A6E6A572686753246ADE84 /* DesktopNotchCompanion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNotchCompanion.swift; sourceTree = "<group>"; };
 		EA1A0B9FF96FF9091D14BDE4 /* SpeakerFeedbackMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerFeedbackMenu.swift; sourceTree = "<group>"; };
@@ -855,6 +858,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6C59B2469D61483C4AF67B3A /* HealthKit.framework in Frameworks */,
 				F136A1C386B4F8997A8F6988 /* MoMoContracts in Frameworks */,
 				9CCA3B7CA1A680D9C29F36A7 /* MoMoRecording in Frameworks */,
 				9FF3B170D72DAF11B8F20065 /* MoMoLink in Frameworks */,
@@ -1392,6 +1396,7 @@
 			children = (
 				C28DBD2BB8B4F4A37C7848B0 /* WatchApplicationDelegate.swift */,
 				E9390A9F9377D6FC261821F7 /* WatchAudioSession.swift */,
+				E9390AA09377D6FC261821F8 /* WatchContinuitySession.swift */,
 				864650681487E4DAA3E176EA /* WatchWidgetPublisher.swift */,
 			);
 			path = Platform;
@@ -2255,6 +2260,7 @@
 				097342180C996B6EEADE5D8A /* MoMoAgentWatchApp.swift in Sources */,
 				CF1D2105FFD6905181AE746E /* WatchApplicationDelegate.swift in Sources */,
 				26F79964C84F3DCC60CAA22D /* WatchAudioSession.swift in Sources */,
+				26F79965C84F3DCC60CAA22E /* WatchContinuitySession.swift in Sources */,
 				AAD6B05332753D37413A9E14 /* WatchComposition.swift in Sources */,
 				F48982030358E2E9EB242F0D /* WatchRuntime.swift in Sources */,
 				99EE5FBAE30FD5EA75BA0C38 /* WatchWidgetPublisher.swift in Sources */,

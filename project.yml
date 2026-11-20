@@ -279,17 +279,22 @@ targets:
         WKRunsIndependentlyOfCompanionApp: true
         NSMicrophoneUsageDescription: 在你开始录音后采集声音，传到你的 iPhone 本地转写。
         NSLocalNetworkUsageDescription: 允许通过局域网校验通道直接与配对的 iPhone 高速同步录音。
+        NSHealthShareUsageDescription: 在手表连续录音期间同步读取实时心率，用于维持录音连续性并帮助 MoMo 理解你的状态。
+        NSHealthUpdateUsageDescription: 在手表连续录音期间维护系统健康会话以防止通话等中断导致录音停止，结束时自动丢弃，不会写入你的体能训练记录。
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         UIBackgroundModes: [audio]
+        WKBackgroundModes: [workout-processing]
         CFBundleURLTypes:
           - CFBundleURLName: "$(MOMO_WATCH_WIDGET_KIND)"
             CFBundleURLSchemes: ["$(MOMO_WATCH_URL_SCHEME)"]
     entitlements:
       path: Apps/WatchApp/Resources/MoMoAgentWatch.entitlements
       properties:
+        com.apple.developer.healthkit: true
         com.apple.security.application-groups: ["$(MOMO_WATCH_APP_GROUP)"]
     dependencies:
+      - sdk: HealthKit.framework
       - package: MoMoAgentKit
         product: MoMoContracts
       - package: MoMoAgentKit
