@@ -233,175 +233,33 @@ struct TimelineRow: View {
     let connected: Bool
     var continuesFromPrevious = false
     var includeUTCOffset = false
-    var illustrationURL: URL? = nil
-    var illustrationAngle: Double = 0
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .title3) private var titleSize: CGFloat = 19
-    @ScaledMetric(relativeTo: .subheadline) private var excerptSize: CGFloat = 14
-
-    private var recap: TranscriptRecapContent? {
-        guard window.canSummarize, let summary else { return nil }
-        let parsed = TranscriptRecapContent.parse(summary)
-        return parsed.isEmpty ? nil : parsed
-    }
-
-    private var hasReadableText: Bool {
-        window.paragraphs.contains(where: \.hasReadableText)
-    }
-
-    private var cardExcerpt: String {
-        if let recap {
-            var parts: [String] = []
-            if let lead = recap.lead {
-                let text = String(lead.characters).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty { parts.append(text) }
-            }
-            for section in recap.sections {
-                for item in section.items {
-                    let text = String(item.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !text.isEmpty { parts.append(text) }
-                    if parts.count >= 3 { break }
-                }
-                if parts.count >= 3 { break }
-            }
-            return parts.joined(separator: " ")
-        }
-        return TimelinePresentation.preview(window, summary: nil)
-    }
-
     var body: some View {
-        let timeText = TimelineDate.time(window.id.start, offset: window.id.timezoneOffset)
-        let parsedRecap = recap
-        let hasImage = illustrationURL != nil
-
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 7) {
-                headerRow(timeText: timeText)
-
-                if let title = parsedRecap?.title {
-                    Text(title)
-                        .font(.system(size: titleSize, weight: .bold))
-                        .tracking(-0.35)
-                        .lineSpacing(1.5)
-                        .foregroundStyle(MoMoPalette.ink)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if !hasImage {
-                    let excerpt = cardExcerpt
-                    if !excerpt.isEmpty {
-                        Text(excerpt)
-                            .font(.system(size: excerptSize, weight: .regular))
-                            .lineSpacing(3.5)
-                            .foregroundStyle(parsedRecap?.title != nil || !hasReadableText ? MoMoPalette.muted : MoMoPalette.ink.opacity(0.86))
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : (parsedRecap?.title != nil ? 4 : 6))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, parsedRecap?.title != nil ? 1 : 2)
-                    }
-                } else if parsedRecap?.title == nil {
-                    let excerpt = cardExcerpt
-                    if !excerpt.isEmpty {
-                        Text(excerpt)
-                            .font(.system(size: titleSize - 1, weight: .semibold))
-                            .tracking(-0.25)
-                            .lineSpacing(1.5)
-                            .foregroundStyle(MoMoPalette.ink)
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, hasImage ? 10 : (window.marks.isEmpty ? 18 : 12))
-
-            if let illustrationURL {
-                TimelineCardIllustration(url: illustrationURL, angle: illustrationAngle)
-                    .padding(.horizontal, 7)
-                    .padding(.bottom, 7)
-            }
-        }
-        .foregroundStyle(MoMoPalette.ink)
-        .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
-        .contentShape(Rectangle())
-    }
-
-    @ViewBuilder
-    private func headerRow(timeText: String) -> some View {
-        let durationText: String? = (window.speechDuration > 0 && window.state == .complete)
-            ? TimelineDate.duration(window.speechDuration)
-            : nil
-
-        HStack(alignment: .center, spacing: 4) {
-            if !window.marks.isEmpty {
-                Image(systemName: "flag.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(MoMoPalette.muted)
-                    .accessibilityHidden(true)
-            } else if !window.isFinal {
-                Circle()
-                    .fill(MoMoPalette.ink)
-                    .frame(width: 5.5, height: 5.5)
-                    .accessibilityHidden(true)
-            }
-
-            Text(timeText)
-                .font(.system(size: 12, weight: .medium))
-                .monospacedDigit()
-                .foregroundStyle(MoMoPalette.muted)
-                .lineLimit(1)
-
-            if let status {
-                Text("·")
-                    .font(.system(size: 12))
-                    .foregroundStyle(MoMoPalette.muted.opacity(0.6))
-                    .accessibilityHidden(true)
-                Text(status)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(MoMoPalette.muted)
-                    .lineLimit(1)
-            } else if let durationText {
-                Text("·")
-                    .font(.system(size: 12))
-                    .foregroundStyle(MoMoPalette.muted.opacity(0.6))
-                    .accessibilityHidden(true)
-                Text(durationText)
-                    .font(.system(size: 12, weight: .regular))
-                    .monospacedDigit()
-                    .foregroundStyle(MoMoPalette.muted)
-                    .lineLimit(1)
+        ClientTranscriptRow(time: TimelineDate.range(window.id, end: window.end, includeUTCOffset: includeUTCOffset),
+            preview: TimelinePresentation.preview(window, summary: summary), status: status,
+            connected: connected, isFinal: window.isFinal, continuesFromPrevious: continuesFromPrevious,
+            bottomSpacing: window.marks.isEmpty ? 26 : 2) {
+            if window.speechDuration > 0, window.state == .complete {
+                TimelineActivityStrip(window: window).frame(height: 8).accessibilityHidden(true)
+                Text("说话约 \(TimelineDate.duration(window.speechDuration))")
+                    .phoneText(.caption).foregroundStyle(MoMoPalette.muted)
                     .accessibilityIdentifier("timeline.speechDuration")
             }
-
-            Spacer(minLength: 0)
         }
     }
 }
 
-private struct TimelineCardIllustration: View {
-    let url: URL
-    var angle: Double = 0
-    @Environment(\.colorScheme) private var colorScheme
-
+private struct TimelineActivityStrip: View {
+    let window: TimelineWindow
     var body: some View {
-        ZStack {
-            LifeIllustrationPaper.fill(for: colorScheme)
-            LifeIllustrationImageView(url: url, contentMode: .fit)
-                .padding(10)
-                .rotationEffect(.degrees(angle))
+        let bins = TimelinePresentation.activity(window.speechIntervals, from: window.id.start, to: window.end, count: 36)
+        return Canvas { context, size in
+            for (index, activity) in bins.enumerated() {
+                let diameter = 2 + 4 * activity
+                let center = (Double(index) + 0.5) * size.width / Double(bins.count)
+                context.fill(Path(ellipseIn: CGRect(x: center - diameter / 2, y: (size.height - diameter) / 2,
+                    width: diameter, height: diameter)), with: .color(MoMoPalette.ink.opacity(0.12 + 0.7 * activity)))
+            }
         }
-        .aspectRatio(1.18, contentMode: .fit)
-        .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(MoMoPalette.borderSubtle, lineWidth: 0.5)
-                .allowsHitTesting(false)
-        }
-        .accessibilityHidden(true)
     }
 }
 
