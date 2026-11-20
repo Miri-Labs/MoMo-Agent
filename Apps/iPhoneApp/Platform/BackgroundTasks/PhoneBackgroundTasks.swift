@@ -11,18 +11,21 @@ enum TranscriptionBackgroundPolicy: Sendable, Equatable {
 enum BackgroundTranscriptionError: Error, LocalizedError {
     case registrationFailed, runtimeUnavailable, alreadyRequested, unavailable, notForeground
     case blockedByFileIssues, waitingForSync, waitingForRetry, audioUnavailable, nothingToContinue
+    case schedulerDenied(code: Int)
     var errorDescription: String? {
         switch self {
         case .registrationFailed: String(localized: "系统暂未接受后台整理申请，App 内仍可继续处理。")
         case .runtimeUnavailable: String(localized: "转录服务尚未就绪，请稍后再试。")
         case .alreadyRequested: String(localized: "已有后台整理任务正在申请或处理。")
-        case .unavailable: String(localized: "当前系统或设备状态暂不支持持续后台整理。")
+        case .unavailable: String(localized: "当前系统或设备状态暂不支持持续后台整理（请检查是否开启低电量模式或机身过热）。")
         case .notForeground: String(localized: "请在 App 内发起后台整理。")
         case .blockedByFileIssues: String(localized: "部分录音导出文件存在冲突待核对，请先恢复文件后再继续整理。")
         case .waitingForSync: String(localized: "剩余片段正在等待手表同步原音，传到手机后会自动整理。")
         case .waitingForRetry: String(localized: "剩余片段正在等待稍后自动重试，其余内容已整理完成。")
         case .audioUnavailable: String(localized: "剩余未完成片段的原音文件不可用，其余内容已整理完成。")
         case .nothingToContinue: String(localized: "当前可整理的内容已完成，最新结尾片段将在收到后续音频后自动整理。")
+        case .schedulerDenied(let code):
+            String(localized: "系统暂未批准后台整理（代码 \(code)），已在 App 内继续处理。")
         }
     }
 }
@@ -101,7 +104,9 @@ final class PhoneBackgroundTasks {
     private var grants: [String: TranscriptionTaskGrant] = [:]
     private var systemTasks: [String: BGTask] = [:]
     private var progressHighWaterMark: [String: Int64] = [:]
+    private var continuedHeartbeats: [String: Task<Void, Never>] = [:]
     private var latestSnapshot: TranscriptionSnapshot?
+    private let logger = Logger(subsystem: "com.momoagent.ios", category: "BackgroundTranscription")
     private lazy var automatic = makeAutomaticSubmission()
     private lazy var continued = makeContinuedSubmission()
 
@@ -113,6 +118,7 @@ final class PhoneBackgroundTasks {
 
     deinit {
         for observer in resourceObservers { observer.cancel() }
+        for heartbeat in continuedHeartbeats.values { heartbeat.cancel() }
     }
 
     static func allowsProcessing(lowPower: Bool, thermalState: ProcessInfo.ThermalState) -> Bool {
@@ -221,6 +227,25 @@ final class PhoneBackgroundTasks {
         // Register each concrete identifier only when a foreground user requests its batch.
         registrationSucceeded = processing
         if !registrationSucceeded { onFailure?(String(localized: "系统未接受后台任务注册，仍可在 App 内转写。")) }
+        // Cancel orphaned continued requests left in BGTaskScheduler from previous launches
+        // so they cannot exhaust the OS pending-request quota.
+        Task { await self.pruneOrphanedContinuedRequests() }
+    }
+
+    func pruneOrphanedContinuedRequests() async {
+        let activeIDs = Set(grants.keys).union(continued.pendingIdentifier.map { [$0] } ?? [])
+        let prefix = Self.continuedPrefix
+        let orphaned = await Task.detached(priority: .utility) {
+            await BGTaskScheduler.shared.pendingTaskRequests()
+                .map(\.identifier)
+                .filter { $0.hasPrefix(prefix) && !activeIDs.contains($0) }
+        }.value
+        for identifier in orphaned {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
+        }
+        if !orphaned.isEmpty {
+            logger.notice("Pruned \(orphaned.count) orphaned continued background task request(s)")
+        }
     }
 
     func scheduleAutomatic() async {
@@ -232,8 +257,28 @@ final class PhoneBackgroundTasks {
         guard policy == .cpu, Self.resourcesAllowProcessing, #available(iOS 26.0, *) else { throw BackgroundTranscriptionError.unavailable }
         guard registrationSucceeded else { throw BackgroundTranscriptionError.registrationFailed }
         guard UIApplication.shared.applicationState == .active else { throw BackgroundTranscriptionError.notForeground }
-        guard grants.isEmpty else { throw BackgroundTranscriptionError.alreadyRequested }
-        try await continued.request(batchID: id)
+        // Reconcile any silently dropped pending request and prune orphaned OS queue entries before admitting.
+        _ = await reconcilePendingContinuedBatch(minimumAge: 0)
+        await pruneOrphanedContinuedRequests()
+        // If only a non-continued automatic BGProcessingTask grant is still unwinding, yield it to the user's explicit request.
+        for (identifier, grant) in grants where !identifier.hasPrefix(Self.continuedPrefix) {
+            grant.expire(reason: .interrupted)
+        }
+        guard !grants.keys.contains(where: { $0.hasPrefix(Self.continuedPrefix) }) else {
+            throw BackgroundTranscriptionError.alreadyRequested
+        }
+        do {
+            try await continued.request(batchID: id)
+        } catch let error as BackgroundTranscriptionError {
+            throw error
+        } catch {
+            let nsError = error as NSError
+            logger.error("BGContinuedProcessingTask submission failed: domain=\(nsError.domain, privacy: .public) code=\(nsError.code) desc=\(nsError.localizedDescription, privacy: .public)")
+            if nsError.domain == BGTaskScheduler.errorDomain {
+                throw BackgroundTranscriptionError.schedulerDenied(code: nsError.code)
+            }
+            throw error
+        }
     }
 
     var hasActiveContinuedGrant: Bool {
@@ -258,9 +303,9 @@ final class PhoneBackgroundTasks {
 
     /// Clears a pending continued request if the system scheduler silently dropped it before launch.
     @discardableResult
-    func reconcilePendingContinuedBatch() async -> UUID? {
+    func reconcilePendingContinuedBatch(minimumAge: TimeInterval = 15) async -> UUID? {
         guard registrationSucceeded, let identifier = continued.pendingIdentifier, grants[identifier] == nil,
-              let age = continued.pendingAge, age >= 15 else {
+              let age = continued.pendingAge, age >= minimumAge else {
             return nil
         }
         let pending = await Task.detached(priority: .utility) {
@@ -268,7 +313,7 @@ final class PhoneBackgroundTasks {
         }.value
         guard !pending.contains(identifier), grants[identifier] == nil,
               continued.pendingIdentifier == identifier,
-              (continued.pendingAge ?? 0) >= 15 else { return nil }
+              (continued.pendingAge ?? 0) >= minimumAge else { return nil }
         guard let droppedBatchID = continued.cancelPending(identifier: identifier) else { return nil }
         onContinuedBatchFinished?(droppedBatchID, false)
         return droppedBatchID
@@ -306,12 +351,18 @@ final class PhoneBackgroundTasks {
             guard let snapshot = latestSnapshot, let batch = snapshot.batch, batch.id == matchedBatchID else { continue }
             let currentCompleted = batch.completedDuration + batch.removedDuration
             let currentPrepared = batch.preparedDuration + batch.removedDuration
-            let completedUnits = ContinuedTranscriptionProgress.completedUnits(
-                batch: batch, previous: progressHighWaterMark[identifier] ?? 0)
+            let activeInFlight = snapshot.nativeInFlight || snapshot.phase == .preparing || snapshot.phase == .transcribing
+            let previousUnits = progressHighWaterMark[identifier] ?? 0
+            var completedUnits = ContinuedTranscriptionProgress.completedUnits(
+                batch: batch, previous: previousUnits)
+            // Keep BGContinuedProcessingTask progress visibly alive during slow CoreML warmup/long windows
+            // without ever over-reporting durable completion (1 unit = 0.0001% of totalUnits).
+            if activeInFlight, completedUnits == previousUnits, previousUnits < Self.progressScale - 1 {
+                completedUnits = previousUnits + 1
+            }
             progressHighWaterMark[identifier] = completedUnits
             task.progress.totalUnitCount = Self.progressScale
             task.progress.completedUnitCount = completedUnits
-            let activeInFlight = snapshot.nativeInFlight || snapshot.phase == .preparing || snapshot.phase == .transcribing
 
             let totalSeconds = max(1, Int(batch.totalDuration.rounded(.up)))
             let processedSeconds = min(totalSeconds, Int(currentCompleted.rounded(.down)))
@@ -373,8 +424,12 @@ final class PhoneBackgroundTasks {
             }
             if let continuedTask = task as? BGContinuedProcessingTask {
                 continuedTask.progress.totalUnitCount = Self.progressScale
-                continuedTask.progress.completedUnitCount = 0
-                progressHighWaterMark[id] = 0
+                continuedTask.progress.completedUnitCount = 1
+                progressHighWaterMark[id] = 1
+                continuedTask.updateTitle(
+                    String(localized: "本机转写"),
+                    subtitle: String(localized: "正在启动本机转写引擎…")
+                )
             }
             batchID = pendingBatchID
         } else {
@@ -449,6 +504,7 @@ final class PhoneBackgroundTasks {
                 }
             }
             task.setTaskCompleted(success: taskSucceeded)
+            self?.continuedHeartbeats.removeValue(forKey: id)?.cancel()
             self?.grants[id] = nil
             self?.systemTasks[id] = nil
             self?.progressHighWaterMark[id] = nil
@@ -462,6 +518,15 @@ final class PhoneBackgroundTasks {
         })
         grants[id] = grant
         systemTasks[id] = task
+        if continued {
+            continuedHeartbeats[id] = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(5))
+                    guard !Task.isCancelled, let self, self.grants[id] != nil else { return }
+                    self.refreshAllContinuedProgress()
+                }
+            }
+        }
         task.expirationHandler = { [weak grant] in
             Task { @MainActor in grant?.expire(reason: continued ? .systemEndedUnknown : .backgroundExpired) }
         }

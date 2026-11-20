@@ -402,9 +402,13 @@ public actor TranscriptionCoordinator {
         startingManaged = true
         defer { startingManaged = false }
         if let execution = managed?.handle {
-            guard execution.origin == .foreground, let batch = execution.batchExecution else { throw TranscriptionExecutionError.busy }
+            guard execution.origin == .foreground || execution.origin == .backgroundProcessing else {
+                throw TranscriptionExecutionError.busy
+            }
             try await stop(execution: execution, reason: .interrupted)
-            return try await archive.transcriptionBatch(id: batch.batchID)
+            if let batch = execution.batchExecution {
+                return try await archive.transcriptionBatch(id: batch.batchID)
+            }
         }
         // Include the current automatic claim in the handoff without awaiting native inference.
         let target = captureInvalidationTarget()

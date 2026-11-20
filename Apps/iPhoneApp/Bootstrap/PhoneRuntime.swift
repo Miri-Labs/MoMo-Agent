@@ -406,6 +406,9 @@ final class PhoneRuntime {
                       PhoneBackgroundTasks.resourcesAllowProcessing {
                 receivedAudioTranscription?.request()
             }
+            if ready, let backgroundTasks {
+                Task { await backgroundTasks.scheduleAutomatic() }
+            }
         }
         playback.requestWaveformPreparation(chunkID: chunkID, run: isForeground)
     }
@@ -929,9 +932,13 @@ final class PhoneRuntime {
     /// Called only by the user's foreground button, never by automatic recording arrival or refresh.
     func continueTranscriptionInBackground() async throws {
         guard isForeground else { throw BackgroundTranscriptionError.notForeground }
-        guard !hasTranscriptionContinuation else { throw BackgroundTranscriptionError.alreadyRequested }
         guard let transcription, let backgroundTasks else { throw BackgroundTranscriptionError.runtimeUnavailable }
         guard supportsTranscriptionContinuation, PhoneBackgroundTasks.resourcesAllowProcessing else { throw BackgroundTranscriptionError.unavailable }
+        if requestedTranscriptionBatchID != nil && !backgroundTasks.hasActiveContinuedGrant {
+            _ = await backgroundTasks.reconcilePendingContinuedBatch(minimumAge: 0)
+        }
+        guard !hasTranscriptionContinuation else { throw BackgroundTranscriptionError.alreadyRequested }
+        receivedAudioTranscription?.expire(reason: .interrupted)
         preparingTranscriptionContinuation = true
         defer { preparingTranscriptionContinuation = false }
         do {
