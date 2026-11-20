@@ -289,7 +289,7 @@ def _cmd_connectors(data: Path, args: argparse.Namespace) -> dict:
         res = configure_email_connector(data, payload)
         store = _open_context(data)
         try:
-            sync_connectors(data, store, target="email")
+            sync_connectors(data, store, connector="email")
         finally:
             store.close()
         return res
@@ -314,7 +314,7 @@ def _cmd_connectors(data: Path, args: argparse.Namespace) -> dict:
             return live
         store = _open_context(data)
         try:
-            return sync_connectors(data, store, target=args.connector)
+            return sync_connectors(data, store, connector=args.connector)
         finally:
             store.close()
     if action == "live-doc":
