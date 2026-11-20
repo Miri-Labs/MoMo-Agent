@@ -57,8 +57,9 @@ struct DesktopWindowDragRegion: NSViewRepresentable {
 }
 
 /// Expands the macOS window rightward when the right detail inspector opens (if screen space allows),
-/// and smoothly restores the previous width when it closes. Falls back to compressing the left pane
-/// when the window is full-screen or already near the screen's right edge.
+/// Keeps the left workspace pane's width locked when toggling the right detail inspector by
+/// synchronously expanding the `NSWindow` frame by `inspectorWidth` (borrowing screen room from
+/// the left edge if the window is near the right edge) and restoring it on close.
 struct DesktopWindowInspectorExpander: NSViewRepresentable {
     let isOpen: Bool
     let inspectorWidth: CGFloat
@@ -67,6 +68,7 @@ struct DesktopWindowInspectorExpander: NSViewRepresentable {
         private var initialized = false
         private var lastOpen = false
         private var expandedDelta: CGFloat = 0
+        private var shiftedLeft: CGFloat = 0
 
         func needsSync(isOpen: Bool) -> Bool {
             !initialized || isOpen != lastOpen
@@ -83,7 +85,10 @@ struct DesktopWindowInspectorExpander: NSViewRepresentable {
             lastOpen = isOpen
 
             guard !window.styleMask.contains(.fullScreen) else {
-                if !isOpen { expandedDelta = 0 }
+                if !isOpen {
+                    expandedDelta = 0
+                    shiftedLeft = 0
+                }
                 return
             }
 
@@ -91,31 +96,31 @@ struct DesktopWindowInspectorExpander: NSViewRepresentable {
                 let visible = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
                 guard let visible else { return }
                 let rightRoom = max(0, visible.maxX - window.frame.maxX)
-                let delta = min(inspectorWidth, rightRoom)
-                if delta >= 12 {
+                let leftRoom = max(0, window.frame.minX - visible.minX)
+                let expandRight = min(inspectorWidth, rightRoom)
+                let borrowLeft = min(max(0, inspectorWidth - expandRight), leftRoom)
+                let totalDelta = expandRight + borrowLeft
+                if totalDelta >= 12 {
                     var nextFrame = window.frame
-                    nextFrame.size.width += delta
-                    expandedDelta = delta
-                    animateWindowFrame(window, to: nextFrame)
+                    nextFrame.origin.x -= borrowLeft
+                    nextFrame.size.width += totalDelta
+                    expandedDelta = totalDelta
+                    shiftedLeft = borrowLeft
+                    window.setFrame(nextFrame, display: false, animate: false)
                 } else {
                     expandedDelta = 0
+                    shiftedLeft = 0
                 }
             } else {
                 guard expandedDelta > 0 else { return }
                 var nextFrame = window.frame
                 let minWidth = max(window.minSize.width, 820)
-                nextFrame.size.width = max(minWidth, nextFrame.size.width - expandedDelta)
+                let shrink = min(expandedDelta, max(0, nextFrame.size.width - minWidth))
+                nextFrame.size.width -= shrink
+                nextFrame.origin.x += min(shiftedLeft, shrink)
                 expandedDelta = 0
-                animateWindowFrame(window, to: nextFrame)
-            }
-        }
-
-        /// Non-blocking CoreAnimation frame transition (avoids `NSWindow.setFrame(..., animate: true)`'s synchronous modal loop).
-        private func animateWindowFrame(_ window: NSWindow, to frame: NSRect) {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.20
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                window.animator().setFrame(frame, display: false)
+                shiftedLeft = 0
+                window.setFrame(nextFrame, display: false, animate: false)
             }
         }
     }
@@ -123,8 +128,12 @@ struct DesktopWindowInspectorExpander: NSViewRepresentable {
     func makeNSView(context: Context) -> Host { Host() }
     func updateNSView(_ nsView: Host, context: Context) {
         guard nsView.needsSync(isOpen: isOpen) else { return }
-        DispatchQueue.main.async {
+        if nsView.window != nil {
             nsView.sync(isOpen: isOpen, inspectorWidth: inspectorWidth)
+        } else {
+            DispatchQueue.main.async {
+                nsView.sync(isOpen: isOpen, inspectorWidth: inspectorWidth)
+            }
         }
     }
 }
