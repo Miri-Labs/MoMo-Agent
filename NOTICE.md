@@ -12,7 +12,10 @@ Keep the license and attribution files supplied with each component when redistr
 - SuperAgent (`dsh-superagent-prototype`), by DeepSeek Harness Team and contributors: [MIT](Vendor/SuperAgent/LICENSE).
 - Hermes Agent, by Nous Research and contributors: [MIT](Vendor/HermesAgent/LICENSE).
 - TailscaleKit, by Tailscale and contributors: [BSD-3-Clause](Vendor/TailscaleKit/LICENSE).
-- Speech libraries and downloaded model weights have their own licenses. See [speech dependencies](Native/SpeechVendor/README.md), their manifests, and the license notices bundled with the distributions. The project license does not relicense model weights.
+- MOSS-Transcribe-Diarize (`OpenMOSS-Team/MOSS-Transcribe-Diarize`), by OpenMOSS Team: Apache-2.0. Converted to Apple Core ML on Mac for joint ASR and speaker diarization.
+- ReDimNet2+ (`lab260/redimnet2-plus`), by Lab260: MIT. Converted to Apple Core ML on Mac for 192-d speaker voiceprint embeddings.
+- Silero VAD (`snakers4/silero-vad`), by Silero Team: MIT. Converted to Apple Core ML on Mac for speech endpointing.
+- Legacy speech libraries and downloaded model weights have their own licenses. See [speech dependencies](Native/SpeechVendor/README.md), their manifests, and the license notices bundled with the distributions. The project license does not relicense model weights.
 - WebRTC and other bundled dependencies retain their accompanying license and notice files.
 
 ## Artwork and marks
