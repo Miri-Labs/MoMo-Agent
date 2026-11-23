@@ -168,6 +168,8 @@ final class ArchiveDatabase: @unchecked Sendable {
             try execute("CREATE TABLE IF NOT EXISTS voice_match_cutoffs(person_id TEXT PRIMARY KEY REFERENCES voice_profiles(id) ON DELETE CASCADE,recorded_from REAL NOT NULL)")
             try execute("CREATE TABLE IF NOT EXISTS speaker_delivery_receipts(id TEXT PRIMARY KEY)")
             try execute("CREATE TABLE IF NOT EXISTS waveform_preparations(chunk_id TEXT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,manifest_hash TEXT NOT NULL,generation INTEGER NOT NULL,cache_generation TEXT NOT NULL)")
+            try execute("CREATE TABLE IF NOT EXISTS mac_audio_uploads(chunk_id TEXT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,upload_state TEXT NOT NULL DEFAULT 'pending',remote_sha256 TEXT,remote_source_id TEXT,uploaded_at REAL,last_error TEXT)")
+            try execute("CREATE INDEX IF NOT EXISTS mac_audio_uploads_state ON mac_audio_uploads(upload_state, chunk_id)")
             // Overlap joining reads one durable neighbor, not every completed window in a long recording.
             try execute("CREATE INDEX IF NOT EXISTS analysis_windows_core_ends ON analysis_windows(configuration_hash,epoch_id,json_extract(CAST(descriptor AS TEXT),'$.coreFrames.start')+json_extract(CAST(descriptor AS TEXT),'$.coreFrames.count')) WHERE state='complete'")
             try ensurePerformanceSchema()

@@ -6,9 +6,6 @@ struct TimelineDetailView: View {
     let id: TimelineWindowID
     let library: LibraryModel
     let playback: AudioPlaybackController
-    let transcription: TranscriptionSnapshot?
-    let speechFailure: String?
-    let retryTimeline: ((TimelineRetryRequest) async throws -> Void)?
     let canDiscuss: Bool
     let discuss: ([SourceReference], TimelineWindow) -> Void
     var initialMarkID: UUID? = nil
@@ -26,7 +23,6 @@ struct TimelineDetailView: View {
     @State private var readingOrder: [UUID: Int] = [:]
     @State private var references: [SourceReference] = []
     @State private var failure: String?
-    @State private var retrying = false
     @State private var resolvingIssueSessionID: UUID?
     @State private var selectedMarkID: UUID?
     @State private var initialMarkConsumed = false
@@ -94,7 +90,7 @@ struct TimelineDetailView: View {
                                 .phoneText(.body).foregroundStyle(MoMoPalette.muted)
                                 .accessibilityIdentifier("timeline.detail.empty")
                         }
-                        if let explanation = TimelinePresentation.explanation(window, transcription: transcription, speechFailure: speechFailure) {
+                        if let explanation = TimelinePresentation.explanation(window) {
                             Text(explanation).phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
                         }
                         if window.unavailableAudio {
@@ -109,12 +105,6 @@ struct TimelineDetailView: View {
                             Text(window.state == .complete ? String(localized: "已处理完当前收到的音频。结束回执尚未同步，不影响现有文字和回听。") : String(localized: "已收到的原音会先处理，不等待结束回执。"))
                                 .phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
                                 .accessibilityIdentifier("timeline.detail.unknownTail")
-                        }
-                        if window.issues.isEmpty,
-                           TimelinePresentation.hasRetryableFailure(window, transcription: transcription, speechFailure: speechFailure), retryTimeline != nil {
-                            Button(retrying ? String(localized: "正在重新整理…") : String(localized: "重新整理这部分")) { retry(TimelineRetryRequest(window: window)) }
-                                .phoneText(.menu).frame(minHeight: 44).disabled(retrying)
-                                .accessibilityIdentifier("timeline.detail.retry")
                         }
                         if let failure { Text(failure).phoneText(.metadata).foregroundStyle(MoMoPalette.failure) }
                     } header: {
@@ -196,9 +186,6 @@ struct TimelineDetailView: View {
             }
         }
         .task(id: loadIdentity) { await load() }
-        .onChange(of: transcription?.failureScope) {
-            if let window { updateEntries(window) }
-        }
     }
 
     @ViewBuilder
@@ -231,14 +218,7 @@ struct TimelineDetailView: View {
             Text("\(TimelineDate.time(issue.start, offset: window.id.timezoneOffset, seconds: true))–\(TimelineDate.time(issue.end, offset: window.id.timezoneOffset, seconds: true)) · \(issue.title)")
                 .phoneText(.metadata).monospacedDigit()
             Text(issue.explanation).phoneText(.metadata).foregroundStyle(MoMoPalette.muted)
-            if issue.issue.canRetry, retryTimeline != nil {
-                Button(retrying ? String(localized: "正在整理…") : issue.retryTitle) {
-                    retry(TimelineRetryRequest(window: window, issueID: issue.issue.id, frames: issue.frames))
-                }
-                .phoneText(.menu).frame(minHeight: 44).disabled(retrying)
-                .accessibilityLabel("\(issue.retryTitle)，\(TimelineDate.time(issue.start, offset: window.id.timezoneOffset, seconds: true))至\(TimelineDate.time(issue.end, offset: window.id.timezoneOffset, seconds: true))")
-                .accessibilityIdentifier("timeline.issue.retry.\(issue.id)")
-            } else if issue.issue.kind == .transcriptUnavailable {
+            if issue.issue.kind == .transcriptUnavailable {
                 let sessionID = issue.issue.source.sessionID
                 HStack(spacing: 16) {
                     if let resolveFiles,
@@ -497,7 +477,7 @@ struct TimelineDetailView: View {
 
     private func updateEntries(_ window: TimelineWindow) {
         entries = TimelineDetailEntry.ordered(window: window,
-            issues: TimelineIssuePresentation.rows(for: window, failureScope: transcription?.failureScope))
+            issues: TimelineIssuePresentation.rows(for: window))
     }
 
     private func rememberVisibleParagraph() {
@@ -528,34 +508,6 @@ struct TimelineDetailView: View {
             visibleSpanIDs: paragraphs.filter { viewport.visibleSpans.contains($0.id) }.map(\.id),
             viewportHeight: viewport.height, layout: readingLayout, frame: frame))
         #endif
-    }
-
-    private func retry(_ request: TimelineRetryRequest) {
-        guard !retrying, let retryTimeline, loadedIdentity == loadIdentity,
-              window?.id == request.window.id, window?.revision == request.window.revision else { return }
-        let route = id
-        retrying = true; failure = nil
-        Task {
-            defer { retrying = false }
-            do {
-                try await retryTimeline(request)
-                guard id == route else { return }
-                await load()
-            } catch {
-                guard id == route else { return }
-                await load()
-                guard id == route, let current = window,
-                      current.id == request.window.id,
-                      current.sources.allSatisfy({ source in request.window.sources.contains {
-                          $0.sessionID == source.sessionID && $0.generation == source.generation
-                      } }) else { return }
-                if error as? ArchiveError == .staleSource {
-                    failure = String(localized: "内容已更新，请按当前显示的时间范围重试。")
-                } else {
-                    failure = String(localized: "这部分仍未整理完成，已有文字和原音已保留。")
-                }
-            }
-        }
     }
 }
 

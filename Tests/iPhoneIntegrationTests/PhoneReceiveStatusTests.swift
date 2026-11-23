@@ -99,7 +99,7 @@ final class PhoneReceiveStatusTests: XCTestCase {
         let agent = try PhoneRemoteAgent(directory: fixture.root.appendingPathComponent("remote"), archive: fixture.archive, deviceID: fixture.receiver)
         let runtime = try PhoneRuntime(archive: fixture.archive, remoteAgent: agent,
             playback: AudioPlaybackController(archive: fixture.archive), receiver: coordinator,
-            transport: nil, speech: nil, speechFailure: nil)
+            transport: nil, deviceID: fixture.receiver)
         for code in [WCError.Code.notReachable, .genericError, .messageReplyTimedOut] {
             let failure = TransportFailure(NSError(domain: WCErrorDomain, code: code.rawValue))
             for _ in 0..<10 {
@@ -509,7 +509,7 @@ final class PhoneReceiveStatusTests: XCTestCase {
         let agent = try PhoneRemoteAgent(directory: fixture.root.appendingPathComponent("remote"), archive: fixture.archive, deviceID: fixture.receiver)
         let runtime = try PhoneRuntime(archive: fixture.archive, remoteAgent: agent,
             playback: AudioPlaybackController(archive: fixture.archive), receiver: coordinator,
-            transport: nil, speech: nil, speechFailure: nil)
+            transport: nil, deviceID: fixture.receiver)
         let message = ControlMessage.receipt(fixture.receipt)
         let failure = TransportFailure(NSError(domain: WCErrorDomain, code: WCError.Code.payloadUnsupportedTypes.rawValue,
             userInfo: [NSLocalizedDescriptionKey: "格式不支持"]))
@@ -551,7 +551,7 @@ final class PhoneReceiveStatusTests: XCTestCase {
         let agent = try PhoneRemoteAgent(directory: fixture.root.appendingPathComponent("remote"), archive: fixture.archive, deviceID: fixture.receiver)
         let runtime = try PhoneRuntime(archive: fixture.archive, remoteAgent: agent,
             playback: AudioPlaybackController(archive: fixture.archive), receiver: fixture.coordinator(),
-            transport: nil, speech: nil, speechFailure: nil)
+            transport: nil, deviceID: fixture.receiver)
         await runtime.start()
         XCTAssertTrue(runtime.ready)
         XCTAssertEqual(runtime.library.recordings.map(\.id), [fixture.session])
@@ -727,7 +727,7 @@ final class PhoneReceiveStatusTests: XCTestCase {
         let agent = try PhoneRemoteAgent(directory: fixture.root.appendingPathComponent("remote"), archive: fixture.archive, deviceID: fixture.receiver)
         let runtime = try PhoneRuntime(archive: fixture.archive, remoteAgent: agent,
             playback: AudioPlaybackController(archive: fixture.archive), receiver: coordinator,
-            transport: nil, speech: nil, speechFailure: nil)
+            transport: nil, deviceID: fixture.receiver)
         let clock = try await fixture.selectWatch(on: coordinator)
         let snapshot = try fixture.snapshot(revision: 1)
         await coordinator.receive(.selectedWatchStatusReceived(snapshot, origin: .applicationContextCallback, context: clock.receive()))

@@ -176,9 +176,12 @@ extension ArchiveStore {
         }
         var expired: [UUID] = []
         for row in try database.rows("""
-            SELECT c.id,c.manifest,c.relative_path,c.session_id FROM chunks c
-            JOIN sessions s ON s.id=c.session_id JOIN transcription_jobs j ON j.chunk_id=c.id
-            WHERE c.retention='present' AND c.receipt_applied=1 AND s.deleted=0 AND s.keep_audio=0 AND j.state='complete'\(ageFilter)
+            SELECT c.id,c.manifest,c.relative_path,c.session_id,COALESCE(u.upload_state,'') FROM chunks c
+            JOIN sessions s ON s.id=c.session_id
+            LEFT JOIN transcription_jobs j ON j.chunk_id=c.id
+            LEFT JOIN mac_audio_uploads u ON u.chunk_id=c.id
+            WHERE c.retention='present' AND c.receipt_applied=1 AND s.deleted=0 AND s.keep_audio=0
+              AND (u.upload_state='uploaded' OR j.state='complete')\(ageFilter)
             ORDER BY c.sealed_at,c.storage_sequence
             """, values) {
             try Task.checkCancellation()
@@ -186,8 +189,11 @@ extension ArchiveStore {
             let manifest = try WireJSON.decode(ChunkManifest.self, from: row.requireData(1))
             let overLimit = bytes > (maximumBytes ?? .max)
             guard cutoff.map({ manifest.sealedAt < $0 }) == true || overLimit else { break }
-            guard let floor = replayFloors[manifest.epochID], floor >= manifest.frames.end,
-                  !leasedSessions.contains(try row.requireUUID(3)), try !pendingWindowNeeds(manifest) else { continue }
+            let uploadedToMac = (row.string(4) == "uploaded")
+            if !uploadedToMac {
+                guard let floor = replayFloors[manifest.epochID], floor >= manifest.frames.end else { continue }
+            }
+            guard !leasedSessions.contains(try row.requireUUID(3)), try !pendingWindowNeeds(manifest) else { continue }
             try database.execute("UPDATE chunks SET retention='expiry_pending' WHERE id=?", [.text(chunkID.uuidString)])
             try finishExpiry(chunkID: chunkID, relativePath: row.requireString(2))
             expired.append(chunkID)

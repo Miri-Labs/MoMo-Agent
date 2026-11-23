@@ -4,11 +4,10 @@ import MoMoArchive
 import MoMoContracts
 import MoMoLink
 import MoMoRecording
-import MoMoSpeech
 
 @MainActor
 enum PhoneComposition {
-    static func make(background: PhoneBackgroundTasks? = nil) throws -> PhoneRuntime {
+    static func make() throws -> PhoneRuntime {
         let documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask,
                                                    appropriateFor: nil, create: true)
         var container = documents.deletingLastPathComponent()
@@ -21,12 +20,18 @@ enum PhoneComposition {
         }
 #endif
         let support = container.appendingPathComponent("Library/Application Support/MoMoAgent", isDirectory: true)
-        let coreMLCacheRoot = container.appendingPathComponent("Library/Caches/MoMoAgent/SpeechModels", isDirectory: true)
         let directoryProtection: [FileAttributeKey: Any] = [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
         try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true, attributes: directoryProtection)
         try? FileManager.default.setAttributes(directoryProtection, ofItemAtPath: support.path)
-        try? FileManager.default.createDirectory(at: coreMLCacheRoot, withIntermediateDirectories: true, attributes: directoryProtection)
-        try? FileManager.default.setAttributes(directoryProtection, ofItemAtPath: coreMLCacheRoot.path)
+
+        // Clean up any legacy on-device iPhone speech model caches left by older builds.
+        let legacySpeechCache = container.appendingPathComponent("Library/Caches/MoMoAgent/SpeechModels", isDirectory: true)
+        let legacyDownloadedModels = support.appendingPathComponent("SpeechModels", isDirectory: true)
+        Task.detached(priority: .utility) {
+            try? FileManager.default.removeItem(at: legacySpeechCache)
+            try? FileManager.default.removeItem(at: legacyDownloadedModels)
+        }
+
         let identityURL = support.appendingPathComponent("device-id")
         let deviceID: UUID
         if FileManager.default.fileExists(atPath: identityURL.path) {
@@ -147,97 +152,26 @@ enum PhoneComposition {
 #if DEBUG
         try testConfiguration?.stage(in: archive, controls: controls)
 #endif
-        let speech: SpeechEngine?
-        var speechPerformance: PhoneSpeechPerformance?
-        let speechFailure: String?
-        var fixedTimelineFixture = false
-#if DEBUG
-        fixedTimelineFixture = testConfiguration?.timelineFixture == true
-#endif
-        if fixedTimelineFixture {
-            speech = nil; speechFailure = nil
-        } else {
-            do {
-                guard let directory = Bundle.main.url(forResource: "Speech", withExtension: nil) else {
-                    throw PhoneCompositionError.missingSpeechBundle
-                }
-                let backend = SpeechRecognitionBackend.sherpaCoreML
-                let filenames = ["model.int8.onnx", "tokens.txt", "silero_vad.onnx"]
-                for filename in filenames {
-                    let values = try directory.appendingPathComponent(filename)
-                        .resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-                    guard values.isRegularFile == true, let size = values.fileSize, size > 0 else {
-                        throw PhoneCompositionError.missingSpeechBundle
-                    }
-                }
-                let speechLog = Logger(subsystem: "com.momoagent.ios", category: "SpeechPerformance")
-                let performance = PhoneSpeechPerformance(url: support.appendingPathComponent("transcription-performance.json"), backend: backend)
-                speechPerformance = performance
-                let bundle = try SpeechModelBundle.load(from: directory)
-                if let bundleID = Bundle.main.bundleIdentifier {
-                    do {
-                        try SpeechModelCache.retireSystemCache(in: container.appendingPathComponent("Library/Caches"),
-                                                              bundleID: bundleID, installation: Bundle.main.bundleURL)
-                    } catch {
-                        speechLog.error("Could not retire the system model cache: \(error.localizedDescription, privacy: .public)")
-                    }
-                }
-                pruneStaleCoreMLCaches(in: coreMLCacheRoot, retainingASRHash: bundle.manifest.asrSHA256)
-                let downloadedModelsRoot = support.appendingPathComponent("SpeechModels", isDirectory: true)
-                PhoneSpeechModelSettings.pruneRetiredDownloads(at: downloadedModelsRoot)
-                SpeechModelInstaller.repairInstalledProtection(at: downloadedModelsRoot)
-                speech = try SpeechEngine(bundle: bundle, configuration: SpeechConfiguration(),
-                    continuousArchive: true,
-                    recognitionBackend: backend,
-                    coreMLCacheDirectory: coreMLCacheRoot,
-                    speakerDirectory: directory.appendingPathComponent("Speakers"),
-                    downloadedModel: PhoneSpeechModelSettings.restoredDownload(at: downloadedModelsRoot),
-                    onDiagnostics: { value in
-                        performance.record(value)
-                        speechLog.debug("Speech \(value.operation.rawValue, privacy: .public) \(value.outcome.rawValue, privacy: .public): elapsed=\(value.elapsedSeconds), queue=\(value.queueWaitSeconds), read=\(value.audioReadSeconds), hash=\(value.audioHashSeconds), modelHash=\(value.modelHashSeconds), modelLoad=\(value.modelLoadSeconds), vadLoad=\(value.vadLoadSeconds), native=\(value.nativeDecodeSeconds), backpressure=\(value.analysisBackpressureSeconds), vadFrames=\(value.vadModelFrames), coreFrames=\(value.coreModelFrames), cachedFrames=\(value.preparedAudioModelFrames)")
-                    }, onEvent: { _ in })
-                speechFailure = nil
-            } catch {
-                speech = nil
-                speechFailure = String(localized: "本地转写模型未就绪，请安装包含完整模型的构建。")
-            }
-        }
         // The phone is both source and receiver of earphone audio; its ledger lives beside the archive.
         let earphoneDirectory = support.appendingPathComponent("EarphoneCapture", isDirectory: true)
         let earphone = EarphoneCaptureRuntime(
             store: try RecordingStore(rootURL: earphoneDirectory.appendingPathComponent("Ledger", isDirectory: true)),
             archive: archive, deviceID: deviceID, sourceBuild: phoneBuild, directory: earphoneDirectory,
             settings: CaptureDeviceSettings())
-        let runtime = try PhoneRuntime(archive: archive, remoteAgent: remoteAgent, playback: playback, receiver: receiver,
-                                      transport: transport, speech: speech, speechFailure: speechFailure,
-                                      backgroundTasks: background,
-                                      modelDirectory: Bundle.main.url(forResource: "Speech", withExtension: nil),
-                                      speechPerformance: speechPerformance, earphone: earphone)
+        let runtime = try PhoneRuntime(
+            archive: archive,
+            remoteAgent: remoteAgent,
+            playback: playback,
+            receiver: receiver,
+            transport: transport,
+            deviceID: deviceID,
+            earphone: earphone
+        )
 #if DEBUG
         runtime.uiTestConfiguration = testConfiguration
 #endif
         return runtime
     }
-
-    private static func pruneStaleCoreMLCaches(in cacheRoot: URL, retainingASRHash: String) {
-        var retainedNames = Set(SpeakerSegmentationModel.allCases.map(SpeechModelCache.speaker))
-        retainedNames.insert(SpeechModelCache.recognizer(retainingASRHash))
-        for model in PhoneSpeechModelSettings.downloadable {
-            if let revision = try? model.catalog()?.revision {
-                retainedNames.insert(SpeechModelCache.recognizer(revision))
-            }
-        }
-        // Legacy caches may contain tens of GB. Only retired namespaces are removed,
-        // so active sessions can start immediately and an interrupted cleanup can retry.
-        Task.detached(priority: .utility) { [retainedNames] in
-            do {
-                try SpeechModelCache.removeObsolete(in: cacheRoot, retaining: retainedNames)
-            } catch {
-                Logger(subsystem: "com.momoagent.ios", category: "SpeechPerformance")
-                    .error("Could not prune obsolete speech model caches: \(error.localizedDescription, privacy: .public)")
-            }
-        }
-    }
 }
 
-enum PhoneCompositionError: Error { case invalidIdentity, missingSpeechBundle }
+enum PhoneCompositionError: Error { case invalidIdentity }

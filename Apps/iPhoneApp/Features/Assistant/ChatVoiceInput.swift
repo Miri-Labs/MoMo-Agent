@@ -1,13 +1,12 @@
 import Foundation
 import Observation
-import MoMoSpeech
 
 enum ChatVoiceFailure: LocalizedError, Equatable {
     case denied, unavailable, empty, interrupted, timedOut
     var errorDescription: String? {
         switch self {
         case .denied: String(localized: "请在系统设置中允许 MoMo Agent 使用麦克风。")
-        case .unavailable: String(localized: "暂时无法使用语音输入，请重试。")
+        case .unavailable: String(localized: "请先配对并连接 Mac 后使用语音输入。")
         case .empty: String(localized: "没有识别到语音，请再试一次。")
         case .interrupted: String(localized: "录音已中断，请重试。")
         case .timedOut: String(localized: "语音识别超时，请重试。")
@@ -42,8 +41,7 @@ final class ChatVoiceInput {
     @ObservationIgnored private var cleanup: Task<Void, Never>?
     @ObservationIgnored private var deadline: Task<Void, Never>?
     @ObservationIgnored private var recording: (any ChatVoiceRecording)?
-    @ObservationIgnored private var recognize: (@Sendable ([Float], SpeechAttempt) async throws -> String)?
-    @ObservationIgnored private var attempt: SpeechAttempt?
+    @ObservationIgnored private var recognize: (@Sendable ([Float]) async throws -> String)?
     @ObservationIgnored private var completion: ((String) -> Void)?
     @ObservationIgnored private let permission: () async -> Bool
     @ObservationIgnored private let makeRecording: () -> any ChatVoiceRecording
@@ -51,12 +49,12 @@ final class ChatVoiceInput {
 
     init(permission: @escaping () async -> Bool,
          makeRecording: @escaping () -> any ChatVoiceRecording,
-         recognitionTimeout: Duration = .seconds(30)) {
+         recognitionTimeout: Duration = .seconds(60)) {
         self.permission = permission; self.makeRecording = makeRecording
         self.recognitionTimeout = recognitionTimeout
     }
 
-    func start(recognize: @escaping @Sendable ([Float], SpeechAttempt) async throws -> String,
+    func start(recognize: @escaping @Sendable ([Float]) async throws -> String,
                stopPlayback: @escaping () async -> Void,
                completion: @escaping (String) -> Void) {
         guard !isActive else { return }
@@ -105,10 +103,9 @@ final class ChatVoiceInput {
 
     func finish() {
         guard phase == .recording, let capture = recording, let recognize else { return }
-        let id = UUID(), attempt = SpeechAttempt()
+        let id = UUID()
         generation = id
         work?.cancel()
-        self.attempt = attempt
         phase = .transcribing
         deadline = Task { [weak self, recognitionTimeout] in
             do { try await Task.sleep(for: recognitionTimeout) }
@@ -122,7 +119,7 @@ final class ChatVoiceInput {
                 let samples = try await capture.finish()
                 self?.sessionDidDeactivate()
                 try Task.checkCancellation()
-                let text = try await recognize(samples, attempt)
+                let text = try await recognize(samples)
                 guard let self, self.generation == id, !Task.isCancelled else { return }
                 guard !text.isEmpty else { throw ChatVoiceFailure.empty }
                 let completion = self.completion
@@ -132,7 +129,7 @@ final class ChatVoiceInput {
                 await capture.cancel()
                 self?.sessionDidDeactivate()
                 guard let self, self.generation == id else { return }
-                if !(error is CancellationError), (error as? SpeechError) != .cancelled {
+                if !(error is CancellationError) {
                     self.failure = error.localizedDescription
                 }
                 self.reset()
@@ -143,7 +140,6 @@ final class ChatVoiceInput {
     func cancel() {
         generation = UUID()
         work?.cancel()
-        attempt?.cancel()
         if let recording {
             let released = sessionDidDeactivate
             cleanup = Task {
@@ -158,6 +154,6 @@ final class ChatVoiceInput {
         deadline?.cancel()
         deadline = nil
         phase = .idle
-        work = nil; recording = nil; recognize = nil; attempt = nil; completion = nil
+        work = nil; recording = nil; recognize = nil; completion = nil
     }
 }

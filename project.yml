@@ -5,7 +5,7 @@ options:
   deploymentTarget:
     iOS: "18.0"
     watchOS: "11.0"
-    macOS: "14.0"
+    macOS: "15.0"
   xcodeVersion: "27.0"
 packages:
   MoMoAgentWeb:
@@ -14,6 +14,8 @@ packages:
     path: Packages/MoMoAgentAgentClient
   MoMoAgentKit:
     path: Packages/MoMoAgentKit
+  MoMoMacSpeech:
+    path: Packages/MoMoMacSpeech
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -86,6 +88,7 @@ targets:
         MoMoDataFolder: "$(MOMO_MAC_DATA_FOLDER)"
         MoMoLocalPort: "$(MOMO_MAC_LOCAL_PORT)"
         NSLocalNetworkUsageDescription: "允许通过加密连接直接与附近的 iPhone 通信，减少连接延迟。"
+        NSMicrophoneUsageDescription: "允许录制你的声音样本以在本地提取声纹，并在日常录音中自动标记说话人。"
         NSRemindersFullAccessUsageDescription: "允许 MoMo 读取和整理你的提醒事项，帮你在对话与录音后创建、编辑、完成或删除待办。"
         NSRemindersUsageDescription: "允许 MoMo 读取和整理你的提醒事项，帮你在对话与录音后创建、编辑、完成或删除待办。"
         NSCalendarsFullAccessUsageDescription: "允许 MoMo 查看和管理你的日历日程，帮你核对安排、添加或调整日程。"
@@ -105,6 +108,8 @@ targets:
         product: MoMoAgentRTC
       - package: MoMoAgentKit
         product: MoMoContracts
+      - package: MoMoMacSpeech
+        product: MoMoMacSpeech
   MoMoAgent:
     type: application
     platform: iOS
@@ -128,30 +133,6 @@ targets:
       - Apps/Shared
       - path: Packages/MoMoAgentKit/Sources/MoMoContracts/Resources/Localizable.xcstrings
         buildPhase: resources
-      - path: Models/Speech
-        type: group
-        includes:
-          - manifest.json
-          - model.int8.onnx
-          - tokens.txt
-          - silero_vad.onnx
-        buildPhase:
-          copyFiles:
-            destination: resources
-            subpath: Speech
-      - path: Models/Speech/Speakers
-        type: group
-        includes: [eres2netv2.onnx, diarizen-wavlm-base-s80-md.onnx, segmentation-community-1.onnx]
-        buildPhase:
-          copyFiles:
-            destination: resources
-            subpath: Speech/Speakers
-      - path: Native/SpeechVendor/Licenses
-        type: group
-        buildPhase:
-          copyFiles:
-            destination: resources
-            subpath: SpeechLicenses
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(MOMO_PHONE_BUNDLE_ID)"
@@ -166,11 +147,6 @@ targets:
           MOMO_TEST_FIXTURES_INPUT: Models/TestFixtures
         Release:
           MOMO_TEST_FIXTURES_INPUT: Tests/Support/SpeechFixtureMetadata.json
-    preBuildScripts:
-      - name: Verify Core ML cache keys
-        basedOnDependencyAnalysis: false
-        script: |
-          /usr/bin/python3 "$SRCROOT/Native/SpeechVendor/prepare-models.py" "$SRCROOT/Models/Speech" --check-cache-keys
     postBuildScripts:
       - name: Copy Debug speech test fixtures
         shell: /bin/bash
@@ -204,7 +180,7 @@ targets:
           NSExceptionDomains:
             "100.64.0.0/10":
               NSExceptionAllowsInsecureHTTPLoads: true
-        NSMicrophoneUsageDescription: "选择蓝牙耳机作为录音设备后，持续录制耳机麦克风的声音，在手机上转写；点击语音输入时录制声音并识别为可编辑文字。"
+        NSMicrophoneUsageDescription: "选择蓝牙耳机作为录音设备后持续录制音频并同步至 Mac 转录；录入声纹或点击语音输入时录制声音。"
         NSCalendarsFullAccessUsageDescription: "开启后，只读日历事项并同步到你的 Mac，由你选用的 AI 服务回答相关问题；不会修改日历。"
         NSRemindersFullAccessUsageDescription: "开启后，只读未完成的提醒事项并同步到你的 Mac，由你选用的 AI 服务回答相关问题；不会修改提醒事项。"
         NSAlarmKitUsageDescription: "按你的指令设置和管理 MoMo Agent 闹钟。"
@@ -219,10 +195,8 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
         UIBackgroundModes: [audio, processing, fetch, remote-notification]
         BGTaskSchedulerPermittedIdentifiers:
-          - $(PRODUCT_BUNDLE_IDENTIFIER).transcription.processing
           - $(PRODUCT_BUNDLE_IDENTIFIER).context.delivery
           - $(PRODUCT_BUNDLE_IDENTIFIER).chat.refresh
-          - $(PRODUCT_BUNDLE_IDENTIFIER).transcription.continued.*
     dependencies:
       - sdk: EventKit.framework
       - framework: Vendor/TailscaleKit/Build/TailscaleKit.xcframework
@@ -238,8 +212,6 @@ targets:
         product: MoMoArchive
       - package: MoMoAgentKit
         product: MoMoRecording
-      - package: MoMoAgentKit
-        product: MoMoSpeech
       - package: MoMoAgentAgentClient
         product: MoMoAgentClient
       - package: MoMoAgentWeb
@@ -277,7 +249,7 @@ targets:
         WKApplication: true
         WKCompanionAppBundleIdentifier: "$(MOMO_PHONE_BUNDLE_ID)"
         WKRunsIndependentlyOfCompanionApp: true
-        NSMicrophoneUsageDescription: 在你开始录音后采集声音，传到你的 iPhone 本地转写。
+        NSMicrophoneUsageDescription: 在你开始录音后采集声音，经由配对的 iPhone 同步至 Mac 完成转录。
         NSLocalNetworkUsageDescription: 允许通过局域网校验通道直接与配对的 iPhone 高速同步录音。
         NSHealthShareUsageDescription: 在手表连续录音期间同步读取实时心率，用于维持录音连续性并帮助 MoMo 理解你的状态。
         NSHealthUpdateUsageDescription: 在手表连续录音期间维护系统健康会话以防止通话等中断导致录音停止，结束时自动丢弃，不会写入你的体能训练记录。
@@ -390,8 +362,6 @@ targets:
     platform: iOS
     sources:
       - Tests/iPhoneIntegrationTests
-      - Tests/Support/PhoneTranscriptionFixture.swift
-      - Apps/iPhoneApp/Application/Transcribing
       - path: Models/TestFixtures
         type: folder
         buildPhase: resources
