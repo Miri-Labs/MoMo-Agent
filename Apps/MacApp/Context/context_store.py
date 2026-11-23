@@ -193,6 +193,10 @@ class ContextStore:
             self.db.execute("""CREATE TABLE IF NOT EXISTS speaker_exclusions(
                 id TEXT PRIMARY KEY, speaker TEXT NOT NULL, source_id TEXT, span_ids TEXT NOT NULL,
                 recorded_from REAL, applied_on_phone INTEGER NOT NULL DEFAULT 0)""")
+            from voiceprint_store import init_voiceprint_schema
+            from mac_audio_pipeline import init_audio_pipeline_schema
+            init_voiceprint_schema(self.db)
+            init_audio_pipeline_schema(self.db)
             # Legacy agents used this placeholder as a positive identity. Keep the original receipts for migration.
             self.db.execute("""DELETE FROM span_speaker_overrides WHERE speaker='身份待确认' AND source_id IN
                 (SELECT source_id FROM speaker_relabel_queue WHERE new_speaker='身份待确认')""")
@@ -739,16 +743,91 @@ class ContextStore:
             override = overrides.get(sid)
             if override and not excluded(override[0]):
                 name = override[0]
-                out.append(dict(span, text=f"[{name}] {body}", speaker=name,
-                                is_owner=override[1], speaker_inferred_by_dream=True))
+                updated = dict(span, text=f"[{name}] {body}", speaker=name,
+                               is_owner=override[1], speaker_inferred_by_dream=True)
+                updated.pop("speaker_attribution_excluded", None)
+                # Drop stale voice_profile_id when speaker name changed so rejection targets the right profile.
+                if speaker != name:
+                    updated.pop("voice_profile_id", None)
+                out.append(updated)
             elif excluded(name) or (override and excluded(override[0])):
                 updated = dict(span, text=body, speaker_attribution_excluded=True)
                 updated.pop("speaker", None)
                 updated.pop("is_owner", None)
+                updated.pop("voice_profile_id", None)
                 out.append(updated)
             else:
-                out.append(span)
+                if span.get("speaker_attribution_excluded"):
+                    updated = dict(span)
+                    updated.pop("speaker_attribution_excluded", None)
+                    out.append(updated)
+                else:
+                    out.append(span)
         return out
+
+    def refresh_mac_source_speakers(self, source_ids: list[str] | set[str]) -> int:
+        """Materializes speaker overrides, exclusions, and cluster profile IDs directly into
+        Mac-authoritative `sources` rows and bumps `version`/`revision` so both Mac list_sources
+        window offsets and iPhone `knownSourceRevisions` stay 100% consistent."""
+        if not source_ids:
+            return 0
+        updated_count = 0
+        now = time.time()
+        with (nullcontext() if self.db.in_transaction else self.write()):
+            for source_id in sorted(set(source_ids)):
+                row = self.db.execute("SELECT * FROM sources WHERE id=? AND deleted=0", (source_id,)).fetchone()
+                if not row:
+                    continue
+                payload = json.loads(row["payload"])
+                if not payload.get("transcribed_on_mac"):
+                    continue
+                # Build cluster_key -> matched_profile_id map so voice_profile_id stays accurate
+                cluster_profiles: dict[str, str | None] = {}
+                try:
+                    for crow in self.db.execute(
+                        "SELECT cluster_key, matched_profile_id FROM session_speaker_clusters WHERE source_id=?",
+                        (source_id,),
+                    ):
+                        cluster_profiles[crow["cluster_key"]] = crow["matched_profile_id"]
+                except sqlite3.OperationalError:
+                    pass
+
+                effective = self._apply_speaker_overrides(source_id, payload.get("spans") or [])
+                rebuilt_spans = []
+                for sp in effective:
+                    clean = dict(sp)
+                    clean.pop("speaker_inferred_by_dream", None)
+                    ck = clean.get("cluster_key")
+                    if clean.get("speaker_attribution_excluded"):
+                        clean.pop("voice_profile_id", None)
+                    elif ck and ck in cluster_profiles:
+                        pid = cluster_profiles[ck]
+                        if pid:
+                            clean["voice_profile_id"] = pid
+                        else:
+                            clean.pop("voice_profile_id", None)
+                    rebuilt_spans.append(clean)
+
+                new_text = "\n".join(str(sp["text"]) for sp in rebuilt_spans)
+                new_hash = digest(new_text)
+                old_spans = payload.get("spans") or []
+                if new_text == row["text"] and rebuilt_spans == old_spans:
+                    continue
+                generation = int(row["generation"])
+                new_version = int(row["version"]) + 1
+                new_revision = f"{generation}:{new_version}:{new_hash}:0"
+                payload["version"] = new_version
+                payload["spans"] = rebuilt_spans
+                payload["text_sha256"] = new_hash
+                self.db.execute(
+                    """UPDATE sources SET version=?, revision=?, hash=?, text=?, payload=?,
+                       updated=MAX(updated+0.000001, ?) WHERE id=?""",
+                    (new_version, new_revision, new_hash, new_text, canonical(payload), now, source_id),
+                )
+                updated_count += 1
+            if updated_count:
+                self.advance()
+        return updated_count
 
     def read_source(self, source_id, expected_revision=None, offset=0, limit=12_000, location_offset=0):
         from personal_context import recording_locations
@@ -771,7 +850,7 @@ class ContextStore:
                     "text": span_text,
                     "citation_url": f'momoagent://source/{payload["session_id"]}/{span["id"]}?version={row["version"]}&generation={row["generation"]}',
                 }
-                for key in ("is_owner", "speaker", "speaker_inferred_by_dream", "speaker_attribution_excluded", "timezone_offset", "end_at"):
+                for key in ("is_owner", "speaker", "speaker_inferred_by_dream", "speaker_attribution_excluded", "timezone_offset", "end_at", "cluster_key", "voice_profile_id"):
                     if key in span:
                         item[key] = span[key]
                 spans.append(item)
@@ -807,9 +886,17 @@ class ContextStore:
             if not set(ids).issubset(sp["id"].lower() for sp in spans):
                 raise ValueError("Selected span is not in the current recording")
         ident = "exclude-" + digest(canonical([speaker.casefold(), source_id, ids, since]))
+        applied_on_phone = 0
+        if source_id:
+            try:
+                src_payload = json.loads(self.source(source_id)["payload"])
+                if src_payload.get("transcribed_on_mac"):
+                    applied_on_phone = 1
+            except Exception:
+                pass
         with self.write():
-            inserted = self.db.execute("INSERT OR IGNORE INTO speaker_exclusions VALUES(?,?,?,?,?,0)",
-                                       (ident, speaker, source_id, canonical(ids), since)).rowcount
+            inserted = self.db.execute("INSERT OR IGNORE INTO speaker_exclusions VALUES(?,?,?,?,?,?)",
+                                       (ident, speaker, source_id, canonical(ids), since, applied_on_phone)).rowcount
             if inserted:
                 self.advance()
         return {"success": True, "exclusion_id": ident, "speaker": speaker, "recorded_from": since, "span_count": len(ids)}
@@ -834,6 +921,7 @@ class ContextStore:
         span_ids: list[str] | None = None,
         scope: str = "cluster",
         reason: str = "",
+        enqueue_phone_sync: bool = True,
     ) -> dict:
         clean_target = "我" if is_owner else str(target_speaker or "").strip()
         if clean_target == "身份待确认":
@@ -895,16 +983,16 @@ class ContextStore:
                     (source_id, sid, clean_target, int(bool(is_owner)), clean_reason, now),
                 ).rowcount
             if updated:
-                # The phone deduplicates deliveries by ID. A later change back
-                # to an earlier label is a new delivery, even for the same spans.
-                relabel_id = str(uuid.uuid4())
-                self.db.execute(
-                    """INSERT INTO speaker_relabel_queue(
-                        id, source_id, session_id, span_ids, new_speaker, is_owner, scope, reason, created_at,
-                        applied_on_phone) VALUES(?,?,?,?,?,?,?,?,?,0)""",
-                    (relabel_id, source_id, session_id, canonical(changed_span_ids), clean_target,
-                     int(bool(is_owner)), clean_scope, clean_reason, now),
-                )
+                # Mac-authoritative transcripts do not need a phone-side mutation round-trip.
+                if enqueue_phone_sync and not payload.get("transcribed_on_mac"):
+                    relabel_id = str(uuid.uuid4())
+                    self.db.execute(
+                        """INSERT INTO speaker_relabel_queue(
+                            id, source_id, session_id, span_ids, new_speaker, is_owner, scope, reason, created_at,
+                            applied_on_phone) VALUES(?,?,?,?,?,?,?,?,?,0)""",
+                        (relabel_id, source_id, session_id, canonical(changed_span_ids), clean_target,
+                         int(bool(is_owner)), clean_scope, clean_reason, now),
+                    )
                 self.advance()
         return {
             "success": True,

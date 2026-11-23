@@ -162,13 +162,22 @@ class RelayTunnel:
             if len(body) > 512 * 1024: raise ValueError('Request body exceeds relay limit')
             source = request.get('headers', {})
             if not isinstance(source, dict): raise ValueError('Invalid headers')
-            allowed = {'authorization', 'content-type', 'accept', 'last-event-id', 'idempotency-key'}
+            allowed = {
+                'authorization', 'content-type', 'accept', 'last-event-id', 'idempotency-key',
+                'range', 'x-momo-chunk-meta', 'x-momo-filename', 'x-momo-device-kind',
+            }
             headers = {k: v for k, v in source.items() if k.lower() in allowed}
             headers['Accept-Encoding'] = 'identity'
             async with session.request(method, f'http://127.0.0.1:{self.port}' + path, data=body or None,
                                        headers=headers, allow_redirects=False,
-                                       timeout=ClientTimeout(total=None, sock_connect=5, sock_read=65)) as response:
-                outgoing = {k.lower(): v for k, v in response.headers.items() if k.lower() in ('content-type', 'retry-after', 'cache-control')}
+                                       timeout=ClientTimeout(total=None, sock_connect=5, sock_read=125)) as response:
+                outgoing = {
+                    k.lower(): v for k, v in response.headers.items()
+                    if k.lower() in (
+                        'content-type', 'retry-after', 'cache-control',
+                        'accept-ranges', 'content-range', 'x-momo-chunk-recorded-at',
+                    )
+                }
                 await send(dict(t='hres', status=response.status, headers=outgoing))
                 async for chunk in response.content.iter_chunked(32768):
                     await send(dict(t='hchunk', b=base64.b64encode(chunk).decode()))

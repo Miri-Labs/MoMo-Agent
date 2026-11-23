@@ -77,6 +77,38 @@ def permitted_route(method, path):
                 return path, False, False
         if method == 'POST' and suffix in ('/messages', '/read', '/adopt', '/mode', '/push', '/push/revoke', '/push/visible') and not parts.query: return path, False, False
         return None
+    if context and target.startswith('/v1/audio/'):
+        suffix = target.removeprefix('/v1/audio/')
+        if method == 'POST' and suffix in ('chunks', 'chunks/batch-status'):
+            return target + ('?' + parts.query if parts.query else ''), True, False
+        if method == 'GET' and suffix in ('chunks', 'stream'):
+            return target + ('?' + parts.query if parts.query else ''), True, False
+        return None
+    if context and target.startswith('/v1/transcription/'):
+        suffix = target.removeprefix('/v1/transcription/')
+        if (method == 'GET' and suffix == 'status') or (method == 'POST' and suffix == 'retranscribe'):
+            return target + ('?' + parts.query if parts.query else ''), True, False
+        return None
+    if context and target.startswith('/v1/speech/'):
+        suffix = target.removeprefix('/v1/speech/')
+        if (method == 'GET' and suffix == 'settings') or (method in ('POST', 'PATCH') and suffix in ('settings', 'dictate')):
+            return target + ('?' + parts.query if parts.query else ''), True, False
+        return None
+    if context and target.startswith('/v1/voiceprints/'):
+        suffix = target.removeprefix('/v1/voiceprints/')
+        if method == 'GET' and suffix == 'profiles':
+            return target + ('?' + parts.query if parts.query else ''), True, False
+        if method == 'POST' and suffix in ('profiles', 'bind-transcript', 'reject', 'rematch'):
+            return target + ('?' + parts.query if parts.query else ''), True, False
+        if method in ('GET', 'PATCH', 'DELETE') and re.fullmatch(r'profiles/[A-Za-z0-9_-]+', suffix):
+            return target + ('?' + parts.query if parts.query else ''), True, False
+        if method == 'POST' and re.fullmatch(r'profiles/[A-Za-z0-9_-]+/samples', suffix):
+            return target + ('?' + parts.query if parts.query else ''), True, False
+        if method == 'DELETE' and re.fullmatch(r'profiles/[A-Za-z0-9_-]+/samples/[A-Za-z0-9_-]+', suffix):
+            return target + ('?' + parts.query if parts.query else ''), True, False
+        if method == 'GET' and re.fullmatch(r'profiles/[A-Za-z0-9_-]+/samples/[A-Za-z0-9_-]+/audio', suffix):
+            return target + ('?' + parts.query if parts.query else ''), True, False
+        return None
     stream = method == 'GET' and re.fullmatch(r'/v1/runs/[A-Za-z0-9_-]+/events', target) is not None and not context
     allowed = (method == 'GET' and re.fullmatch(r'/v1/(capabilities|runs/[A-Za-z0-9_-]+)', target) is not None or
                method == 'POST' and re.fullmatch(r'/v1/runs(?:/[A-Za-z0-9_-]+/(?:stop|approval|clarify|resolve-unknown))?', target) is not None) if not context else (
@@ -280,7 +312,7 @@ class Peer:
             headers['X-MoMo-Device'] = self.owner.service.store.device_id(self.token) or 'revoked'
             stream = stream or (method == 'POST' and target == '/momo/v1/conversation/messages'
                                 and headers.get('Accept') == 'text/event-stream')
-            async with await self.owner.service.upstream(method, target, body if method == 'POST' else None, context, headers, streaming=stream) as response:
+            async with await self.owner.service.upstream(method, target, body if method in ('POST', 'PATCH', 'PUT', 'DELETE') else None, context, headers, streaming=stream) as response:
                 await self.send(dict(kind='head', id=ident, status=response.status, content_type=response.content_type,retry_after=response.headers.get('Retry-After')))
                 total = 0
                 async for chunk in response.content.iter_chunked(CHUNK_BYTES):
