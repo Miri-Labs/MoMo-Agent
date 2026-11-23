@@ -7,7 +7,6 @@ import MoMoAgentClient
 #if os(macOS)
 import AppKit
 #else
-import MoMoSpeech
 import PhotosUI
 import UIKit
 #endif
@@ -51,7 +50,7 @@ struct ClientComposer: View {
     var onPreviewAttachment: ((AgentAttachment) -> Void)? = nil
     var onError: ((String) -> Void)? = nil
     #if !os(macOS)
-    var speech: SpeechEngine? = nil
+    var dictate: (@Sendable ([Float]) async throws -> String)? = nil
     var stopPlayback: () async -> Void = {}
     var voiceInputEnabled = true
     #endif
@@ -359,13 +358,13 @@ struct ClientComposer: View {
     #if !os(macOS)
     private var voiceButton: some View {
         Button {
-            guard let speech else {
+            guard let dictate else {
                 voice.failure = ChatVoiceFailure.unavailable.localizedDescription
                 return
             }
             focused = false
             onCompose()
-            voice.start(recognize: { try await speech.dictate(samples: $0, attempt: $1) },
+            voice.start(recognize: dictate,
                         stopPlayback: stopPlayback) { result in
                 text = text.isEmpty ? result : text + "\n" + result
                 focused = true

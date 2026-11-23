@@ -95,6 +95,7 @@ final class DesktopModel {
     var failure: String?
     var desktopHost: DesktopControlHost?
     var desktopFailure: String?
+    let speechHost = MacSpeechHost()
     var endpoint = ""
     var modelProvider = DesktopModelProvider.codex {
         didSet {
@@ -1264,6 +1265,108 @@ final class DesktopModel {
         return try await dataClient(for: connection, url: url).recordingCitation(citation)
     }
 
+    // MARK: - Mac-as-Backend Speech, Audio & Voiceprints
+
+    private func requireDataClient() throws -> AgentClient {
+        guard let connection, let url = connection.dataURL else {
+            throw DesktopError.message(String(localized: "Mac 尚未连接。"))
+        }
+        return try dataClient(for: connection, url: url)
+    }
+
+    func sourceAudioChunks(sourceID: String) async throws -> [SourceAudioChunkItem] {
+        try await requireDataClient().sourceAudioChunks(sourceID: sourceID).chunks
+    }
+
+    func transcriptionStatus() async throws -> MacTranscriptionStatus {
+        try await requireDataClient().transcriptionStatus()
+    }
+
+    func updateSpeechSettings(_ settings: MacSpeechSettings) async throws -> MacSpeechSettings {
+        try await requireDataClient().updateSpeechSettings(settings)
+    }
+
+    func voiceprintProfiles() async throws -> [VoiceprintProfile] {
+        try await requireDataClient().voiceprintProfiles()
+    }
+
+    func createVoiceprintProfile(name: String, isOwner: Bool, aliases: [String], memoryFile: String? = nil, notes: String = "") async throws -> VoiceprintProfile {
+        try await requireDataClient().createVoiceprintProfile(name: name, isOwner: isOwner, aliases: aliases, memoryFile: memoryFile, notes: notes)
+    }
+
+    func updateVoiceprintProfile(id: String, name: String, isOwner: Bool, aliases: [String], memoryFile: String? = nil, notes: String = "") async throws -> VoiceprintProfile {
+        try await requireDataClient().updateVoiceprintProfile(id: id, name: name, isOwner: isOwner, aliases: aliases, memoryFile: memoryFile, notes: notes)
+    }
+
+    func deleteVoiceprintProfile(id: String) async throws {
+        try await requireDataClient().deleteVoiceprintProfile(id: id)
+    }
+
+    func enrollVoiceprintSample(profileID: String, audioData: Data, filename: String, sourceDevice: String) async throws -> VoiceprintSampleEnrollResponse {
+        try await requireDataClient().enrollVoiceprintSample(profileID: profileID, audioData: audioData, filename: filename, sourceDevice: sourceDevice)
+    }
+
+    func deleteVoiceprintSample(profileID: String, sampleID: String) async throws {
+        try await requireDataClient().deleteVoiceprintSample(profileID: profileID, sampleID: sampleID)
+    }
+
+    func fetchVoiceprintSampleAudio(profileID: String, sampleID: String) async throws -> Data {
+        let req = try requireDataClient().voiceprintSampleAudioRequest(profileID: profileID, sampleID: sampleID)
+        let (data, resp) = try await controlSession.data(for: req)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw DesktopError.message("无法读取声纹音频片段")
+        }
+        return data
+    }
+
+    func bindTranscriptSpeaker(
+        sourceID: String,
+        spanIDs: [String]?,
+        clusterKey: String?,
+        profileID: String?,
+        targetName: String?,
+        isOwner: Bool,
+        enrollVoiceprint: Bool,
+        rematchHistory: Bool,
+        scope: String
+    ) async throws -> VoiceprintBindResponse {
+        let res = try await requireDataClient().bindTranscriptSpeaker(
+            sourceID: sourceID,
+            spanIDs: spanIDs,
+            clusterKey: clusterKey,
+            profileID: profileID,
+            targetName: targetName,
+            isOwner: isOwner,
+            enrollVoiceprint: enrollVoiceprint,
+            rematchHistory: rematchHistory,
+            scope: scope
+        )
+        await loadContext(silent: true)
+        return res
+    }
+
+    func rejectSpeakerMatch(
+        sourceID: String,
+        profileID: String?,
+        speakerName: String?,
+        spanIDs: [String]?,
+        clusterKey: String?
+    ) async throws -> VoiceprintRejectResponse {
+        let res = try await requireDataClient().rejectSpeakerMatch(
+            sourceID: sourceID,
+            profileID: profileID,
+            speakerName: speakerName,
+            spanIDs: spanIDs,
+            clusterKey: clusterKey
+        )
+        await loadContext(silent: true)
+        return res
+    }
+
+    func rematchVoiceprints() async throws -> VoiceprintRematchSummary {
+        try await requireDataClient().rematchVoiceprints()
+    }
+
     func advanceSetup(_ step: SetupStep) {
         setupStep = step; failure = nil
         UserDefaults.standard.set(step.rawValue, forKey: "setup." + dataDirectory.path)
@@ -1308,7 +1411,11 @@ final class DesktopModel {
     }
 
     func prepareDesktop() {
-        guard desktopHost == nil, !key.isEmpty, let port = connection?.baseURL.port else { return }
+        guard !key.isEmpty, let port = connection?.baseURL.port else { return }
+        if !isLivePreviewClient && !speechHost.isRunning && port + 4 <= Int(UInt16.max) {
+            speechHost.start(port: UInt16(port + 4), apiKey: key, dataDirectory: dataDirectory)
+        }
+        guard desktopHost == nil else { return }
         do { desktopHost = try DesktopControlHost(data: dataDirectory, key: key, tailnet: tailnet, controlPort: port + 3); desktopFailure = nil }
         catch { desktopFailure = error.localizedDescription }
     }
@@ -1318,6 +1425,7 @@ final class DesktopModel {
         if let activeObserver { NotificationCenter.default.removeObserver(activeObserver); self.activeObserver = nil }
         if let backgroundActivity { ProcessInfo.processInfo.endActivity(backgroundActivity); self.backgroundActivity = nil }
         Task { await tailnet.close() }
+        speechHost.stop()
         desktopHost?.stop(); desktopHost = nil
         cancelModelConnection()
         shuttingDown = true; timer?.cancel(); taskStore?.background(); accessProcess?.terminate(); agentProcess?.terminate()

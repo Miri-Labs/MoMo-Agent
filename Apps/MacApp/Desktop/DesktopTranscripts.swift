@@ -1389,6 +1389,19 @@ struct DesktopSourceReader: View {
     @State private var composedDocument: MacSourceTranscriptComposer.ComposedTranscript?
     @State private var loading = false
     @State private var error: String?
+    @State private var audioPlayer = DesktopRecordingAudioPlayer()
+    @State private var speakerLockSpan: SourceTextSpan?
+
+    private var distinctSpeakers: [(label: String, sampleSpan: SourceTextSpan)] {
+        var seen = Set<String>()
+        var out: [(String, SourceTextSpan)] = []
+        for sp in spans {
+            let lbl = sp.speaker?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !lbl.isEmpty, seen.insert(lbl).inserted else { continue }
+            out.append((lbl, sp))
+        }
+        return out
+    }
 
     private static let clockFormat = Date.FormatStyle().hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
 
@@ -1398,7 +1411,16 @@ struct DesktopSourceReader: View {
     private var startOffset: Int { window?.offset ?? 0 }
     private var endOffset: Int { window?.end ?? source.totalCharacters }
     private var documentID: String { "\(source.id)|\(window?.id ?? "full")" }
-    private var composeTriggerKey: String { "\(documentID)|\(source.revision)|\(spans.count)|\(text.utf8.count)" }
+    private var speakerSignature: Int {
+        var h = Hasher()
+        for sp in spans {
+            h.combine(sp.id)
+            h.combine(sp.speaker)
+            h.combine(sp.isOwner)
+        }
+        return h.finalize()
+    }
+    private var composeTriggerKey: String { "\(documentID)|\(source.revision)|\(spans.count)|\(text.utf8.count)|\(speakerSignature)" }
     private var hasMore: Bool {
         guard let page else { return true }
         guard let next = page.nextOffset else { return false }
@@ -1470,6 +1492,46 @@ struct DesktopSourceReader: View {
                     .fill(MoMoPalette.borderSubtle)
                     .frame(height: 0.5)
                     .allowsHitTesting(false)
+            }
+
+            if audioPlayer.hasAudio || !distinctSpeakers.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    if audioPlayer.hasAudio {
+                        DesktopAudioPlaybackBar(player: audioPlayer)
+                    }
+                    if !distinctSpeakers.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                Text("说话人：")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(MoMoPalette.muted)
+                                ForEach(distinctSpeakers, id: \.label) { entry in
+                                    Button {
+                                        speakerLockSpan = entry.sampleSpan
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: entry.sampleSpan.isOwner == true ? "person.crop.circle.badge.checkmark" : "person.wave.2")
+                                                .font(.system(size: 10.5))
+                                            Text(entry.label)
+                                                .font(.system(size: 11.5, weight: .medium))
+                                        }
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3.5)
+                                        .background(MoMoPalette.ink.opacity(0.06), in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("点击修改「\(entry.label)」的身份或录入声纹名册")
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(MoMoPalette.pane)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
+                }
             }
 
             MacSourceTranscriptReader(
@@ -1556,7 +1618,18 @@ struct DesktopSourceReader: View {
             guard !Task.isCancelled else { return }
             composedDocument = built
         }
-        .task(id: "\(documentID)|\(source.revision)") { await more(replacing: true) }
+        .task(id: "\(documentID)|\(source.revision)") {
+            await more(replacing: true)
+            if let chunks = try? await model.sourceAudioChunks(sourceID: source.id) {
+                audioPlayer.load(sourceID: source.id, chunks: chunks)
+            }
+        }
+        .onDisappear { audioPlayer.stop() }
+        .sheet(item: $speakerLockSpan) { sp in
+            DesktopSpeakerLockSheet(model: model, sourceID: source.id, span: sp) {
+                Task { await more(replacing: true) }
+            }
+        }
     }
 
     private func more(replacing: Bool = false) async {
@@ -1669,6 +1742,10 @@ private enum MacSourceTranscriptComposer {
         hasher.combine(spans.count)
         hasher.combine(spans.first?.id)
         hasher.combine(spans.last?.id)
+        for sp in spans {
+            hasher.combine(sp.speaker)
+            hasher.combine(sp.isOwner)
+        }
         hasher.combine(fallbackText.utf8.count)
         hasher.combine(defaultTimeZone.identifier)
         return "v4|\(documentID)|\(sourceRevision)|\(spans.count)|\(fallbackText.utf8.count)|\(hasher.finalize())"
@@ -2101,6 +2178,7 @@ struct DesktopRecordingCitation: View {
     @State private var state: LoadState = .loading
     @State private var retry = 0
     @State private var showingFullTranscript = false
+    @State private var citationPlayer = DesktopRecordingAudioPlayer()
 
     private enum LoadState {
         case loading, loaded(ResolvedRecordingCitation), failed(String)
@@ -2139,6 +2217,20 @@ struct DesktopRecordingCitation: View {
                             }
                             TranscriptParagraphText(text: resolved.span.text ?? "", accessibilityID: "desktop.citation.text")
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                            if citationPlayer.hasAudio {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    DesktopAudioPlaybackBar(player: citationPlayer)
+                                    if let ts = resolved.span.recordedAt {
+                                        Button {
+                                            citationPlayer.play(atWallClock: ts)
+                                        } label: {
+                                            Label("从该句位置播放原音", systemImage: "play.circle")
+                                                .font(.system(size: 12.5, weight: .medium))
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
+                                }
+                            }
                         }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     Divider()
@@ -2151,12 +2243,16 @@ struct DesktopRecordingCitation: View {
         }
         .frame(width: 640, height: 540)
         .background(MoMoPalette.canvas)
+        .onDisappear { citationPlayer.stop() }
         .task(id: retry) {
             state = .loading
             do {
                 let result = try await model.readRecordingCitation(citation)
                 try Task.checkCancellation()
                 state = .loaded(result)
+                if let chunks = try? await model.sourceAudioChunks(sourceID: result.source.id) {
+                    citationPlayer.load(sourceID: result.source.id, chunks: chunks)
+                }
             } catch is CancellationError { }
             catch { state = .failed(error.localizedDescription) }
         }

@@ -54,6 +54,8 @@
 	<string>允许 MoMo 查看和管理你的日历日程，帮你核对安排、添加或调整日程。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>允许通过加密连接直接与附近的 iPhone 通信，减少连接延迟。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>允许录制你的声音样本以在本地提取声纹，并在日常录音中自动标记说话人。</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>允许 MoMo 读取和整理你的提醒事项，帮你在对话与录音后创建、编辑、完成或删除待办。</string>
 	<key>NSRemindersUsageDescription</key>
