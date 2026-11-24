@@ -392,23 +392,16 @@ struct DesktopOnboardingConnectors: View {
                     .textSelection(.enabled)
             }
 
-            Button(anyConnected ? "继续" : "继续配对") {
-                model.advanceSetup(.pair)
-            }
-            .buttonStyle(DesktopSetupButton())
-            .accessibilityIdentifier("onboarding.connectorsContinue")
+            Button(anyConnected ? "继续" : "稍后设置") { model.advanceSetup(.pair) }
+                .buttonStyle(DesktopSetupButton())
+                .accessibilityIdentifier(anyConnected ? "onboarding.connectorsContinue" : "onboarding.skipConnectors")
 
-            HStack(spacing: 24) {
-                Button("返回") { model.advanceSetup(.permissions) }
-                    .disabled(busyConnector != nil)
-                    .accessibilityIdentifier("onboarding.connectorsBack")
-                Button("稍后设置") { model.advanceSetup(.pair) }
-                    .disabled(busyConnector != nil)
-                    .accessibilityIdentifier("onboarding.skipConnectors")
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 13))
-            .foregroundStyle(.secondary)
+            Button("返回") { model.advanceSetup(.permissions) }
+                .buttonStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .disabled(busyConnector != nil)
+                .accessibilityIdentifier("onboarding.connectorsBack")
         }
         .multilineTextAlignment(.center)
         .task { await refreshStatus() }
@@ -687,11 +680,13 @@ private struct ComposioMailSetup: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 MailConnectorIcon(connected: status?.connected == true)
-                VStack(alignment: .leading) {
+                    .accessibilityHidden(true)
+                if let status, status.connected {
+                    Text(status.account_label).lineLimit(1)
+                } else if status?.pending == true {
+                    Text("等待邮箱授权")
+                } else {
                     Text("邮件").font(.headline)
-                    if let status, status.connected {
-                        Text("\(status.account_label) · \(status.item_count) 封").font(.caption)
-                    }
                 }
                 Spacer()
                 if let status, status.connected {
@@ -703,7 +698,17 @@ private struct ComposioMailSetup: View {
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                     .accessibilityLabel("邮箱连接选项")
-                } else if status != nil, status?.pending != true {
+                } else if status?.pending == true {
+                    Button("打开授权页") { Task { await perform(.start) } }
+                    Menu {
+                        Button("检查连接") { Task { await perform(.check) } }
+                        Button("更换 API key") { replaceKey.toggle() }
+                        Button("取消连接", role: .destructive) { Task { await perform(.disconnect) } }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .accessibilityLabel("邮箱连接选项")
+                } else if status != nil {
                     Button(expanded ? "收起" : "连接邮箱") { expanded.toggle() }
                         .buttonStyle(DesktopSetupButton(filled: true, minimumHeight: 28, fontSize: 12))
                 }
@@ -711,30 +716,26 @@ private struct ComposioMailSetup: View {
             if status?.needs_reconnect == true {
                 Text("旧邮箱连接需要重新授权。已同步的邮件仍可搜索。").font(.caption)
             }
-            if status?.pending == true {
-                Label("请在浏览器完成邮箱授权", systemImage: "arrow.up.right.square")
-                HStack {
-                    Button("打开授权页") { Task { await perform(.start) } }
-                    Button("检查连接") { Task { await perform(.check) } }
-                    Button("取消连接") { Task { await perform(.disconnect) } }
-                    Button("更换 API key") { replaceKey.toggle() }
-                }
-            } else if expanded, status?.connected != true {
+            if expanded, status?.connected != true, status?.pending != true {
                 Picker("邮箱服务", selection: $provider) {
                     Text("Gmail").tag("gmail")
                     Text("Outlook").tag("outlook")
                 }
                 .pickerStyle(.segmented)
-                Text("Composio 保管邮箱授权，并代理读取最近 7 天的收件箱邮件。")
-                    .font(.caption).foregroundStyle(.secondary)
+                .labelsHidden()
                 if status?.has_api_key != true || replaceKey {
-                    Link("获取 Composio 项目 API key", destination: URL(string: "https://dashboard.composio.dev/~/project/settings/api-keys")!)
-                    SecureField("Composio 项目 API key", text: $key)
-                        .textFieldStyle(.roundedBorder)
+                    HStack {
+                        SecureField("Composio API key", text: $key)
+                            .textFieldStyle(.roundedBorder)
+                        Link("获取密钥", destination: URL(string: "https://dashboard.composio.dev/~/project/settings/api-keys")!)
+                            .accessibilityLabel("获取 Composio 项目 API key")
+                    }
                 } else {
                     Button("更换 Composio API key") { replaceKey = true }
                         .buttonStyle(.link)
                 }
+                Text("Composio 保存授权凭据，代读近 7 天的收件箱邮件。")
+                    .font(.caption).foregroundStyle(.secondary)
                 Button("在浏览器中授权") { Task { await perform(.start) } }
                     .disabled((replaceKey || status?.has_api_key != true) && key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
