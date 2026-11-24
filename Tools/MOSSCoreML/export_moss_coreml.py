@@ -230,10 +230,11 @@ def load_moss_audio_encoder(state_dict: dict[str, torch.Tensor]) -> MOSSAudioEnc
 class ANERMSNorm(nn.Module):
     """Exact overflow-free FP16 RMSNorm via ANE hardware LayerNorm([x, -x])."""
 
-    def __init__(self, dim: int, eps: float = 1e-6, channel_first: bool = True):
+    def __init__(self, dim: int, eps: float = 1e-5, channel_first: bool = True):
         super().__init__()
         self.dim = dim
-        self.eps = eps
+        # Clamp subnormal FP16 eps (1e-6 -> 1e-5) to prevent flush-to-zero on ANE.
+        self.eps = max(float(eps), 1e-5)
         self.channel_first = channel_first
         self.weight = nn.Parameter(torch.ones(dim))
 
@@ -319,40 +320,52 @@ class Qwen3ANEBase(nn.Module):
 
 
 class Qwen3ChunkPrefillWrapper(nn.Module):
-    def __init__(self, base: Qwen3ANEBase):
+    def __init__(self, base: Qwen3ANEBase, max_kv: int | None = None, state_suffix: str = ""):
         super().__init__()
         self.layers = base.layers
         self.sink_start_layer = base.sink_start_layer
         self.residual_scale = base.residual_scale
-        self.register_buffer("k_cache", torch.zeros((LLM_LAYERS, LLM_KV_HEADS, base.max_kv, LLM_HEAD_DIM), dtype=torch.float32))
-        self.register_buffer("v_cache", torch.zeros((LLM_LAYERS, LLM_KV_HEADS, base.max_kv, LLM_HEAD_DIM), dtype=torch.float32))
+        self.max_kv = int(max_kv or base.max_kv)
+        self.k_name = f"k_cache{state_suffix}"
+        self.v_name = f"v_cache{state_suffix}"
+        self.register_buffer(self.k_name, torch.zeros((LLM_LAYERS, LLM_KV_HEADS, self.max_kv, LLM_HEAD_DIM), dtype=torch.float32))
+        self.register_buffer(self.v_name, torch.zeros((LLM_LAYERS, LLM_KV_HEADS, self.max_kv, LLM_HEAD_DIM), dtype=torch.float32))
 
     def forward(self, inputs_embeds, cos, sin, attn_mask, write_pos):
+        kc = getattr(self, self.k_name)
+        vc = getattr(self, self.v_name)
         x = inputs_embeds
         for idx, layer in enumerate(self.layers):
             if idx == self.sink_start_layer and self.residual_scale != 1.0:
                 x = x * self.residual_scale
-            x = layer(x, cos, sin, attn_mask, self.k_cache, self.v_cache, idx, write_pos)
+            layer.max_kv = self.max_kv
+            x = layer(x, cos, sin, attn_mask, kc, vc, idx, write_pos)
         return x[:, :1, :1, :1]
 
 
 class Qwen3DecodeWrapper(nn.Module):
-    def __init__(self, base: Qwen3ANEBase):
+    def __init__(self, base: Qwen3ANEBase, max_kv: int | None = None, state_suffix: str = ""):
         super().__init__()
         self.layers = base.layers
         self.norm = base.norm
         self.lm_heads = base.lm_heads
         self.sink_start_layer = base.sink_start_layer
         self.residual_scale = base.residual_scale
-        self.register_buffer("k_cache", torch.zeros((LLM_LAYERS, LLM_KV_HEADS, base.max_kv, LLM_HEAD_DIM), dtype=torch.float32))
-        self.register_buffer("v_cache", torch.zeros((LLM_LAYERS, LLM_KV_HEADS, base.max_kv, LLM_HEAD_DIM), dtype=torch.float32))
+        self.max_kv = int(max_kv or base.max_kv)
+        self.k_name = f"k_cache{state_suffix}"
+        self.v_name = f"v_cache{state_suffix}"
+        self.register_buffer(self.k_name, torch.zeros((LLM_LAYERS, LLM_KV_HEADS, self.max_kv, LLM_HEAD_DIM), dtype=torch.float32))
+        self.register_buffer(self.v_name, torch.zeros((LLM_LAYERS, LLM_KV_HEADS, self.max_kv, LLM_HEAD_DIM), dtype=torch.float32))
 
     def forward(self, inputs_embeds, cos, sin, attn_mask, write_pos):
+        kc = getattr(self, self.k_name)
+        vc = getattr(self, self.v_name)
         x = inputs_embeds
         for idx, layer in enumerate(self.layers):
             if idx == self.sink_start_layer and self.residual_scale != 1.0:
                 x = x * self.residual_scale
-            x = layer(x, cos, sin, attn_mask, self.k_cache, self.v_cache, idx, write_pos)
+            layer.max_kv = self.max_kv
+            x = layer(x, cos, sin, attn_mask, kc, vc, idx, write_pos)
         x = self.norm(x)
         chunks = [head(x) for head in self.lm_heads]
         return torch.cat(chunks, dim=1).squeeze(-1).squeeze(-1)
@@ -560,6 +573,7 @@ def export_audio_encoder(
             compute_precision=ct.precision.FLOAT16,
             minimum_deployment_target=ct.target.macOS15,
             convert_to="mlprogram",
+            skip_model_load=True,
         )
         if encoder_quant == "int8":
             print("Quantizing MOSSAudioEncoder weights to INT8...")
@@ -608,11 +622,183 @@ def export_audio_encoder(
     }
 
 
+def _quantize_decoder_mlmodel(ml, quant_mode: str):
+    if quant_mode in ("lut6", "lut4"):
+        nbits = 6 if quant_mode == "lut6" else 4
+        # NOTE: split lm_head chunk size is 151936 / 16 = 9496 = 8 * 1187 (NOT divisible by 16!).
+        # Using group_size=16 silently skips palettizing all 16 lm_heads (leaving 311 MB in FP16).
+        # group_size=8 divides 1024, 2048, 3072, AND 9496 cleanly.
+        qcfg = cto.OptimizationConfig(
+            global_config=cto.OpPalettizerConfig(
+                mode="kmeans", nbits=nbits, granularity="per_grouped_channel", group_size=8
+            )
+        )
+        return cto.palettize_weights(ml, config=qcfg)
+    qcfg = cto.OptimizationConfig(
+        global_config=cto.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int8")
+    )
+    return cto.linear_quantize_weights(ml, config=qcfg)
+
+
+def _convert_kv_pair(
+    base: Qwen3ANEBase,
+    work_dir: Path,
+    kv_len: int,
+    prefill_len: int,
+    quant_mode: str,
+    state_suffix: str,
+    tag: str,
+) -> tuple[Path, Path]:
+    prefill_mod = Qwen3ChunkPrefillWrapper(base, max_kv=kv_len, state_suffix=state_suffix).eval()
+    decode_mod = Qwen3DecodeWrapper(base, max_kv=kv_len, state_suffix=state_suffix).eval()
+
+    ex_emb_p = torch.randn(1, LLM_HIDDEN, 1, prefill_len)
+    ex_cos_p = torch.randn(1, 1, prefill_len, LLM_HEAD_DIM)
+    ex_sin_p = torch.randn(1, 1, prefill_len, LLM_HEAD_DIM)
+    ex_mask_p = torch.zeros(1, 1, prefill_len, kv_len)
+    ex_pos_p = torch.tensor([0], dtype=torch.int32)
+    traced_prefill = torch.jit.trace(
+        prefill_mod, (ex_emb_p, ex_cos_p, ex_sin_p, ex_mask_p, ex_pos_p), check_trace=False
+    )
+
+    ex_emb_d = torch.randn(1, LLM_HIDDEN, 1, 1)
+    ex_cos_d = torch.randn(1, 1, 1, LLM_HEAD_DIM)
+    ex_sin_d = torch.randn(1, 1, 1, LLM_HEAD_DIM)
+    ex_mask_d = torch.zeros(1, 1, 1, kv_len)
+    ex_pos_d = torch.tensor([16], dtype=torch.int32)
+    traced_decode = torch.jit.trace(
+        decode_mod, (ex_emb_d, ex_cos_d, ex_sin_d, ex_mask_d, ex_pos_d), check_trace=False
+    )
+
+    states = [
+        ct.StateType(
+            wrapped_type=ct.TensorType(shape=(LLM_LAYERS, LLM_KV_HEADS, kv_len, LLM_HEAD_DIM), dtype=np.float16),
+            name=f"k_cache{state_suffix}",
+        ),
+        ct.StateType(
+            wrapped_type=ct.TensorType(shape=(LLM_LAYERS, LLM_KV_HEADS, kv_len, LLM_HEAD_DIM), dtype=np.float16),
+            name=f"v_cache{state_suffix}",
+        ),
+    ]
+
+    print(f"Converting MOSS Qwen3 {tag} prefill (S={prefill_len}, MAX_KV={kv_len}) to MLProgram...")
+    ml_prefill = ct.convert(
+        traced_prefill,
+        inputs=[
+            ct.TensorType(name="inputs_embeds", shape=(1, LLM_HIDDEN, 1, prefill_len), dtype=np.float16),
+            ct.TensorType(name="cos", shape=(1, 1, prefill_len, LLM_HEAD_DIM), dtype=np.float16),
+            ct.TensorType(name="sin", shape=(1, 1, prefill_len, LLM_HEAD_DIM), dtype=np.float16),
+            ct.TensorType(name="attn_mask", shape=(1, 1, prefill_len, kv_len), dtype=np.float16),
+            ct.TensorType(name="write_pos", shape=(1,), dtype=np.int32),
+        ],
+        outputs=[ct.TensorType(name="anchor", dtype=np.float16)],
+        states=states,
+        compute_precision=ct.precision.FLOAT16,
+        minimum_deployment_target=ct.target.macOS15,
+        convert_to="mlprogram",
+        skip_model_load=True,
+    )
+    del traced_prefill, prefill_mod
+    gc.collect()
+
+    print(f"Converting MOSS Qwen3 {tag} decode (S=1, MAX_KV={kv_len}) to MLProgram...")
+    ml_decode = ct.convert(
+        traced_decode,
+        inputs=[
+            ct.TensorType(name="inputs_embeds", shape=(1, LLM_HIDDEN, 1, 1), dtype=np.float16),
+            ct.TensorType(name="cos", shape=(1, 1, 1, LLM_HEAD_DIM), dtype=np.float16),
+            ct.TensorType(name="sin", shape=(1, 1, 1, LLM_HEAD_DIM), dtype=np.float16),
+            ct.TensorType(name="attn_mask", shape=(1, 1, 1, kv_len), dtype=np.float16),
+            ct.TensorType(name="write_pos", shape=(1,), dtype=np.int32),
+        ],
+        outputs=[ct.TensorType(name="logits", dtype=np.float16)],
+        states=states,
+        compute_precision=ct.precision.FLOAT16,
+        minimum_deployment_target=ct.target.macOS15,
+        convert_to="mlprogram",
+        skip_model_load=True,
+    )
+    del traced_decode, decode_mod
+    gc.collect()
+
+    print(f"Quantizing MOSS Qwen3 {tag} decoder ({quant_mode})...")
+    ml_prefill = _quantize_decoder_mlmodel(ml_prefill, quant_mode)
+    ml_decode = _quantize_decoder_mlmodel(ml_decode, quant_mode)
+
+    prefill_pkg = work_dir / f"moss_prefill_{tag}.mlpackage"
+    decode_pkg = work_dir / f"moss_decode_{tag}.mlpackage"
+    shutil.rmtree(prefill_pkg, ignore_errors=True)
+    shutil.rmtree(decode_pkg, ignore_errors=True)
+    ml_prefill.save(str(prefill_pkg))
+    ml_decode.save(str(decode_pkg))
+    del ml_prefill, ml_decode
+    gc.collect()
+    return prefill_pkg, decode_pkg
+
+
+def audit_moss_compute_plan(enc_mlc: Path, dec_mlc: Path) -> dict:
+    """Subprocess MLComputePlan + per-function ANE load audit verifying >=99.5% ANE residency and 0 compile errors."""
+    import sys as _sys
+
+    code = f"""
+import json
+import coremltools as ct
+from coremltools.models.compute_plan import MLComputePlan
+
+out = {{}}
+for name, path, fn_target in [
+    ("MOSSAudioEncoder", {str(enc_mlc)!r}, "main"),
+    ("MOSSDecoder", {str(dec_mlc)!r}, "decode"),
+]:
+    plan = MLComputePlan.load_from_path(path, compute_units=ct.ComputeUnit.CPU_AND_NE)
+    prog_fns = plan.model_structure.program.functions
+    fn = prog_fns[fn_target]
+    total = 0
+    ane = 0
+    non_ane = {{}}
+    for op in fn.block.operations:
+        if op.operator_name == "const" or "constexpr_" in op.operator_name:
+            continue
+        total += 1
+        u = plan.get_compute_device_usage_for_mlprogram_operation(op)
+        dev = type(u.preferred_compute_device).__name__ if u and u.preferred_compute_device else "None"
+        if "NeuralEngine" in dev:
+            ane += 1
+        else:
+            non_ane[f"{{op.operator_name}}->{{dev}}"] = non_ane.get(f"{{op.operator_name}}->{{dev}}", 0) + 1
+    out[name] = {{
+        "auditedFunction": fn_target,
+        "availableFunctions": sorted(prog_fns.keys()),
+        "totalComputeOps": total,
+        "aneComputeOps": ane,
+        "aneResidencyPct": round(100.0 * ane / max(total, 1), 2),
+        "nonAneOps": non_ane,
+    }}
+    if name == "MOSSDecoder":
+        for fn_name in sorted(prog_fns.keys()):
+            _cm = ct.models.CompiledMLModel(path, function_name=fn_name, compute_units=ct.ComputeUnit.CPU_AND_NE)
+            del _cm
+print(json.dumps(out))
+"""
+    proc = subprocess.run([_sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    anec_fails = proc.stderr.count("ANECCompile() FAILED")
+    if anec_fails > 0:
+        raise RuntimeError(f"MOSS ANECCompile() FAILED {anec_fails} times:\n{proc.stderr}")
+    audit = json.loads(proc.stdout.strip().splitlines()[-1])
+    for key, stats in audit.items():
+        if stats["aneResidencyPct"] < 99.5:
+            raise RuntimeError(f"{key} ANE residency too low: {stats}")
+    audit["anecCompileFailures"] = anec_fails
+    print(f"MOSS ANE ComputePlan audit: {json.dumps(audit)}")
+    return audit
+
+
 def export_decoder(
     base: Qwen3ANEBase,
     out_dir: Path,
     work_dir: Path,
     max_kv: int,
+    short_kv: int,
     prefill_len: int,
     quant_mode: str,
     reuse_existing: bool,
@@ -620,109 +806,27 @@ def export_decoder(
     t0 = time.perf_counter()
     mlc_path = out_dir / "MOSSDecoder.mlmodelc"
     if not (reuse_existing and (mlc_path / "weights" / "weight.bin").is_file()):
-        prefill_mod = Qwen3ChunkPrefillWrapper(base).eval()
-        decode_mod = Qwen3DecodeWrapper(base).eval()
-
-        ex_emb_p = torch.randn(1, LLM_HIDDEN, 1, prefill_len)
-        ex_cos_p = torch.randn(1, 1, prefill_len, LLM_HEAD_DIM)
-        ex_sin_p = torch.randn(1, 1, prefill_len, LLM_HEAD_DIM)
-        ex_mask_p = torch.zeros(1, 1, prefill_len, max_kv)
-        ex_pos_p = torch.tensor([0], dtype=torch.int32)
-        traced_prefill = torch.jit.trace(
-            prefill_mod, (ex_emb_p, ex_cos_p, ex_sin_p, ex_mask_p, ex_pos_p), check_trace=False
-        )
-
-        ex_emb_d = torch.randn(1, LLM_HIDDEN, 1, 1)
-        ex_cos_d = torch.randn(1, 1, 1, LLM_HEAD_DIM)
-        ex_sin_d = torch.randn(1, 1, 1, LLM_HEAD_DIM)
-        ex_mask_d = torch.zeros(1, 1, 1, max_kv)
-        ex_pos_d = torch.tensor([16], dtype=torch.int32)
-        traced_decode = torch.jit.trace(
-            decode_mod, (ex_emb_d, ex_cos_d, ex_sin_d, ex_mask_d, ex_pos_d), check_trace=False
-        )
-
-        states = [
-            ct.StateType(
-                wrapped_type=ct.TensorType(shape=(LLM_LAYERS, LLM_KV_HEADS, max_kv, LLM_HEAD_DIM), dtype=np.float16),
-                name="k_cache",
-            ),
-            ct.StateType(
-                wrapped_type=ct.TensorType(shape=(LLM_LAYERS, LLM_KV_HEADS, max_kv, LLM_HEAD_DIM), dtype=np.float16),
-                name="v_cache",
-            ),
-        ]
-
-        print(f"Converting MOSS Qwen3 prefill (S={prefill_len}, MAX_KV={max_kv}) to MLProgram...")
-        ml_prefill = ct.convert(
-            traced_prefill,
-            inputs=[
-                ct.TensorType(name="inputs_embeds", shape=(1, LLM_HIDDEN, 1, prefill_len), dtype=np.float16),
-                ct.TensorType(name="cos", shape=(1, 1, prefill_len, LLM_HEAD_DIM), dtype=np.float16),
-                ct.TensorType(name="sin", shape=(1, 1, prefill_len, LLM_HEAD_DIM), dtype=np.float16),
-                ct.TensorType(name="attn_mask", shape=(1, 1, prefill_len, max_kv), dtype=np.float16),
-                ct.TensorType(name="write_pos", shape=(1,), dtype=np.int32),
-            ],
-            outputs=[ct.TensorType(name="anchor", dtype=np.float16)],
-            states=states,
-            compute_precision=ct.precision.FLOAT16,
-            minimum_deployment_target=ct.target.macOS15,
-            convert_to="mlprogram",
-        )
-        del traced_prefill
-        gc.collect()
-
-        print(f"Converting MOSS Qwen3 decode (S=1, MAX_KV={max_kv}) to MLProgram...")
-        ml_decode = ct.convert(
-            traced_decode,
-            inputs=[
-                ct.TensorType(name="inputs_embeds", shape=(1, LLM_HIDDEN, 1, 1), dtype=np.float16),
-                ct.TensorType(name="cos", shape=(1, 1, 1, LLM_HEAD_DIM), dtype=np.float16),
-                ct.TensorType(name="sin", shape=(1, 1, 1, LLM_HEAD_DIM), dtype=np.float16),
-                ct.TensorType(name="attn_mask", shape=(1, 1, 1, max_kv), dtype=np.float16),
-                ct.TensorType(name="write_pos", shape=(1,), dtype=np.int32),
-            ],
-            outputs=[ct.TensorType(name="logits", dtype=np.float16)],
-            states=states,
-            compute_precision=ct.precision.FLOAT16,
-            minimum_deployment_target=ct.target.macOS15,
-            convert_to="mlprogram",
-        )
-        del traced_decode, prefill_mod, decode_mod
-        gc.collect()
-
-        print(f"Quantizing MOSS Qwen3 decoder ({quant_mode})...")
-        if quant_mode == "lut6":
-            qcfg = cto.OptimizationConfig(
-                global_config=cto.OpPalettizerConfig(mode="kmeans", nbits=6, granularity="per_grouped_channel", group_size=16)
-            )
-            ml_prefill = cto.palettize_weights(ml_prefill, config=qcfg)
-            ml_decode = cto.palettize_weights(ml_decode, config=qcfg)
-        else:
-            qcfg = cto.OptimizationConfig(
-                global_config=cto.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int8")
-            )
-            ml_prefill = cto.linear_quantize_weights(ml_prefill, config=qcfg)
-            ml_decode = cto.linear_quantize_weights(ml_decode, config=qcfg)
-
-        prefill_pkg = work_dir / "moss_prefill.mlpackage"
-        decode_pkg = work_dir / "moss_decode.mlpackage"
-        merged_pkg = work_dir / "MOSSDecoder.mlpackage"
-        for p in (prefill_pkg, decode_pkg, merged_pkg):
-            shutil.rmtree(p, ignore_errors=True)
-
-        ml_prefill.save(str(prefill_pkg))
-        ml_decode.save(str(decode_pkg))
-        del ml_prefill, ml_decode
-        gc.collect()
-
-        print("Merging prefill + decode into deduplicated MultiFunction MLProgram...")
+        temp_pkgs: list[Path] = []
         desc = ct.utils.MultiFunctionDescriptor()
-        desc.add_function(str(prefill_pkg), src_function_name="main", target_function_name="prefill")
-        desc.add_function(str(decode_pkg), src_function_name="main", target_function_name="decode")
+
+        p_long, d_long = _convert_kv_pair(base, work_dir, max_kv, prefill_len, quant_mode, "", f"kv{max_kv}")
+        desc.add_function(str(p_long), src_function_name="main", target_function_name="prefill")
+        desc.add_function(str(d_long), src_function_name="main", target_function_name="decode")
+        temp_pkgs.extend([p_long, d_long])
+
+        if short_kv > 0 and short_kv < max_kv:
+            p_short, d_short = _convert_kv_pair(base, work_dir, short_kv, prefill_len, quant_mode, "_s", f"kv{short_kv}")
+            desc.add_function(str(p_short), src_function_name="main", target_function_name="prefill_short")
+            desc.add_function(str(d_short), src_function_name="main", target_function_name="decode_short")
+            temp_pkgs.extend([p_short, d_short])
+
+        merged_pkg = work_dir / "MOSSDecoder.mlpackage"
+        shutil.rmtree(merged_pkg, ignore_errors=True)
+        print("Merging decoder functions into weight-deduplicated MultiFunction MLProgram...")
         desc.default_function_name = "decode"
         ct.utils.save_multifunction(desc, str(merged_pkg))
-        shutil.rmtree(prefill_pkg, ignore_errors=True)
-        shutil.rmtree(decode_pkg, ignore_errors=True)
+        for p in temp_pkgs:
+            shutil.rmtree(p, ignore_errors=True)
 
         shutil.rmtree(mlc_path, ignore_errors=True)
         print("Compiling MOSSDecoder.mlpackage -> MOSSDecoder.mlmodelc...")
@@ -735,6 +839,7 @@ def export_decoder(
         "mb": round(total_bytes / (1024 * 1024), 2),
         "quantMode": quant_mode,
         "prefillLen": prefill_len,
+        "shortKvLen": short_kv if (0 < short_kv < max_kv) else 0,
         "maxKvLen": max_kv,
         "splitLmHead": LLM_SPLIT_HEAD,
         "exportSeconds": round(time.perf_counter() - t0, 2),
@@ -783,6 +888,7 @@ def verify_end_to_end_coreml(
     source_dir: Path,
     out_dir: Path,
     max_kv: int,
+    short_kv: int,
     prefill_len: int,
     test_wavs: list[Path],
 ) -> dict:
@@ -809,18 +915,28 @@ def verify_end_to_end_coreml(
 
     # Try CPU_AND_NE first; fall back to ALL if ANE rejects a large MLState shape
     compute_used = "CPU_AND_NE"
+    has_short = 0 < short_kv < max_kv
+    pre_short_cm = None
+    dec_short_cm = None
     try:
         enc_cm = ct.models.CompiledMLModel(str(out_dir / "MOSSAudioEncoder.mlmodelc"), compute_units=ct.ComputeUnit.CPU_AND_NE)
         pre_cm = ct.models.CompiledMLModel(str(out_dir / "MOSSDecoder.mlmodelc"), function_name="prefill", compute_units=ct.ComputeUnit.CPU_AND_NE)
         dec_cm = ct.models.CompiledMLModel(str(out_dir / "MOSSDecoder.mlmodelc"), function_name="decode", compute_units=ct.ComputeUnit.CPU_AND_NE)
+        if has_short:
+            pre_short_cm = ct.models.CompiledMLModel(str(out_dir / "MOSSDecoder.mlmodelc"), function_name="prefill_short", compute_units=ct.ComputeUnit.CPU_AND_NE)
+            dec_short_cm = ct.models.CompiledMLModel(str(out_dir / "MOSSDecoder.mlmodelc"), function_name="decode_short", compute_units=ct.ComputeUnit.CPU_AND_NE)
     except Exception as exc:
         print(f"CPU_AND_NE load fallback to ComputeUnit.ALL: {exc}")
         compute_used = "ALL"
         enc_cm = ct.models.CompiledMLModel(str(out_dir / "MOSSAudioEncoder.mlmodelc"), compute_units=ct.ComputeUnit.ALL)
         pre_cm = ct.models.CompiledMLModel(str(out_dir / "MOSSDecoder.mlmodelc"), function_name="prefill", compute_units=ct.ComputeUnit.ALL)
         dec_cm = ct.models.CompiledMLModel(str(out_dir / "MOSSDecoder.mlmodelc"), function_name="decode", compute_units=ct.ComputeUnit.ALL)
+        if has_short:
+            pre_short_cm = ct.models.CompiledMLModel(str(out_dir / "MOSSDecoder.mlmodelc"), function_name="prefill_short", compute_units=ct.ComputeUnit.ALL)
+            dec_short_cm = ct.models.CompiledMLModel(str(out_dir / "MOSSDecoder.mlmodelc"), function_name="decode_short", compute_units=ct.ComputeUnit.ALL)
 
-    state = pre_cm.make_state()
+    active_state = None
+    active_state_kv = 0
     cos_tab, sin_tab = build_rope_tables(max_kv)
 
     before_text, after_text = _render_moss_prompt(DEFAULT_PROMPT)
@@ -828,6 +944,29 @@ def verify_end_to_end_coreml(
     after_ids = list(tok.encode(after_text, add_special_tokens=False).ids)
     im_end_id = int(tok.token_to_id("<|im_end|>"))
     eos_id = int(tok.token_to_id("<|endoftext|>") or im_end_id)
+
+    # Pre-allocate reusable input buffers so CoreML's async `MLE5ExecutionStream resetAfterLingering:`
+    # never calls Python's `_PyObject_Free` on a non-GIL GCD thread via `libcoremlpython`.
+    enc_mel_buf = np.zeros((1, 80, 3000), dtype=np.float32)
+    pre_emb_buf = np.zeros((1, LLM_HIDDEN, 1, prefill_len), dtype=np.float16)
+    pre_cos_buf = np.zeros((1, 1, prefill_len, LLM_HEAD_DIM), dtype=np.float16)
+    pre_sin_buf = np.zeros((1, 1, prefill_len, LLM_HEAD_DIM), dtype=np.float16)
+    pre_mask_bufs = {
+        kv: np.full((1, 1, prefill_len, kv), -1e4, dtype=np.float16)
+        for kv in ({max_kv, short_kv} if has_short else {max_kv})
+    }
+    dec_emb_buf = np.zeros((1, LLM_HIDDEN, 1, 1), dtype=np.float16)
+    dec_cos_buf = np.zeros((1, 1, 1, LLM_HEAD_DIM), dtype=np.float16)
+    dec_sin_buf = np.zeros((1, 1, 1, LLM_HEAD_DIM), dtype=np.float16)
+    dec_mask_bufs = {
+        kv: np.full((1, 1, 1, kv), -1e4, dtype=np.float16)
+        for kv in ({max_kv, short_kv} if has_short else {max_kv})
+    }
+    wpos_buf = np.zeros((1,), dtype=np.int32)
+    keepalive_refs: list = [
+        enc_mel_buf, pre_emb_buf, pre_cos_buf, pre_sin_buf, pre_mask_bufs,
+        dec_emb_buf, dec_cos_buf, dec_sin_buf, dec_mask_bufs, wpos_buf,
+    ]
 
     results = []
     for wav_path in test_wavs:
@@ -849,7 +988,8 @@ def verify_end_to_end_coreml(
             tok_len = (len(chunk) - 1) // stride + 1
             padded = chunk if len(chunk) == n_chunk_samples else np.pad(chunk, (0, n_chunk_samples - len(chunk)))
             mel = fe(padded, sampling_rate=16000, return_tensors="np").input_features.astype(np.float32)
-            enc_out = enc_cm.predict({"input_features": mel})["audio_embeds"][0, :tok_len].astype(np.float32)
+            np.copyto(enc_mel_buf, mel)
+            enc_out = enc_cm.predict({"input_features": enc_mel_buf})["audio_embeds"][0, :tok_len].astype(np.float32)
             aud_parts.append(enc_out)
             total_audio_tokens += tok_len
         all_aud_embeds = np.concatenate(aud_parts, axis=0)
@@ -865,82 +1005,106 @@ def verify_end_to_end_coreml(
         assert aud_idx == total_audio_tokens
 
         ctx_len = len(full_ids)
+        max_new = min(max_kv - ctx_len, max(128, int(dur * 20)))
+        use_short = has_short and (ctx_len + max_new <= short_kv)
+        active_pre = pre_short_cm if use_short else pre_cm
+        active_dec = dec_short_cm if use_short else dec_cm
+        active_kv = short_kv if use_short else max_kv
+        if active_state is None or active_state_kv != active_kv:
+            # Keep only ONE MLState alive at a time in MultiFunction CoreML bundles
+            active_state = None
+            gc.collect()
+            active_state = active_pre.make_state()
+            active_state_kv = active_kv
         t_enc = time.perf_counter()
+
+        pre_mask = pre_mask_bufs[active_kv]
+        dec_mask = dec_mask_bufs[active_kv]
 
         # Chunked prefill
         pos = 0
         while pos + prefill_len < ctx_len:
-            emb_p = ctx_embeds[pos : pos + prefill_len].T.astype(np.float16).reshape(1, LLM_HIDDEN, 1, prefill_len)
-            cos_p = cos_tab[pos : pos + prefill_len].reshape(1, 1, prefill_len, LLM_HEAD_DIM)
-            sin_p = sin_tab[pos : pos + prefill_len].reshape(1, 1, prefill_len, LLM_HEAD_DIM)
-            mask_p = np.full((1, 1, prefill_len, max_kv), -1e4, dtype=np.float16)
+            pre_emb_buf[0, :, 0, :] = ctx_embeds[pos : pos + prefill_len].T.astype(np.float16)
+            pre_cos_buf[0, 0, :, :] = cos_tab[pos : pos + prefill_len]
+            pre_sin_buf[0, 0, :, :] = sin_tab[pos : pos + prefill_len]
+            pre_mask.fill(np.float16(-1e4))
             for i in range(prefill_len):
-                mask_p[0, 0, i, : pos + i + 1] = 0.0
-            pre_cm.predict(
+                pre_mask[0, 0, i, : pos + i + 1] = 0.0
+            wpos_buf[0] = pos
+            active_pre.predict(
                 {
-                    "inputs_embeds": emb_p,
-                    "cos": cos_p,
-                    "sin": sin_p,
-                    "attn_mask": mask_p,
-                    "write_pos": np.array([pos], dtype=np.int32),
+                    "inputs_embeds": pre_emb_buf,
+                    "cos": pre_cos_buf,
+                    "sin": pre_sin_buf,
+                    "attn_mask": pre_mask,
+                    "write_pos": wpos_buf,
                 },
-                state=state,
+                state=active_state,
             )
             pos += prefill_len
 
         # Tail prompt tokens through decode
         logits = None
         while pos < ctx_len:
-            emb_d = ctx_embeds[pos].astype(np.float16).reshape(1, LLM_HIDDEN, 1, 1)
-            mask_d = np.full((1, 1, 1, max_kv), -1e4, dtype=np.float16)
-            mask_d[0, 0, 0, : pos + 1] = 0.0
-            logits = dec_cm.predict(
+            dec_emb_buf[0, :, 0, 0] = ctx_embeds[pos].astype(np.float16)
+            dec_cos_buf[0, 0, 0, :] = cos_tab[pos]
+            dec_sin_buf[0, 0, 0, :] = sin_tab[pos]
+            dec_mask.fill(np.float16(-1e4))
+            dec_mask[0, 0, 0, : pos + 1] = 0.0
+            wpos_buf[0] = pos
+            logits = active_dec.predict(
                 {
-                    "inputs_embeds": emb_d,
-                    "cos": cos_tab[pos : pos + 1].reshape(1, 1, 1, LLM_HEAD_DIM),
-                    "sin": sin_tab[pos : pos + 1].reshape(1, 1, 1, LLM_HEAD_DIM),
-                    "attn_mask": mask_d,
-                    "write_pos": np.array([pos], dtype=np.int32),
+                    "inputs_embeds": dec_emb_buf,
+                    "cos": dec_cos_buf,
+                    "sin": dec_sin_buf,
+                    "attn_mask": dec_mask,
+                    "write_pos": wpos_buf,
                 },
-                state=state,
+                state=active_state,
             )["logits"][0].astype(np.float32)
+            assert np.isfinite(logits).all(), "Non-finite logits during prefill tail!"
             pos += 1
         t_prefill = time.perf_counter()
 
         # Autoregressive greedy decode
         gen_ids: list[int] = []
-        max_new = min(max_kv - pos, max(128, int(dur * 20)))
         for _ in range(max_new):
             next_id = int(np.argmax(logits))
             if next_id in (eos_id, im_end_id):
                 break
             gen_ids.append(next_id)
-            if pos >= max_kv:
+            if pos >= active_kv:
                 break
-            tok_emb = (weights[next_id].astype(np.float32) * scales[next_id]).astype(np.float16).reshape(1, LLM_HIDDEN, 1, 1)
-            mask_d = np.full((1, 1, 1, max_kv), -1e4, dtype=np.float16)
-            mask_d[0, 0, 0, : pos + 1] = 0.0
-            logits = dec_cm.predict(
+            dec_emb_buf[0, :, 0, 0] = (weights[next_id].astype(np.float32) * scales[next_id]).astype(np.float16)
+            dec_cos_buf[0, 0, 0, :] = cos_tab[pos]
+            dec_sin_buf[0, 0, 0, :] = sin_tab[pos]
+            dec_mask.fill(np.float16(-1e4))
+            dec_mask[0, 0, 0, : pos + 1] = 0.0
+            wpos_buf[0] = pos
+            logits = active_dec.predict(
                 {
-                    "inputs_embeds": tok_emb,
-                    "cos": cos_tab[pos : pos + 1].reshape(1, 1, 1, LLM_HEAD_DIM),
-                    "sin": sin_tab[pos : pos + 1].reshape(1, 1, 1, LLM_HEAD_DIM),
-                    "attn_mask": mask_d,
-                    "write_pos": np.array([pos], dtype=np.int32),
+                    "inputs_embeds": dec_emb_buf,
+                    "cos": dec_cos_buf,
+                    "sin": dec_sin_buf,
+                    "attn_mask": dec_mask,
+                    "write_pos": wpos_buf,
                 },
-                state=state,
+                state=active_state,
             )["logits"][0].astype(np.float32)
+            assert np.isfinite(logits).all(), "Non-finite logits during decode!"
             pos += 1
 
-        elapsed = time.perf_counter() - t0
+        t_end = time.perf_counter()
+        elapsed = t_end - t0
         text = tok.decode(gen_ids, skip_special_tokens=True).strip()
         segs = re.findall(r"\[(\d+(?:\.\d+)?)\]\[(S\d+)\](.*?)\[(\d+(?:\.\d+)?)\]", text, re.DOTALL)
         row = {
             "file": wav_path.name,
+            "kvBucket": active_kv,
             "durationSec": round(dur, 2),
             "encodeSec": round(t_enc - t0, 3),
             "prefillSec": round(t_prefill - t_enc, 3),
-            "decodeSec": round(elapsed - t_prefill, 3),
+            "decodeSec": round(t_end - t_prefill, 3),
             "totalSec": round(elapsed, 3),
             "rtf": round(elapsed / max(dur, 1e-3), 4),
             "rtfx": round(dur / max(elapsed, 1e-4), 1),
@@ -949,18 +1113,27 @@ def verify_end_to_end_coreml(
             "text": text,
         }
         print(
-            f"  [{wav_path.name}] {dur:.2f}s -> {elapsed:.3f}s ({row['rtfx']}x RTFx, "
+            f"  [{wav_path.name} kv={active_kv}] {dur:.2f}s -> {elapsed:.3f}s ({row['rtfx']}x RTFx, "
             f"enc={row['encodeSec']}s prefill={row['prefillSec']}s dec={row['decodeSec']}s, "
             f"{len(segs)} segs): {text}"
         )
         results.append(row)
 
-    del state, dec_cm, pre_cm, enc_cm
+    del active_state, dec_short_cm, pre_short_cm, dec_cm, pre_cm, enc_cm
     gc.collect()
+    keepalive_refs.clear()
     return {"computeUnits": compute_used, "examples": results}
 
 
-def export_support_assets(source_dir: Path, out_dir: Path, max_kv: int, prefill_len: int, sink_layer: int, sink_scale: float) -> None:
+def export_support_assets(
+    source_dir: Path,
+    out_dir: Path,
+    max_kv: int,
+    short_kv: int,
+    prefill_len: int,
+    sink_layer: int,
+    sink_scale: float,
+) -> None:
     from transformers import WhisperFeatureExtractor
 
     fe = WhisperFeatureExtractor.from_pretrained(str(source_dir))
@@ -1011,6 +1184,7 @@ def export_support_assets(source_dir: Path, out_dir: Path, max_kv: int, prefill_
         "promptSuffixTemplate": after_text,
         "defaultPrompt": DEFAULT_PROMPT,
         "maxKvLen": max_kv,
+        "shortKvLen": short_kv if (0 < short_kv < max_kv) else 0,
         "prefillLen": prefill_len,
         "hiddenSize": LLM_HIDDEN,
         "vocabSize": LLM_VOCAB,
@@ -1031,9 +1205,10 @@ def main() -> None:
     parser.add_argument("--source-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--max-kv", type=int, default=4096)
+    parser.add_argument("--short-kv", type=int, default=1536, help="Optional fast short-context KV bucket (0 to disable)")
     parser.add_argument("--prefill-len", type=int, default=128)
     parser.add_argument("--encoder-quant", choices=["fp16", "int8"], default="fp16")
-    parser.add_argument("--decoder-quant", choices=["int8", "lut6"], default="int8")
+    parser.add_argument("--decoder-quant", choices=["int8", "lut6", "lut4"], default="int8")
     parser.add_argument("--reuse-existing", action="store_true")
     parser.add_argument("--test-wav", type=Path, nargs="*", default=[])
     args = parser.parse_args()
@@ -1064,20 +1239,22 @@ def main() -> None:
         gc.collect()
 
         dec_report = export_decoder(
-            qwen_base, out, work, args.max_kv, args.prefill_len, args.decoder_quant, args.reuse_existing
+            qwen_base, out, work, args.max_kv, args.short_kv, args.prefill_len, args.decoder_quant, args.reuse_existing
         )
         del qwen_base
         gc.collect()
 
-        export_support_assets(src, out, args.max_kv, args.prefill_len, sink_layer, sink_scale)
+        export_support_assets(src, out, args.max_kv, args.short_kv, args.prefill_len, sink_layer, sink_scale)
 
-        e2e_report = verify_end_to_end_coreml(src, out, args.max_kv, args.prefill_len, list(args.test_wav))
+        ane_audit = audit_moss_compute_plan(out / "MOSSAudioEncoder.mlmodelc", out / "MOSSDecoder.mlmodelc")
+        e2e_report = verify_end_to_end_coreml(src, out, args.max_kv, args.short_kv, args.prefill_len, list(args.test_wav))
 
         report = {
             "totalExportSeconds": round(time.perf_counter() - t0, 2),
             "activationProbeMaxAbs": round(max_act, 2),
             "sinkStartLayer": sink_layer,
             "residualScale": sink_scale,
+            "aneComputePlan": ane_audit,
             "audioEncoder": enc_report,
             "decoder": dec_report,
             "embedding": emb_report,

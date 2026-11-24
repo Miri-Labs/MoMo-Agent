@@ -39,7 +39,7 @@ public final class CoreMLBundleManager: @unchecked Sendable {
             .appendingPathComponent("speech-coreml-v1", isDirectory: true)
     }
 
-    public init(modelsRoot: URL = CoreMLBundleManager.defaultModelsRoot, idleEvictionSeconds: TimeInterval = 300) {
+    public init(modelsRoot: URL = CoreMLBundleManager.defaultModelsRoot, idleEvictionSeconds: TimeInterval = 1800) {
         self.modelsRoot = modelsRoot
         self.idleEvictionSeconds = idleEvictionSeconds
         startIdleWatchdog()
@@ -125,6 +125,23 @@ public final class CoreMLBundleManager: @unchecked Sendable {
         let encoder = try ReDimNetVoiceEncoder(bundleDirectory: redimnetDir)
         redimnet = encoder
         return encoder
+    }
+
+    /// Pre-loads CoreML bundles quietly on a utility background queue so first-time e5rt specialization
+    /// finishes before the user's first recording or dictation arrives.
+    public func warmUpInBackground() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let thermal = ProcessInfo.processInfo.thermalState
+            guard thermal == .nominal || thermal == .fair else { return }
+            _ = self.getVAD()
+            if self.redimnetAvailable {
+                _ = try? self.getReDimNet()
+            }
+            if self.mossAvailable {
+                _ = try? self.getMOSS()
+            }
+        }
     }
 
     /// Unloads heavy CoreML handles (MOSS + ReDimNet2+) to release unified memory.

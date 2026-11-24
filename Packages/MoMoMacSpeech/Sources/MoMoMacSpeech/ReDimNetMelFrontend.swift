@@ -149,22 +149,12 @@ public final class ReDimNetMelFrontend: @unchecked Sendable {
         }
 
         // 3. STFT real/imag [256, T] = dft [256, 400] * frames^T [400, T]
+        var framesT = [Float](repeating: 0, count: L * T)
+        vDSP_mtrans(frames, 1, &framesT, 1, vDSP_Length(L), vDSP_Length(T))
         var realSpec = [Float](repeating: 0, count: K * T)
         var imagSpec = [Float](repeating: 0, count: K * T)
-        cblas_sgemm(
-            CblasRowMajor, CblasNoTrans, CblasTrans,
-            Int32(K), Int32(T), Int32(L),
-            1.0, dftCos, Int32(L),
-            frames, Int32(L),
-            0.0, &realSpec, Int32(T)
-        )
-        cblas_sgemm(
-            CblasRowMajor, CblasNoTrans, CblasTrans,
-            Int32(K), Int32(T), Int32(L),
-            1.0, dftSin, Int32(L),
-            frames, Int32(L),
-            0.0, &imagSpec, Int32(T)
-        )
+        vDSP_mmul(dftCos, 1, framesT, 1, &realSpec, 1, vDSP_Length(K), vDSP_Length(T), vDSP_Length(L))
+        vDSP_mmul(dftSin, 1, framesT, 1, &imagSpec, 1, vDSP_Length(K), vDSP_Length(T), vDSP_Length(L))
 
         // Power = real^2 + imag^2
         let specLen = vDSP_Length(K * T)
@@ -174,13 +164,7 @@ public final class ReDimNetMelFrontend: @unchecked Sendable {
 
         // 4. Mel [72, T] = melFilterbank [72, 256] * power [256, T]
         var mel = [Float](repeating: 0, count: Self.numMels * T)
-        cblas_sgemm(
-            CblasRowMajor, CblasNoTrans, CblasNoTrans,
-            Int32(Self.numMels), Int32(T), Int32(K),
-            1.0, melFilterbank, Int32(K),
-            realSpec, Int32(T),
-            0.0, &mel, Int32(T)
-        )
+        vDSP_mmul(melFilterbank, 1, realSpec, 1, &mel, 1, vDSP_Length(Self.numMels), vDSP_Length(T), vDSP_Length(K))
 
         // 5. log(x + 1e-8)
         let total = Self.numMels * T

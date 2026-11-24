@@ -52,12 +52,13 @@ struct ReDimNetBucketSlot {
     int32_t frames = 0;
     MLModel *model = nil;
     MLMultiArray *mel = nil;
+    MLMultiArray *emb_backing = nil;
     MLDictionaryFeatureProvider *provider = nil;
+    MLPredictionOptions *options = nil;
 };
 
 struct MoMoReDimNetCoreMLHandle {
     std::unordered_map<int32_t, ReDimNetBucketSlot> slots;
-    MLPredictionOptions *options = nil;
     int32_t accelerator_mask = 0;
 };
 
@@ -80,13 +81,54 @@ MoMoReDimNetCoreMLHandle *MoMoReDimNetCreate(
                 }
                 NSURL *url = [NSURL fileURLWithPath:nsPath isDirectory:isDir];
                 auto handle = std::make_unique<MoMoReDimNetCoreMLHandle>();
-                handle->options = [[MLPredictionOptions alloc] init];
+
+                // Load all 3 static buckets in parallel to minimize startup latency
+                __block MLModel *m0 = nil, *m1 = nil, *m2 = nil;
+                __block bool ane0 = false, ane1 = false, ane2 = false;
+                std::string loadErrors[3];
+                std::string *pErrors = loadErrors;
+
+                dispatch_group_t grp = dispatch_group_create();
+                dispatch_queue_t q = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
+                dispatch_group_async(grp, q, ^{
+                    @autoreleasepool {
+                        try {
+                            bool ane = false;
+                            m0 = LoadFunctionModel(url, @"embed_200", &ane);
+                            ane0 = ane;
+                        } catch (const std::exception &e) { pErrors[0] = e.what(); }
+                    }
+                });
+                dispatch_group_async(grp, q, ^{
+                    @autoreleasepool {
+                        try {
+                            bool ane = false;
+                            m1 = LoadFunctionModel(url, @"embed_400", &ane);
+                            ane1 = ane;
+                        } catch (const std::exception &e) { pErrors[1] = e.what(); }
+                    }
+                });
+                dispatch_group_async(grp, q, ^{
+                    @autoreleasepool {
+                        try {
+                            bool ane = false;
+                            m2 = LoadFunctionModel(url, @"embed_600", &ane);
+                            ane2 = ane;
+                        } catch (const std::exception &e) { pErrors[2] = e.what(); }
+                    }
+                });
+                dispatch_group_wait(grp, DISPATCH_TIME_FOREVER);
+
+                MLModel *loadedModels[3] = {m0, m1, m2};
+                const bool loadedANE[3] = {ane0, ane1, ane2};
+
                 bool allANE = true;
-                for (int32_t frames : kBuckets) {
-                    NSString *fnName = [NSString stringWithFormat:@"embed_%d", frames];
-                    bool ane = false;
-                    MLModel *m = LoadFunctionModel(url, fnName, &ane);
-                    allANE = allANE && ane;
+                for (int idx = 0; idx < 3; ++idx) {
+                    if (!loadErrors[idx].empty()) {
+                        throw std::runtime_error(loadErrors[idx]);
+                    }
+                    const int32_t frames = kBuckets[idx];
+                    allANE = allANE && loadedANE[idx];
                     NSError *err = nil;
                     MLMultiArray *mel = [[MLMultiArray alloc]
                         initWithShape:@[ @1, @1, @(kNumMels), @(frames) ]
@@ -95,17 +137,29 @@ MoMoReDimNetCoreMLHandle *MoMoReDimNetCreate(
                     if (!mel) {
                         throw std::runtime_error(err ? [[err localizedDescription] UTF8String] : "MLMultiArray alloc failed");
                     }
+                    MLMultiArray *embBacking = [[MLMultiArray alloc]
+                        initWithShape:@[ @1, @(kEmbedDim) ]
+                             dataType:MLMultiArrayDataTypeFloat32
+                                error:&err];
+                    if (!embBacking) {
+                        throw std::runtime_error(err ? [[err localizedDescription] UTF8String] : "Embedding backing alloc failed");
+                    }
                     MLDictionaryFeatureProvider *prov = [[MLDictionaryFeatureProvider alloc]
                         initWithDictionary:@{@"mel" : [MLFeatureValue featureValueWithMultiArray:mel]}
                                      error:&err];
                     if (!prov) {
                         throw std::runtime_error(err ? [[err localizedDescription] UTF8String] : "FeatureProvider init failed");
                     }
+                    MLPredictionOptions *opts = [[MLPredictionOptions alloc] init];
+                    opts.outputBackings = @{@"embedding" : embBacking};
+
                     ReDimNetBucketSlot slot;
                     slot.frames = frames;
-                    slot.model = m;
+                    slot.model = loadedModels[idx];
                     slot.mel = mel;
+                    slot.emb_backing = embBacking;
                     slot.provider = prov;
+                    slot.options = opts;
                     handle->slots.emplace(frames, slot);
                 }
                 handle->accelerator_mask = allANE ? 1 : 0;
@@ -168,11 +222,11 @@ int32_t MoMoReDimNetEmbed(
             }];
 
             NSError *err = nil;
-            id<MLFeatureProvider> out = [slot.model predictionFromFeatures:slot.provider options:handle->options error:&err];
+            id<MLFeatureProvider> out = [slot.model predictionFromFeatures:slot.provider options:slot.options error:&err];
             if (!out) {
                 throw std::runtime_error(err ? [[err localizedDescription] UTF8String] : "ReDimNet2+ prediction failed");
             }
-            MLMultiArray *emb = [out featureValueForName:@"embedding"].multiArrayValue;
+            MLMultiArray *emb = [out featureValueForName:@"embedding"].multiArrayValue ?: slot.emb_backing;
             if (!emb || emb.count < kEmbedDim) {
                 throw std::runtime_error("Missing or short ReDimNet2+ embedding output");
             }

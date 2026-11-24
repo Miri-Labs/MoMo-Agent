@@ -102,25 +102,16 @@ public final class WhisperMelFrontend: @unchecked Sendable {
             }
         }
 
-        // 4. Real & Imag STFT via BLAS SGEMM:
-        //    real [K, F] = dftCos [K, N] * frames^T [N, F]
-        //    imag [K, F] = dftSin [K, N] * frames^T [N, F]
+        // 4. Real & Imag STFT via Accelerate vDSP_mmul:
+        //    framesT [N, F] = transpose(frames [F, N])
+        //    real [K, F] = dftCos [K, N] * framesT [N, F]
+        //    imag [K, F] = dftSin [K, N] * framesT [N, F]
+        var framesT = [Float](repeating: 0, count: N * F)
+        vDSP_mtrans(frames, 1, &framesT, 1, vDSP_Length(N), vDSP_Length(F))
         var realSpec = [Float](repeating: 0, count: K * F)
         var imagSpec = [Float](repeating: 0, count: K * F)
-        cblas_sgemm(
-            CblasRowMajor, CblasNoTrans, CblasTrans,
-            Int32(K), Int32(F), Int32(N),
-            1.0, dftCos, Int32(N),
-            frames, Int32(N),
-            0.0, &realSpec, Int32(F)
-        )
-        cblas_sgemm(
-            CblasRowMajor, CblasNoTrans, CblasTrans,
-            Int32(K), Int32(F), Int32(N),
-            1.0, dftSin, Int32(N),
-            frames, Int32(N),
-            0.0, &imagSpec, Int32(F)
-        )
+        vDSP_mmul(dftCos, 1, framesT, 1, &realSpec, 1, vDSP_Length(K), vDSP_Length(F), vDSP_Length(N))
+        vDSP_mmul(dftSin, 1, framesT, 1, &imagSpec, 1, vDSP_Length(K), vDSP_Length(F), vDSP_Length(N))
 
         // Power spectrum = real^2 + imag^2 -> stored in realSpec
         let specCount = vDSP_Length(K * F)
@@ -130,13 +121,7 @@ public final class WhisperMelFrontend: @unchecked Sendable {
 
         // 5. Mel projection: melSpec [80, 3000] = melFilters [80, 201] * powerSpec [201, 3000]
         var melSpec = [Float](repeating: 0, count: Self.numMels * F)
-        cblas_sgemm(
-            CblasRowMajor, CblasNoTrans, CblasNoTrans,
-            Int32(Self.numMels), Int32(F), Int32(K),
-            1.0, melFilters, Int32(K),
-            realSpec, Int32(F),
-            0.0, &melSpec, Int32(F)
-        )
+        vDSP_mmul(melFilters, 1, realSpec, 1, &melSpec, 1, vDSP_Length(Self.numMels), vDSP_Length(F), vDSP_Length(K))
 
         // 6. Log10 scaling & Whisper normalization
         let total = Self.numMels * F

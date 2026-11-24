@@ -21,7 +21,7 @@ final class MacSpeechHost {
         }
         stop()
         let modelsRoot = Self.resolveModelsRoot(dataDirectory: dataDirectory)
-        let manager = CoreMLBundleManager(modelsRoot: modelsRoot, idleEvictionSeconds: 300)
+        let manager = CoreMLBundleManager(modelsRoot: modelsRoot, idleEvictionSeconds: 1800)
         let srv = MacSpeechHTTPServer(port: port, authToken: apiKey, bundleManager: manager)
         do {
             try srv.start()
@@ -31,6 +31,7 @@ final class MacSpeechHost {
             self.isRunning = true
             self.lastError = nil
             self.status = manager.status()
+            manager.warmUpInBackground()
         } catch {
             self.lastError = error.localizedDescription
             self.isRunning = false

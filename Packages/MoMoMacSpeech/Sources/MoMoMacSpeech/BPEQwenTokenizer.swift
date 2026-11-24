@@ -48,21 +48,17 @@ public final class BPEQwenTokenizer: @unchecked Sendable {
 
         let tokenizerJsonURL = directory.appendingPathComponent("tokenizer.json")
         if FileManager.default.fileExists(atPath: tokenizerJsonURL.path) {
-            let tokData = try Data(contentsOf: tokenizerJsonURL)
-            if let root = try JSONSerialization.jsonObject(with: tokData) as? [String: Any],
-               let rawAdded = root["added_tokens"] as? [[String: Any]] {
-                for item in rawAdded {
-                    guard let idNum = item["id"] as? NSNumber,
-                          let content = item["content"] as? String,
-                          !content.isEmpty else { continue }
-                    let sw = (item["single_word"] as? Bool) ?? false
-                    let sp = (item["special"] as? Bool) ?? false
-                    let tok = AddedToken(id: idNum.int32Value, content: content, singleWord: sw, special: sp)
-                    addedTokens.append(tok)
-                    token2id[content] = tok.id
-                    if sp {
-                        specialIds.insert(tok.id)
-                    }
+            for item in Self.readAddedTokens(from: tokenizerJsonURL) {
+                guard let idNum = item["id"] as? NSNumber,
+                      let content = item["content"] as? String,
+                      !content.isEmpty else { continue }
+                let sw = (item["single_word"] as? Bool) ?? false
+                let sp = (item["special"] as? Bool) ?? false
+                let tok = AddedToken(id: idNum.int32Value, content: content, singleWord: sw, special: sp)
+                addedTokens.append(tok)
+                token2id[content] = tok.id
+                if sp {
+                    specialIds.insert(tok.id)
                 }
             }
         }
@@ -193,19 +189,112 @@ public final class BPEQwenTokenizer: @unchecked Sendable {
         }
     }
 
+    /// Reads only the `"added_tokens": [...]` header slice from Hugging Face `tokenizer.json`
+    /// instead of deserializing the entire ~11 MB file (which also duplicates `vocab.json` & `merges.txt`).
+    private static func readAddedTokens(from url: URL) -> [[String: Any]] {
+        if let fh = try? FileHandle(forReadingFrom: url) {
+            defer { try? fh.close() }
+            if let headData = try? fh.read(upToCount: 65_536),
+               let keyRange = headData.range(of: Data("\"added_tokens\"".utf8)) {
+                var idx = keyRange.upperBound
+                while idx < headData.endIndex && headData[idx] != UInt8(ascii: "[") {
+                    idx += 1
+                }
+                if idx < headData.endIndex {
+                    let arrayStart = idx
+                    var depth = 0
+                    var inString = false
+                    var escaped = false
+                    while idx < headData.endIndex {
+                        let b = headData[idx]
+                        if inString {
+                            if escaped {
+                                escaped = false
+                            } else if b == UInt8(ascii: "\\") {
+                                escaped = true
+                            } else if b == UInt8(ascii: "\"") {
+                                inString = false
+                            }
+                        } else {
+                            if b == UInt8(ascii: "\"") {
+                                inString = true
+                            } else if b == UInt8(ascii: "[") {
+                                depth += 1
+                            } else if b == UInt8(ascii: "]") {
+                                depth -= 1
+                                if depth == 0 {
+                                    let slice = headData[arrayStart...idx]
+                                    if let parsed = try? JSONSerialization.jsonObject(with: slice) as? [[String: Any]] {
+                                        return parsed
+                                    }
+                                    break
+                                }
+                            }
+                        }
+                        idx += 1
+                    }
+                }
+            }
+        }
+        // Safe fallback if added_tokens is unusually large or located later in the file
+        guard let fullData = try? Data(contentsOf: url),
+              let root = try? JSONSerialization.jsonObject(with: fullData) as? [String: Any],
+              let rawAdded = root["added_tokens"] as? [[String: Any]] else {
+            return []
+        }
+        return rawAdded
+    }
+
     private func parseMerges(_ text: String) {
         mergesRank.reserveCapacity(155_000)
         var rank: Int32 = 0
-        text.enumerateLines { line, _ in
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty || trimmed.hasPrefix("#version") { return }
-            guard let sp = trimmed.firstIndex(of: " ") else { return }
-            let a = trimmed[..<sp]
-            let b = trimmed[trimmed.index(after: sp)...].trimmingCharacters(in: .whitespaces)
-            guard !a.isEmpty && !b.isEmpty else { return }
-            self.mergesRank["\(a)\t\(b)"] = rank
-            rank += 1
-        }
+        text.utf8.withContiguousStorageIfAvailable { buf in
+            let n = buf.count
+            var i = 0
+            while i < n {
+                var lineEnd = i
+                while lineEnd < n && buf[lineEnd] != 0x0A { lineEnd += 1 }
+                var trimEnd = lineEnd
+                while trimEnd > i && (buf[trimEnd - 1] == 0x0D || buf[trimEnd - 1] == 0x20 || buf[trimEnd - 1] == 0x09) {
+                    trimEnd -= 1
+                }
+                var trimStart = i
+                while trimStart < trimEnd && (buf[trimStart] == 0x20 || buf[trimStart] == 0x09) {
+                    trimStart += 1
+                }
+                if trimStart < trimEnd && buf[trimStart] != 0x23 { // skip #version comment
+                    var sp = trimStart
+                    while sp < trimEnd && buf[sp] != 0x20 { sp += 1 }
+                    if sp > trimStart && sp + 1 < trimEnd {
+                        var bStart = sp + 1
+                        while bStart < trimEnd && buf[bStart] == 0x20 { bStart += 1 }
+                        if bStart < trimEnd {
+                            let aLen = sp - trimStart
+                            let bLen = trimEnd - bStart
+                            var keyBytes = [UInt8](repeating: 0, count: aLen + 1 + bLen)
+                            for k in 0..<aLen { keyBytes[k] = buf[trimStart + k] }
+                            keyBytes[aLen] = 0x09 // '\t'
+                            for k in 0..<bLen { keyBytes[aLen + 1 + k] = buf[bStart + k] }
+                            let key = String(decoding: keyBytes, as: UTF8.self)
+                            self.mergesRank[key] = rank
+                            rank += 1
+                        }
+                    }
+                }
+                i = lineEnd + 1
+            }
+        } ?? {
+            text.enumerateLines { line, _ in
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty || trimmed.hasPrefix("#version") { return }
+                guard let sp = trimmed.firstIndex(of: " ") else { return }
+                let a = trimmed[..<sp]
+                let b = trimmed[trimmed.index(after: sp)...].trimmingCharacters(in: .whitespaces)
+                guard !a.isEmpty && !b.isEmpty else { return }
+                self.mergesRank["\(a)\t\(b)"] = rank
+                rank += 1
+            }
+        }()
     }
 
     private func matchAdded(_ bytes: [UInt8], at pos: Int) -> (Int, Int) {

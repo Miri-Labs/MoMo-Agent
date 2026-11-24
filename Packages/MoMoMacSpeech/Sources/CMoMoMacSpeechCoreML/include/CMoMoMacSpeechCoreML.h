@@ -31,6 +31,7 @@ void MoMoMOSSDestroy(MoMoMOSSCoreMLHandle *handle);
 /// Bit 0 (1): AudioEncoder ANE/GPU, Bit 1 (2): Decoder ANE/GPU.
 int32_t MoMoMOSSAcceleratorMask(const MoMoMOSSCoreMLHandle *handle);
 int32_t MoMoMOSSMaxKvLen(const MoMoMOSSCoreMLHandle *handle);
+int32_t MoMoMOSSShortKvLen(const MoMoMOSSCoreMLHandle *handle);
 int32_t MoMoMOSSPrefillLen(const MoMoMOSSCoreMLHandle *handle);
 
 /// Runs MOSSAudioEncoder on one 30s Whisper log-mel chunk [1, 80, 3000] (row-major float32).
@@ -81,7 +82,7 @@ void MoMoReDimNetDestroy(MoMoReDimNetCoreMLHandle *handle);
 int32_t MoMoReDimNetAcceleratorMask(const MoMoReDimNetCoreMLHandle *handle);
 
 /// Runs ReDimNet2Plus.mlmodelc on a 72-band mel spectrogram [1, 1, 72, num_frames] (row-major float32).
-/// num_frames must match one of the exported buckets (200, 300, 400, 600).
+/// num_frames must match one of the exported buckets (200, 400, 600).
 /// Writes 192 L2-normalized float32 values into out_embedding.
 /// Returns 0 on success, -1 on error.
 int32_t MoMoReDimNetEmbed(

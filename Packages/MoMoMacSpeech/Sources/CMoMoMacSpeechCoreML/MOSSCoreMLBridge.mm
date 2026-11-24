@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -78,6 +79,67 @@ inline void ConvertHalfToFloat(const uint16_t *src, float *dst, size_t n) noexce
 #else
     for (size_t i = 0; i < n; ++i) dst[i] = HalfBitsToFloat(src[i]);
 #endif
+}
+
+inline bool ArgmaxFp16(const uint16_t *src, int32_t count, int32_t *out_best_id) noexcept {
+    int32_t best_id = -1;
+    float best_val = -std::numeric_limits<float>::infinity();
+#if (defined(__ARM_NEON) || defined(__aarch64__)) && defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
+    // Fast NEON FP16 chunk scan: find block max with vmaxnmvq_f16, only refine lanes when a block beats best_val.
+    constexpr int32_t kBlock = 64;
+    int32_t i = 0;
+    for (; i + kBlock <= count; i += kBlock) {
+        const __fp16 *p = reinterpret_cast<const __fp16 *>(src + i);
+        float16x8_t m0 = vmaxnmq_f16(vld1q_f16(p), vld1q_f16(p + 8));
+        float16x8_t m1 = vmaxnmq_f16(vld1q_f16(p + 16), vld1q_f16(p + 24));
+        float16x8_t m2 = vmaxnmq_f16(vld1q_f16(p + 32), vld1q_f16(p + 40));
+        float16x8_t m3 = vmaxnmq_f16(vld1q_f16(p + 48), vld1q_f16(p + 56));
+        float16x8_t m01 = vmaxnmq_f16(m0, m1);
+        float16x8_t m23 = vmaxnmq_f16(m2, m3);
+        float16x8_t mall = vmaxnmq_f16(m01, m23);
+        float block_max = static_cast<float>(vmaxnmvq_f16(mall));
+        if (!std::isnan(block_max) && block_max > best_val) {
+            for (int32_t k = 0; k < kBlock; ++k) {
+                float v = static_cast<float>(p[k]);
+                if (!std::isnan(v) && v > best_val) {
+                    best_val = v;
+                    best_id = i + k;
+                }
+            }
+        }
+    }
+    for (; i < count; ++i) {
+        float v = HalfBitsToFloat(src[i]);
+        if (!std::isnan(v) && v > best_val) {
+            best_val = v;
+            best_id = i;
+        }
+    }
+#else
+    for (int32_t i = 0; i < count; ++i) {
+        float v = HalfBitsToFloat(src[i]);
+        if (!std::isnan(v) && v > best_val) {
+            best_val = v;
+            best_id = i;
+        }
+    }
+#endif
+    *out_best_id = best_id;
+    return best_id >= 0 && std::isfinite(best_val);
+}
+
+inline bool ArgmaxFp32(const float *src, int32_t count, int32_t *out_best_id) noexcept {
+    int32_t best_id = -1;
+    float best_val = -std::numeric_limits<float>::infinity();
+    for (int32_t i = 0; i < count; ++i) {
+        float v = src[i];
+        if (!std::isnan(v) && v > best_val) {
+            best_val = v;
+            best_id = i;
+        }
+    }
+    *out_best_id = best_id;
+    return best_id >= 0 && std::isfinite(best_val);
 }
 
 #pragma pack(push, 1)
@@ -226,17 +288,9 @@ MLDictionaryFeatureProvider *MakeProvider(NSDictionary<NSString *, MLFeatureValu
 
 }  // namespace
 
-struct MoMoMOSSCoreMLHandle {
-    std::unique_ptr<MmapEmbeddingTable> embedding;
-    int32_t max_kv_len = 4096;
+struct DecoderKVSlot {
+    int32_t kv_len = 0;
     int32_t prefill_len = 128;
-    int32_t accelerator_mask = 0;
-
-    MLModel *encoder_model = nil;
-    MLMultiArray *enc_mel = nil;
-    MLDictionaryFeatureProvider *enc_provider = nil;
-    MLPredictionOptions *enc_options = nil;
-
     MLModel *prefill_model = nil;
     MLModel *decode_model = nil;
     id llm_state = nil;  // MLState *
@@ -258,27 +312,115 @@ struct MoMoMOSSCoreMLHandle {
     MLDictionaryFeatureProvider *decode_provider = nil;
     MLPredictionOptions *decode_options = nil;
 
-    std::vector<uint16_t> rope_cos_fp16;
-    std::vector<uint16_t> rope_sin_fp16;
-    std::vector<float> scratch_logits;
-    std::array<uint16_t, kHiddenSize> scratch_tok_fp16{};
+    int32_t decode_mask_allowed = -1;
+
+    bool is_loaded() const noexcept {
+        return prefill_model != nil && decode_model != nil && kv_len > 0;
+    }
+
+    void ReleaseState() {
+        @autoreleasepool {
+            llm_state = nil;
+        }
+        decode_mask_allowed = -1;
+    }
 
     API_AVAILABLE(macos(15.0))
-    void RunChunkPrefill(const uint16_t *embeds_fp16, int32_t start_pos) {
-        const uint16_t *cos_ptr = rope_cos_fp16.data();
-        const uint16_t *sin_ptr = rope_sin_fp16.data();
+    void EnsureState() {
+        if (!llm_state) {
+            llm_state = [prefill_model newState];
+            if (!llm_state) {
+                throw std::runtime_error("Failed to allocate MOSS MLState for kv_len=" + std::to_string(kv_len));
+            }
+            decode_mask_allowed = -1;
+        }
+    }
+
+    API_AVAILABLE(macos(15.0))
+    void InitFromModels(MLModel *pm, MLModel *dm, int32_t default_kv_len, int32_t p_len) {
+        prefill_model = pm;
+        decode_model = dm;
+        prefill_len = p_len;
+
+        // Read exact kv_len from decode model's attn_mask shape [1, 1, 1, kv_len]
+        int32_t detected_kv = default_kv_len;
+        MLFeatureDescription *maskDesc = dm.modelDescription.inputDescriptionsByName[@"attn_mask"];
+        if (maskDesc && maskDesc.multiArrayConstraint && maskDesc.multiArrayConstraint.shape.count >= 4) {
+            int32_t s3 = maskDesc.multiArrayConstraint.shape[3].intValue;
+            if (s3 > 0) detected_kv = s3;
+        }
+        kv_len = detected_kv;
+        llm_state = nil;  // Allocated exclusively on active slot (macOS CoreML crashes if two differently-shaped MLStates coexist in one MultiFunction bundle)
+
+        // Prefill inputs
+        prefill_embeds = MakeArray(@[ @1, @(kHiddenSize), @1, @(prefill_len) ], MLMultiArrayDataTypeFloat16, "prefill_embeds");
+        prefill_cos = MakeArray(@[ @1, @1, @(prefill_len), @(kHeadDim) ], MLMultiArrayDataTypeFloat16, "prefill_cos");
+        prefill_sin = MakeArray(@[ @1, @1, @(prefill_len), @(kHeadDim) ], MLMultiArrayDataTypeFloat16, "prefill_sin");
+        prefill_mask = MakeArray(@[ @1, @1, @(prefill_len), @(kv_len) ], MLMultiArrayDataTypeFloat16, "prefill_mask");
+        prefill_write_pos = MakeArray(@[ @1 ], MLMultiArrayDataTypeInt32, "prefill_write_pos");
+        prefill_provider = MakeProvider(@{
+            @"inputs_embeds" : [MLFeatureValue featureValueWithMultiArray:prefill_embeds],
+            @"cos" : [MLFeatureValue featureValueWithMultiArray:prefill_cos],
+            @"sin" : [MLFeatureValue featureValueWithMultiArray:prefill_sin],
+            @"attn_mask" : [MLFeatureValue featureValueWithMultiArray:prefill_mask],
+            @"write_pos" : [MLFeatureValue featureValueWithMultiArray:prefill_write_pos],
+        }, "prefill_provider");
+        prefill_options = [[MLPredictionOptions alloc] init];
+
+        // Decode inputs
+        decode_embeds = MakeArray(@[ @1, @(kHiddenSize), @1, @1 ], MLMultiArrayDataTypeFloat16, "decode_embeds");
+        decode_cos = MakeArray(@[ @1, @1, @1, @(kHeadDim) ], MLMultiArrayDataTypeFloat16, "decode_cos");
+        decode_sin = MakeArray(@[ @1, @1, @1, @(kHeadDim) ], MLMultiArrayDataTypeFloat16, "decode_sin");
+        decode_mask = MakeArray(@[ @1, @1, @1, @(kv_len) ], MLMultiArrayDataTypeFloat16, "decode_mask");
+        decode_write_pos = MakeArray(@[ @1 ], MLMultiArrayDataTypeInt32, "decode_write_pos");
+        MLFeatureDescription *logitsDesc = decode_model.modelDescription.outputDescriptionsByName[@"logits"];
+        MLMultiArrayDataType logitsDtype = (logitsDesc && logitsDesc.multiArrayConstraint)
+            ? logitsDesc.multiArrayConstraint.dataType : MLMultiArrayDataTypeFloat16;
+        decode_logits_backing = MakeArray(@[ @1, @(kVocabSize) ], logitsDtype, "decode_logits");
+        decode_provider = MakeProvider(@{
+            @"inputs_embeds" : [MLFeatureValue featureValueWithMultiArray:decode_embeds],
+            @"cos" : [MLFeatureValue featureValueWithMultiArray:decode_cos],
+            @"sin" : [MLFeatureValue featureValueWithMultiArray:decode_sin],
+            @"attn_mask" : [MLFeatureValue featureValueWithMultiArray:decode_mask],
+            @"write_pos" : [MLFeatureValue featureValueWithMultiArray:decode_write_pos],
+        }, "decode_provider");
+        decode_options = [[MLPredictionOptions alloc] init];
+        decode_options.outputBackings = @{@"logits" : decode_logits_backing};
+        decode_mask_allowed = -1;
+    }
+
+    API_AVAILABLE(macos(15.0))
+    void ResetState() {
+        ReleaseState();
+        EnsureState();
+    }
+
+    API_AVAILABLE(macos(15.0))
+    void RunChunkPrefill(const uint16_t *embeds_fp16, int32_t start_pos, int32_t valid_count,
+                         const uint16_t *cos_ptr, const uint16_t *sin_ptr) {
         const int32_t S = prefill_len;
-        const int32_t maxKV = max_kv_len;
+        const int32_t maxKV = kv_len;
+        const int32_t valid = std::min(valid_count, S);
 
         // inputs_embeds shape: [1, 1024, 1, S]
         [prefill_embeds getMutableBytesWithHandler:^(void *mutableBytes, NSInteger, NSArray<NSNumber *> *strides) {
             auto *dst = static_cast<uint16_t *>(mutableBytes);
             const ptrdiff_t s1 = strides[1].integerValue;
             const ptrdiff_t s3 = strides[3].integerValue;
-            for (int32_t t = 0; t < S; ++t) {
+            for (int32_t t = 0; t < valid; ++t) {
                 const uint16_t *srcRow = embeds_fp16 + static_cast<size_t>(t) * kHiddenSize;
                 for (int32_t c = 0; c < kHiddenSize; ++c) {
                     dst[c * s1 + t * s3] = srcRow[c];
+                }
+            }
+            if (valid < S) {
+                for (int32_t c = 0; c < kHiddenSize; ++c) {
+                    uint16_t *dstC = dst + c * s1;
+                    if (s3 == 1) {
+                        std::memset(dstC + valid, 0, static_cast<size_t>(S - valid) * sizeof(uint16_t));
+                    } else {
+                        for (int32_t t = valid; t < S; ++t) dstC[t * s3] = 0;
+                    }
                 }
             }
         }];
@@ -331,15 +473,17 @@ struct MoMoMOSSCoreMLHandle {
                                                                   options:prefill_options
                                                                     error:&err];
         if (!out) {
+            ResetState();
             throw std::runtime_error(err ? [[err localizedDescription] UTF8String] : "MOSS prefill failed");
         }
     }
 
     API_AVAILABLE(macos(15.0))
-    void RunSingleDecode(const uint16_t *embed_fp16, int32_t write_pos, float *out_logits) {
-        const uint16_t *cos_row = rope_cos_fp16.data() + static_cast<size_t>(write_pos) * kHeadDim;
-        const uint16_t *sin_row = rope_sin_fp16.data() + static_cast<size_t>(write_pos) * kHeadDim;
-        const int32_t maxKV = max_kv_len;
+    int32_t RunSingleDecode(const uint16_t *embed_fp16, int32_t write_pos, bool want_argmax,
+                            const uint16_t *rope_cos, const uint16_t *rope_sin) {
+        const uint16_t *cos_row = rope_cos + static_cast<size_t>(write_pos) * kHeadDim;
+        const uint16_t *sin_row = rope_sin + static_cast<size_t>(write_pos) * kHeadDim;
+        const int32_t maxKV = kv_len;
 
         [decode_embeds getMutableBytesWithHandler:^(void *mutableBytes, NSInteger, NSArray<NSNumber *> *strides) {
             auto *dst = static_cast<uint16_t *>(mutableBytes);
@@ -361,16 +505,21 @@ struct MoMoMOSSCoreMLHandle {
         }];
         const uint16_t negMask = FloatToHalfBits(-10000.0f);
         const int32_t allowed = write_pos + 1;
+        const bool incremental = (decode_mask_allowed == write_pos);
         [decode_mask getMutableBytesWithHandler:^(void *mutableBytes, NSInteger, NSArray<NSNumber *> *strides) {
             auto *dst = static_cast<uint16_t *>(mutableBytes);
             const ptrdiff_t s3 = strides[3].integerValue;
-            if (s3 == 1) {
+            if (incremental) {
+                dst[write_pos * s3] = 0;
+            } else if (s3 == 1) {
                 std::memset(dst, 0, static_cast<size_t>(allowed) * sizeof(uint16_t));
                 for (int32_t j = allowed; j < maxKV; ++j) dst[j] = negMask;
             } else {
                 for (int32_t j = 0; j < maxKV; ++j) dst[j * s3] = (j < allowed) ? uint16_t(0) : negMask;
             }
         }];
+        decode_mask_allowed = allowed;
+
         [decode_write_pos getMutableBytesWithHandler:^(void *mutableBytes, NSInteger, NSArray<NSNumber *> *) {
             static_cast<int32_t *>(mutableBytes)[0] = write_pos;
         }];
@@ -382,16 +531,263 @@ struct MoMoMOSSCoreMLHandle {
                                                                  options:decode_options
                                                                    error:&err];
         if (!out) {
+            ResetState();
             throw std::runtime_error(err ? [[err localizedDescription] UTF8String] : "MOSS decode failed");
         }
+        if (!want_argmax) {
+            return -1;
+        }
         MLMultiArray *logitsArr = [out featureValueForName:@"logits"].multiArrayValue ?: decode_logits_backing;
+        __block int32_t best_id = -1;
+        __block bool finite_ok = false;
         [logitsArr getBytesWithHandler:^(const void *bytes, NSInteger) {
             if (logitsArr.dataType == MLMultiArrayDataTypeFloat16) {
-                ConvertHalfToFloat(static_cast<const uint16_t *>(bytes), out_logits, kVocabSize);
+                finite_ok = ArgmaxFp16(static_cast<const uint16_t *>(bytes), kVocabSize, &best_id);
             } else {
-                std::memcpy(out_logits, bytes, kVocabSize * sizeof(float));
+                finite_ok = ArgmaxFp32(static_cast<const float *>(bytes), kVocabSize, &best_id);
             }
         }];
+        if (!finite_ok) {
+            ResetState();
+            throw std::runtime_error("Non-finite logits detected in MOSSDecoder CoreML output");
+        }
+        return best_id;
+    }
+};
+
+API_AVAILABLE(macos(15.0))
+static bool LoadDecoderPairParallel(NSURL *decURL, NSString *preFn, NSString *decFn,
+                                    MLComputeUnits preferredCU, bool tryAllTiers,
+                                    MLModel **outPre, MLModel **outDec,
+                                    MLComputeUnits *outUsedCU, std::string *outErr) {
+    dispatch_queue_t q = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
+    std::vector<MLComputeUnits> tiers;
+    if (tryAllTiers) {
+        tiers = {
+            MLComputeUnitsCPUAndNeuralEngine,
+            MLComputeUnitsAll,
+            MLComputeUnitsCPUAndGPU,
+            MLComputeUnitsCPUOnly,
+        };
+    } else {
+        tiers = {preferredCU, MLComputeUnitsAll, MLComputeUnitsCPUOnly};
+    }
+    NSError *lastErr = nil;
+    for (MLComputeUnits cu : tiers) {
+        __block MLModel *pm = nil;
+        __block MLModel *dm = nil;
+        __block NSError *err1 = nil;
+        __block NSError *err2 = nil;
+        dispatch_group_t g = dispatch_group_create();
+        dispatch_group_async(g, q, ^{
+            @autoreleasepool {
+                MLModelConfiguration *c = [[MLModelConfiguration alloc] init];
+                c.computeUnits = cu;
+                c.functionName = preFn;
+                pm = [MLModel modelWithContentsOfURL:decURL configuration:c error:&err1];
+            }
+        });
+        dispatch_group_async(g, q, ^{
+            @autoreleasepool {
+                MLModelConfiguration *c = [[MLModelConfiguration alloc] init];
+                c.computeUnits = cu;
+                c.functionName = decFn;
+                dm = [MLModel modelWithContentsOfURL:decURL configuration:c error:&err2];
+            }
+        });
+        dispatch_group_wait(g, DISPATCH_TIME_FOREVER);
+        if (pm && dm) {
+            *outPre = pm;
+            *outDec = dm;
+            if (outUsedCU) *outUsedCU = cu;
+            return true;
+        }
+        lastErr = err1 ?: err2;
+    }
+    if (outErr) {
+        *outErr = lastErr ? [[lastErr localizedDescription] UTF8String] : "Failed to load MOSS decoder functions";
+    }
+    return false;
+}
+
+static bool BundleHasShortKVFunctions(const char *decoder_mlmodelc_path) {
+    // Fast JSON check on metadata.json for exact "prefill_short" and "decode_short" entries
+    std::string metaPath = std::string(decoder_mlmodelc_path) + "/metadata.json";
+    NSData *data = [NSData dataWithContentsOfFile:[NSString stringWithUTF8String:metaPath.c_str()]];
+    if (!data) return false;
+    id root = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if (![root isKindOfClass:[NSArray class]] || [(NSArray *)root count] == 0) return false;
+    id first = [(NSArray *)root objectAtIndex:0];
+    if (![first isKindOfClass:[NSDictionary class]]) return false;
+    id funcs = [(NSDictionary *)first objectForKey:@"functions"];
+    if (![funcs isKindOfClass:[NSArray class]]) return false;
+    bool hasPre = false, hasDec = false;
+    for (id entry in (NSArray *)funcs) {
+        if (![entry isKindOfClass:[NSDictionary class]]) continue;
+        id name = [(NSDictionary *)entry objectForKey:@"name"];
+        if ([name isKindOfClass:[NSString class]]) {
+            if ([(NSString *)name isEqualToString:@"prefill_short"]) hasPre = true;
+            if ([(NSString *)name isEqualToString:@"decode_short"]) hasDec = true;
+        }
+    }
+    return hasPre && hasDec;
+}
+
+struct MoMoMOSSCoreMLHandle {
+    std::unique_ptr<MmapEmbeddingTable> embedding;
+    int32_t max_kv_len = 4096;
+    int32_t prefill_len = 128;
+    int32_t accelerator_mask = 0;
+
+    NSURL *decoder_url = nil;
+    MLComputeUnits decoder_cu = MLComputeUnitsCPUAndNeuralEngine;
+
+    MLModel *encoder_model = nil;
+    MLMultiArray *enc_mel = nil;
+    MLDictionaryFeatureProvider *enc_provider = nil;
+    MLPredictionOptions *enc_options = nil;
+
+    // Dual-KV architecture:
+    // - short_slot (e.g. KV=1536, ~76 tok/s, 176 MB state): eager-loaded when present in Dual-KV bundle
+    // - long_slot  (KV=4096, ~50 tok/s, 470 MB state): lazy-loaded on demand for >65s windows (or eager on legacy single-KV bundles)
+    DecoderKVSlot short_slot;
+    DecoderKVSlot long_slot;
+
+    std::vector<uint16_t> rope_cos_fp16;
+    std::vector<uint16_t> rope_sin_fp16;
+    std::array<uint16_t, kHiddenSize> scratch_tok_fp16{};
+
+    API_AVAILABLE(macos(15.0))
+    DecoderKVSlot &EnsureLongSlotLoaded() {
+        if (!long_slot.is_loaded()) {
+            MLModel *pm = nil;
+            MLModel *dm = nil;
+            std::string errMsg;
+            if (!LoadDecoderPairParallel(decoder_url, @"prefill", @"decode", decoder_cu, false, &pm, &dm, nullptr, &errMsg)) {
+                throw std::runtime_error("Lazy-load MOSS long-KV decoder failed: " + errMsg);
+            }
+            long_slot.InitFromModels(pm, dm, max_kv_len, prefill_len);
+        }
+        return long_slot;
+    }
+
+    API_AVAILABLE(macos(15.0))
+    void ActivateExclusiveState(DecoderKVSlot &target) {
+        // CoreML MultiFunction ANE runtime requires only ONE active MLState shape at a time.
+        // Release the inactive slot's MLState before allocating the active one (~0.2 ms swap, saves 176-470 MB RAM).
+        if (&target != &short_slot && short_slot.llm_state != nil) {
+            short_slot.ReleaseState();
+        }
+        if (&target != &long_slot && long_slot.llm_state != nil) {
+            long_slot.ReleaseState();
+        }
+        target.EnsureState();
+    }
+
+    API_AVAILABLE(macos(15.0))
+    void RunGenerateOnSlot(
+        DecoderKVSlot &slot,
+        const std::vector<uint16_t> &ctx_fp16,
+        int32_t prompt_len,
+        int32_t eos_token_id,
+        int32_t im_end_token_id,
+        int32_t max_new_tokens,
+        int32_t *out_token_ids,
+        int32_t *out_generated_count,
+        int32_t *out_possibly_truncated,
+        int32_t *out_final_pos) {
+        ActivateExclusiveState(slot);
+        slot.decode_mask_allowed = -1;
+        int32_t pos = 0;
+        const int32_t prefill_target = prompt_len - 1;
+        while (pos + slot.prefill_len <= prefill_target) {
+            slot.RunChunkPrefill(
+                ctx_fp16.data() + static_cast<size_t>(pos) * kHiddenSize,
+                pos,
+                slot.prefill_len,
+                rope_cos_fp16.data(),
+                rope_sin_fp16.data()
+            );
+            pos += slot.prefill_len;
+        }
+        const int32_t tail_rem = prefill_target - pos;
+        if (tail_rem >= 5 && pos + slot.prefill_len <= slot.kv_len) {
+            slot.RunChunkPrefill(
+                ctx_fp16.data() + static_cast<size_t>(pos) * kHiddenSize,
+                pos,
+                tail_rem,
+                rope_cos_fp16.data(),
+                rope_sin_fp16.data()
+            );
+            pos += tail_rem;
+        }
+
+        int32_t best_id = eos_token_id;
+        while (pos < prompt_len) {
+            const bool is_last_prompt = (pos == prompt_len - 1);
+            best_id = slot.RunSingleDecode(
+                ctx_fp16.data() + static_cast<size_t>(pos) * kHiddenSize,
+                pos,
+                is_last_prompt,
+                rope_cos_fp16.data(),
+                rope_sin_fp16.data()
+            );
+            ++pos;
+        }
+
+        const int32_t budget = std::min(max_new_tokens, slot.kv_len - pos);
+        int32_t gen_count = 0;
+        int32_t truncated = 0;
+
+        for (int32_t step = 0; step < budget; ++step) {
+            if (best_id == eos_token_id || best_id == im_end_token_id) {
+                truncated = 0;
+                break;
+            }
+            out_token_ids[gen_count++] = best_id;
+            // Fast repetition-loop guard: abort early if the last 12-token block repeats 3x consecutively
+            if (gen_count >= 36) {
+                bool loopFound = false;
+                for (int32_t period = 1; period <= 12; ++period) {
+                    int32_t span = period * 3;
+                    if (gen_count >= span) {
+                        bool allMatch = true;
+                        const int32_t base = gen_count - span;
+                        for (int32_t k = 0; k < period * 2; ++k) {
+                            if (out_token_ids[base + k] != out_token_ids[base + k + period]) {
+                                allMatch = false;
+                                break;
+                            }
+                        }
+                        if (allMatch) {
+                            loopFound = true;
+                            break;
+                        }
+                    }
+                }
+                if (loopFound) {
+                    truncated = 1;
+                    break;
+                }
+            }
+            if (step + 1 >= budget || pos >= slot.kv_len) {
+                truncated = 1;
+                break;
+            }
+            embedding->LookupFp16(best_id, scratch_tok_fp16.data());
+            best_id = slot.RunSingleDecode(
+                scratch_tok_fp16.data(),
+                pos,
+                true,
+                rope_cos_fp16.data(),
+                rope_sin_fp16.data()
+            );
+            ++pos;
+        }
+
+        *out_generated_count = gen_count;
+        *out_possibly_truncated = truncated;
+        if (out_final_pos) *out_final_pos = pos;
     }
 };
 
@@ -421,50 +817,63 @@ MoMoMOSSCoreMLHandle *MoMoMOSSCreate(
 
                 NSURL *encURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:encoder_mlmodelc_path] isDirectory:YES];
                 NSURL *decURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:decoder_mlmodelc_path] isDirectory:YES];
+                h->decoder_url = decURL;
 
-                bool encAcc = false, decAcc = false;
-                h->encoder_model = LoadCoreMLModel(encURL, nil, &encAcc);
-                // Load prefill & decode on the exact same compute-unit tier so they share llm_state cleanly
-                {
-                    const MLComputeUnits tiers[] = {
-                        MLComputeUnitsCPUAndNeuralEngine,
-                        MLComputeUnitsAll,
-                        MLComputeUnitsCPUAndGPU,
-                        MLComputeUnitsCPUOnly,
-                    };
-                    NSError *lastErr = nil;
-                    for (MLComputeUnits cu : tiers) {
-                        MLModelConfiguration *preCfg = [[MLModelConfiguration alloc] init];
-                        preCfg.computeUnits = cu;
-                        preCfg.functionName = @"prefill";
-                        NSError *err1 = nil;
-                        MLModel *pm = [MLModel modelWithContentsOfURL:decURL configuration:preCfg error:&err1];
-                        if (!pm) { lastErr = err1; continue; }
+                const bool hasDualKV = BundleHasShortKVFunctions(decoder_mlmodelc_path);
+                NSString *initPreFn = hasDualKV ? @"prefill_short" : @"prefill";
+                NSString *initDecFn = hasDualKV ? @"decode_short" : @"decode";
 
-                        MLModelConfiguration *decCfg = [[MLModelConfiguration alloc] init];
-                        decCfg.computeUnits = cu;
-                        decCfg.functionName = @"decode";
-                        NSError *err2 = nil;
-                        MLModel *dm = [MLModel modelWithContentsOfURL:decURL configuration:decCfg error:&err2];
-                        if (!dm) { lastErr = err2; continue; }
+                // Load AudioEncoder + primary Decoder pair in parallel on Apple Silicon
+                __block MLModel *loadedEnc = nil;
+                __block MLModel *loadedPrefill = nil;
+                __block MLModel *loadedDecode = nil;
+                __block bool encAcc = false;
+                __block MLComputeUnits usedDecCU = MLComputeUnitsCPUAndNeuralEngine;
+                std::string errEnc, errDec;
+                std::string *pErrEnc = &errEnc;
+                std::string *pErrDec = &errDec;
 
-                        h->prefill_model = pm;
-                        h->decode_model = dm;
-                        decAcc = (cu != MLComputeUnitsCPUOnly);
-                        break;
+                dispatch_group_t loadGroup = dispatch_group_create();
+                dispatch_queue_t loadQueue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
+
+                dispatch_group_async(loadGroup, loadQueue, ^{
+                    @autoreleasepool {
+                        try {
+                            bool acc = false;
+                            loadedEnc = LoadCoreMLModel(encURL, nil, &acc);
+                            encAcc = acc;
+                        } catch (const std::exception &e) {
+                            *pErrEnc = e.what();
+                        }
                     }
-                    if (!h->prefill_model || !h->decode_model) {
-                        throw std::runtime_error(lastErr ? [[lastErr localizedDescription] UTF8String] : "Failed to load MOSS decoder functions");
+                });
+                dispatch_group_async(loadGroup, loadQueue, ^{
+                    @autoreleasepool {
+                        MLModel *pm = nil;
+                        MLModel *dm = nil;
+                        MLComputeUnits cu = MLComputeUnitsCPUAndNeuralEngine;
+                        std::string err;
+                        if (LoadDecoderPairParallel(decURL, initPreFn, initDecFn, MLComputeUnitsCPUAndNeuralEngine, true, &pm, &dm, &cu, &err)) {
+                            loadedPrefill = pm;
+                            loadedDecode = dm;
+                            usedDecCU = cu;
+                        } else {
+                            *pErrDec = err;
+                        }
                     }
-                }
+                });
+                dispatch_group_wait(loadGroup, DISPATCH_TIME_FOREVER);
+                if (!errEnc.empty()) throw std::runtime_error(errEnc);
+                if (!errDec.empty()) throw std::runtime_error(errDec);
+
+                h->encoder_model = loadedEnc;
+                h->decoder_cu = usedDecCU;
+                const bool decAcc = (usedDecCU != MLComputeUnitsCPUOnly);
                 h->accelerator_mask = (encAcc ? 1 : 0) | (decAcc ? 2 : 0);
 
                 h->enc_mel = MakeArray(@[ @1, @(kWhisperMels), @(kWhisperFrames) ], MLMultiArrayDataTypeFloat32, "enc_mel");
                 h->enc_provider = MakeProvider(@{@"input_features" : [MLFeatureValue featureValueWithMultiArray:h->enc_mel]}, "enc_provider");
                 h->enc_options = [[MLPredictionOptions alloc] init];
-
-                h->llm_state = [h->prefill_model newState];
-                if (!h->llm_state) throw std::runtime_error("Failed to allocate MOSS MLState");
 
                 // Precompute RoPE cos/sin tables [max_kv_len, 128] in FP16
                 constexpr int32_t kHalf = kHeadDim / 2;
@@ -486,41 +895,11 @@ MoMoMOSSCoreMLHandle *MoMoMOSSCreate(
                     }
                 }
 
-                // Prefill inputs
-                h->prefill_embeds = MakeArray(@[ @1, @(kHiddenSize), @1, @(h->prefill_len) ], MLMultiArrayDataTypeFloat16, "prefill_embeds");
-                h->prefill_cos = MakeArray(@[ @1, @1, @(h->prefill_len), @(kHeadDim) ], MLMultiArrayDataTypeFloat16, "prefill_cos");
-                h->prefill_sin = MakeArray(@[ @1, @1, @(h->prefill_len), @(kHeadDim) ], MLMultiArrayDataTypeFloat16, "prefill_sin");
-                h->prefill_mask = MakeArray(@[ @1, @1, @(h->prefill_len), @(h->max_kv_len) ], MLMultiArrayDataTypeFloat16, "prefill_mask");
-                h->prefill_write_pos = MakeArray(@[ @1 ], MLMultiArrayDataTypeInt32, "prefill_write_pos");
-                h->prefill_provider = MakeProvider(@{
-                    @"inputs_embeds" : [MLFeatureValue featureValueWithMultiArray:h->prefill_embeds],
-                    @"cos" : [MLFeatureValue featureValueWithMultiArray:h->prefill_cos],
-                    @"sin" : [MLFeatureValue featureValueWithMultiArray:h->prefill_sin],
-                    @"attn_mask" : [MLFeatureValue featureValueWithMultiArray:h->prefill_mask],
-                    @"write_pos" : [MLFeatureValue featureValueWithMultiArray:h->prefill_write_pos],
-                }, "prefill_provider");
-                h->prefill_options = [[MLPredictionOptions alloc] init];
-
-                // Decode inputs
-                h->decode_embeds = MakeArray(@[ @1, @(kHiddenSize), @1, @1 ], MLMultiArrayDataTypeFloat16, "decode_embeds");
-                h->decode_cos = MakeArray(@[ @1, @1, @1, @(kHeadDim) ], MLMultiArrayDataTypeFloat16, "decode_cos");
-                h->decode_sin = MakeArray(@[ @1, @1, @1, @(kHeadDim) ], MLMultiArrayDataTypeFloat16, "decode_sin");
-                h->decode_mask = MakeArray(@[ @1, @1, @1, @(h->max_kv_len) ], MLMultiArrayDataTypeFloat16, "decode_mask");
-                h->decode_write_pos = MakeArray(@[ @1 ], MLMultiArrayDataTypeInt32, "decode_write_pos");
-                MLFeatureDescription *logitsDesc = h->decode_model.modelDescription.outputDescriptionsByName[@"logits"];
-                MLMultiArrayDataType logitsDtype = (logitsDesc && logitsDesc.multiArrayConstraint)
-                    ? logitsDesc.multiArrayConstraint.dataType : MLMultiArrayDataTypeFloat16;
-                h->decode_logits_backing = MakeArray(@[ @1, @(kVocabSize) ], logitsDtype, "decode_logits");
-                h->decode_provider = MakeProvider(@{
-                    @"inputs_embeds" : [MLFeatureValue featureValueWithMultiArray:h->decode_embeds],
-                    @"cos" : [MLFeatureValue featureValueWithMultiArray:h->decode_cos],
-                    @"sin" : [MLFeatureValue featureValueWithMultiArray:h->decode_sin],
-                    @"attn_mask" : [MLFeatureValue featureValueWithMultiArray:h->decode_mask],
-                    @"write_pos" : [MLFeatureValue featureValueWithMultiArray:h->decode_write_pos],
-                }, "decode_provider");
-                h->decode_options = [[MLPredictionOptions alloc] init];
-                h->decode_options.outputBackings = @{@"logits" : h->decode_logits_backing};
-                h->scratch_logits.resize(kVocabSize);
+                if (hasDualKV) {
+                    h->short_slot.InitFromModels(loadedPrefill, loadedDecode, 1536, h->prefill_len);
+                } else {
+                    h->long_slot.InitFromModels(loadedPrefill, loadedDecode, h->max_kv_len, h->prefill_len);
+                }
 
                 return h.release();
             } catch (const std::exception &e) {
@@ -546,6 +925,10 @@ int32_t MoMoMOSSAcceleratorMask(const MoMoMOSSCoreMLHandle *handle) {
 
 int32_t MoMoMOSSMaxKvLen(const MoMoMOSSCoreMLHandle *handle) {
     return handle ? handle->max_kv_len : 0;
+}
+
+int32_t MoMoMOSSShortKvLen(const MoMoMOSSCoreMLHandle *handle) {
+    return (handle && handle->short_slot.is_loaded()) ? handle->short_slot.kv_len : 0;
 }
 
 int32_t MoMoMOSSPrefillLen(const MoMoMOSSCoreMLHandle *handle) {
@@ -587,6 +970,7 @@ int32_t MoMoMOSSEncodeAudioChunk(
             if (!arr || arr.count < kAudioChunkTokens * kHiddenSize) {
                 throw std::runtime_error("Invalid MOSSAudioEncoder output");
             }
+            __block bool nonFinite = false;
             [arr getBytesWithHandler:^(const void *bytes, NSInteger) {
                 const auto *strides = arr.strides;
                 const ptrdiff_t s1 = strides[1].integerValue;
@@ -602,6 +986,12 @@ int32_t MoMoMOSSEncodeAudioChunk(
                                 dstRow[d] = HalfBitsToFloat(src[t * s1 + d * s2]);
                             }
                         }
+                        for (int32_t d = 0; d < kHiddenSize; ++d) {
+                            if (!std::isfinite(dstRow[d])) {
+                                nonFinite = true;
+                                dstRow[d] = 0.0f;
+                            }
+                        }
                     }
                 } else {
                     const auto *src = static_cast<const float *>(bytes);
@@ -609,9 +999,18 @@ int32_t MoMoMOSSEncodeAudioChunk(
                         float *dstRow = out_embeds_375x1024 + static_cast<size_t>(t) * kHiddenSize;
                         if (s2 == 1) std::memcpy(dstRow, src + t * s1, kHiddenSize * sizeof(float));
                         else for (int32_t d = 0; d < kHiddenSize; ++d) dstRow[d] = src[t * s1 + d * s2];
+                        for (int32_t d = 0; d < kHiddenSize; ++d) {
+                            if (!std::isfinite(dstRow[d])) {
+                                nonFinite = true;
+                                dstRow[d] = 0.0f;
+                            }
+                        }
                     }
                 }
             }];
+            if (nonFinite) {
+                throw std::runtime_error("Non-finite audio embeddings produced by MOSSAudioEncoder");
+            }
             return 0;
         } catch (const std::exception &e) {
             WriteErr(error_buf, error_buf_size, e.what());
@@ -665,71 +1064,58 @@ int32_t MoMoMOSSGenerate(
                     throw std::runtime_error("Unused audio embeddings after injection");
                 }
 
-                // Chunked prefill up to prompt_len - 1 (last prompt token runs via decode to produce first logits)
-                int32_t pos = 0;
-                while (pos + handle->prefill_len < prompt_len) {
-                    handle->RunChunkPrefill(ctx_fp16.data() + static_cast<size_t>(pos) * kHiddenSize, pos);
-                    pos += handle->prefill_len;
-                }
-
-                float *logits = handle->scratch_logits.data();
-                while (pos < prompt_len) {
-                    handle->RunSingleDecode(ctx_fp16.data() + static_cast<size_t>(pos) * kHiddenSize, pos, logits);
-                    ++pos;
-                }
-
-                const int32_t budget = std::min(max_new_tokens, handle->max_kv_len - pos);
+                // Route <= ~70s clips to fast short-KV slot (~76 tok/s, 176 MB state) with transparent
+                // overflow retry on lazy-loaded 4096-KV slot if generation ever hits short_slot.kv_len.
                 int32_t gen_count = 0;
                 int32_t truncated = 0;
+                int32_t final_pos = 0;
 
-                for (int32_t step = 0; step < budget; ++step) {
-                    // Greedy argmax with NaN guard
-                    int32_t best_id = eos_token_id;
-                    float best_val = -std::numeric_limits<float>::infinity();
-                    for (int32_t v = 0; v < kVocabSize; ++v) {
-                        float val = logits[v];
-                        if (!std::isnan(val) && val > best_val) {
-                            best_val = val;
-                            best_id = v;
-                        }
+                const bool tryShort = handle->short_slot.is_loaded()
+                    && (prompt_len <= handle->short_slot.kv_len - 480)
+                    && (prompt_len + 160 <= handle->short_slot.kv_len);
+                if (tryShort) {
+                    handle->RunGenerateOnSlot(
+                        handle->short_slot,
+                        ctx_fp16,
+                        prompt_len,
+                        eos_token_id,
+                        im_end_token_id,
+                        max_new_tokens,
+                        out_token_ids,
+                        &gen_count,
+                        &truncated,
+                        &final_pos
+                    );
+                    if (truncated != 0 && final_pos >= handle->short_slot.kv_len && handle->short_slot.kv_len < handle->max_kv_len) {
+                        // Rare high-density speech overflowed short KV bucket -> rerun transparently on 4096 KV
+                        DecoderKVSlot &longSlot = handle->EnsureLongSlotLoaded();
+                        handle->RunGenerateOnSlot(
+                            longSlot,
+                            ctx_fp16,
+                            prompt_len,
+                            eos_token_id,
+                            im_end_token_id,
+                            max_new_tokens,
+                            out_token_ids,
+                            &gen_count,
+                            &truncated,
+                            &final_pos
+                        );
                     }
-                    if (best_id == eos_token_id || best_id == im_end_token_id) {
-                        truncated = 0;
-                        break;
-                    }
-                    out_token_ids[gen_count++] = best_id;
-                    // Fast repetition-loop guard: abort early if the last 12-token block repeats 3x consecutively
-                    if (gen_count >= 36) {
-                        bool loopFound = false;
-                        for (int32_t period = 1; period <= 12; ++period) {
-                            int32_t span = period * 3;
-                            if (gen_count >= span) {
-                                bool allMatch = true;
-                                const int32_t base = gen_count - span;
-                                for (int32_t k = 0; k < period * 2; ++k) {
-                                    if (out_token_ids[base + k] != out_token_ids[base + k + period]) {
-                                        allMatch = false;
-                                        break;
-                                    }
-                                }
-                                if (allMatch) {
-                                    loopFound = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (loopFound) {
-                            truncated = 1;
-                            break;
-                        }
-                    }
-                    if (step + 1 >= budget || pos >= handle->max_kv_len) {
-                        truncated = 1;
-                        break;
-                    }
-                    handle->embedding->LookupFp16(best_id, handle->scratch_tok_fp16.data());
-                    handle->RunSingleDecode(handle->scratch_tok_fp16.data(), pos, logits);
-                    ++pos;
+                } else {
+                    DecoderKVSlot &longSlot = handle->EnsureLongSlotLoaded();
+                    handle->RunGenerateOnSlot(
+                        longSlot,
+                        ctx_fp16,
+                        prompt_len,
+                        eos_token_id,
+                        im_end_token_id,
+                        max_new_tokens,
+                        out_token_ids,
+                        &gen_count,
+                        &truncated,
+                        &final_pos
+                    );
                 }
 
                 *out_generated_count = gen_count;

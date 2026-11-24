@@ -124,17 +124,33 @@ public final class SileroVADRunner: @unchecked Sendable {
         let numWindows = samples.count / Self.windowSamples
         guard numWindows > 0 else { return [] }
         guard let inputArr = try? MLMultiArray(shape: [1, 576], dataType: .float32),
-              var stateArr = try? MLMultiArray(shape: [2, 1, 128], dataType: .float32) else {
+              let stateA = try? MLMultiArray(shape: [2, 1, 128], dataType: .float32),
+              let stateB = try? MLMultiArray(shape: [2, 1, 128], dataType: .float32),
+              let probBacking = try? MLMultiArray(shape: [1, 1], dataType: .float32),
+              let providerA = try? MLDictionaryFeatureProvider(dictionary: [
+                  "input_576": MLFeatureValue(multiArray: inputArr),
+                  "vad_state": MLFeatureValue(multiArray: stateA)
+              ]),
+              let providerB = try? MLDictionaryFeatureProvider(dictionary: [
+                  "input_576": MLFeatureValue(multiArray: inputArr),
+                  "vad_state": MLFeatureValue(multiArray: stateB)
+              ]) else {
             return runEnergyFallbackProbabilities(samples: samples)
         }
-        // Zero initial LSTM state & 64-sample context
-        let statePtr = stateArr.dataPointer.bindMemory(to: Float.self, capacity: 256)
-        statePtr.initialize(repeating: 0, count: 256)
-        var context = [Float](repeating: 0, count: Self.contextSamples)
+        // Zero initial LSTM state & 64-sample context; ping-pong outputBackings avoid 1875 allocs/min.
+        stateA.dataPointer.bindMemory(to: Float.self, capacity: 256).initialize(repeating: 0, count: 256)
+        stateB.dataPointer.bindMemory(to: Float.self, capacity: 256).initialize(repeating: 0, count: 256)
+        let optsA = MLPredictionOptions()
+        optsA.outputBackings = ["prob": probBacking, "next_state": stateB]
+        let optsB = MLPredictionOptions()
+        optsB.outputBackings = ["prob": probBacking, "next_state": stateA]
 
+        var context = [Float](repeating: 0, count: Self.contextSamples)
         var probs = [Float](repeating: 0, count: numWindows)
         let inPtr = inputArr.dataPointer.bindMemory(to: Float.self, capacity: 576)
+        let probPtr = probBacking.dataPointer.bindMemory(to: Float.self, capacity: 1)
 
+        var useA = true
         for w in 0..<numWindows {
             let offset = w * Self.windowSamples
             context.withUnsafeBufferPointer { cBuf in
@@ -149,17 +165,25 @@ public final class SileroVADRunner: @unchecked Sendable {
                     )
                 }
             }
-            guard let provider = try? MLDictionaryFeatureProvider(dictionary: [
-                "input_576": MLFeatureValue(multiArray: inputArr),
-                "vad_state": MLFeatureValue(multiArray: stateArr)
-            ]),
-                  let out = try? model.prediction(from: provider),
-                  let probArr = out.featureValue(for: "prob")?.multiArrayValue,
-                  let nextState = out.featureValue(for: "next_state")?.multiArrayValue else {
-                break
+            let ok = autoreleasepool { () -> Bool in
+                guard let out = try? model.prediction(from: useA ? providerA : providerB, options: useA ? optsA : optsB) else {
+                    return false
+                }
+                if let pArr = out.featureValue(for: "prob")?.multiArrayValue, pArr !== probBacking {
+                    probs[w] = pArr[0].floatValue
+                } else {
+                    probs[w] = probPtr[0]
+                }
+                if let nextArr = out.featureValue(for: "next_state")?.multiArrayValue {
+                    let expectedDst = useA ? stateB : stateA
+                    if nextArr !== expectedDst {
+                        memcpy(expectedDst.dataPointer, nextArr.dataPointer, 256 * MemoryLayout<Float>.size)
+                    }
+                }
+                return true
             }
-            probs[w] = probArr[0].floatValue
-            stateArr = nextState
+            if !ok { break }
+            useA.toggle()
         }
         return probs
     }

@@ -68,33 +68,67 @@ public final class MOSSTranscriber: @unchecked Sendable {
         return handle.map { MoMoMOSSAcceleratorMask($0) } ?? 0
     }
 
+    public var shortKvLen: Int32 {
+        lock.lock()
+        defer { lock.unlock() }
+        return handle.map { MoMoMOSSShortKvLen($0) } ?? 0
+    }
+
     public init(bundleDirectory: URL) throws {
         self.bundleDir = bundleDirectory
         let cfgURL = bundleDirectory.appendingPathComponent("moss_coreml_config.json")
         let cfgData = try Data(contentsOf: cfgURL)
-        self.config = try JSONDecoder().decode(MOSSBundleConfig.self, from: cfgData)
-        self.tokenizer = try BPEQwenTokenizer(directory: bundleDirectory)
-        self.melFrontend = try WhisperMelFrontend(
-            melFiltersURL: bundleDirectory.appendingPathComponent(config.melFiltersFile)
-        )
+        let cfg = try JSONDecoder().decode(MOSSBundleConfig.self, from: cfgData)
+        self.config = cfg
 
         let encPath = bundleDirectory.appendingPathComponent("MOSSAudioEncoder.mlmodelc").path
         let decPath = bundleDirectory.appendingPathComponent("MOSSDecoder.mlmodelc").path
         let embPath = bundleDirectory.appendingPathComponent("embedding.int8.bin").path
+        let melURL = bundleDirectory.appendingPathComponent(cfg.melFiltersFile)
+
+        // Overlap BPEQwenTokenizer + WhisperMelFrontend initialization with CoreML model loading.
+        final class InitBox<Value>: @unchecked Sendable {
+            var result: Result<Value, Error>?
+        }
+        let tokBox = InitBox<BPEQwenTokenizer>()
+        let melBox = InitBox<WhisperMelFrontend>()
+        let group = DispatchGroup()
+        let queue = DispatchQueue.global(qos: .userInitiated)
+        group.enter()
+        queue.async {
+            tokBox.result = Result { try BPEQwenTokenizer(directory: bundleDirectory) }
+            group.leave()
+        }
+        group.enter()
+        queue.async {
+            melBox.result = Result { try WhisperMelFrontend(melFiltersURL: melURL) }
+            group.leave()
+        }
+
         var errBuf = [CChar](repeating: 0, count: 1024)
-        guard let h = MoMoMOSSCreate(
+        let createdHandle = MoMoMOSSCreate(
             encPath,
             decPath,
             embPath,
-            config.maxKvLen,
-            config.prefillLen,
+            cfg.maxKvLen,
+            cfg.prefillLen,
             &errBuf,
             errBuf.count
-        ) else {
+        )
+        group.wait()
+
+        guard let h = createdHandle else {
             let msg = errBuf.withUnsafeBufferPointer { ptr in
                 ptr.baseAddress.map { String(cString: $0) } ?? "unknown"
             }
             throw SpeechEngineError.inferenceFailed("MoMoMOSSCreate failed: \(msg)")
+        }
+        do {
+            self.tokenizer = try tokBox.result!.get()
+            self.melFrontend = try melBox.result!.get()
+        } catch {
+            MoMoMOSSDestroy(h)
+            throw error
         }
         self.handle = h
     }
