@@ -209,11 +209,12 @@ struct DesktopVoiceprintsAndSpeechView: View {
                                     Text(profile.name)
                                         .font(.callout.weight(.medium))
                                     if profile.isOwner {
-                                        Text("我")
+                                        Text("主人")
                                             .font(.caption2.weight(.semibold))
-                                            .padding(.horizontal, 5)
+                                            .padding(.horizontal, 5.5)
                                             .padding(.vertical, 1)
-                                            .background(MoMoPalette.ink.opacity(0.08), in: Capsule())
+                                            .foregroundStyle(MoMoPalette.success)
+                                            .background(MoMoPalette.successBackground, in: Capsule())
                                     }
                                     if !profile.aliases.isEmpty {
                                         Text(profile.aliases.joined(separator: " / "))

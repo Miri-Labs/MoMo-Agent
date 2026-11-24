@@ -443,6 +443,15 @@ extension AgentClient {
         try authorizedURLRequest(path: ["v1", "voiceprints", "profiles", profileID, "samples", sampleID, "audio"])
     }
 
+    public func fetchVoiceprintSampleAudio(profileID: String, sampleID: String) async throws -> Data {
+        try await rawRequest(
+            path: ["v1", "voiceprints", "profiles", profileID, "samples", sampleID, "audio"],
+            method: "GET",
+            timeout: 30,
+            bypassDataChannel: true
+        )
+    }
+
     public func bindTranscriptSpeaker(
         sourceID: String,
         spanIDs: [String]? = nil,

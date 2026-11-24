@@ -386,6 +386,13 @@ private struct MacNewVoiceprintPersonSheet: View {
     }
 }
 
+private final class SampleClipPlayerDelegate: NSObject, AVAudioPlayerDelegate, @unchecked Sendable {
+    var onFinish: (@Sendable () -> Void)?
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        onFinish?()
+    }
+}
+
 private struct MacVoiceprintPersonDetailSheet: View {
     let client: AgentClient
     @State var profile: VoiceprintProfile
@@ -404,6 +411,10 @@ private struct MacVoiceprintPersonDetailSheet: View {
     @State private var timerTask: Task<Void, Never>?
     @State private var statusBanner: String?
     @State private var error: String?
+    @State private var loadingSampleID: String?
+    @State private var playingSampleID: String?
+    @State private var samplePlayer: AVAudioPlayer?
+    @State private var playerDelegate = SampleClipPlayerDelegate()
 
     var body: some View {
         NavigationStack {
@@ -466,7 +477,28 @@ private struct MacVoiceprintPersonDetailSheet: View {
                             .foregroundStyle(MoMoPalette.muted)
                     } else {
                         ForEach(profile.samples) { sample in
-                            HStack {
+                            HStack(spacing: 12) {
+                                if sample.hasClip {
+                                    Button {
+                                        Task { await toggleSamplePlayback(sample) }
+                                    } label: {
+                                        Group {
+                                            if loadingSampleID == sample.id {
+                                                ProgressView().controlSize(.small)
+                                            } else {
+                                                Image(systemName: playingSampleID == sample.id ? "stop.circle.fill" : "play.circle.fill")
+                                                    .font(.title3)
+                                                    .foregroundStyle(playingSampleID == sample.id ? MoMoPalette.success : MoMoPalette.ink)
+                                            }
+                                        }
+                                        .frame(width: 36, height: 36)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(playingSampleID == sample.id ? "停止试听声纹样本" : "试听声纹样本")
+                                    .accessibilityIdentifier("voiceprint.sample.play.\(sample.id)")
+                                    .disabled(loadingSampleID != nil && loadingSampleID != sample.id)
+                                }
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text((sample.sourceKind == "transcript_bind" || sample.sourceKind == "transcript_confirm") ? "转录确认收录" : "手动录入 · \(sample.sourceDevice)")
                                         .font(.subheadline)
@@ -536,6 +568,7 @@ private struct MacVoiceprintPersonDetailSheet: View {
     }
 
     private func startRecording() async {
+        stopSamplePlayback()
         error = nil; statusBanner = nil
         let granted = await AVAudioApplication.requestRecordPermission()
         guard granted else {
@@ -631,7 +664,54 @@ private struct MacVoiceprintPersonDetailSheet: View {
         }
     }
 
+    private func toggleSamplePlayback(_ sample: VoiceprintSample) async {
+        if playingSampleID == sample.id {
+            stopSamplePlayback()
+            return
+        }
+        stopSamplePlayback()
+        loadingSampleID = sample.id
+        error = nil
+        defer { if loadingSampleID == sample.id { loadingSampleID = nil } }
+        do {
+            let data = try await client.fetchVoiceprintSampleAudio(profileID: profile.id, sampleID: sample.id)
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try session.setActive(true)
+            let player = try AVAudioPlayer(data: data)
+            let sampleID = sample.id
+            playerDelegate.onFinish = {
+                Task { @MainActor in
+                    if playingSampleID == sampleID {
+                        playingSampleID = nil
+                        samplePlayer = nil
+                        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                    }
+                }
+            }
+            player.delegate = playerDelegate
+            guard player.play() else {
+                error = "无法播放该声纹音频片段。"
+                return
+            }
+            samplePlayer = player
+            playingSampleID = sample.id
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func stopSamplePlayback() {
+        samplePlayer?.stop()
+        samplePlayer = nil
+        if playingSampleID != nil {
+            playingSampleID = nil
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+    }
+
     private func cleanupRecorder() {
+        stopSamplePlayback()
         timerTask?.cancel(); timerTask = nil
         recorder?.stop(); recorder = nil; recording = false
         if let url = recordURL { try? FileManager.default.removeItem(at: url); recordURL = nil }

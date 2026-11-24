@@ -244,7 +244,7 @@ struct DesktopSpeakerLockSheet: View {
     let model: DesktopModel
     let sourceID: String
     let span: SourceTextSpan
-    let onCommitted: () -> Void
+    let onCommitted: (String?) -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var profiles: [VoiceprintProfile] = []
@@ -256,12 +256,13 @@ struct DesktopSpeakerLockSheet: View {
     @State private var applyToCluster = true
     @State private var busy = false
     @State private var error: String?
-    @State private var resultBanner: String?
+
+    private var hasExistingOwner: Bool { profiles.contains(where: \.isOwner) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("绑定说话人与声纹")
                         .font(.system(size: 15, weight: .semibold))
                     if let current = span.speaker {
@@ -279,8 +280,9 @@ struct DesktopSpeakerLockSheet: View {
                 Text(text)
                     .font(.system(size: 12.5))
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                    .padding(10)
+                    .lineLimit(2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(MoMoPalette.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             }
@@ -305,7 +307,9 @@ struct DesktopSpeakerLockSheet: View {
                 if selectedProfileID == nil {
                     Section("或输入新人物") {
                         TextField("姓名（例如：张三、Alex）", text: $customName)
-                        Toggle("这是我本人（设为机主「我」）", isOn: $isOwner)
+                        if !hasExistingOwner {
+                            Toggle("这是我本人（设为机主「我」）", isOn: $isOwner)
+                        }
                     }
                 }
 
@@ -323,11 +327,6 @@ struct DesktopSpeakerLockSheet: View {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(MoMoPalette.failure)
-            }
-            if let resultBanner {
-                Text(resultBanner)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             HStack {
@@ -347,10 +346,13 @@ struct DesktopSpeakerLockSheet: View {
             }
         }
         .padding(18)
-        .frame(width: 440, height: 470)
+        .frame(width: 460, height: 560)
         .task {
             if let fetched = try? await model.voiceprintProfiles() {
                 profiles = fetched
+                if let currentID = span.voiceProfileId, fetched.contains(where: { $0.id == currentID }) {
+                    selectedProfileID = currentID
+                }
             }
         }
     }
@@ -371,10 +373,15 @@ struct DesktopSpeakerLockSheet: View {
                 rematchHistory: rematchHistory,
                 scope: applyToCluster ? "cluster" : "selection"
             )
+            let banner: String
             if let rm = res.rematch, rm.updatedSpans > 0 {
-                resultBanner = "已锁定 \(res.targetName) 并回填 \(rm.updatedSpans) 段历史记录（\(Int(rm.elapsedMs)) ms）"
+                banner = "已锁定「\(res.targetName)」并回填 \(rm.updatedSpans) 段历史记录（\(String(format: "%.1f", rm.elapsedMs)) ms）"
+            } else if enrollVoiceprint {
+                banner = "已锁定「\(res.targetName)」并收录声纹样本"
+            } else {
+                banner = "已更正说话人标记为「\(res.targetName)」"
             }
-            onCommitted()
+            onCommitted(banner)
             dismiss()
         } catch {
             self.error = error.localizedDescription
@@ -392,7 +399,8 @@ struct DesktopSpeakerLockSheet: View {
                 spanIDs: [span.id],
                 clusterKey: span.clusterKey
             )
-            onCommitted()
+            let prev = span.speaker ?? "该说话人"
+            onCommitted("已标记不是「\(prev)」并写入排除样本")
             dismiss()
         } catch {
             self.error = error.localizedDescription

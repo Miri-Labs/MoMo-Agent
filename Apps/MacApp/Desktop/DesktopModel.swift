@@ -186,14 +186,16 @@ final class DesktopModel {
         let resolvedDataDir = URL(fileURLWithPath: argument("--data-dir") ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/\(dataFolder)/Agent").path)
         let prodDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/MoMoAgent/Agent")
         let explicitPreview = args.contains("--attach-live-preview") || ProcessInfo.processInfo.environment["MOMO_UI_PREVIEW"] == "1"
+        let explicitDataDir = argument("--data-dir") != nil
+        let previewSourceDir = explicitDataDir ? resolvedDataDir : prodDataDir
         let autoBetaAttach = dataFolder != "MoMoAgent"
-            && argument("--data-dir") == nil
+            && !explicitDataDir
             && !FileManager.default.fileExists(atPath: resolvedDataDir.appendingPathComponent("connection.json").path)
             && FileManager.default.fileExists(atPath: prodDataDir.appendingPathComponent("connection.json").path)
         if (explicitPreview || autoBetaAttach),
-           FileManager.default.fileExists(atPath: prodDataDir.appendingPathComponent("connection.json").path) {
+           FileManager.default.fileExists(atPath: previewSourceDir.appendingPathComponent("connection.json").path) {
             isLivePreviewClient = true
-            liveSourceDirectory = prodDataDir
+            liveSourceDirectory = previewSourceDir
         } else {
             isLivePreviewClient = false
             liveSourceDirectory = nil
