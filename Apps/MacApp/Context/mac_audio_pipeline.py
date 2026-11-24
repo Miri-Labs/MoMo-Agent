@@ -50,8 +50,17 @@ DEFAULT_SPEECH_SETTINGS: dict[str, Any] = {
 }
 
 
+_AUDIO_CHUNK_COLUMNS = (
+    "chunk_id, library_id, session_id, source_id, device_id, chunk_seq, "
+    "recorded_at, duration_sec, timezone_offset, source_kind, codec, sample_rate, "
+    "sha256, byte_size, relative_path, vad_status, speech_seconds, vad_intervals, "
+    "transcription_status, window_id, error, created_at, updated_at"
+)
+_AUDIO_SCHEMA_READY_PATHS: set[str] = set()
+
+
 def init_audio_pipeline_schema(db: sqlite3.Connection) -> None:
-    db.executescript(
+    db.execute(
         """
         CREATE TABLE IF NOT EXISTS audio_chunks (
             chunk_id TEXT PRIMARY KEY,
@@ -76,12 +85,69 @@ def init_audio_pipeline_schema(db: sqlite3.Connection) -> None:
             window_id TEXT,
             error TEXT,
             created_at REAL NOT NULL,
-            updated_at REAL NOT NULL,
-            UNIQUE(source_id, chunk_seq)
-        );
-        CREATE INDEX IF NOT EXISTS idx_audio_chunks_status ON audio_chunks(transcription_status, recorded_at);
-        CREATE INDEX IF NOT EXISTS idx_audio_chunks_source ON audio_chunks(source_id, chunk_seq);
-
+            updated_at REAL NOT NULL
+        )
+        """
+    )
+    # Migrate legacy databases that had UNIQUE(source_id, chunk_seq) so out-of-order Watch chunks never overwrite.
+    ddl_row = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='audio_chunks'").fetchone()
+    ddl = str(ddl_row[0] or "") if ddl_row else ""
+    if "UNIQUE(source_id, chunk_seq)" in ddl or "UNIQUE (source_id, chunk_seq)" in ddl:
+        started_tx = False
+        if not db.in_transaction:
+            db.execute("BEGIN IMMEDIATE")
+            started_tx = True
+        try:
+            # Re-verify inside lock so concurrent threads do not double-migrate.
+            ddl_locked = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='audio_chunks'").fetchone()
+            ddl_text = str(ddl_locked[0] or "") if ddl_locked else ""
+            if "UNIQUE(source_id, chunk_seq)" in ddl_text or "UNIQUE (source_id, chunk_seq)" in ddl_text:
+                db.execute("DROP TABLE IF EXISTS audio_chunks_v2")
+                db.execute(
+                    """
+                    CREATE TABLE audio_chunks_v2 (
+                        chunk_id TEXT PRIMARY KEY,
+                        library_id TEXT NOT NULL,
+                        session_id TEXT NOT NULL,
+                        source_id TEXT NOT NULL,
+                        device_id TEXT NOT NULL,
+                        chunk_seq INTEGER NOT NULL,
+                        recorded_at REAL NOT NULL,
+                        duration_sec REAL NOT NULL,
+                        timezone_offset INTEGER,
+                        source_kind TEXT NOT NULL DEFAULT 'watch',
+                        codec TEXT NOT NULL DEFAULT 'aac',
+                        sample_rate INTEGER NOT NULL DEFAULT 16000,
+                        sha256 TEXT NOT NULL,
+                        byte_size INTEGER NOT NULL,
+                        relative_path TEXT NOT NULL,
+                        vad_status TEXT NOT NULL DEFAULT 'pending',
+                        speech_seconds REAL NOT NULL DEFAULT 0.0,
+                        vad_intervals TEXT NOT NULL DEFAULT '[]',
+                        transcription_status TEXT NOT NULL DEFAULT 'pending',
+                        window_id TEXT,
+                        error TEXT,
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    )
+                    """
+                )
+                db.execute(
+                    f"INSERT OR IGNORE INTO audio_chunks_v2({_AUDIO_CHUNK_COLUMNS}) "
+                    f"SELECT {_AUDIO_CHUNK_COLUMNS} FROM audio_chunks"
+                )
+                db.execute("DROP TABLE audio_chunks")
+                db.execute("ALTER TABLE audio_chunks_v2 RENAME TO audio_chunks")
+            if started_tx:
+                db.execute("COMMIT")
+        except Exception:
+            if started_tx and db.in_transaction:
+                db.execute("ROLLBACK")
+            raise
+    db.execute("CREATE INDEX IF NOT EXISTS idx_audio_chunks_status ON audio_chunks(transcription_status, recorded_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_audio_chunks_source_time ON audio_chunks(source_id, recorded_at, chunk_seq, chunk_id)")
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS transcription_windows (
             window_id TEXT PRIMARY KEY,
             source_id TEXT NOT NULL,
@@ -98,14 +164,17 @@ def init_audio_pipeline_schema(db: sqlite3.Connection) -> None:
             error TEXT,
             created_at REAL NOT NULL,
             finished_at REAL
-        );
-        CREATE INDEX IF NOT EXISTS idx_tx_windows_source ON transcription_windows(source_id, start_at);
-
+        )
+        """
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_tx_windows_source ON transcription_windows(source_id, start_at)")
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS speech_settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL,
             updated_at REAL NOT NULL
-        );
+        )
         """
     )
 
@@ -193,8 +262,11 @@ class MacAudioPipeline:
         self.data_dir = Path(data_dir) if data_dir else context_store.directory.parent
         self.audio_root = context_store.directory / "audio"
         self.audio_root.mkdir(parents=True, exist_ok=True)
+        db_key = str((context_store.directory / "context.sqlite").resolve())
         if not getattr(context_store, "_audio_pipeline_schema_ready", False):
-            init_audio_pipeline_schema(self.db)
+            if db_key not in _AUDIO_SCHEMA_READY_PATHS:
+                init_audio_pipeline_schema(self.db)
+                _AUDIO_SCHEMA_READY_PATHS.add(db_key)
             context_store._audio_pipeline_schema_ready = True
         self.voiceprints = VoiceprintStore(context_store, data_dir=self.data_dir)
 
@@ -308,6 +380,91 @@ class MacAudioPipeline:
     # Audio Chunk Ingestion & Status (Idempotent SHA-256)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _atomic_write_bytes(dest_file: Path, data: bytes) -> None:
+        dest_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                dir=str(dest_file.parent),
+                prefix=".chunk-",
+                suffix=".tmp",
+                delete=False,
+            ) as tmp:
+                tmp_path = tmp.name
+                tmp.write(data)
+                tmp.flush()
+                os.fsync(tmp.fileno())
+            os.replace(tmp_path, dest_file)
+            tmp_path = None
+            try:
+                dir_fd = os.open(str(dest_file.parent), os.O_RDONLY)
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
+            except OSError:
+                pass
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    def _verify_or_repair_existing_chunk(
+        self,
+        *,
+        existing: sqlite3.Row,
+        source_id: str,
+        actual_sha: str,
+        audio_bytes: bytes,
+    ) -> dict[str, Any]:
+        chunk_id = existing["chunk_id"]
+        if existing["sha256"] != actual_sha:
+            raise ValueError(
+                f"Conflicting audio payload for chunk_id {chunk_id}: "
+                f"existing {existing['sha256'][:12]} != incoming {actual_sha[:12]}"
+            )
+        existing_file = self.store.directory / existing["relative_path"]
+        try:
+            intact = (
+                existing_file.is_file()
+                and existing_file.stat().st_size == len(audio_bytes)
+                and hashlib.sha256(existing_file.read_bytes()).hexdigest() == actual_sha
+            )
+        except OSError:
+            intact = False
+        repaired = False
+        tx_status = existing["transcription_status"]
+        if not intact:
+            self._atomic_write_bytes(existing_file, audio_bytes)
+            repaired = True
+            with self.store.write():
+                self.db.execute(
+                    """
+                    UPDATE audio_chunks
+                    SET vad_status='pending', transcription_status='pending', error=NULL, updated_at=?
+                    WHERE chunk_id=? AND (vad_status='error' OR transcription_status='failed')
+                    """,
+                    (time.time(), chunk_id),
+                )
+            refreshed = self.db.execute(
+                "SELECT transcription_status FROM audio_chunks WHERE chunk_id=?",
+                (chunk_id,),
+            ).fetchone()
+            if refreshed:
+                tx_status = refreshed["transcription_status"]
+        return {
+            "accepted": True,
+            "deduplicated": not repaired,
+            "repaired": repaired,
+            "chunk_id": chunk_id,
+            "source_id": source_id,
+            "sha256": actual_sha,
+            "transcription_status": tx_status,
+        }
+
     def ingest_audio_chunk(
         self,
         *,
@@ -319,7 +476,7 @@ class MacAudioPipeline:
         library_id = str(uuid.UUID(str(meta["library_id"]))).lower()
         session_id = str(uuid.UUID(str(meta["session_id"]))).lower()
         device_id = str(uuid.UUID(str(meta.get("device_id") or meta["library_id"]))).lower()
-        chunk_id = str(meta.get("chunk_id") or f"{session_id}:{int(meta['chunk_seq']):06d}").strip()
+        chunk_id = str(meta.get("chunk_id") or f"{session_id}:{int(meta['chunk_seq']):06d}").strip().lower()
         chunk_seq = int(meta["chunk_seq"])
         if chunk_seq < 0:
             raise ValueError("chunk_seq must be >= 0")
@@ -340,76 +497,84 @@ class MacAudioPipeline:
             raise ValueError(f"Audio chunk SHA-256 mismatch: expected {expected_sha[:12]}, got {actual_sha[:12]}")
 
         source_id = f"{library_id}/{session_id}"
+        # Identify chunks strictly by immutable chunk_id so out-of-order Watch delivery never overwrites another chunk.
         existing = self.db.execute(
-            "SELECT chunk_id, sha256, transcription_status, relative_path FROM audio_chunks WHERE chunk_id=? OR (source_id=? AND chunk_seq=?)",
-            (chunk_id, source_id, chunk_seq),
+            "SELECT chunk_id, sha256, vad_status, transcription_status, relative_path, error FROM audio_chunks WHERE chunk_id=?",
+            (chunk_id,),
         ).fetchone()
-        if existing and existing["sha256"] == actual_sha:
-            return {
-                "accepted": True,
-                "deduplicated": True,
-                "chunk_id": existing["chunk_id"],
-                "source_id": source_id,
-                "sha256": actual_sha,
-                "transcription_status": existing["transcription_status"],
-            }
+        if existing:
+            return self._verify_or_repair_existing_chunk(
+                existing=existing,
+                source_id=source_id,
+                actual_sha=actual_sha,
+                audio_bytes=audio_bytes,
+            )
 
         ext = "wav" if codec in ("wav", "pcm", "pcmint16", "pcmfloat32") else "m4a"
         day_str = _dt.datetime.fromtimestamp(recorded_at).strftime("%Y-%m-%d")
         dest_dir = self.audio_root / day_str / session_id
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest_file = dest_dir / f"{chunk_seq:06d}_{actual_sha[:8]}.{ext}"
-        tmp_file = dest_file.with_suffix(f".{ext}.tmp")
-        tmp_file.write_bytes(audio_bytes)
-        tmp_file.replace(dest_file)
+        safe_cid = re.sub(r"[^a-z0-9_-]", "", chunk_id)[:16] or "chunk"
+        dest_file = dest_dir / f"{int(recorded_at)}_{safe_cid}_{actual_sha[:8]}.{ext}"
+        self._atomic_write_bytes(dest_file, audio_bytes)
         rel_path = str(dest_file.relative_to(self.store.directory))
 
         now = time.time()
-        with self.store.write():
-            self.db.execute(
-                """
-                INSERT INTO audio_chunks(
-                    chunk_id, library_id, session_id, source_id, device_id, chunk_seq,
-                    recorded_at, duration_sec, timezone_offset, source_kind, codec, sample_rate,
-                    sha256, byte_size, relative_path, vad_status, speech_seconds, vad_intervals,
-                    transcription_status, created_at, updated_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',0.0,'[]','pending',?,?)
-                ON CONFLICT(source_id, chunk_seq) DO UPDATE SET
-                    chunk_id=excluded.chunk_id, sha256=excluded.sha256, byte_size=excluded.byte_size,
-                    relative_path=excluded.relative_path, duration_sec=excluded.duration_sec,
-                    vad_status='pending', transcription_status='pending', error=NULL, updated_at=excluded.updated_at
-                """,
-                (
-                    chunk_id,
-                    library_id,
-                    session_id,
-                    source_id,
-                    device_id,
-                    chunk_seq,
-                    recorded_at,
-                    duration_sec,
-                    tz_offset,
-                    source_kind,
-                    codec,
-                    sample_rate,
-                    actual_sha,
-                    len(audio_bytes),
-                    rel_path,
-                    now,
-                    now,
-                ),
-            )
-            # Ensure a source stub exists so Mac UI / iPhone immediately know this recording is being processed
-            self._ensure_source_stub(
-                source_id=source_id,
-                library_id=library_id,
-                session_id=session_id,
-                device_id=device_id,
-                recorded_at=recorded_at,
-                end_at=recorded_at + duration_sec,
-                timezone_offset=tz_offset,
-            )
-            self.store.advance()
+        try:
+            with self.store.write():
+                self.db.execute(
+                    """
+                    INSERT INTO audio_chunks(
+                        chunk_id, library_id, session_id, source_id, device_id, chunk_seq,
+                        recorded_at, duration_sec, timezone_offset, source_kind, codec, sample_rate,
+                        sha256, byte_size, relative_path, vad_status, speech_seconds, vad_intervals,
+                        transcription_status, created_at, updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',0.0,'[]','pending',?,?)
+                    """,
+                    (
+                        chunk_id,
+                        library_id,
+                        session_id,
+                        source_id,
+                        device_id,
+                        chunk_seq,
+                        recorded_at,
+                        duration_sec,
+                        tz_offset,
+                        source_kind,
+                        codec,
+                        sample_rate,
+                        actual_sha,
+                        len(audio_bytes),
+                        rel_path,
+                        now,
+                        now,
+                    ),
+                )
+                # Ensure a source stub exists so Mac UI / iPhone immediately know this recording is being processed
+                self._ensure_source_stub(
+                    source_id=source_id,
+                    library_id=library_id,
+                    session_id=session_id,
+                    device_id=device_id,
+                    recorded_at=recorded_at,
+                    end_at=recorded_at + duration_sec,
+                    timezone_offset=tz_offset,
+                )
+                self.store.advance()
+        except sqlite3.IntegrityError:
+            # Concurrent duplicate upload raced past the pre-check; fall back to verify/repair instead of HTTP 500.
+            raced = self.db.execute(
+                "SELECT chunk_id, sha256, vad_status, transcription_status, relative_path, error FROM audio_chunks WHERE chunk_id=?",
+                (chunk_id,),
+            ).fetchone()
+            if raced:
+                return self._verify_or_repair_existing_chunk(
+                    existing=raced,
+                    source_id=source_id,
+                    actual_sha=actual_sha,
+                    audio_bytes=audio_bytes,
+                )
+            raise
 
         return {
             "accepted": True,
@@ -574,7 +739,7 @@ class MacAudioPipeline:
             """
             SELECT * FROM audio_chunks
             WHERE vad_status='speech' AND transcription_status='pending'
-            ORDER BY source_id ASC, chunk_seq ASC
+            ORDER BY source_id ASC, recorded_at ASC, chunk_seq ASC, chunk_id ASC
             """
         ).fetchall()
         if not ready_rows:
@@ -610,10 +775,15 @@ class MacAudioPipeline:
             if not group:
                 continue
             last_updated = float(group[-1]["updated_at"])
-            # Check if a silent chunk immediately follows this group (meaning speaker stopped talking)
+            # Check if a silent chunk immediately follows this group in chronological order (meaning speaker stopped talking)
+            last_row = group[-1]
             next_chunk = self.db.execute(
-                "SELECT vad_status FROM audio_chunks WHERE source_id=? AND chunk_seq=?",
-                (sid, int(group[-1]["chunk_seq"]) + 1),
+                """
+                SELECT vad_status FROM audio_chunks
+                WHERE source_id=? AND (recorded_at > ? OR (recorded_at = ? AND chunk_id > ?))
+                ORDER BY recorded_at ASC, chunk_id ASC LIMIT 1
+                """,
+                (sid, float(last_row["recorded_at"]), float(last_row["recorded_at"]), str(last_row["chunk_id"])),
             ).fetchone()
             followed_by_silence = next_chunk is not None and next_chunk["vad_status"] == "silent"
             is_full = acc_dur >= max_win_sec * 0.85
@@ -723,10 +893,14 @@ class MacAudioPipeline:
             cursor += d
 
         def _window_sec_to_wall(sec: float) -> float:
-            for c_start, c_end, wall_start in chunk_offsets:
-                if sec <= c_end or c_end == chunk_offsets[-1][1]:
-                    return wall_start + max(0.0, sec - c_start)
-            return start_at + sec
+            clamped = max(0.0, min(cursor, sec))
+            for idx, (c_start, c_end, wall_start) in enumerate(chunk_offsets):
+                is_last = idx == len(chunk_offsets) - 1
+                if clamped < c_end or is_last:
+                    chunk_dur = max(0.0, c_end - c_start)
+                    offset_in_chunk = min(max(0.0, clamped - c_start), max(0.0, chunk_dur - 0.005))
+                    return wall_start + offset_in_chunk
+            return start_at + clamped
 
         # Resolve speakers via VoiceprintStore (enrolled profiles + session continuity)
         # Ensure every speaker tag present in segments has an entry even if clip < 1.2s
@@ -969,7 +1143,7 @@ class MacAudioPipeline:
                    vad_status, transcription_status
             FROM audio_chunks
             WHERE source_id=?
-            ORDER BY chunk_seq ASC
+            ORDER BY recorded_at ASC, chunk_seq ASC, chunk_id ASC
             """,
             (source_id.lower(),),
         ).fetchall()
@@ -1021,7 +1195,7 @@ class MacAudioPipeline:
                 ).fetchone()
             if row is None:
                 row = self.db.execute(
-                    "SELECT relative_path, codec, recorded_at FROM audio_chunks WHERE source_id=? ORDER BY chunk_seq ASC LIMIT 1",
+                    "SELECT relative_path, codec, recorded_at FROM audio_chunks WHERE source_id=? ORDER BY recorded_at ASC, chunk_seq ASC, chunk_id ASC LIMIT 1",
                     (source_id.lower(),),
                 ).fetchone()
         if not row:

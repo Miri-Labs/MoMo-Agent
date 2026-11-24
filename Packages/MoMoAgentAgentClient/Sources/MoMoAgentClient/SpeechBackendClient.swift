@@ -261,7 +261,11 @@ extension AgentClient {
     }
 
     /// Uploads a single 60s AAC/WAV chunk to Mac backend over direct HTTPS (bypassing WebRTC 32 KB limit).
-    public func uploadAudioChunk(meta: AudioChunkUploadMeta, audioData: Data) async throws -> AudioChunkUploadReceipt {
+    public func uploadAudioChunk(
+        meta: AudioChunkUploadMeta,
+        audioData: Data,
+        timeout: TimeInterval = 45
+    ) async throws -> AudioChunkUploadReceipt {
         let metaBytes = try Self.speechEncoder().encode(meta)
         let metaB64 = metaBytes.base64EncodedString()
         let isWav = ["wav", "pcm", "pcmint16", "pcmfloat32"].contains(meta.codec.lowercased())
@@ -272,7 +276,7 @@ extension AgentClient {
             body: audioData,
             contentType: contentType,
             extraHeaders: ["X-MoMo-Chunk-Meta": metaB64],
-            timeout: 120,
+            timeout: timeout,
             bypassDataChannel: true
         )
         return try Self.speechDecoder().decode(AudioChunkUploadReceipt.self, from: data)

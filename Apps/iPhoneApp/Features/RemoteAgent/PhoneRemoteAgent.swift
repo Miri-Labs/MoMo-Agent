@@ -43,7 +43,9 @@ final class PhoneRemoteAgent {
     private(set) var speechDataClient: AgentClient?
     private(set) var desktopClientID = UUID()
     @ObservationIgnored var hasPendingAudioUpload: (@MainActor () -> Bool)?
-    @ObservationIgnored var onAudioRelayCycle: (@MainActor () async -> Void)?
+    @ObservationIgnored var onAudioRelayCycle: (@MainActor () async throws -> Void)?
+    @ObservationIgnored var onAudioRelayCancel: (@MainActor () -> Void)?
+    @ObservationIgnored var onNetworkPathRecovered: (@MainActor () -> Void)?
     private(set) var connection: AgentConnection?
     var failure: String?
     @ObservationIgnored private(set) var readingPosition: ChatReadingPosition?
@@ -76,7 +78,12 @@ final class PhoneRemoteAgent {
                 || self.context?.needsIllustrationRefresh == true
         }, deliver: { [weak self] in
             guard let self, let context = self.context else { throw CancellationError() }
-            await self.onAudioRelayCycle?()
+            do {
+                try await self.onAudioRelayCycle?()
+            } catch {
+                if case AgentClientError.http(401, _, _, _) = error { self.store?.recordConnectionFailure(error) }
+                throw error
+            }
             if context.needsDelivery { try await context.synchronize(includeMemories: false) }
             let sourceRevision = context.sourceChangeRevision
             do {
@@ -96,6 +103,7 @@ final class PhoneRemoteAgent {
         }, suspend: { [weak self] in self?.suspendTransportIfIdle() },
         cancel: { [weak self] in
             guard let self else { return }
+            self.onAudioRelayCancel?()
             self.context?.cancelSynchronization()
             self.lifeIllustrations.cancelSynchronization()
         },
@@ -460,6 +468,7 @@ final class PhoneRemoteAgent {
                 guard path.status == .satisfied, previous != nil, previous != signature,
                       self.store?.canContactServer != false else { return }
                 self.beginRecovery(trigger: "network-path")
+                self.onNetworkPathRecovered?()
             }
         }
         monitor.start(queue: DispatchQueue(label: "com.momoagent.remote.path"))

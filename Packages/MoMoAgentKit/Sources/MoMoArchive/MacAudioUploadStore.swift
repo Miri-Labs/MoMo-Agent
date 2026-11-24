@@ -23,11 +23,13 @@ public struct MacAudioUploadCounts: Sendable, Equatable {
     public let pending: Int
     public let uploaded: Int
     public let failed: Int
+    public let permanentFailed: Int
 
-    public init(pending: Int = 0, uploaded: Int = 0, failed: Int = 0) {
+    public init(pending: Int = 0, uploaded: Int = 0, failed: Int = 0, permanentFailed: Int = 0) {
         self.pending = pending
         self.uploaded = uploaded
         self.failed = failed
+        self.permanentFailed = permanentFailed
     }
 }
 
@@ -60,32 +62,23 @@ public struct MacRemoteTranscriptSpanInput: Sendable, Equatable {
 }
 
 extension ArchiveStore {
-    /// Returns locally stored audio chunks that have not yet been uploaded & confirmed by Mac,
-    /// prioritized newest-first so live Watch/Earphone speech is transcribed by Mac first, while
-    /// assigning strictly chronological per-session `chunkSeq` and true chunk wall-clock timestamps.
-    public func pendingMacAudioUploads(limit: Int = 16) throws -> [PendingMacAudioChunk] {
+    /// Returns locally stored audio chunks that are ready to upload to Mac (excluding already uploaded,
+    /// permanently failed, and transiently backed-off chunks whose `next_retry_at > now`).
+    /// Preserves each chunk's immutable `manifest.sequence` so out-of-order Watch delivery never collides.
+    public func pendingMacAudioUploads(limit: Int = 16, now: Date = Date()) throws -> [PendingMacAudioChunk] {
         guard (1...128).contains(limit) else { throw ArchiveError.invalidQuery }
         let rows = try database.rows("""
-            WITH ordered AS (
-                SELECT c.id, c.session_id, c.manifest, c.relative_path, c.sealed_at, c.storage_sequence,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY c.session_id
-                           ORDER BY (c.wall_clock_anchor + CAST(c.start_frame AS REAL) / MAX(1.0, c.timebase_hz)) ASC,
-                                    c.storage_sequence ASC
-                       ) - 1 AS session_seq
-                FROM chunks c
-                JOIN sessions s ON s.id = c.session_id
-                WHERE s.deleted = 0
-            )
-            SELECT o.id, o.session_id, o.manifest, o.relative_path, o.session_seq
-            FROM ordered o
-            JOIN chunks c ON c.id = o.id
-            LEFT JOIN mac_audio_uploads u ON u.chunk_id = o.id
-            WHERE c.retention = 'present'
-              AND (u.upload_state IS NULL OR u.upload_state != 'uploaded')
-            ORDER BY o.sealed_at DESC, o.storage_sequence DESC
+            SELECT c.id, c.session_id, c.manifest, c.relative_path
+            FROM chunks c
+            JOIN sessions s ON s.id = c.session_id
+            LEFT JOIN mac_audio_uploads u ON u.chunk_id = c.id
+            WHERE s.deleted = 0
+              AND c.retention = 'present'
+              AND (u.upload_state IS NULL OR u.upload_state IN ('pending', 'failed'))
+              AND (u.next_retry_at IS NULL OR u.next_retry_at <= ?)
+            ORDER BY c.sealed_at DESC, c.storage_sequence DESC
             LIMIT ?
-            """, [.integer(Int64(limit))])
+            """, [.double(now.timeIntervalSince1970), .integer(Int64(limit))])
 
         var out: [PendingMacAudioChunk] = []
         out.reserveCapacity(rows.count)
@@ -94,9 +87,9 @@ extension ArchiveStore {
             let sessionID = try row.requireUUID(1)
             let manifest = try WireJSON.decode(ChunkManifest.self, from: row.requireData(2))
             let relPath = try row.requireString(3)
-            let seq = Int(try row.requireInt(4))
             let url = rootURL.appendingPathComponent(relPath)
-            guard files.fileExists(atPath: url.path) else { continue }
+            // Do not silently skip missing files inside LIMIT; return them so AudioUploadCoordinator
+            // isolates missing-file chunks as permanent_failed instead of head-of-line blocking older chunks.
             let timebase = manifest.timebaseHz > 0 ? manifest.timebaseHz : Double(max(16_000, manifest.sampleRate))
             // `manifest.wallClockAnchor` is the epoch start; each chunk starts at `wallClockAnchor + frames.start / timebaseHz`.
             let chunkRecordedAt = manifest.wallClockAnchor.addingTimeInterval(Double(manifest.frames.start) / timebase)
@@ -106,7 +99,7 @@ extension ArchiveStore {
                 chunkID: chunkID,
                 sessionID: sessionID,
                 deviceID: manifest.sourceDeviceID,
-                chunkSeq: seq,
+                chunkSeq: Int(max(0, manifest.sequence)),
                 recordedAt: chunkRecordedAt,
                 durationSec: duration,
                 timezoneOffset: manifest.timezoneOffset,
@@ -123,11 +116,12 @@ extension ArchiveStore {
 
     public func markMacAudioChunkUploaded(chunkID: UUID, remoteSHA256: String, remoteSourceID: String) throws {
         try database.execute("""
-            INSERT INTO mac_audio_uploads(chunk_id, upload_state, remote_sha256, remote_source_id, uploaded_at, last_error)
-            VALUES(?, 'uploaded', ?, ?, ?, NULL)
+            INSERT INTO mac_audio_uploads(chunk_id, upload_state, remote_sha256, remote_source_id, uploaded_at, last_error, retry_count, next_retry_at)
+            VALUES(?, 'uploaded', ?, ?, ?, NULL, 0, NULL)
             ON CONFLICT(chunk_id) DO UPDATE SET
                 upload_state='uploaded', remote_sha256=excluded.remote_sha256,
-                remote_source_id=excluded.remote_source_id, uploaded_at=excluded.uploaded_at, last_error=NULL
+                remote_source_id=excluded.remote_source_id, uploaded_at=excluded.uploaded_at,
+                last_error=NULL, retry_count=0, next_retry_at=NULL
             """, [
             .text(chunkID.uuidString),
             .text(remoteSHA256),
@@ -136,23 +130,81 @@ extension ArchiveStore {
         ])
     }
 
-    public func markMacAudioChunkFailed(chunkID: UUID, error: String) throws {
+    public func markMacAudioChunkFailed(
+        chunkID: UUID,
+        error: String,
+        permanent: Bool = false,
+        now: Date = Date(),
+        retryDelay: TimeInterval? = nil
+    ) throws {
+        let existingRetry = try database.rows(
+            "SELECT retry_count FROM mac_audio_uploads WHERE chunk_id = ?",
+            [.text(chunkID.uuidString)]
+        ).first?.integer(0) ?? 0
+        let nextAttempts = existingRetry + 1
+        let state = permanent ? "permanent_failed" : "failed"
+        let computedDelay: TimeInterval?
+        if permanent {
+            computedDelay = nil
+        } else if let retryDelay {
+            computedDelay = max(0, retryDelay)
+        } else {
+            // Bounded exponential backoff: 15s, 30s, 60s, 120s, 240s, 480s, capped at 600s.
+            let expStep = min(6, Int(max(0, nextAttempts - 1)))
+            computedDelay = min(600, 15.0 * pow(2.0, Double(expStep)))
+        }
+        let nextRetryValue: SQLValue = computedDelay.map { .double(now.timeIntervalSince1970 + $0) } ?? .null
         try database.execute("""
-            INSERT INTO mac_audio_uploads(chunk_id, upload_state, last_error)
-            VALUES(?, 'failed', ?)
+            INSERT INTO mac_audio_uploads(chunk_id, upload_state, last_error, retry_count, next_retry_at)
+            VALUES(?, ?, ?, ?, ?)
             ON CONFLICT(chunk_id) DO UPDATE SET
-                upload_state=CASE WHEN upload_state='uploaded' THEN 'uploaded' ELSE 'failed' END,
-                last_error=excluded.last_error
+                upload_state=CASE WHEN upload_state='uploaded' THEN 'uploaded' ELSE excluded.upload_state END,
+                last_error=CASE WHEN upload_state='uploaded' THEN last_error ELSE excluded.last_error END,
+                retry_count=CASE WHEN upload_state='uploaded' THEN retry_count ELSE excluded.retry_count END,
+                next_retry_at=CASE WHEN upload_state='uploaded' THEN NULL ELSE excluded.next_retry_at END
             """, [
             .text(chunkID.uuidString),
-            .text(String(error.prefix(400)))
+            .text(state),
+            .text(String(error.prefix(400))),
+            .integer(nextAttempts),
+            nextRetryValue
         ])
+    }
+
+    /// Clears transient backoff timers (e.g. when network reachability recovers or user requests retry)
+    /// without reviving permanently rejected chunks.
+    public func resetTransientMacAudioUploadBackoff() throws {
+        try database.execute("UPDATE mac_audio_uploads SET next_retry_at = NULL WHERE upload_state = 'failed'")
+    }
+
+    public func macSyncedSourceRevisions() throws -> [String: String] {
+        let rows = try database.rows("SELECT source_id, revision FROM mac_synced_source_revisions")
+        var result: [String: String] = [:]
+        result.reserveCapacity(rows.count)
+        for row in rows {
+            if let sid = row.string(0), let rev = row.string(1) {
+                result[sid] = rev
+            }
+        }
+        return result
+    }
+
+    public func setMacSyncedSourceRevision(sourceID: String, revision: String) throws {
+        try database.execute("""
+            INSERT INTO mac_synced_source_revisions(source_id, revision, updated_at)
+            VALUES(?, ?, ?)
+            ON CONFLICT(source_id) DO UPDATE SET revision=excluded.revision, updated_at=excluded.updated_at
+            """, [.text(sourceID), .text(revision), .double(Date().timeIntervalSince1970)])
+    }
+
+    public func clearMacSyncedSourceRevisions() throws {
+        try database.execute("DELETE FROM mac_synced_source_revisions")
     }
 
     /// Returns uploaded chunk IDs whose local `transcription_jobs` row is still pending so iPhone
     /// can poll Mac's `/v1/audio/chunks/batch-status` and mark silent/done/failed chunks cleanly.
-    public func uploadedUnsettledMacAudioChunkIDs(limit: Int = 64) throws -> [UUID] {
-        guard (1...256).contains(limit) else { throw ArchiveError.invalidQuery }
+    public func uploadedUnsettledMacAudioChunkIDs(limit: Int = 64, offset: Int = 0) throws -> [UUID] {
+        guard (1...256).contains(limit), offset >= 0 else { throw ArchiveError.invalidQuery }
         let rows = try database.rows("""
             SELECT u.chunk_id
             FROM mac_audio_uploads u
@@ -160,10 +212,33 @@ extension ArchiveStore {
             JOIN chunks c ON c.id = u.chunk_id
             JOIN sessions s ON s.id = c.session_id
             WHERE u.upload_state = 'uploaded' AND s.deleted = 0 AND j.state != 'complete' AND j.state != 'failed'
-            ORDER BY u.uploaded_at DESC
-            LIMIT ?
-            """, [.integer(Int64(limit))])
+            ORDER BY u.uploaded_at DESC, u.chunk_id ASC
+            LIMIT ? OFFSET ?
+            """, [.integer(Int64(limit)), .integer(Int64(offset))])
         return rows.compactMap { try? $0.requireUUID(0) }
+    }
+
+    /// Re-queues locally present chunks that Mac reports as `uploaded: false` (e.g. after Mac DB reset/restore).
+    public func requeueMissingRemoteMacAudioChunks(_ chunkIDs: [UUID]) throws -> Int {
+        guard !chunkIDs.isEmpty else { return 0 }
+        var requeued = 0
+        try database.transaction {
+            for cid in chunkIDs {
+                let present = try database.rows(
+                    "SELECT 1 FROM chunks WHERE id = ? AND retention = 'present'",
+                    [.text(cid.uuidString)]
+                ).first != nil
+                guard present else { continue }
+                try database.execute("""
+                    UPDATE mac_audio_uploads
+                    SET upload_state = 'pending', remote_sha256 = NULL, uploaded_at = NULL,
+                        last_error = 'Mac missing chunk; requeued', retry_count = 0, next_retry_at = NULL
+                    WHERE chunk_id = ? AND upload_state = 'uploaded'
+                    """, [.text(cid.uuidString)])
+                requeued += 1
+            }
+        }
+        return requeued
     }
 
     /// Updates local `transcription_jobs` from Mac's chunk transcription status (`done` / `silent` / `failed`)
@@ -176,22 +251,31 @@ extension ArchiveStore {
                 let lower = rawStatus.lowercased()
                 let jobState: String
                 let errorCode: SQLValue
+                let expectedErrorString: String
                 switch lower {
                 case "done":
                     jobState = "complete"
                     errorCode = .null
+                    expectedErrorString = ""
                 case "silent":
                     jobState = "complete"
                     errorCode = .text("no_speech")
+                    expectedErrorString = "no_speech"
                 case "failed":
                     jobState = "failed"
                     errorCode = .text("mac_transcription_failed")
+                    expectedErrorString = "mac_transcription_failed"
                 default:
                     continue
                 }
+                let needsUpdate = try database.rows(
+                    "SELECT state, COALESCE(error_code, '') FROM transcription_jobs WHERE chunk_id = ?",
+                    [.text(chunkID.uuidString)]
+                ).first.map { $0.string(0) != jobState || $0.string(1) != expectedErrorString } ?? false
+                guard needsUpdate else { continue }
                 try database.execute(
-                    "UPDATE transcription_jobs SET state = ?, error_code = ? WHERE chunk_id = ? AND (state != ? OR COALESCE(error_code, '') != COALESCE(?, ''))",
-                    [.text(jobState), errorCode, .text(chunkID.uuidString), .text(jobState), errorCode]
+                    "UPDATE transcription_jobs SET state = ?, error_code = ? WHERE chunk_id = ?",
+                    [.text(jobState), errorCode, .text(chunkID.uuidString)]
                 )
                 changed += 1
             }
@@ -216,7 +300,18 @@ extension ArchiveStore {
             JOIN sessions s ON s.id = c.session_id
             WHERE c.retention = 'present' AND s.deleted = 0 AND u.upload_state = 'failed'
             """).first?.integer(0) ?? 0
-        return MacAudioUploadCounts(pending: Int(pending), uploaded: Int(uploaded), failed: Int(failed))
+        let permanentFailed = try database.rows("""
+            SELECT COUNT(*) FROM mac_audio_uploads u
+            JOIN chunks c ON c.id = u.chunk_id
+            JOIN sessions s ON s.id = c.session_id
+            WHERE c.retention = 'present' AND s.deleted = 0 AND u.upload_state = 'permanent_failed'
+            """).first?.integer(0) ?? 0
+        return MacAudioUploadCounts(
+            pending: Int(pending),
+            uploaded: Int(uploaded),
+            failed: Int(failed),
+            permanentFailed: Int(permanentFailed)
+        )
     }
 
     /// Returns session IDs whose audio has been uploaded to Mac so Mac owns their authoritative transcripts.
@@ -340,16 +435,17 @@ extension ArchiveStore {
                 [.text(sessionID.uuidString), .integer(targetVersion)]
             )
             _ = try storeDocument(doc, invalidatesExistingSources: targetGeneration != currentGeneration)
-            // Mark uploaded chunks of this session as complete so Timeline & RecordingSummary reflect finished state
-            try database.execute("""
-                UPDATE transcription_jobs
-                SET state = 'complete', error_code = NULL
-                WHERE chunk_id IN (
-                    SELECT c.id FROM chunks c
-                    JOIN mac_audio_uploads u ON u.chunk_id = c.id
-                    WHERE c.session_id = ? AND u.upload_state = 'uploaded'
-                ) AND state != 'complete'
-                """, [.text(sessionID.uuidString)])
+            // Only mark uploaded chunks actually covered by received transcript spans as complete;
+            // remaining uploaded/pending chunks stay unsettled until Mac batch-status confirms done/silent/failed.
+            let coveredChunkIDs = Set(transcriptSpans.map(\.chunkID))
+            for chunkID in coveredChunkIDs {
+                try database.execute("""
+                    UPDATE transcription_jobs
+                    SET state = 'complete', error_code = NULL
+                    WHERE chunk_id = ? AND state != 'complete'
+                      AND chunk_id IN (SELECT chunk_id FROM mac_audio_uploads WHERE upload_state = 'uploaded')
+                    """, [.text(chunkID.uuidString)])
+            }
         }
     }
 }

@@ -179,6 +179,7 @@
 		92D309EF6CF45BAB3E979C56 /* MoMoAgentRTC in Frameworks */ = {isa = PBXBuildFile; productRef = B483B927F54A60317D80D67A /* MoMoAgentRTC */; };
 		941D1B3AAB83F140579E5B14 /* TimelineDateNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADFFFD16B0030094EEF43B3B /* TimelineDateNavigationTests.swift */; };
 		942C5A6FC4B5FD8B47CB9BB7 /* ControlInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4F0CD832C0F480FDDB640BE /* ControlInbox.swift */; };
+		9672A6311AA14D4CBA37CBBD /* MacAudioTransferRobustnessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A14D73480295FF97C0B6475E /* MacAudioTransferRobustnessTests.swift */; };
 		98BC7C1320EF6820B1DE6125 /* TailscaleKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = E2DD611307066A8F65D2427E /* TailscaleKit.xcframework */; };
 		99EE5FBAE30FD5EA75BA0C38 /* WatchWidgetPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 864650681487E4DAA3E176EA /* WatchWidgetPublisher.swift */; };
 		9AD88A5FED733F4430A68E0B /* LifeIllustrationJourney.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7FFAC058F21C32ED98BE66 /* LifeIllustrationJourney.swift */; };
@@ -584,6 +585,7 @@
 		9F75D5463AB120F61A835C25 /* PhoneLocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneLocalizationTests.swift; sourceTree = "<group>"; };
 		A00F1BA86A6D86E48FB8D003 /* ChatRenderSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRenderSnapshot.swift; sourceTree = "<group>"; };
 		A079AE69F8B994090BDDFE31 /* ContinuousReplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContinuousReplay.swift; sourceTree = "<group>"; };
+		A14D73480295FF97C0B6475E /* MacAudioTransferRobustnessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAudioTransferRobustnessTests.swift; sourceTree = "<group>"; };
 		A45F95222812A2FBDAF616C2 /* CaptureDeviceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureDeviceSettingsView.swift; sourceTree = "<group>"; };
 		A4EB30B4CCBEE13BC66A5AB1 /* WatchLocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchLocalizationTests.swift; sourceTree = "<group>"; };
 		A4F0CD832C0F480FDDB640BE /* ControlInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlInbox.swift; sourceTree = "<group>"; };
@@ -1112,6 +1114,7 @@
 				AFDE13770A80BC06CE96F5A9 /* LifeIllustrationJourneyLayoutTests.swift */,
 				0C9123E82BFAA3D8E6C89FD9 /* LiveAgentQualityFixtures.swift */,
 				8F1B139E35226FA50EA4DE63 /* MacAudioRelayIntegrationTests.swift */,
+				A14D73480295FF97C0B6475E /* MacAudioTransferRobustnessTests.swift */,
 				578B2D95DC27750045E5CA5A /* MarkdownReadingTests.swift */,
 				A909FFBEF237B9D4E0E2F90E /* PhoneContextDeliveryTests.swift */,
 				3B4DBB9C4816FCAC226C283B /* PhoneReceiveControlFailureTests.swift */,
@@ -1397,7 +1400,7 @@
 			path = SharedUI;
 			sourceTree = "<group>";
 		};
-		"TEMP_1396A23A-65AD-47B1-9694-C92834BA9D8C" /* Rendering */ = {
+		"TEMP_10E7BE27-E0D6-43AB-A157-FD951948063B" /* Rendering */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -2096,6 +2099,7 @@
 				48834D3F740FF473645DC8E0 /* LifeIllustrationJourneyLayoutTests.swift in Sources */,
 				79ADC738A206B7025B089B33 /* LiveAgentQualityFixtures.swift in Sources */,
 				7EC841AE72DF42A9B63A0FEF /* MacAudioRelayIntegrationTests.swift in Sources */,
+				9672A6311AA14D4CBA37CBBD /* MacAudioTransferRobustnessTests.swift in Sources */,
 				FD8434F29F72688431119448 /* MarkdownReadingTests.swift in Sources */,
 				0D0E581AFFD5AAC8B208766F /* PhoneContextDeliveryTests.swift in Sources */,
 				64859F3A7178BFD80C6090A9 /* PhoneReceiveControlFailureTests.swift in Sources */,

@@ -84,9 +84,15 @@ final class PhoneRuntime {
         uploader = AudioUploadCoordinator(
             archive: archive,
             deviceID: deviceID,
-            dataClientProvider: { [weak remoteAgent] in remoteAgent?.speechDataClient },
+            dataClientProvider: { [weak remoteAgent] in
+                guard let remoteAgent, remoteAgent.store?.canContactServer != false else { return nil }
+                return remoteAgent.speechDataClient
+            },
             onTranscriptsUpdated: {
                 await refreshCallback?()
+            },
+            onAuthenticationRequired: { [weak remoteAgent] error in
+                remoteAgent?.store?.recordConnectionFailure(error)
             }
         )
         refreshCallback = { [weak self] in
@@ -99,7 +105,13 @@ final class PhoneRuntime {
             uploader?.hasPendingWork == true
         }
         remoteAgent.onAudioRelayCycle = { [weak uploader] in
-            await uploader?.drainUploadQueue()
+            try await uploader?.deliverInBackgroundPass()
+        }
+        remoteAgent.onAudioRelayCancel = { [weak uploader] in
+            uploader?.cancelUpload()
+        }
+        remoteAgent.onNetworkPathRecovered = { [weak uploader] in
+            uploader?.handleNetworkPathRecovered()
         }
 
         speechSettings.onDayStartHourChanged = { [weak self] in
@@ -162,7 +174,11 @@ final class PhoneRuntime {
     }
 
     private func archiveChanged() async {
-        uploader.requestUpload()
+        if isForeground {
+            uploader.requestUpload()
+        } else {
+            remoteAgent.contextDelivery.request()
+        }
         if !libraryPresentationDeferred {
             await refresh(reconcileFiles: false, deferBurstProjection: true)
         }
@@ -170,8 +186,10 @@ final class PhoneRuntime {
 
     private func audioReceived(_ chunkID: UUID) {
         uploader.notePendingUploadArrived()
-        uploader.requestUpload()
-        if !isForeground {
+        if isForeground {
+            uploader.requestUpload()
+        } else {
+            // Single background grant owner: PhoneContextDelivery drives AudioUploadCoordinator.deliverInBackgroundPass().
             remoteAgent.contextDelivery.request()
         }
         playback.requestWaveformPreparation(chunkID: chunkID, run: isForeground)
@@ -217,8 +235,8 @@ final class PhoneRuntime {
             await uploader.refreshCounts()
             if isForeground {
                 uploader.foreground()
-            } else {
-                uploader.requestUpload()
+            } else if uploader.hasPendingWork {
+                remoteAgent.contextDelivery.request()
             }
         } catch { failure = String(localized: "本机资料恢复未完成：\(error.localizedDescription)") }
     }

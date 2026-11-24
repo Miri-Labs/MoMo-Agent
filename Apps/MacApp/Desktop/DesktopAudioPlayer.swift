@@ -33,7 +33,11 @@ final class DesktopRecordingAudioPlayer: NSObject, AVAudioPlayerDelegate {
         if self.sourceID == sourceID && self.chunks == chunks { return }
         stop()
         self.sourceID = sourceID
-        self.chunks = chunks.filter(\.exists).sorted(by: { $0.chunkSeq < $1.chunkSeq })
+        self.chunks = chunks.filter(\.exists).sorted {
+            if $0.recordedAt != $1.recordedAt { return $0.recordedAt < $1.recordedAt }
+            if $0.chunkSeq != $1.chunkSeq { return $0.chunkSeq < $1.chunkSeq }
+            return $0.chunkId < $1.chunkId
+        }
         self.totalDurationSec = self.chunks.reduce(0.0) { $0 + $1.durationSec }
         self.currentTimeSec = 0
         self.activeChunkIndex = 0
