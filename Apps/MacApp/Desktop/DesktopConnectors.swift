@@ -17,13 +17,10 @@ private struct ConnectorsStatusResponse: Decodable {
     struct EmailStatus: Decodable {
         let enabled: Bool
         let connected: Bool
-        let preset: String
-        let host: String
-        let port: Int
-        let username: String
-        let has_password: Bool
-        let folder: String
-        let sync_days: Int
+        let provider: String
+        let pending: Bool
+        let has_api_key: Bool
+        let needs_reconnect: Bool
         let account_label: String
         let last_synced: Double?
         let last_error: String?
@@ -53,15 +50,6 @@ struct DesktopConnectorsView: View {
     @State private var awaitingFeishuOAuth = false
     @State private var feishuRedirectURI = ""
 
-    @State private var expandEmailManual = false
-    @State private var expandEmailAdvanced = false
-    @State private var emailUsername = ""
-    @State private var emailPassword = ""
-    @State private var emailHost = ""
-    @State private var emailPort = "993"
-    @State private var emailFolder = "INBOX"
-    @State private var emailSyncDays = 7
-
     var body: some View {
         Form {
             Section {
@@ -75,9 +63,8 @@ struct DesktopConnectorsView: View {
             }
 
             Section {
-                emailRow
-                if expandEmailManual {
-                    emailManualFields
+                ComposioMailSetup(model: model, status: status?.connectors.email) {
+                    await refreshStatus(hydrateFields: false)
                 }
             }
 
@@ -126,7 +113,7 @@ struct DesktopConnectorsView: View {
                     .disabled(busyConnector != nil)
 
                 Menu {
-                    Button("让 MoMo 排查") { askMoMoToConfigure("feishu", reconnect: true) }
+                    Button("让 MoMo 排查") { askMoMoToConfigureFeishu(reconnect: true) }
                     Button("重新授权") { expandFeishuManual.toggle() }
                     Divider()
                     Button("断开连接", role: .destructive) { Task { await disconnect("feishu") } }
@@ -139,7 +126,7 @@ struct DesktopConnectorsView: View {
                 .fixedSize()
             } else {
                 Button("让 MoMo 帮我配") {
-                    askMoMoToConfigure("feishu", reconnect: false)
+                    askMoMoToConfigureFeishu(reconnect: false)
                 }
                 .buttonStyle(DesktopSetupButton(filled: true, minimumHeight: 28, fontSize: 12))
                 .disabled(busyConnector != nil)
@@ -200,125 +187,17 @@ struct DesktopConnectorsView: View {
         }
     }
 
-    // MARK: - Email
-
-    private var emailRow: some View {
-        let em = status?.connectors.email
-        let connected = em?.connected == true
-        return HStack(spacing: 12) {
-            MailConnectorIcon(connected: connected)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("邮件")
-                    .font(.system(size: 14, weight: .medium))
-                if connected, let em {
-                    Text(connectedMeta(label: em.account_label, count: em.item_count, synced: em.last_synced))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                } else if let err = em?.last_error, !err.isEmpty {
-                    Text(err)
-                        .font(.system(size: 11))
-                        .foregroundStyle(MoMoPalette.failure)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer()
-
-            if connected {
-                Button("同步") { Task { await syncNow("email") } }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(busyConnector != nil)
-
-                Menu {
-                    Button("让 MoMo 排查") { askMoMoToConfigure("email", reconnect: true) }
-                    Button("修改配置") { expandEmailManual.toggle() }
-                    Divider()
-                    Button("断开连接", role: .destructive) { Task { await disconnect("email") } }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-            } else {
-                Button("让 MoMo 帮我配") {
-                    askMoMoToConfigure("email", reconnect: false)
-                }
-                .buttonStyle(DesktopSetupButton(filled: true, minimumHeight: 28, fontSize: 12))
-                .disabled(busyConnector != nil)
-
-                Button(expandEmailManual ? "收起" : "手动") {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        expandEmailManual.toggle()
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(busyConnector != nil)
-            }
-        }
-        .padding(.vertical, 2)
-    }
-
-    @ViewBuilder
-    private var emailManualFields: some View {
-        let em = status?.connectors.email
-        TextField("邮箱", text: $emailUsername, prompt: Text(verbatim: "you@example.com"))
-            .textFieldStyle(.roundedBorder)
-
-        SecureField("密码", text: $emailPassword, prompt: Text(em?.has_password == true ? "已保存" : "应用专用密码 / 授权码"))
-            .textFieldStyle(.roundedBorder)
-
-        DisclosureGroup("高级", isExpanded: $expandEmailAdvanced) {
-            HStack(spacing: 8) {
-                TextField("IMAP", text: $emailHost, prompt: Text(verbatim: "自动识别"))
-                    .textFieldStyle(.roundedBorder)
-                TextField("端口", text: $emailPort, prompt: Text(verbatim: "993"))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 64)
-            }
-            HStack(spacing: 10) {
-                TextField("文件夹", text: $emailFolder, prompt: Text(verbatim: "INBOX"))
-                    .textFieldStyle(.roundedBorder)
-                Stepper("近 \(emailSyncDays) 天", value: $emailSyncDays, in: 1...30)
-                    .font(.system(size: 12))
-            }
-        }
-        .font(.system(size: 12))
-        .foregroundStyle(.secondary)
-
-        HStack {
-            Spacer()
-            Button("连接") {
-                Task { await saveEmailConnector() }
-            }
-            .buttonStyle(DesktopSetupButton(filled: true, minimumHeight: 28, fontSize: 12))
-            .disabled(busyConnector != nil || emailUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-    }
-
     // MARK: - AI-Native Handoff
 
-    private func askMoMoToConfigure(_ connector: String, reconnect: Bool) {
+    private func askMoMoToConfigureFeishu(reconnect: Bool) {
         errorMessage = nil
         guard let store = model.taskStore else {
             errorMessage = "MoMo 尚未在线，请稍候再试。"
             return
         }
-        let prompt: String
-        switch (connector, reconnect) {
-        case ("feishu", false):
-            prompt = "帮我接入飞书连接器，只读同步我的飞书群聊消息和云文档。"
-        case ("feishu", true):
-            prompt = "帮我检查一下飞书连接器的状态和同步情况，有问题的话按 connectors-setup skill 顺手帮我修好。"
-        case ("email", false):
-            prompt = "帮我接入我的邮箱连接器，只读同步近期邮件。"
-        default:
-            prompt = "帮我检查一下邮箱连接器的状态和同步情况，有问题的话按 connectors-setup skill 顺手帮我修好。"
-        }
+        let prompt = reconnect
+            ? "帮我检查一下飞书连接器的状态和同步情况，有问题的话按 connectors-setup skill 顺手帮我修好。"
+            : "帮我接入飞书连接器，只读同步我的飞书群聊消息和云文档。"
         do {
             try store.enqueueIndependentMessage(prompt)
             dismiss()
@@ -334,6 +213,7 @@ struct DesktopConnectorsView: View {
     // MARK: - API Actions
 
     private func refreshStatus(hydrateFields: Bool) async {
+        errorMessage = nil
         do {
             let data = try await model.contextAPIRequest(path: "/v1/connectors")
             let decoded = try JSONDecoder().decode(ConnectorsStatusResponse.self, from: data)
@@ -342,12 +222,7 @@ struct DesktopConnectorsView: View {
                 let fs = decoded.connectors.feishu
                 feishuDomain = fs.domain
                 if !fs.app_id.isEmpty { feishuAppID = fs.app_id }
-                let em = decoded.connectors.email
-                if !em.username.isEmpty { emailUsername = em.username }
-                if !em.host.isEmpty { emailHost = em.host }
-                emailPort = String(em.port)
-                if !em.folder.isEmpty { emailFolder = em.folder }
-                emailSyncDays = max(1, min(30, em.sync_days))
+
             }
             if decoded.connectors.feishu.connected {
                 awaitingFeishuOAuth = false
@@ -380,32 +255,6 @@ struct DesktopConnectorsView: View {
                     }
                 }
             }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func saveEmailConnector() async {
-        busyConnector = "email"
-        errorMessage = nil
-        defer { busyConnector = nil }
-        do {
-            var payload: [String: Any] = [
-                "username": emailUsername,
-                "folder": emailFolder,
-                "sync_days": emailSyncDays,
-                "enabled": true,
-            ]
-            let trimmedHost = emailHost.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmedHost.isEmpty {
-                payload["host"] = trimmedHost
-                payload["port"] = Int(emailPort) ?? 993
-            }
-            if !emailPassword.isEmpty { payload["password"] = emailPassword }
-            _ = try await model.contextAPIRequest(path: "/v1/connectors/email/configure", method: "POST", body: payload)
-            emailPassword = ""
-            expandEmailManual = false
-            await refreshStatus(hydrateFields: false)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -462,10 +311,6 @@ struct DesktopOnboardingConnectors: View {
     @State private var awaitingFeishuOAuth = false
     @State private var feishuRedirectURI = ""
 
-    @State private var expandEmail = false
-    @State private var emailUsername = ""
-    @State private var emailPassword = ""
-
     private var anyConnected: Bool {
         status?.connectors.feishu.connected == true || status?.connectors.email.connected == true
     }
@@ -483,8 +328,7 @@ struct DesktopOnboardingConnectors: View {
                     title: "飞书",
                     connected: status?.connectors.feishu.connected == true,
                     account: status?.connectors.feishu.account_label ?? "",
-                    expanded: $expandFeishu,
-                    connector: "feishu"
+                    expanded: $expandFeishu
                 ) {
                     FeishuConnectorIcon(connected: status?.connectors.feishu.connected == true)
                 }
@@ -532,33 +376,10 @@ struct DesktopOnboardingConnectors: View {
 
                 Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
 
-                onboardingRow(
-                    title: "邮件",
-                    connected: status?.connectors.email.connected == true,
-                    account: status?.connectors.email.account_label ?? "",
-                    expanded: $expandEmail,
-                    connector: "email"
-                ) {
-                    MailConnectorIcon(connected: status?.connectors.email.connected == true)
+                ComposioMailSetup(model: model, status: status?.connectors.email) {
+                    await refreshStatus()
                 }
-
-                if expandEmail {
-                    VStack(spacing: 8) {
-                        TextField("", text: $emailUsername, prompt: Text(verbatim: "you@example.com"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                        SecureField("", text: $emailPassword, prompt: Text("应用专用密码 / 授权码"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                        HStack {
-                            Spacer()
-                            Button("连接") { Task { await saveEmail() } }
-                                .buttonStyle(DesktopSetupButton(filled: true, minimumHeight: 28, fontSize: 12))
-                                .disabled(busyConnector != nil || emailUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
-                    .padding(.bottom, 12)
-                }
+                .padding(.vertical, 10)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 6)
@@ -599,7 +420,6 @@ struct DesktopOnboardingConnectors: View {
         connected: Bool,
         account: String,
         expanded: Binding<Bool>,
-        connector: String,
         @ViewBuilder icon: () -> Icon
     ) -> some View {
         HStack(spacing: 12) {
@@ -624,7 +444,7 @@ struct DesktopOnboardingConnectors: View {
                     .foregroundStyle(MoMoPalette.success)
             } else {
                 Button("让 MoMo 配") {
-                    handoffToMoMo(connector)
+                    handoffFeishuToMoMo()
                 }
                 .buttonStyle(DesktopSetupButton(filled: true, minimumHeight: 28, fontSize: 12))
                 .disabled(busyConnector != nil)
@@ -642,11 +462,9 @@ struct DesktopOnboardingConnectors: View {
         .padding(.vertical, 12)
     }
 
-    private func handoffToMoMo(_ connector: String) {
+    private func handoffFeishuToMoMo() {
         errorMessage = nil
-        let prompt = connector == "feishu"
-            ? "帮我接入飞书连接器，只读同步我的飞书群聊消息和云文档。"
-            : "帮我接入我的邮箱连接器，只读同步近期邮件。"
+        let prompt = "帮我接入飞书连接器，只读同步我的飞书群聊消息和云文档。"
         if let store = model.taskStore {
             do {
                 try store.enqueueIndependentMessage(prompt)
@@ -660,6 +478,7 @@ struct DesktopOnboardingConnectors: View {
     }
 
     private func refreshStatus() async {
+        errorMessage = nil
         do {
             let data = try await model.contextAPIRequest(path: "/v1/connectors")
             let decoded = try JSONDecoder().decode(ConnectorsStatusResponse.self, from: data)
@@ -669,7 +488,7 @@ struct DesktopOnboardingConnectors: View {
                 expandFeishu = false
             }
         } catch {
-            // Keep onboarding smooth if context server is still warming up.
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -700,24 +519,7 @@ struct DesktopOnboardingConnectors: View {
         }
     }
 
-    private func saveEmail() async {
-        busyConnector = "email"
-        errorMessage = nil
-        defer { busyConnector = nil }
-        do {
-            let payload: [String: Any] = [
-                "username": emailUsername,
-                "password": emailPassword,
-                "enabled": true,
-            ]
-            _ = try await model.contextAPIRequest(path: "/v1/connectors/email/configure", method: "POST", body: payload)
-            emailPassword = ""
-            expandEmail = false
-            await refreshStatus()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
+
 }
 
 // MARK: - Apple Settings-Style Connector Icons
@@ -861,5 +663,158 @@ struct MailConnectorIcon: View {
             }
         }
         .frame(width: 28, height: 28)
+    }
+}
+
+/// Both entry points resume the same pending connection after the browser handoff.
+private struct ComposioMailSetup: View {
+    let model: DesktopModel
+    let status: ConnectorsStatusResponse.EmailStatus?
+    let refresh: () async -> Void
+
+    private enum Action { case start, check, sync, disconnect, updateKey }
+
+    @State private var expanded = false
+    @State private var provider = "gmail"
+    @State private var key = ""
+    @State private var replaceKey = false
+    @State private var busy = false
+    @State private var error: String?
+    @State private var polling = true
+    @State private var checking = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                MailConnectorIcon(connected: status?.connected == true)
+                VStack(alignment: .leading) {
+                    Text("邮件").font(.headline)
+                    if let status, status.connected {
+                        Text("\(status.account_label) · \(status.item_count) 封").font(.caption)
+                    }
+                }
+                Spacer()
+                if let status, status.connected {
+                    Button("同步") { Task { await perform(.sync) } }
+                    Menu {
+                        Button("更换 Composio API key") { replaceKey.toggle() }
+                        Button("断开连接", role: .destructive) { Task { await perform(.disconnect) } }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .accessibilityLabel("邮箱连接选项")
+                } else if status != nil, status?.pending != true {
+                    Button(expanded ? "收起" : "连接邮箱") { expanded.toggle() }
+                        .buttonStyle(DesktopSetupButton(filled: true, minimumHeight: 28, fontSize: 12))
+                }
+            }
+            if status?.needs_reconnect == true {
+                Text("旧邮箱连接需要重新授权。已同步的邮件仍可搜索。").font(.caption)
+            }
+            if status?.pending == true {
+                Label("请在浏览器完成邮箱授权", systemImage: "arrow.up.right.square")
+                HStack {
+                    Button("打开授权页") { Task { await perform(.start) } }
+                    Button("检查连接") { Task { await perform(.check) } }
+                    Button("取消连接") { Task { await perform(.disconnect) } }
+                    Button("更换 API key") { replaceKey.toggle() }
+                }
+            } else if expanded, status?.connected != true {
+                Picker("邮箱服务", selection: $provider) {
+                    Text("Gmail").tag("gmail")
+                    Text("Outlook").tag("outlook")
+                }
+                .pickerStyle(.segmented)
+                Text("Composio 保管邮箱授权，并代理读取最近 7 天的收件箱邮件。")
+                    .font(.caption).foregroundStyle(.secondary)
+                if status?.has_api_key != true || replaceKey {
+                    Link("获取 Composio 项目 API key", destination: URL(string: "https://dashboard.composio.dev/~/project/settings/api-keys")!)
+                    SecureField("Composio 项目 API key", text: $key)
+                        .textFieldStyle(.roundedBorder)
+                } else {
+                    Button("更换 Composio API key") { replaceKey = true }
+                        .buttonStyle(.link)
+                }
+                Button("在浏览器中授权") { Task { await perform(.start) } }
+                    .disabled((replaceKey || status?.has_api_key != true) && key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if replaceKey, status?.connected == true || status?.pending == true {
+                SecureField("同一 Composio 项目的新 API key", text: $key)
+                    .textFieldStyle(.roundedBorder)
+                Button("保存 API key") { Task { await perform(.updateKey) } }
+                    .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if status == nil {
+                Button("重新读取连接状态") { Task { await refresh() } }
+            }
+            if busy { ProgressView().controlSize(.small).accessibilityLabel("正在联系邮箱服务") }
+            if let message = error ?? status?.last_error {
+                Text(message).foregroundStyle(MoMoPalette.failure).font(.caption).textSelection(.enabled)
+            }
+        }
+        .multilineTextAlignment(.leading)
+        .disabled(busy || checking)
+        .task(id: status?.pending) {
+            guard status?.pending == true else { return }
+            polling = true
+            for _ in 0..<60 {
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                guard polling, !Task.isCancelled else { return }
+                if !busy { await perform(.check, automatic: true) }
+            }
+        }
+    }
+
+    @MainActor
+    private func perform(_ action: Action, automatic: Bool = false) async {
+        guard !busy else { return }
+        if checking { return }
+        if action == .check { checking = true }
+        if !automatic { busy = true }
+        defer {
+            if action == .check { checking = false }
+            if !automatic { busy = false }
+        }
+        error = nil
+        do {
+            switch action {
+            case .start:
+                let selected = status.flatMap { $0.pending ? $0.provider : nil } ?? provider
+                var payload = ["provider": selected]
+                if !key.isEmpty { payload["api_key"] = key }
+                let data = try await model.contextAPIRequest(path: "/v1/connectors/email/oauth/start", method: "POST", body: payload)
+                struct LinkResponse: Decodable { let authorize_url: URL }
+                let link = try JSONDecoder().decode(LinkResponse.self, from: data)
+                key = ""
+                replaceKey = false
+                polling = true
+                if !NSWorkspace.shared.open(link.authorize_url) { error = "无法打开浏览器，请重试打开授权页。" }
+            case .check:
+                let data = try await model.contextAPIRequest(path: "/v1/connectors/email/oauth/check", method: "POST", body: [:])
+                struct Connection: Decodable { let connected: Bool }
+                if try JSONDecoder().decode(Connection.self, from: data).connected { expanded = false }
+            case .sync:
+                let data = try await model.contextAPIRequest(path: "/v1/connectors/sync", method: "POST", body: ["connector": "email"])
+                struct SyncResult: Decodable {
+                    struct MailResult: Decodable { let error: String? }
+                    let results: [String: MailResult]
+                }
+                error = try JSONDecoder().decode(SyncResult.self, from: data).results["email"]?.error
+            case .updateKey:
+                _ = try await model.contextAPIRequest(path: "/v1/connectors/email/key", method: "POST", body: ["api_key": key])
+                key = ""
+                replaceKey = false
+                polling = true
+            case .disconnect:
+                _ = try await model.contextAPIRequest(path: "/v1/connectors/disconnect", method: "POST", body: ["connector": "email"])
+                expanded = false
+                key = ""
+                replaceKey = false
+            }
+        } catch {
+            self.error = error.localizedDescription
+            polling = false
+        }
+        await refresh()
     }
 }

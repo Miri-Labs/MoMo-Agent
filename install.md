@@ -12,6 +12,17 @@
 
 <a id="mac-proxy-recovery"></a>
 
+## 在 Mac 上连接 Gmail 或 Outlook
+
+1. 在首次引导或「设置 → 连接器」中点「连接邮箱」，选择 Gmail 或 Outlook。
+2. 首次连接时，在安全输入框填入自己的 Composio 项目 API key。[获取项目 API key](https://dashboard.composio.dev/~/project/settings/api-keys)
+3. 点「在浏览器中授权」，在邮箱服务商页面登录并确认权限。
+4. 回到 MoMo 查看已连接的邮箱地址。授权页关闭后，可以点「打开授权页」继续。也可以跳过引导，稍后从设置接入。
+
+Composio 托管邮箱 OAuth 凭据并代理读取请求。MoMo 每次最多同步最近 7 天的 80 封收件箱邮件，供本地搜索和简报使用。一个 Mac 资料库可连接一个邮箱。更换邮箱前先从菜单断开当前连接。
+
+从旧版升级时，MoMo 会清除本机保存的 IMAP 配置和密码，历史邮件仍可检索。Gmail 和 Outlook 账号需重新授权。此前通过 IMAP 接入的其他邮箱目前仅可查看已导入的邮件。
+
 ## Mac Tailscale 与代理（2026-10-28）
 
 **设置 → 通用 → 网络代理 → Tailscale**，默认「跟随系统」。只有需要覆盖系统设置时才选「手动」，填写 HTTP/HTTPS 代理地址和端口后应用；「不使用代理」是用户显式选择。该项管理内嵌 Tailscale 的控制与中继连接，不更改全系统代理或MoMo 的模型代理。
