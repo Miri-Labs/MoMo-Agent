@@ -4,11 +4,14 @@ import UniformTypeIdentifiers
 import MoMoAgentClient
 import MoMoArchive
 
-/// iPhone Speaker Voiceprint Roster screen.
-///
-/// When connected to Mac (`remoteAgent?.speechDataClient != nil`), manages Mac's authoritative
-/// ReDimNet2+ voiceprint roster: owner voiceprint onboarding, adding people, recording or importing
-/// reference voice clips, managing aliases/hotwords, and triggering <100ms global history rematch.
+private final class SampleClipPlayerDelegate: NSObject, AVAudioPlayerDelegate, @unchecked Sendable {
+    var onFinish: (@Sendable () -> Void)?
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        onFinish?()
+    }
+}
+
+/// Clean AI-native People & Voiceprints screen on iPhone.
 struct SpeakerProfilesView: View {
     let archive: ArchiveStore
     var remoteAgent: PhoneRemoteAgent? = nil
@@ -18,7 +21,6 @@ struct SpeakerProfilesView: View {
     @State private var macProfiles: [VoiceprintProfile] = []
     @State private var localPeople: [SpeakerProfile] = []
     @State private var loaded = false
-    @State private var busy = false
     @State private var rematching = false
     @State private var rematchMessage: String?
     @State private var failure: String?
@@ -28,8 +30,16 @@ struct SpeakerProfilesView: View {
     @State private var selectedProfile: VoiceprintProfile?
     @State private var deletingMacProfile: VoiceprintProfile?
 
+    @State private var loadingPlayID: String?
+    @State private var playingProfileID: String?
+    @State private var listPlayer: AVAudioPlayer?
+    @State private var listPlayerDelegate = SampleClipPlayerDelegate()
+
     private var isConnectedToMac: Bool { remoteAgent?.speechDataClient != nil }
     private var ownerProfile: VoiceprintProfile? { macProfiles.first(where: \.isOwner) }
+    private var sortedProfiles: [VoiceprintProfile] {
+        macProfiles.sorted { ($0.isOwner ? 0 : 1) < ($1.isOwner ? 0 : 1) }
+    }
 
     var body: some View {
         List {
@@ -49,19 +59,43 @@ struct SpeakerProfilesView: View {
         .tint(MoMoPalette.ink)
         .toolbar {
             if isConnectedToMac {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            showingOnboarding = true
+                        } label: {
+                            Label("录下我的声音", systemImage: "mic")
+                        }
+                        .accessibilityIdentifier("speaker.owner.onboarding")
+
+                        if !macProfiles.isEmpty {
+                            Button {
+                                Task { await runGlobalRematch() }
+                            } label: {
+                                Label("重新匹配历史录音", systemImage: "waveform.badge.magnifyingglass")
+                            }
+                            .disabled(rematching)
+                            .accessibilityIdentifier("speaker.rematch.all")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .accessibilityLabel("更多")
+                    .accessibilityIdentifier("speaker.more.menu")
+
                     Button {
                         showingNewPerson = true
                     } label: {
-                        Image(systemName: "person.badge.plus")
+                        Image(systemName: "plus")
                     }
-                    .accessibilityLabel("新增声纹人物")
+                    .accessibilityLabel("添加人物")
                     .accessibilityIdentifier("speaker.add.person")
                 }
             }
         }
         .task { await reload() }
         .refreshable { await reload() }
+        .onDisappear { stopListPlayback() }
         .sheet(isPresented: $showingOnboarding) {
             if let remoteAgent {
                 NavigationStack {
@@ -75,7 +109,7 @@ struct SpeakerProfilesView: View {
                                 await onSpeakersChanged?()
                             }
                         },
-                        onSkip: { showingOnboarding = false }
+                        onSkip: nil
                     )
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
@@ -97,8 +131,9 @@ struct SpeakerProfilesView: View {
             }
         }
         .sheet(item: $selectedProfile) { profile in
-            if let client = remoteAgent?.speechDataClient {
+            if let remoteAgent, let client = remoteAgent.speechDataClient {
                 MacVoiceprintPersonDetailSheet(
+                    remoteAgent: remoteAgent,
                     client: client,
                     profile: profile,
                     onChanged: {
@@ -110,7 +145,7 @@ struct SpeakerProfilesView: View {
             }
         }
         .confirmationDialog(
-            "删除人物与声纹？",
+            "删除人物？",
             isPresented: Binding(get: { deletingMacProfile != nil }, set: { if !$0 { deletingMacProfile = nil } }),
             titleVisibility: .visible,
             presenting: deletingMacProfile
@@ -119,155 +154,194 @@ struct SpeakerProfilesView: View {
                 Task { await deleteMacProfile(person) }
             }
         } message: { _ in
-            Text("清除 Mac 端该人物的声纹样本与绑定，保留原始录音和转录文字。")
+            Text("保留原始录音与文字。")
         }
-        .alert("声纹操作失败", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+        .alert("操作失败", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("好", role: .cancel) { failure = nil }
         } message: { Text(failure ?? "") }
     }
 
     @ViewBuilder
     private var macRosterContent: some View {
-        Section {
-            Button {
-                showingOnboarding = true
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: ownerProfile?.sampleCount ?? 0 > 0 ? "person.crop.circle.badge.checkmark" : "person.wave.2.fill")
-                        .font(.title2)
-                        .foregroundStyle(ownerProfile?.sampleCount ?? 0 > 0 ? MoMoPalette.success : MoMoPalette.ink)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(ownerProfile?.sampleCount ?? 0 > 0 ? "补录我的声音（提升跨设备准确度）" : "锁定我的声音（15 秒引导）")
-                            .foregroundStyle(MoMoPalette.ink)
-                            .fontWeight(.medium)
-                        if let owner = ownerProfile, owner.sampleCount > 0 {
-                            Text(String(format: "已录入 %d 条样本 · %.1f 秒清晰语音", owner.sampleCount, owner.totalCleanSeconds))
-                                .font(.caption)
-                                .foregroundStyle(MoMoPalette.muted)
-                        } else {
-                            Text("录入后，Watch / 耳机 / 电脑录音将自动标出「我」")
-                                .font(.caption)
-                                .foregroundStyle(MoMoPalette.muted)
-                        }
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .accessibilityIdentifier("speaker.owner.onboarding")
-        } header: {
-            Text("我的声纹")
-        }
-
-        Section {
-            if macProfiles.isEmpty && loaded {
-                Text("还没有其他人物。点右上角 + 提前录入同事/家人，或在转录里点任意说话人一键绑定。")
-                    .font(.footnote)
-                    .foregroundStyle(MoMoPalette.muted)
-            } else {
-                ForEach(macProfiles) { person in
-                    Button {
-                        selectedProfile = person
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: person.isOwner ? "person.crop.circle.fill" : "person.crop.circle")
-                                .font(.title2)
-                                .foregroundStyle(person.isOwner ? MoMoPalette.success : MoMoPalette.muted)
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(spacing: 6) {
-                                    Text(person.name)
-                                        .foregroundStyle(MoMoPalette.ink)
-                                    if person.isOwner {
-                                        Text("主人")
-                                            .font(.caption2.weight(.medium))
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(MoMoPalette.successBackground, in: Capsule())
-                                            .foregroundStyle(MoMoPalette.success)
-                                    }
-                                }
-                                Text(String(format: "样本 %d · %.1f 秒 · 排除 %d", person.sampleCount, person.totalCleanSeconds, person.rejectionCount))
-                                    .font(.caption)
-                                    .foregroundStyle(MoMoPalette.muted)
-                                    .monospacedDigit()
-                                if !person.aliases.isEmpty {
-                                    Text("别名：\(person.aliases.joined(separator: "、"))")
-                                        .font(.caption2)
-                                        .foregroundStyle(MoMoPalette.muted)
-                                        .lineLimit(1)
-                                }
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            deletingMacProfile = person
-                        } label: {
-                            Label("删除", systemImage: "trash")
-                        }
-                    }
-                }
-            }
-        } header: {
-            Text("Mac 声纹名册（ReDimNet2+ Core ML）")
-        } footer: {
-            Text("点击人物可查看/删除声纹片段、用麦克风补录、导入参考音频或设置别名热词。")
-        }
-
-        if !macProfiles.isEmpty {
+        if ownerProfile == nil || (ownerProfile?.sampleCount ?? 0) == 0 {
             Section {
                 Button {
-                    Task { await runGlobalRematch() }
+                    showingOnboarding = true
                 } label: {
-                    HStack {
-                        if rematching {
-                            ProgressView().controlSize(.small)
-                            Text("正在 Mac 端重匹配历史声纹…")
-                        } else {
-                            Label("立即重匹配全部历史录音", systemImage: "waveform.badge.magnifyingglass")
-                                .foregroundStyle(MoMoPalette.ink)
-                        }
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(MoMoPalette.successBackground)
+                            .frame(width: 34, height: 34)
+                            .overlay {
+                                Image(systemName: "waveform")
+                                    .font(.callout.weight(.semibold))
+                                    .foregroundStyle(MoMoPalette.success)
+                            }
+                        Text("录下我的声音")
+                            .fontWeight(.medium)
+                            .foregroundStyle(MoMoPalette.ink)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
                 }
-                .disabled(rematching || busy)
-                .accessibilityIdentifier("speaker.rematch.all")
-            } footer: {
-                if let rematchMessage {
-                    Label(rematchMessage, systemImage: "checkmark.circle.fill")
-                        .font(.footnote)
-                        .foregroundStyle(MoMoPalette.muted)
-                } else {
-                    Text("只重新比对 192 维声纹向量，无需重新转录，通常在 100 毫秒内完成。")
+                .accessibilityIdentifier("speaker.owner.onboarding")
+            }
+        }
+
+        Section {
+            if sortedProfiles.isEmpty && loaded {
+                Text("暂无人物")
+                    .foregroundStyle(MoMoPalette.muted)
+            } else {
+                ForEach(sortedProfiles) { person in
+                    rosterRow(person)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                deletingMacProfile = person
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                        }
                 }
             }
+        } footer: {
+            if rematching {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("正在匹配…")
+                }
+            } else if let rematchMessage {
+                Text(rematchMessage)
+            }
+        }
+    }
+
+    private func rosterRow(_ person: VoiceprintProfile) -> some View {
+        let firstClip = person.samples.first(where: \.hasClip)
+        let isPlaying = (playingProfileID == person.id)
+        return HStack(spacing: 12) {
+            Button {
+                stopListPlayback()
+                selectedProfile = person
+            } label: {
+                HStack(spacing: 12) {
+                    Circle()
+                        .fill(person.isOwner ? MoMoPalette.successBackground : MoMoPalette.ink.opacity(0.07))
+                        .frame(width: 34, height: 34)
+                        .overlay {
+                            Text(String(person.name.prefix(1)))
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(person.isOwner ? MoMoPalette.success : MoMoPalette.ink)
+                        }
+                    HStack(spacing: 6) {
+                        Text(person.name)
+                            .foregroundStyle(MoMoPalette.ink)
+                        if person.isOwner {
+                            Text("本人")
+                                .font(.caption2.weight(.medium))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1.5)
+                                .background(MoMoPalette.successBackground, in: Capsule())
+                                .foregroundStyle(MoMoPalette.success)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    if person.sampleCount > 0 {
+                        Text(String(format: "%.0fs", max(1, person.totalCleanSeconds)))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        Text("未录")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if let sample = firstClip {
+                Button {
+                    Task { await toggleListPlay(profile: person, sample: sample) }
+                } label: {
+                    Group {
+                        if loadingPlayID == person.id {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: isPlaying ? "stop.circle.fill" : "play.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(isPlaying ? MoMoPalette.success : MoMoPalette.muted)
+                        }
+                    }
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isPlaying ? "停止试听" : "试听\(person.name)")
+                .accessibilityIdentifier("speaker.row.play.\(person.id)")
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
     }
 
     @ViewBuilder
     private var offlineContent: some View {
         Section {
-            Label("请先配对并连接 Mac，即可管理全局 ReDimNet2+ 声纹名册、录入声纹样本并毫秒级重匹配历史录音。", systemImage: "desktopcomputer.trianglebadge.exclamationmark")
-                .font(.footnote)
+            Label("连接 Mac 后可管理声纹", systemImage: "desktopcomputer")
                 .foregroundStyle(MoMoPalette.muted)
         }
         if !localPeople.isEmpty {
-            Section("本机缓存的说话人") {
+            Section {
                 ForEach(localPeople) { person in
-                    HStack {
-                        Text(person.name)
-                        Spacer()
-                        Text("样本 \(person.sampleCount)")
-                            .font(.caption)
-                            .foregroundStyle(MoMoPalette.muted)
+                    Text(person.name)
+                }
+            }
+        }
+    }
+
+    private func toggleListPlay(profile: VoiceprintProfile, sample: VoiceprintSample) async {
+        guard let client = remoteAgent?.speechDataClient else { return }
+        if playingProfileID == profile.id {
+            stopListPlayback()
+            return
+        }
+        stopListPlayback()
+        loadingPlayID = profile.id
+        defer { if loadingPlayID == profile.id { loadingPlayID = nil } }
+        do {
+            let data = try await client.fetchVoiceprintSampleAudio(profileID: profile.id, sampleID: sample.id)
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try session.setActive(true)
+            let player = try AVAudioPlayer(data: data)
+            let pid = profile.id
+            listPlayerDelegate.onFinish = {
+                Task { @MainActor in
+                    if playingProfileID == pid {
+                        stopListPlayback()
                     }
                 }
             }
+            player.delegate = listPlayerDelegate
+            guard player.play() else { return }
+            listPlayer = player
+            playingProfileID = profile.id
+        } catch {
+            failure = error.localizedDescription
+        }
+    }
+
+    private func stopListPlayback() {
+        listPlayer?.stop()
+        listPlayer = nil
+        if playingProfileID != nil {
+            playingProfileID = nil
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
 
@@ -292,8 +366,7 @@ struct SpeakerProfilesView: View {
 
     private func deleteMacProfile(_ profile: VoiceprintProfile) async {
         guard let client = remoteAgent?.speechDataClient else { return }
-        busy = true
-        defer { busy = false }
+        stopListPlayback()
         do {
             try await client.deleteVoiceprintProfile(id: profile.id)
             await reload()
@@ -311,12 +384,7 @@ struct SpeakerProfilesView: View {
         defer { rematching = false }
         do {
             let summary = try await client.rematchVoiceprints()
-            rematchMessage = String(
-                format: "已扫描 %d 个声纹簇，更新 %d 条语音（耗时 %.1f ms）。",
-                summary.scannedClusters,
-                summary.updatedSpans,
-                summary.elapsedMs
-            )
+            rematchMessage = String(format: "已匹配 %d 处（%.1f ms）", summary.updatedSpans, summary.elapsedMs)
             await uploader?.syncRemoteTranscriptsFromMac(force: true)
             await onSpeakersChanged?()
         } catch {
@@ -332,18 +400,20 @@ private struct MacNewVoiceprintPersonSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var aliasesText = ""
-    @State private var isOwner = false
     @State private var saving = false
     @State private var error: String?
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("基本信息") {
-                    TextField("姓名（例如：Alex、产品经理）", text: $name)
+                Section {
+                    TextField("姓名", text: $name)
                         .textContentType(.name)
-                    TextField("别名 / 称呼（逗号分隔，自动注入热词）", text: $aliasesText)
-                    Toggle("设为设备主人（「我」）", isOn: $isOwner)
+                        .focused($nameFocused)
+                        .submitLabel(.done)
+                        .onSubmit { Task { await create() } }
+                    TextField("别名（可选，逗号分隔）", text: $aliasesText)
                 }
                 if let error {
                     Section {
@@ -351,26 +421,25 @@ private struct MacNewVoiceprintPersonSheet: View {
                     }
                 }
             }
-            .navigationTitle("新增声纹人物")
+            .navigationTitle("添加人物")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }.disabled(saving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("创建") {
-                        Task { await create() }
-                    }
-                    .disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("添加") { Task { await create() } }
+                        .disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+            .onAppear { nameFocused = true }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.height(260), .medium])
     }
 
     private func create() async {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty, !saving else { return }
         saving = true; error = nil
         defer { saving = false }
         let aliases = aliasesText
@@ -378,7 +447,7 @@ private struct MacNewVoiceprintPersonSheet: View {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         do {
-            let profile = try await client.createVoiceprintProfile(name: trimmed, isOwner: isOwner, aliases: aliases)
+            let profile = try await client.createVoiceprintProfile(name: trimmed, isOwner: false, aliases: aliases)
             onCreated(profile)
         } catch {
             self.error = error.localizedDescription
@@ -386,14 +455,8 @@ private struct MacNewVoiceprintPersonSheet: View {
     }
 }
 
-private final class SampleClipPlayerDelegate: NSObject, AVAudioPlayerDelegate, @unchecked Sendable {
-    var onFinish: (@Sendable () -> Void)?
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        onFinish?()
-    }
-}
-
 private struct MacVoiceprintPersonDetailSheet: View {
+    let remoteAgent: PhoneRemoteAgent
     let client: AgentClient
     @State var profile: VoiceprintProfile
     let onChanged: () async -> Void
@@ -404,11 +467,7 @@ private struct MacVoiceprintPersonDetailSheet: View {
     @State private var notes: String = ""
     @State private var saving = false
     @State private var importingFile = false
-    @State private var recording = false
-    @State private var recordSeconds: Double = 0
-    @State private var recorder: AVAudioRecorder?
-    @State private var recordURL: URL?
-    @State private var timerTask: Task<Void, Never>?
+    @State private var showingRecorder = false
     @State private var statusBanner: String?
     @State private var error: String?
     @State private var loadingSampleID: String?
@@ -419,45 +478,82 @@ private struct MacVoiceprintPersonDetailSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("资料与热词") {
-                    TextField("姓名", text: $name)
-                    TextField("别名（逗号分隔，自动注入热词）", text: $aliasesText)
-                    TextField("备注（角色 / 关系）", text: $notes)
-                    Button {
-                        Task { await saveProfileInfo() }
-                    } label: {
-                        if saving { ProgressView() } else { Text("保存修改") }
+                Section {
+                    LabeledContent("姓名") {
+                        TextField("姓名", text: $name)
+                            .multilineTextAlignment(.trailing)
+                            .submitLabel(.done)
+                            .onSubmit { Task { await saveProfileInfoIfDirty() } }
                     }
-                    .disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    LabeledContent("别名") {
+                        TextField("逗号分隔", text: $aliasesText)
+                            .multilineTextAlignment(.trailing)
+                            .submitLabel(.done)
+                            .onSubmit { Task { await saveProfileInfoIfDirty() } }
+                    }
+                    LabeledContent("备注") {
+                        TextField("可选", text: $notes)
+                            .multilineTextAlignment(.trailing)
+                            .submitLabel(.done)
+                            .onSubmit { Task { await saveProfileInfoIfDirty() } }
+                    }
                 }
 
-                Section("补充声纹样本") {
-                    if recording {
-                        HStack {
-                            ProgressView().controlSize(.small)
-                            Text(String(format: "正在录音 %.1f 秒（建议 5–15 秒）", recordSeconds))
+                Section("声音") {
+                    ForEach(profile.samples) { sample in
+                        HStack(spacing: 12) {
+                            if sample.hasClip {
+                                Button {
+                                    Task { await toggleSamplePlayback(sample) }
+                                } label: {
+                                    Group {
+                                        if loadingSampleID == sample.id {
+                                            ProgressView().controlSize(.small)
+                                        } else {
+                                            Image(systemName: playingSampleID == sample.id ? "stop.circle.fill" : "play.circle.fill")
+                                                .font(.title3)
+                                                .foregroundStyle(playingSampleID == sample.id ? MoMoPalette.success : MoMoPalette.ink)
+                                        }
+                                    }
+                                    .frame(width: 34, height: 34)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(playingSampleID == sample.id ? "停止试听" : "试听")
+                                .accessibilityIdentifier("voiceprint.sample.play.\(sample.id)")
+                                .disabled(loadingSampleID != nil && loadingSampleID != sample.id)
+                            }
+                            Text(String(format: "%.1fs", sample.cleanSeconds))
                                 .monospacedDigit()
                             Spacer()
-                            Button("停止并录入") {
-                                Task { await stopRecordingAndUpload() }
+                            Text(friendlySource(sample))
+                                .font(.caption)
+                                .foregroundStyle(MoMoPalette.muted)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                Task { await deleteSample(sample) }
+                            } label: {
+                                Label("删除", systemImage: "trash")
                             }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(recordSeconds < 2.0)
                         }
-                    } else {
-                        Button {
-                            Task { await startRecording() }
-                        } label: {
-                            Label("用手机麦克风录制一段", systemImage: "mic.fill")
-                        }
-                        .disabled(saving)
-                        Button {
-                            importingFile = true
-                        } label: {
-                            Label("从文件导入参考音频（wav / m4a / mp3）", systemImage: "square.and.arrow.down")
-                        }
-                        .disabled(saving)
                     }
+
+                    Button {
+                        stopSamplePlayback()
+                        showingRecorder = true
+                    } label: {
+                        Label("录制一段", systemImage: "mic")
+                    }
+                    .disabled(saving)
+
+                    Button {
+                        importingFile = true
+                    } label: {
+                        Label("导入音频", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(saving)
+
                     if let statusBanner {
                         Text(statusBanner)
                             .font(.footnote)
@@ -469,62 +565,17 @@ private struct MacVoiceprintPersonDetailSheet: View {
                             .foregroundStyle(MoMoPalette.failure)
                     }
                 }
-
-                Section("已录入声纹样本（\(profile.samples.count)）") {
-                    if profile.samples.isEmpty {
-                        Text("还没有声音样本。录制或导入一段 5–15 秒的干净语音，或在转录页点击该说话人勾选「记住 TA 的声音」。")
-                            .font(.footnote)
-                            .foregroundStyle(MoMoPalette.muted)
-                    } else {
-                        ForEach(profile.samples) { sample in
-                            HStack(spacing: 12) {
-                                if sample.hasClip {
-                                    Button {
-                                        Task { await toggleSamplePlayback(sample) }
-                                    } label: {
-                                        Group {
-                                            if loadingSampleID == sample.id {
-                                                ProgressView().controlSize(.small)
-                                            } else {
-                                                Image(systemName: playingSampleID == sample.id ? "stop.circle.fill" : "play.circle.fill")
-                                                    .font(.title3)
-                                                    .foregroundStyle(playingSampleID == sample.id ? MoMoPalette.success : MoMoPalette.ink)
-                                            }
-                                        }
-                                        .frame(width: 36, height: 36)
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel(playingSampleID == sample.id ? "停止试听声纹样本" : "试听声纹样本")
-                                    .accessibilityIdentifier("voiceprint.sample.play.\(sample.id)")
-                                    .disabled(loadingSampleID != nil && loadingSampleID != sample.id)
-                                }
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text((sample.sourceKind == "transcript_bind" || sample.sourceKind == "transcript_confirm") ? "转录确认收录" : "手动录入 · \(sample.sourceDevice)")
-                                        .font(.subheadline)
-                                    Text(String(format: "清晰语音 %.1f 秒 · SNR %.0f dB", sample.cleanSeconds, sample.snrDb))
-                                        .font(.caption)
-                                        .foregroundStyle(MoMoPalette.muted)
-                                        .monospacedDigit()
-                                }
-                                Spacer()
-                            }
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    Task { await deleteSample(sample) }
-                                } label: {
-                                    Label("删除", systemImage: "trash")
-                                }
-                            }
-                        }
-                    }
-                }
             }
             .navigationTitle(profile.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }
+                    Button("完成") {
+                        Task {
+                            await saveProfileInfoIfDirty()
+                            dismiss()
+                        }
+                    }
                 }
             }
             .onAppear {
@@ -532,7 +583,30 @@ private struct MacVoiceprintPersonDetailSheet: View {
                 aliasesText = profile.aliases.joined(separator: ", ")
                 notes = profile.notes
             }
-            .onDisappear { cleanupRecorder() }
+            .onDisappear { stopSamplePlayback() }
+            .sheet(isPresented: $showingRecorder) {
+                NavigationStack {
+                    VoiceprintOnboardingView(
+                        remoteAgent: remoteAgent,
+                        targetProfile: profile,
+                        onFinish: {
+                            showingRecorder = false
+                            Task {
+                                if let fresh = try? await client.voiceprintProfiles().first(where: { $0.id == profile.id }) {
+                                    profile = fresh
+                                }
+                                await onChanged()
+                            }
+                        },
+                        onSkip: nil
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭") { showingRecorder = false }
+                        }
+                    }
+                }
+            }
             .fileImporter(
                 isPresented: $importingFile,
                 allowedContentTypes: [.audio, .mpeg4Audio, .wav, .mp3],
@@ -544,83 +618,43 @@ private struct MacVoiceprintPersonDetailSheet: View {
         }
     }
 
-    private func saveProfileInfo() async {
-        saving = true; error = nil; statusBanner = nil
-        defer { saving = false }
+    private func friendlySource(_ s: VoiceprintSample) -> String {
+        if s.sourceKind == "transcript_bind" || s.sourceKind == "transcript_confirm" { return "录音" }
+        if s.sourceDevice.contains("iphone") { return "iPhone" }
+        if s.sourceDevice.contains("mac") { return "Mac" }
+        return "导入"
+    }
+
+    private func saveProfileInfoIfDirty() async {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
         let aliases = aliasesText
             .split(whereSeparator: { $0 == "," || $0 == "，" || $0 == "、" })
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+        guard trimmed != profile.name || aliases != profile.aliases || notes != profile.notes else { return }
+        saving = true; error = nil
+        defer { saving = false }
         do {
             profile = try await client.updateVoiceprintProfile(
                 id: profile.id,
-                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                name: trimmed,
                 isOwner: profile.isOwner,
                 aliases: aliases,
                 memoryFile: profile.memoryFile,
                 notes: notes
             )
-            statusBanner = "资料已同步到 Mac。"
             await onChanged()
         } catch {
             self.error = error.localizedDescription
         }
     }
 
-    private func startRecording() async {
-        stopSamplePlayback()
-        error = nil; statusBanner = nil
-        let granted = await AVAudioApplication.requestRecordPermission()
-        guard granted else {
-            error = "请在系统设置中允许使用麦克风。"
-            return
-        }
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP])
-            try session.setActive(true)
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("vp-\(UUID().uuidString).m4a")
-            let rec = try AVAudioRecorder(url: url, settings: [
-                AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVSampleRateKey: 16_000.0,
-                AVNumberOfChannelsKey: 1,
-                AVEncoderBitRateKey: 32_000,
-            ])
-            guard rec.record() else { error = "无法启动录音。"; return }
-            recorder = rec; recordURL = url; recordSeconds = 0; recording = true
-            timerTask?.cancel()
-            timerTask = Task {
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(100))
-                    guard let r = recorder, r.isRecording else { return }
-                    recordSeconds = r.currentTime
-                    if r.currentTime >= 30.0 {
-                        await self.stopRecordingAndUpload()
-                        return
-                    }
-                }
-            }
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    private func stopRecordingAndUpload() async {
-        timerTask?.cancel(); timerTask = nil
-        recorder?.stop(); recorder = nil; recording = false
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        guard let url = recordURL else { return }
-        recordURL = nil
-        defer { try? FileManager.default.removeItem(at: url) }
-        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return }
-        await enrollBytes(data, filename: "iphone-mic.m4a", device: "iphone_mic")
-    }
-
     private func uploadAudioFile(_ url: URL) async {
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         guard let data = try? Data(contentsOf: url), !data.isEmpty else {
-            error = "无法读取选中的音频文件。"
+            error = "无法读取音频文件。"
             return
         }
         await enrollBytes(data, filename: url.lastPathComponent, device: "iphone_import")
@@ -637,12 +671,7 @@ private struct MacVoiceprintPersonDetailSheet: View {
                 sourceDevice: device
             )
             profile = res.profile
-            statusBanner = String(
-                format: "已录入 %.1f 秒清晰声纹，并重匹配 %d 条历史记录（%.1f ms）。",
-                res.quality.cleanSeconds ?? 0,
-                res.rematch.updatedSpans,
-                res.rematch.elapsedMs
-            )
+            statusBanner = res.rematch.updatedSpans > 0 ? "已记住 · 更新 \(res.rematch.updatedSpans) 处" : "已记住"
             await onChanged()
         } catch {
             self.error = error.localizedDescription
@@ -691,7 +720,7 @@ private struct MacVoiceprintPersonDetailSheet: View {
             }
             player.delegate = playerDelegate
             guard player.play() else {
-                error = "无法播放该声纹音频片段。"
+                error = "无法播放音频。"
                 return
             }
             samplePlayer = player
@@ -708,12 +737,5 @@ private struct MacVoiceprintPersonDetailSheet: View {
             playingSampleID = nil
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
-    }
-
-    private func cleanupRecorder() {
-        stopSamplePlayback()
-        timerTask?.cancel(); timerTask = nil
-        recorder?.stop(); recorder = nil; recording = false
-        if let url = recordURL { try? FileManager.default.removeItem(at: url); recordURL = nil }
     }
 }

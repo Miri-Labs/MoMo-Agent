@@ -228,18 +228,23 @@ final class VoiceprintUIJourneyTests: XCTestCase {
         XCTAssertTrue(speakersRow.waitForExistence(timeout: 8))
         speakersRow.tap()
         XCTAssertTrue(app.navigationBars["人物与声纹"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["speaker.owner.onboarding"].waitForExistence(timeout: 10), app.debugDescription)
+        let alexCell = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Alex")).firstMatch
+        XCTAssertTrue(alexCell.waitForExistence(timeout: 10), app.debugDescription)
         sleep(1)
         snap(app, "ios_04_voiceprint_roster")
 
-        // 2. Open owner onboarding from roster
-        app.buttons["speaker.owner.onboarding"].tap()
+        // 2. Open owner onboarding from toolbar overflow menu
+        let moreMenu = app.buttons["speaker.more.menu"]
+        XCTAssertTrue(moreMenu.waitForExistence(timeout: 8), app.debugDescription)
+        moreMenu.tap()
+        let onboardItem = app.buttons["录下我的声音"]
+        XCTAssertTrue(onboardItem.waitForExistence(timeout: 8), app.debugDescription)
+        onboardItem.tap()
         XCTAssertTrue(app.buttons["voiceprint.onboarding.record"].waitForExistence(timeout: 8))
         snap(app, "ios_05_owner_onboarding_sheet")
         app.buttons["关闭"].tap()
 
         // 3. Open Alex profile detail -> verify sample clip playback button
-        let alexCell = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Alex")).firstMatch
         XCTAssertTrue(alexCell.waitForExistence(timeout: 8), app.debugDescription)
         alexCell.tap()
         XCTAssertTrue(app.navigationBars["Alex"].waitForExistence(timeout: 8))
@@ -251,12 +256,13 @@ final class VoiceprintUIJourneyTests: XCTestCase {
         snap(app, "ios_07_person_detail_playing")
         app.buttons["完成"].tap()
 
-        // 4. Trigger global rematch
-        let rematchBtn = app.buttons["speaker.rematch.all"]
-        for _ in 0..<3 where !rematchBtn.isHittable { app.swipeUp() }
-        XCTAssertTrue(rematchBtn.waitForExistence(timeout: 8))
-        rematchBtn.tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "已扫描")).firstMatch.waitForExistence(timeout: 10))
+        // 4. Trigger global rematch from toolbar overflow menu
+        XCTAssertTrue(moreMenu.waitForExistence(timeout: 8))
+        moreMenu.tap()
+        let rematchItem = app.buttons["重新匹配历史录音"]
+        XCTAssertTrue(rematchItem.waitForExistence(timeout: 8))
+        rematchItem.tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "已匹配")).firstMatch.waitForExistence(timeout: 10))
         snap(app, "ios_08_rematch_done")
 
         // 5. Navigate back to Transcripts -> open recording -> open SpeakerFeedbackMenu

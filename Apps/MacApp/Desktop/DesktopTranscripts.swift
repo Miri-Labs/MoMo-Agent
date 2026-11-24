@@ -1390,20 +1390,8 @@ struct DesktopSourceReader: View {
     @State private var loading = false
     @State private var error: String?
     @State private var audioPlayer = DesktopRecordingAudioPlayer()
-    @State private var speakerLockSpan: SourceTextSpan?
     @State private var speakerBanner: String?
     @State private var speakerBannerTask: Task<Void, Never>?
-
-    private var distinctSpeakers: [(label: String, sampleSpan: SourceTextSpan)] {
-        var seen = Set<String>()
-        var out: [(String, SourceTextSpan)] = []
-        for sp in spans {
-            let lbl = sp.speaker?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !lbl.isEmpty, seen.insert(lbl).inserted else { continue }
-            out.append((lbl, sp))
-        }
-        return out
-    }
 
     private static let clockFormat = Date.FormatStyle().hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
 
@@ -1497,41 +1485,10 @@ struct DesktopSourceReader: View {
                     .allowsHitTesting(false)
             }
 
-            if audioPlayer.hasAudio || !distinctSpeakers.isEmpty || speakerBanner != nil {
+            if audioPlayer.hasAudio || speakerBanner != nil {
                 VStack(alignment: .leading, spacing: 8) {
                     if audioPlayer.hasAudio {
                         DesktopAudioPlaybackBar(player: audioPlayer)
-                    }
-                    if !distinctSpeakers.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                Text("说话人：")
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(MoMoPalette.muted)
-                                ForEach(distinctSpeakers, id: \.label) { entry in
-                                    let isOwnerChip = entry.sampleSpan.isOwner == true || entry.label == "我"
-                                    Button {
-                                        speakerLockSpan = entry.sampleSpan
-                                    } label: {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: isOwnerChip ? "person.crop.circle.badge.checkmark" : "person.wave.2")
-                                                .font(.system(size: 10.5))
-                                            Text(entry.label)
-                                                .font(.system(size: 11.5, weight: .medium))
-                                            Image(systemName: "chevron.down")
-                                                .font(.system(size: 8.5, weight: .semibold))
-                                                .opacity(0.65)
-                                        }
-                                        .foregroundStyle(isOwnerChip ? MoMoPalette.success : (entry.sampleSpan.voiceProfileId != nil ? MoMoPalette.ink : MoMoPalette.muted))
-                                        .padding(.horizontal, 8.5)
-                                        .padding(.vertical, 3.5)
-                                        .background(isOwnerChip ? MoMoPalette.successBackground : MoMoPalette.ink.opacity(0.06), in: Capsule())
-                                    }
-                                    .buttonStyle(.plain)
-                                    .help("点击修改「\(entry.label)」的身份或录入声纹名册（也可直接点击正文任意段落前的说话人标签单段绑定）")
-                                }
-                            }
-                        }
                     }
                     if let speakerBanner {
                         HStack(spacing: 6) {
@@ -1560,10 +1517,28 @@ struct DesktopSourceReader: View {
                 composed: composedDocument,
                 scrollSpanID: pendingScrollSpanID,
                 onConsumedScrollSpan: { pendingScrollSpanID = nil },
-                onSelectSpeakerSpanID: { spanID in
-                    if let target = spans.first(where: { $0.id == spanID }) {
-                        speakerLockSpan = target
-                    }
+                makeSpeakerPopoverView: { spanID, closePopover in
+                    guard let target = spans.first(where: { $0.id == spanID }) else { return nil }
+                    return AnyView(
+                        DesktopSpeakerLockSheet(
+                            model: model,
+                            sourceID: source.id,
+                            span: target,
+                            onCommitted: { banner in
+                                if let banner {
+                                    speakerBanner = banner
+                                    speakerBannerTask?.cancel()
+                                    speakerBannerTask = Task {
+                                        try? await Task.sleep(for: .seconds(3.5))
+                                        guard !Task.isCancelled else { return }
+                                        speakerBanner = nil
+                                    }
+                                }
+                                Task { await more(replacing: true) }
+                            },
+                            onClose: closePopover
+                        )
+                    )
                 }
             )
             .momoScrollEdgeFade(top: 12, bottom: 20, surface: MoMoPalette.pane)
@@ -1654,20 +1629,6 @@ struct DesktopSourceReader: View {
         .onDisappear {
             audioPlayer.stop()
             speakerBannerTask?.cancel()
-        }
-        .sheet(item: $speakerLockSpan) { sp in
-            DesktopSpeakerLockSheet(model: model, sourceID: source.id, span: sp) { banner in
-                if let banner {
-                    speakerBanner = banner
-                    speakerBannerTask?.cancel()
-                    speakerBannerTask = Task {
-                        try? await Task.sleep(for: .seconds(4))
-                        guard !Task.isCancelled else { return }
-                        speakerBanner = nil
-                    }
-                }
-                Task { await more(replacing: true) }
-            }
         }
     }
 
@@ -2082,7 +2043,7 @@ private final class MacSourceDocumentTextView: NSTextView {
     }
     var summaryQuoteRanges: [NSRange] = []
     var speakerPills: [MacSourceTranscriptComposer.SpeakerPill] = []
-    var onSelectSpeakerSpanID: ((String) -> Void)?
+    var onSelectSpeakerPill: ((String, NSRect) -> Void)?
 
     private var cachedSummaryCardRect: NSRect?
     private var cachedSummaryWidth: CGFloat = -1
@@ -2112,7 +2073,7 @@ private final class MacSourceDocumentTextView: NSTextView {
         speakerTrackingArea = area
     }
 
-    private func speakerSpanID(at viewPoint: NSPoint) -> String? {
+    private func speakerPillHit(at viewPoint: NSPoint) -> (spanID: String, rectInView: NSRect)? {
         guard !speakerPills.isEmpty,
               let lm = layoutManager, let tc = textContainer, let ts = textStorage, ts.length > 0 else {
             return nil
@@ -2125,17 +2086,18 @@ private final class MacSourceDocumentTextView: NSTextView {
               let spanID = ts.attribute(.momoSpeakerSpanID, at: charIndex, effectiveRange: nil) as? String else {
             return nil
         }
-        // Verify point actually lands inside the pill's visual bounds (not trailing empty margin of the line)
         var effective = NSRange(location: 0, length: 0)
         _ = ts.attribute(.momoSpeakerSpanID, at: charIndex, effectiveRange: &effective)
         let glyphRange = lm.glyphRange(forCharacterRange: effective, actualCharacterRange: nil)
         let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc).insetBy(dx: -4, dy: -3)
-        return rect.contains(containerPt) ? spanID : nil
+        guard rect.contains(containerPt) else { return nil }
+        let viewRect = rect.offsetBy(dx: origin.x, dy: origin.y)
+        return (spanID, viewRect)
     }
 
     override func mouseMoved(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
-        let hit = speakerSpanID(at: pt)
+        let hit = speakerPillHit(at: pt)?.spanID
         if hit != hoveredSpeakerSpanID {
             hoveredSpeakerSpanID = hit
             needsDisplay = true
@@ -2157,8 +2119,8 @@ private final class MacSourceDocumentTextView: NSTextView {
 
     override func mouseDown(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
-        if let spanID = speakerSpanID(at: pt) {
-            onSelectSpeakerSpanID?(spanID)
+        if let hit = speakerPillHit(at: pt) {
+            onSelectSpeakerPill?(hit.spanID, hit.rectInView)
             return
         }
         super.mouseDown(with: event)
@@ -2287,10 +2249,30 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
     let composed: MacSourceTranscriptComposer.ComposedTranscript?
     let scrollSpanID: String?
     let onConsumedScrollSpan: () -> Void
-    var onSelectSpeakerSpanID: ((String) -> Void)? = nil
+    var makeSpeakerPopoverView: ((String, @escaping () -> Void) -> AnyView?)? = nil
 
     final class Coordinator: NSObject {
         weak var textView: MacSourceDocumentTextView?
+        var activePopover: NSPopover?
+        var makeSpeakerPopoverView: ((String, @escaping () -> Void) -> AnyView?)?
+
+        @MainActor
+        func showSpeakerPopover(spanID: String, relativeTo rect: NSRect) {
+            guard let textView, let makeView = makeSpeakerPopoverView else { return }
+            activePopover?.performClose(nil)
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.animates = true
+            let closeFn: () -> Void = { [weak popover] in
+                popover?.performClose(nil)
+            }
+            guard let content = makeView(spanID, closeFn) else { return }
+            let host = NSHostingController(rootView: content)
+            host.sizingOptions = [.preferredContentSize]
+            popover.contentViewController = host
+            activePopover = popover
+            popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -2331,9 +2313,15 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
         textView.textContainer?.lineFragmentPadding = 0
         textView.layoutManager?.allowsNonContiguousLayout = true
         textView.setAccessibilityIdentifier("desktop.source.text")
-        textView.onSelectSpeakerSpanID = onSelectSpeakerSpanID
 
-        context.coordinator.textView = textView
+        let coord = context.coordinator
+        coord.textView = textView
+        coord.makeSpeakerPopoverView = makeSpeakerPopoverView
+        textView.onSelectSpeakerPill = { [weak coord] spanID, rect in
+            Task { @MainActor in
+                coord?.showSpeakerPopover(spanID: spanID, relativeTo: rect)
+            }
+        }
         scrollView.documentView = textView
         apply(to: textView, in: scrollView)
         return scrollView
@@ -2341,7 +2329,7 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
 
     func updateNSView(_ scrollView: MacSourceDocumentScrollView, context: Context) {
         guard let textView = context.coordinator.textView else { return }
-        textView.onSelectSpeakerSpanID = onSelectSpeakerSpanID
+        context.coordinator.makeSpeakerPopoverView = makeSpeakerPopoverView
         apply(to: textView, in: scrollView)
     }
 

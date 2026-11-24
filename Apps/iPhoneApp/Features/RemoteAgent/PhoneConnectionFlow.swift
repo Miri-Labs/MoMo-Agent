@@ -28,31 +28,26 @@ struct PhoneConnectionFlow: View {
                             PersonalAgentSlot(size: ready || canScan ? 120 : 64, active: false, expression: ready ? .settled : .present)
                             PhoneBrandWordmark(.momo, size: ready || canScan ? 24 : 18)
                         }
-                        Text(ready ? "配对成功" : canScan ? "扫码连接 Mac" : "连接 Mac")
+                        Text(ready ? "已连接 Mac" : canScan ? "扫码连接 Mac" : "连接 Mac")
                             .phoneText(.heading).multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
                         if ready {
-                            Label("配对已验证", systemImage: "checkmark.circle")
                             if !reconnecting && agent.speechDataClient != nil {
                                 VStack(spacing: 12) {
-                                    Text("建议顺手花 15 秒录入你的声音，Mac 端之后会自动把日常录音里你说的话标成「我」。")
-                                        .phoneText(.caption)
-                                        .foregroundStyle(MoMoPalette.muted)
-                                        .multilineTextAlignment(.center)
                                     Button {
                                         showingVoiceprintOnboarding = true
                                     } label: {
-                                        Label("锁定我的声音（推荐）", systemImage: "person.wave.2.fill")
+                                        Label("录下我的声音", systemImage: "waveform")
                                     }
                                     .buttonStyle(ClientPrimaryButton())
                                     .accessibilityIdentifier("onboarding.voiceprint")
-                                    Button("跳过，开始聊天", action: finish)
+                                    Button("跳过", action: finish)
                                         .buttonStyle(.plain)
                                         .foregroundStyle(MoMoPalette.muted)
                                         .frame(maxWidth: .infinity, minHeight: 44)
                                         .accessibilityIdentifier("onboarding.finish")
                                 }
                             } else {
-                                Button("开始聊天", action: finish).buttonStyle(ClientPrimaryButton()).accessibilityIdentifier("onboarding.finish")
+                                Button("开始使用", action: finish).buttonStyle(ClientPrimaryButton()).accessibilityIdentifier("onboarding.finish")
                             }
                         } else {
                     if canScan {

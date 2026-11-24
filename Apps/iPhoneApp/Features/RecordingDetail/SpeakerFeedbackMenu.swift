@@ -53,12 +53,13 @@ struct SpeakerFeedbackMenu: View {
                 enqueueFeedback: enqueueFeedback,
                 changed: changed
             )
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.height(440), .large])
             .presentationDragIndicator(.visible)
         }
     }
 }
 
+/// Compact AI-native speaker quick-picker: type-or-tap people first, minimal scope & learn bar at bottom.
 private struct SpeakerPicker: View {
     let archive: ArchiveStore
     let remoteAgent: PhoneRemoteAgent?
@@ -75,15 +76,35 @@ private struct SpeakerPicker: View {
     @State private var wholeGroup: Bool
     @State private var enrollVoiceprint = true
     @State private var groupCount = 0
-    @State private var name = ""
-    @State private var naming = false
-    @State private var search = ""
-    @FocusState private var nameFocused: Bool
+    @State private var query = ""
     @State private var loaded: Bool
     @State private var saving = false
     @State private var failure: String?
 
     private var macClient: AgentClient? { remoteAgent?.speechDataClient }
+    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private var filteredMacOthers: [VoiceprintProfile] {
+        macProfiles.filter {
+            !$0.isOwner && (trimmedQuery.isEmpty
+                || $0.name.localizedStandardContains(trimmedQuery)
+                || $0.aliases.contains(where: { $0.localizedStandardContains(trimmedQuery) }))
+        }
+    }
+
+    private var filteredLocalOthers: [SpeakerProfile] {
+        people.filter {
+            !$0.isUser && (trimmedQuery.isEmpty || $0.name.localizedStandardContains(trimmedQuery))
+        }
+    }
+
+    private var canCreateNewName: Bool {
+        guard !trimmedQuery.isEmpty, trimmedQuery != "我" else { return false }
+        if macClient != nil {
+            return !macProfiles.contains(where: { $0.name.caseInsensitiveCompare(trimmedQuery) == .orderedSame })
+        }
+        return !people.contains(where: { $0.name.caseInsensitiveCompare(trimmedQuery) == .orderedSame })
+    }
 
     init(
         archive: ArchiveStore,
@@ -112,91 +133,103 @@ private struct SpeakerPicker: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                if macClient != nil {
-                    Section {
-                        Toggle("同时记住 TA 的声音（加入声纹名册）", isOn: $enrollVoiceprint)
-                            .accessibilityIdentifier("speaker.enroll.toggle")
-                    } footer: {
-                        Text("开启后会提取这段清晰语音写入 Mac 声纹名册，后续和全部历史录音自动锁定该说话人。仅更正标注而不录入声纹可关闭。")
-                    }
-                }
+            List {
+                // 1. Inline search / instant create field
                 Section {
-                    Button { chooseOwner() } label: {
-                        profileRow(name: String(localized: "我"), selected: attribution?.isUser == true || speaker == "我")
-                    }.accessibilityIdentifier("speaker.choose.owner")
-
-                    if macClient != nil {
-                        if macProfiles.count > 10 {
-                            TextField("搜索人物", text: $search).accessibilityIdentifier("speaker.search")
-                        }
-                        ForEach(macProfiles.filter { !$0.isOwner && (search.isEmpty || $0.name.localizedStandardContains(search)) }) { person in
-                            Button { chooseMacPerson(person) } label: {
-                                profileRow(name: person.name, selected: speaker == person.name)
-                            }.accessibilityIdentifier("speaker.choose.mac.\(person.id)")
-                        }
-                    } else {
-                        if people.count > 10 {
-                            TextField("搜索人物", text: $search).accessibilityIdentifier("speaker.search")
-                        }
-                        ForEach(people.filter { !$0.isUser && (search.isEmpty || $0.name.localizedStandardContains(search)) }) { person in
-                            Button { correctLocal(.knownPerson(person.id)) } label: {
-                                profileRow(name: person.name, selected: attribution?.personID == person.id)
-                            }.accessibilityIdentifier("speaker.choose.\(person.id)")
-                        }
-                    }
-                } header: { Text("这是谁") }
-                if groupCount > sources.count || macClient != nil {
-                    Section {
-                        Picker("应用范围", selection: $wholeGroup) {
-                            Text(groupCount > sources.count ? "这个说话人（\(groupCount) 段）" : "同场录音中该说话人").tag(true)
-                            Text("仅这段").tag(false)
-                        }.pickerStyle(.menu)
-                    }
-                }
-                Section {
-                    if naming {
-                        TextField("姓名", text: $name).textContentType(.name)
-                            .focused($nameFocused).submitLabel(.done)
-                            .onAppear { nameFocused = true }
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                        TextField("选择或输入姓名", text: $query)
+                            .textContentType(.name)
+                            .submitLabel(.done)
                             .onSubmit {
-                                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                                if !trimmed.isEmpty { chooseNewPerson(trimmed) }
+                                if canCreateNewName {
+                                    chooseNewPerson(trimmedQuery)
+                                } else if let match = filteredMacOthers.first {
+                                    chooseMacPerson(match)
+                                }
                             }
                             .accessibilityIdentifier("speaker.new.name")
+                    }
+
+                    if trimmedQuery.isEmpty || "我".localizedStandardContains(trimmedQuery) {
+                        Button { chooseOwner() } label: {
+                            profileRow(name: String(localized: "我"), isOwner: true, selected: attribution?.isUser == true || speaker == "我")
+                        }
+                        .accessibilityIdentifier("speaker.choose.owner")
+                    }
+
+                    if macClient != nil {
+                        ForEach(filteredMacOthers) { person in
+                            Button { chooseMacPerson(person) } label: {
+                                profileRow(name: person.name, isOwner: false, selected: speaker == person.name)
+                            }
+                            .accessibilityIdentifier("speaker.choose.mac.\(person.id)")
+                        }
                     } else {
-                        Button("添加人物", systemImage: "person.badge.plus") { naming = true }
-                            .accessibilityIdentifier("speaker.new.add")
+                        ForEach(filteredLocalOthers) { person in
+                            Button { correctLocal(.knownPerson(person.id)) } label: {
+                                profileRow(name: person.name, isOwner: false, selected: attribution?.personID == person.id)
+                            }
+                            .accessibilityIdentifier("speaker.choose.\(person.id)")
+                        }
+                    }
+
+                    if canCreateNewName {
+                        Button {
+                            chooseNewPerson(trimmedQuery)
+                        } label: {
+                            Label("新建「\(trimmedQuery)」", systemImage: "plus.circle.fill")
+                                .foregroundStyle(MoMoPalette.ink)
+                        }
+                        .accessibilityIdentifier("speaker.new.save")
                     }
                 }
+
+                // 2. Compact options (zero essay footers)
                 Section {
-                    if macClient != nil, speaker != String(localized: "说话人"), !speaker.hasPrefix("说话人 ") {
-                        Button("这不是\(speaker)", role: .destructive) { rejectMacMatch() }
-                    } else if let personID = attribution?.personID {
-                        Button("这不是\(speaker)", role: .destructive) { correctLocal(.notPerson(personID)) }
+                    if groupCount > sources.count || macClient != nil {
+                        HStack {
+                            Text("范围")
+                            Spacer()
+                            Picker("", selection: $wholeGroup) {
+                                Text("本场").tag(true)
+                                Text("仅此句").tag(false)
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .frame(width: 140)
+                        }
                     }
-                    if attribution != nil, macClient == nil {
-                        Button("撤销标记", systemImage: "arrow.uturn.backward") { correctLocal(.clear) }
+                    if macClient != nil {
+                        Toggle("记住声纹", isOn: $enrollVoiceprint)
+                            .accessibilityIdentifier("speaker.enroll.toggle")
+                    }
+                }
+
+                if (macClient != nil && speaker != String(localized: "说话人") && !speaker.hasPrefix("说话人 "))
+                    || (macClient == nil && attribution != nil) {
+                    Section {
+                        if macClient != nil, speaker != String(localized: "说话人"), !speaker.hasPrefix("说话人 ") {
+                            Button("不是「\(speaker)」", role: .destructive) { rejectMacMatch() }
+                        } else if let personID = attribution?.personID {
+                            Button("不是「\(speaker)」", role: .destructive) { correctLocal(.notPerson(personID)) }
+                        }
+                        if attribution != nil, macClient == nil {
+                            Button("撤销标记") { correctLocal(.clear) }
+                        }
                     }
                 }
             }
+            .listStyle(.insetGrouped)
             .buttonStyle(.automatic)
             .disabled(!loaded || saving)
             .tint(MoMoPalette.ink)
             .phoneSoftTopEdge()
-            .navigationTitle("说话人")
+            .navigationTitle("这是谁")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(saving) }
-                if naming {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("保存") {
-                            chooseNewPerson(name.trimmingCharacters(in: .whitespacesAndNewlines))
-                        }
-                        .disabled(!loaded || saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .accessibilityIdentifier("speaker.new.save")
-                    }
-                }
             }
             .overlay { if (!loaded && failure == nil) || saving { ProgressView() } }
             .task {
@@ -216,18 +249,39 @@ private struct SpeakerPicker: View {
                     loaded = true
                 }
             }
-            .alert("声纹未更新", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            .alert("未更新", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
                 Button("好", role: .cancel) { failure = nil; if !loaded { dismiss() } }
             } message: { Text(failure ?? "") }
         }
     }
 
-    private func profileRow(name: String, selected: Bool) -> some View {
-        HStack {
+    private func profileRow(name: String, isOwner: Bool, selected: Bool) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(isOwner ? MoMoPalette.successBackground : MoMoPalette.ink.opacity(0.07))
+                .frame(width: 26, height: 26)
+                .overlay {
+                    Text(String(name.prefix(1)))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(isOwner ? MoMoPalette.success : MoMoPalette.ink)
+                }
             Text(name).foregroundStyle(MoMoPalette.ink)
+            if isOwner {
+                Text("本人")
+                    .font(.caption2.weight(.medium))
+                    .padding(.horizontal, 5.5)
+                    .padding(.vertical, 1)
+                    .background(MoMoPalette.successBackground, in: Capsule())
+                    .foregroundStyle(MoMoPalette.success)
+            }
             Spacer()
-            if selected { Image(systemName: "checkmark").foregroundStyle(MoMoPalette.ink).accessibilityLabel("当前说话人") }
-        }.contentShape(Rectangle())
+            if selected {
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isOwner ? MoMoPalette.success : MoMoPalette.ink)
+            }
+        }
+        .contentShape(Rectangle())
     }
 
     private func macSourceID() -> String? {
@@ -285,7 +339,6 @@ private struct SpeakerPicker: View {
         isOwner: Bool
     ) {
         guard !saving else { return }
-        nameFocused = false
         saving = true
         let spanIDs = sources.map { $0.spanID.uuidString.lowercased() }
         let scope = wholeGroup ? "cluster" : "selection"
@@ -301,7 +354,7 @@ private struct SpeakerPicker: View {
                     targetName: targetName,
                     isOwner: isOwner,
                     enrollVoiceprint: enroll,
-                    rematchHistory: true,
+                    rematchHistory: enroll,
                     scope: scope
                 )
                 await uploader?.syncRemoteTranscriptsFromMac(force: true)
@@ -374,7 +427,6 @@ private struct SpeakerPicker: View {
 
     private func correctLocal(_ feedback: SpeakerFeedback) {
         guard !saving else { return }
-        nameFocused = false
         let scope: SpeakerFeedbackScope = wholeGroup ? .cluster : .selection
         if let enqueueFeedback {
             do {

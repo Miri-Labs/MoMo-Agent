@@ -2,10 +2,10 @@ import AVFoundation
 import SwiftUI
 import MoMoAgentClient
 
-/// Guided ~15-second voiceprint onboarding flow ("锁定我的声音") shown right after Mac pairing
-/// and re-openable anytime from「人物与声纹」.
+/// Minimal AI-native voice onboarding: one sentence, one pulsing mic orb, zero clutter.
 struct VoiceprintOnboardingView: View {
     let remoteAgent: PhoneRemoteAgent
+    var targetProfile: VoiceprintProfile? = nil
     let onFinish: () -> Void
     var onSkip: (() -> Void)? = nil
 
@@ -14,102 +14,128 @@ struct VoiceprintOnboardingView: View {
     @State private var level: Float = 0
     @State private var uploading = false
     @State private var completedSamples = 0
-    @State private var lastQualityText: String?
     @State private var error: String?
     @State private var recorder: AVAudioRecorder?
     @State private var recordingURL: URL?
     @State private var meterTask: Task<Void, Never>?
 
+    private var isForOtherPerson: Bool {
+        if let targetProfile, !targetProfile.isOwner { return true }
+        return false
+    }
+
+    private var headingText: String {
+        if completedSamples > 0 {
+            if let targetProfile, !targetProfile.isOwner {
+                return "已记住「\(targetProfile.name)」的声音"
+            }
+            return "已记住你的声音"
+        }
+        if let targetProfile, !targetProfile.isOwner {
+            return "让「\(targetProfile.name)」读出这句话"
+        }
+        return "读出这句话"
+    }
+
+    private var currentPrompt: String {
+        if let targetProfile, !targetProfile.isOwner {
+            return "你好，我是\(targetProfile.name)，今天我们来聊聊接下来的安排。"
+        }
+        return prompts[min(completedSamples, prompts.count - 1)]
+    }
+
     private let prompts = [
-        "你好，我是这台设备的主人。今天天气不错，我们稍后开会讨论一下接下来的工作安排和待办事项。",
-        "平时我会用 Apple Watch 或蓝牙耳机记录日常想法，希望 MoMo 每次都能一眼认出我的声音。"
+        "你好，我是这台设备的主人，今天来聊聊接下来的安排。",
+        "平时我会用手表和耳机随手记下想法，希望你一眼认出我的声音。"
     ]
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 22) {
-                Image(systemName: completedSamples > 0 ? "person.crop.circle.badge.checkmark" : "person.wave.2.fill")
-                    .font(.system(size: 54))
-                    .foregroundStyle(completedSamples > 0 ? MoMoPalette.success : MoMoPalette.ink)
-                    .padding(.top, 16)
+        VStack(spacing: 0) {
+            Spacer()
 
-                VStack(spacing: 8) {
-                    Text(completedSamples > 0 ? "声纹已锁定" : "锁定我的声音")
-                        .phoneText(.heading)
-                    Text("用 10–15 秒自然朗读下面这句话，Mac 端会自动记住你的声纹，以后所有日常录音都能准确标出「我」说的话。")
-                        .phoneText(.body)
-                        .foregroundStyle(MoMoPalette.muted)
-                        .multilineTextAlignment(.center)
-                }
+            VStack(spacing: 28) {
+                Text(headingText)
+                    .phoneText(.heading)
 
-                Text("“\(prompts[min(completedSamples, prompts.count - 1)])”")
-                    .font(.body)
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(MoMoPalette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                Text("“\(currentPrompt)”")
+                    .font(.title3.weight(.regular))
+                    .lineSpacing(5)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 20)
+                    .frame(maxWidth: .infinity)
+                    .background(MoMoPalette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .strokeBorder(MoMoPalette.line, lineWidth: 0.75)
                     }
 
-                VStack(spacing: 10) {
-                    ProgressView(value: Double(level), total: 1.0)
-                        .tint(MoMoPalette.ink)
-                    Text(recording ? String(format: "正在录音 %.1f 秒（建议 8–15 秒）", elapsed)
-                         : (completedSamples > 0 ? "已录入 \(completedSamples) 条声纹样本" : "点击下方按钮开始朗读"))
-                        .font(.footnote.monospacedDigit())
-                        .foregroundStyle(MoMoPalette.muted)
-                }
+                // Pulsing live voice orb
+                VStack(spacing: 14) {
+                    Button {
+                        if recording {
+                            Task { await stopAndEnroll() }
+                        } else {
+                            Task { await startRecording() }
+                        }
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill((recording ? MoMoPalette.failure : (completedSamples > 0 ? MoMoPalette.success : MoMoPalette.ink)).opacity(recording ? 0.14 : 0.06))
+                                .frame(width: 92 + CGFloat(level) * 44, height: 92 + CGFloat(level) * 44)
+                                .animation(.easeOut(duration: 0.1), value: level)
+                            Circle()
+                                .fill(recording ? MoMoPalette.failure : (completedSamples > 0 ? MoMoPalette.success : MoMoPalette.ink))
+                                .frame(width: 76, height: 76)
+                            if uploading {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: recording ? "stop.fill" : (completedSamples > 0 ? "checkmark" : "mic.fill"))
+                                    .font(.system(size: 26, weight: .semibold))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .frame(width: 140, height: 140)
+                        .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(uploading || (recording && elapsed < 2.2))
+                    .accessibilityLabel(recording ? "停止录音" : "开始录音")
+                    .accessibilityIdentifier(recording ? "voiceprint.onboarding.stop" : "voiceprint.onboarding.record")
 
-                if let lastQualityText {
-                    Label(lastQualityText, systemImage: "checkmark.seal.fill")
-                        .font(.footnote)
-                        .foregroundStyle(MoMoPalette.success)
-                }
-
-                if let error {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(MoMoPalette.failure)
-                        .multilineTextAlignment(.center)
-                }
-
-                if uploading {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                        Text("正在上传到 Mac 提取 ReDimNet2+ 声纹…")
+                    if recording {
+                        Text(String(format: "%.1fs", elapsed))
+                            .font(.footnote.monospacedDigit())
+                            .foregroundStyle(MoMoPalette.muted)
+                    } else if uploading {
+                        Text("学习声纹中…")
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                } else if recording {
-                    Button {
-                        Task { await stopAndEnroll() }
-                    } label: {
-                        Label("停止并录入声纹", systemImage: "stop.circle.fill")
-                    }
-                    .buttonStyle(ClientPrimaryButton())
-                    .disabled(elapsed < 2.2)
-                    .accessibilityIdentifier("voiceprint.onboarding.stop")
-                } else {
-                    Button {
-                        Task { await startRecording() }
-                    } label: {
-                        Label(completedSamples == 0 ? "开始录制我的声音" : "再补录一条（提升跨设备准确度）", systemImage: "mic.fill")
-                    }
-                    .buttonStyle(ClientPrimaryButton())
-                    .accessibilityIdentifier("voiceprint.onboarding.record")
-
-                    if completedSamples > 0 {
-                        Button("完成并开始使用", action: onFinish)
-                            .buttonStyle(.borderedProminent)
-                            .accessibilityIdentifier("voiceprint.onboarding.done")
+                            .foregroundStyle(MoMoPalette.muted)
+                    } else if let error {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(MoMoPalette.failure)
+                            .multilineTextAlignment(.center)
+                    } else {
+                        Text(" ")
+                            .font(.footnote)
                     }
                 }
+            }
+            .padding(.horizontal, 28)
+            .frame(maxWidth: 440)
 
-                if completedSamples == 0 {
-                    Button("稍后再说") {
+            Spacer()
+
+            VStack(spacing: 8) {
+                if completedSamples > 0 {
+                    Button("完成", action: onFinish)
+                        .buttonStyle(ClientPrimaryButton())
+                        .accessibilityIdentifier("voiceprint.onboarding.done")
+                } else if let onSkip {
+                    Button("跳过") {
                         stopRecorderCleanup()
-                        (onSkip ?? onFinish)()
+                        onSkip()
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(MoMoPalette.muted)
@@ -117,10 +143,11 @@ struct VoiceprintOnboardingView: View {
                     .accessibilityIdentifier("voiceprint.onboarding.skip")
                 }
             }
-            .padding(24)
-            .frame(maxWidth: 480)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 28)
+            .padding(.bottom, 28)
+            .frame(maxWidth: 440)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .phonePageSurface()
         .onDisappear { stopRecorderCleanup() }
     }
@@ -129,7 +156,7 @@ struct VoiceprintOnboardingView: View {
         error = nil
         let granted = await AVAudioApplication.requestRecordPermission()
         guard granted else {
-            error = "请在系统设置中允许 MoMo Agent 使用麦克风。"
+            error = "请在系统设置中允许麦克风权限。"
             return
         }
         let session = AVAudioSession.sharedInstance()
@@ -147,7 +174,7 @@ struct VoiceprintOnboardingView: View {
             let rec = try AVAudioRecorder(url: url, settings: settings)
             rec.isMeteringEnabled = true
             guard rec.record() else {
-                error = "无法启动录音，请稍后重试。"
+                error = "无法启动录音，请重试。"
                 return
             }
             self.recorder = rec
@@ -157,7 +184,7 @@ struct VoiceprintOnboardingView: View {
             self.meterTask?.cancel()
             self.meterTask = Task {
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(100))
+                    try? await Task.sleep(for: .milliseconds(80))
                     guard let r = self.recorder, r.isRecording else { return }
                     r.updateMeters()
                     self.level = max(0, min(1, (r.averagePower(forChannel: 0) + 50) / 50))
@@ -179,6 +206,7 @@ struct VoiceprintOnboardingView: View {
         recorder?.stop()
         recorder = nil
         recording = false
+        level = 0
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
         guard let url = recordingURL else { return }
@@ -186,34 +214,35 @@ struct VoiceprintOnboardingView: View {
         defer { try? FileManager.default.removeItem(at: url) }
 
         guard let client = remoteAgent.speechDataClient else {
-            error = "当前未连接到 Mac，请确认 Mac 在线后重试。"
+            error = "未连接到 Mac。"
             return
         }
         guard let data = try? Data(contentsOf: url), !data.isEmpty else {
-            error = "未录到有效声音，请重试。"
+            error = "未录到声音，请重试。"
             return
         }
 
         uploading = true; error = nil
         defer { uploading = false }
         do {
-            let existing = try await client.voiceprintProfiles()
-            let owner: VoiceprintProfile
-            if let found = existing.first(where: \.isOwner) {
-                owner = found
+            let target: VoiceprintProfile
+            if let explicit = targetProfile {
+                target = explicit
             } else {
-                owner = try await client.createVoiceprintProfile(name: "我", isOwner: true)
+                let existing = try await client.voiceprintProfiles()
+                if let found = existing.first(where: \.isOwner) {
+                    target = found
+                } else {
+                    target = try await client.createVoiceprintProfile(name: "我", isOwner: true)
+                }
             }
             let res = try await client.enrollVoiceprintSample(
-                profileID: owner.id,
+                profileID: target.id,
                 audioData: data,
-                filename: "iphone-onboarding.m4a",
+                filename: "iphone-mic.m4a",
                 sourceDevice: "iphone_mic"
             )
             completedSamples = res.profile.sampleCount
-            let clean = res.quality.cleanSeconds ?? 0
-            let snr = res.quality.snrDb ?? 0
-            lastQualityText = String(format: "已提取清晰语音 %.1f 秒（信噪比 %.0f dB）", clean, snr)
         } catch {
             self.error = error.localizedDescription
         }
@@ -225,6 +254,7 @@ struct VoiceprintOnboardingView: View {
         recorder?.stop()
         recorder = nil
         recording = false
+        level = 0
         if let url = recordingURL {
             try? FileManager.default.removeItem(at: url)
             recordingURL = nil

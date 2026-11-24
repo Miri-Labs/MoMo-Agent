@@ -239,150 +239,245 @@ struct DesktopAudioPlaybackBar: View {
     }
 }
 
-/// Click-to-lock sheet on macOS transcripts separating `assign` vs `enroll_voiceprint` + negative rejection.
+/// Compact AI-native speaker quick-picker (1-click existing person or type name + Return).
 struct DesktopSpeakerLockSheet: View {
     let model: DesktopModel
     let sourceID: String
     let span: SourceTextSpan
     let onCommitted: (String?) -> Void
+    var onClose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var profiles: [VoiceprintProfile] = []
-    @State private var selectedProfileID: String?
-    @State private var customName = ""
-    @State private var isOwner = false
+    @State private var query = ""
     @State private var enrollVoiceprint = true
-    @State private var rematchHistory = true
     @State private var applyToCluster = true
     @State private var busy = false
     @State private var error: String?
+    @FocusState private var inputFocused: Bool
 
-    private var hasExistingOwner: Bool { profiles.contains(where: \.isOwner) }
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var filteredProfiles: [VoiceprintProfile] {
+        let sorted = profiles.sorted { ($0.isOwner ? 0 : 1) < ($1.isOwner ? 0 : 1) }
+        guard !trimmedQuery.isEmpty else { return sorted }
+        return sorted.filter {
+            $0.name.localizedStandardContains(trimmedQuery)
+                || $0.aliases.contains(where: { $0.localizedStandardContains(trimmedQuery) })
+        }
+    }
+
+    private var canCreateTypedName: Bool {
+        !trimmedQuery.isEmpty
+            && !profiles.contains(where: { $0.name.caseInsensitiveCompare(trimmedQuery) == .orderedSame })
+    }
+
+    private var currentNamedSpeaker: String? {
+        guard let s = span.speaker?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !s.isEmpty, !s.hasPrefix("说话人") else { return nil }
+        return s
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("绑定说话人与声纹")
-                        .font(.system(size: 15, weight: .semibold))
-                    if let current = span.speaker {
-                        Text("当前标记：\(current)")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                Button("取消") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-            }
-
-            if let text = span.text, !text.isEmpty {
-                Text(text)
-                    .font(.system(size: 12.5))
+        VStack(alignment: .leading, spacing: 0) {
+            // Inline search / create field (auto-focused: type + Enter = instant bind)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(MoMoPalette.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                TextField("选择或输入姓名…", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .focused($inputFocused)
+                    .onSubmit {
+                        if let first = filteredProfiles.first, trimmedQuery.caseInsensitiveCompare(first.name) == .orderedSame {
+                            Task { await pickExisting(first) }
+                        } else if canCreateTypedName {
+                            Task { await createAndBind(trimmedQuery) }
+                        } else if let first = filteredProfiles.first {
+                            Task { await pickExisting(first) }
+                        }
+                    }
+                if busy {
+                    ProgressView().controlSize(.mini)
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
 
-            Form {
-                Section("选择已有声纹人物") {
-                    if profiles.isEmpty {
-                        Text("声纹名册为空，可在下方输入新姓名并一键收录。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Picker("人物", selection: $selectedProfileID) {
-                            Text("新建或手动输入姓名…").tag(String?.none)
-                            ForEach(profiles) { p in
-                                Text(p.isOwner ? "\(p.name)（我 · \(p.sampleCount) 条声纹）" : "\(p.name)（\(p.sampleCount) 条声纹）")
-                                    .tag(Optional(p.id))
+            Divider()
+
+            // Direct 1-click people list
+            ScrollView {
+                VStack(spacing: 2) {
+                    if !profiles.contains(where: \.isOwner) && (trimmedQuery.isEmpty || "我".localizedStandardContains(trimmedQuery)) {
+                        personRow(name: "我", badge: "本人", isOwner: true, selected: span.isOwner == true) {
+                            Task { await createAndBind("我", isOwner: true) }
+                        }
+                    }
+                    ForEach(filteredProfiles) { person in
+                        let isSelected = (span.voiceProfileId == person.id)
+                            || (person.isOwner && span.isOwner == true)
+                            || (span.speaker == person.name)
+                        personRow(
+                            name: person.name,
+                            badge: person.isOwner ? "本人" : nil,
+                            isOwner: person.isOwner,
+                            selected: isSelected
+                        ) {
+                            Task { await pickExisting(person) }
+                        }
+                    }
+                    if canCreateTypedName {
+                        Button {
+                            Task { await createAndBind(trimmedQuery) }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(Color.accentColor)
+                                Text("新建「\(trimmedQuery)」")
+                                    .font(.system(size: 13, weight: .medium))
+                                Spacer()
+                                Text("↵")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
                             }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .disabled(busy)
                     }
                 }
-
-                if selectedProfileID == nil {
-                    Section("或输入新人物") {
-                        TextField("姓名（例如：张三、Alex）", text: $customName)
-                        if !hasExistingOwner {
-                            Toggle("这是我本人（设为机主「我」）", isOn: $isOwner)
-                        }
-                    }
-                }
-
-                Section("声纹锁定策略") {
-                    Toggle("应用到本次录音中该说话人的全部片段", isOn: $applyToCluster)
-                    Toggle("同时记住 TA 的声音（加入声纹名册）", isOn: $enrollVoiceprint)
-                    if enrollVoiceprint {
-                        Toggle("立刻自动回填所有历史录音（<100ms）", isOn: $rematchHistory)
-                    }
-                }
+                .padding(6)
             }
-            .formStyle(.grouped)
+            .frame(maxHeight: 200)
 
             if let error {
                 Text(error)
-                    .font(.caption)
+                    .font(.system(size: 11))
                     .foregroundStyle(MoMoPalette.failure)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
             }
 
-            HStack {
-                if let current = span.speaker, !current.isEmpty, !current.hasPrefix("说话人") {
-                    Button("这不是「\(current)」", role: .destructive) {
-                        Task { await rejectCurrent() }
+            Divider()
+
+            // Compact bottom bar: scope + learn toggle + reject
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Picker("", selection: $applyToCluster) {
+                        Text("本场").tag(true)
+                        Text("仅此句").tag(false)
                     }
-                    .disabled(busy)
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .frame(width: 112)
+
+                    Spacer(minLength: 6)
+
+                    Toggle("记住声纹", isOn: $enrollVoiceprint)
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
                 }
-                Spacer()
-                Button("确认锁定") {
-                    Task { await commitBinding() }
+
+                if let current = currentNamedSpeaker {
+                    HStack {
+                        Button("不是「\(current)」", role: .destructive) {
+                            Task { await rejectCurrent() }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(MoMoPalette.failure)
+                        .disabled(busy)
+                        Spacer()
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(busy || (selectedProfileID == nil && !isOwner && customName.trimmingCharacters(in: .whitespaces).isEmpty))
-                .keyboardShortcut(.defaultAction)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
         }
-        .padding(18)
-        .frame(width: 460, height: 560)
+        .frame(width: 268)
+        .onAppear { inputFocused = true }
         .task {
             if let fetched = try? await model.voiceprintProfiles() {
                 profiles = fetched
-                if let currentID = span.voiceProfileId, fetched.contains(where: { $0.id == currentID }) {
-                    selectedProfileID = currentID
-                }
             }
         }
     }
 
-    private func commitBinding() async {
+    private func personRow(name: String, badge: String?, isOwner: Bool, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(isOwner ? MoMoPalette.successBackground : MoMoPalette.ink.opacity(0.08))
+                    .frame(width: 22, height: 22)
+                    .overlay {
+                        Text(String(name.prefix(1)))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(isOwner ? MoMoPalette.success : MoMoPalette.ink)
+                    }
+                Text(name)
+                    .font(.system(size: 13))
+                    .foregroundStyle(MoMoPalette.ink)
+                    .lineLimit(1)
+                if let badge {
+                    Text(badge)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(MoMoPalette.success)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(MoMoPalette.successBackground, in: Capsule())
+                }
+                Spacer(minLength: 4)
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(isOwner ? MoMoPalette.success : MoMoPalette.ink)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(selected ? MoMoPalette.ink.opacity(0.05) : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+    }
+
+    private func pickExisting(_ person: VoiceprintProfile) async {
+        await commit(profileID: person.id, targetName: nil, isOwner: person.isOwner)
+    }
+
+    private func createAndBind(_ name: String, isOwner: Bool = false) async {
+        await commit(profileID: nil, targetName: name, isOwner: isOwner)
+    }
+
+    private func commit(profileID: String?, targetName: String?, isOwner: Bool) async {
         busy = true; error = nil
         defer { busy = false }
         do {
-            let trimmed = customName.trimmingCharacters(in: .whitespacesAndNewlines)
             let res = try await model.bindTranscriptSpeaker(
                 sourceID: sourceID,
                 spanIDs: [span.id],
                 clusterKey: span.clusterKey,
-                profileID: selectedProfileID,
-                targetName: selectedProfileID == nil ? (isOwner && trimmed.isEmpty ? "我" : trimmed) : nil,
-                isOwner: selectedProfileID == nil ? isOwner : false,
+                profileID: profileID,
+                targetName: targetName,
+                isOwner: isOwner,
                 enrollVoiceprint: enrollVoiceprint,
-                rematchHistory: rematchHistory,
+                rematchHistory: enrollVoiceprint,
                 scope: applyToCluster ? "cluster" : "selection"
             )
-            let banner: String
-            if let rm = res.rematch, rm.updatedSpans > 0 {
-                banner = "已锁定「\(res.targetName)」并回填 \(rm.updatedSpans) 段历史记录（\(String(format: "%.1f", rm.elapsedMs)) ms）"
-            } else if enrollVoiceprint {
-                banner = "已锁定「\(res.targetName)」并收录声纹样本"
-            } else {
-                banner = "已更正说话人标记为「\(res.targetName)」"
-            }
+            let updated = res.rematch?.updatedSpans ?? 0
+            let banner = updated > 0 ? "已设为「\(res.targetName)」· 同步更新 \(updated) 处" : "已设为「\(res.targetName)」"
             onCommitted(banner)
-            dismiss()
+            if let onClose { onClose() } else { dismiss() }
         } catch {
             self.error = error.localizedDescription
         }
@@ -399,9 +494,8 @@ struct DesktopSpeakerLockSheet: View {
                 spanIDs: [span.id],
                 clusterKey: span.clusterKey
             )
-            let prev = span.speaker ?? "该说话人"
-            onCommitted("已标记不是「\(prev)」并写入排除样本")
-            dismiss()
+            onCommitted("已取消「\(span.speaker ?? "")」标记")
+            if let onClose { onClose() } else { dismiss() }
         } catch {
             self.error = error.localizedDescription
         }

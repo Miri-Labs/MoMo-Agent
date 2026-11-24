@@ -4,115 +4,48 @@ import SwiftUI
 import UniformTypeIdentifiers
 import MoMoAgentClient
 
-/// Native macOS microphone recorder for 2–60s voiceprint enrollment clips (16 kHz mono WAV).
-@MainActor @Observable
-final class MacVoiceprintRecorder {
-    private(set) var isRecording = false
-    private(set) var elapsedSeconds: Double = 0
-    private(set) var level: Float = 0
-    private(set) var error: String?
-
-    @ObservationIgnored private var recorder: AVAudioRecorder?
-    @ObservationIgnored private var outputURL: URL?
-    @ObservationIgnored private var timerTask: Task<Void, Never>?
-
-    func start() {
-        error = nil
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("momo-voiceprint-\(UUID().uuidString).wav")
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVSampleRateKey: 16_000.0,
-            AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsBigEndianKey: false,
-        ]
-        do {
-            let rec = try AVAudioRecorder(url: url, settings: settings)
-            rec.isMeteringEnabled = true
-            guard rec.record() else {
-                error = "无法启动麦克风录音，请检查麦克风权限。"
-                return
-            }
-            self.recorder = rec
-            self.outputURL = url
-            self.elapsedSeconds = 0
-            self.isRecording = true
-            self.timerTask?.cancel()
-            self.timerTask = Task { [weak self] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(100))
-                    guard let self, let r = self.recorder, r.isRecording else { return }
-                    r.updateMeters()
-                    let power = r.averagePower(forChannel: 0)
-                    self.level = max(0, min(1, (power + 50) / 50))
-                    self.elapsedSeconds = r.currentTime
-                    if r.currentTime >= 60.0 {
-                        r.stop()
-                        self.isRecording = false
-                        break
-                    }
-                }
-            }
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    func stopAndReadData() -> Data? {
-        timerTask?.cancel()
-        timerTask = nil
-        recorder?.stop()
-        recorder = nil
-        isRecording = false
-        guard let url = outputURL else { return nil }
-        outputURL = nil
-        defer { try? FileManager.default.removeItem(at: url) }
-        return try? Data(contentsOf: url)
-    }
-
-    func cancel() {
-        _ = stopAndReadData()
+private final class MacSampleClipDelegate: NSObject, AVAudioPlayerDelegate, @unchecked Sendable {
+    var onFinish: (@Sendable () -> Void)?
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        onFinish?()
     }
 }
 
-/// Mac Settings pane for CoreML Speech Backend + Voiceprint Roster Management (「声纹与转录」).
+/// Minimal AI-native Mac Settings pane for Voiceprints & Transcription (「声纹与转录」).
+/// Voiceprint enrollment via microphone lives on iPhone; Mac manages profiles, playback,
+/// file import, and transcript-driven speaker learning.
 struct DesktopVoiceprintsAndSpeechView: View {
     @Bindable var model: DesktopModel
     @State private var profiles: [VoiceprintProfile] = []
     @State private var txStatus: MacTranscriptionStatus?
     @State private var settings = MacSpeechSettings()
     @State private var hotwordsText = ""
-    @State private var loading = false
+    @State private var showAdvanced = false
     @State private var busyMessage: String?
     @State private var statusBanner: String?
     @State private var error: String?
 
     @State private var showingNewProfileSheet = false
-    @State private var recordingProfile: VoiceprintProfile?
     @State private var editingProfile: VoiceprintProfile?
+    @State private var playingProfileID: String?
     @State private var clipPlayer: AVAudioPlayer?
+    @State private var clipDelegate = MacSampleClipDelegate()
+
+    private var sortedProfiles: [VoiceprintProfile] {
+        profiles.sorted { ($0.isOwner ? 0 : 1) < ($1.isOwner ? 0 : 1) }
+    }
 
     var body: some View {
         Form {
-            engineStatusSection
-            voiceprintRosterSection
-            speechSettingsSection
+            peopleSection
+            transcriptionSection
+            advancedSection
         }
         .formStyle(.grouped)
         .task { await reloadAll() }
+        .onDisappear { stopPlayback() }
         .sheet(isPresented: $showingNewProfileSheet) {
-            NewVoiceprintProfileSheet(model: model, hasOwner: profiles.contains(where: \.isOwner)) { created in
-                Task {
-                    await reloadAll()
-                    recordingProfile = created
-                }
-            }
-        }
-        .sheet(item: $recordingProfile) { profile in
-            MacVoiceprintEnrollSheet(model: model, profile: profile) { banner in
-                statusBanner = banner
+            NewVoiceprintProfileSheet(model: model, hasOwner: profiles.contains(where: \.isOwner)) {
                 Task { await reloadAll() }
             }
         }
@@ -123,250 +56,214 @@ struct DesktopVoiceprintsAndSpeechView: View {
         }
     }
 
-    private var engineStatusSection: some View {
-        Section {
-            let hostReady = model.speechHost.isRunning
-            let eng = txStatus?.engine
-            LabeledContent("Apple Core ML 加速引擎") {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill((eng?.reachable == true || hostReady) ? Color.green : Color.orange)
-                        .frame(width: 8, height: 8)
-                    Text((eng?.reachable == true || hostReady) ? "运行中（ANE + GPU）" : "未启动")
-                        .foregroundStyle(.secondary)
+    // MARK: - 1. People (Clean management + playback; mic recording lives on iPhone)
+
+    private var peopleSection: some View {
+        Section("人物") {
+            if sortedProfiles.isEmpty {
+                Label("在 iPhone 录下本人声音，或在转录中点击说话人", systemImage: "iphone")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(sortedProfiles) { profile in
+                    personRow(profile)
                 }
             }
-            LabeledContent("核心模型包") {
-                HStack(spacing: 8) {
-                    modelPill("Silero VAD", ready: eng?.sileroAvailable ?? model.speechHost.status?.sileroAvailable ?? false)
-                    modelPill("MOSS 0.9B", ready: eng?.mossAvailable ?? model.speechHost.status?.mossAvailable ?? false)
-                    modelPill("ReDimNet2+", ready: eng?.redimnetAvailable ?? model.speechHost.status?.redimnetAvailable ?? false)
-                }
-            }
-            if let q = txStatus?.queue {
-                LabeledContent("转录队列") {
-                    Text("待处理 \(q.pending) · 处理中 \(q.processing) · 已完成 \(q.done) · 静音跳过 \(q.silent)")
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if let st = txStatus?.storage {
-                LabeledContent("Mac 原音缓存") {
-                    Text("\(st.chunkCount) 段 · \(String(format: "%.1f MB", st.totalMb))")
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
+
             HStack {
-                Button("刷新状态") { Task { await reloadAll() } }
-                    .disabled(loading)
-                Button("释放模型内存") {
-                    model.speechHost.unloadHeavyModels()
-                    statusBanner = "已释放 Core ML 模型内存，下次收到新录音时自动按需加载。"
+                Button {
+                    showingNewProfileSheet = true
+                } label: {
+                    Label("添加人物", systemImage: "plus")
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+
                 Spacer()
+
                 if let busyMessage {
-                    ProgressView().controlSize(.small)
+                    ProgressView().controlSize(.mini)
                     Text(busyMessage).font(.caption).foregroundStyle(.secondary)
+                } else if let statusBanner {
+                    Text(statusBanner).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            if let statusBanner {
-                Text(statusBanner).font(.caption).foregroundStyle(.secondary)
-            }
+
             if let error {
                 Text(error).font(.caption).foregroundStyle(MoMoPalette.failure)
             }
-        } header: {
-            Text("Mac 转录后端（单通道 Core ML）")
-        } footer: {
-            Text("Apple Watch 与蓝牙耳机录音由 iPhone 静默中转至 Mac，统一由本机 Core ML 引擎完成转录与说话人识别。")
         }
     }
 
-    private var voiceprintRosterSection: some View {
-        Section {
-            if profiles.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("尚未录入声纹")
-                        .font(.callout.weight(.medium))
-                    Text("先花 15 秒录下「我」的声音，之后所有日常录音都会自动标记你的发言。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("录入我的声音（推荐）") {
-                        Task { await quickCreateOwner() }
-                    }
-                    .buttonStyle(.borderedProminent)
+    private func personRow(_ profile: VoiceprintProfile) -> some View {
+        let isPlaying = (playingProfileID == profile.id)
+        let firstPlayable = profile.samples.first(where: \.hasClip)
+        return HStack(spacing: 10) {
+            Circle()
+                .fill(profile.isOwner ? MoMoPalette.successBackground : MoMoPalette.ink.opacity(0.07))
+                .frame(width: 30, height: 30)
+                .overlay {
+                    Text(String(profile.name.prefix(1)))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(profile.isOwner ? MoMoPalette.success : MoMoPalette.ink)
                 }
-                .padding(.vertical, 4)
-            } else {
-                ForEach(profiles) { profile in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image(systemName: profile.isOwner ? "person.crop.circle.badge.checkmark" : "person.wave.2")
-                                .foregroundStyle(profile.isOwner ? Color.accentColor : .secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text(profile.name)
-                                        .font(.callout.weight(.medium))
-                                    if profile.isOwner {
-                                        Text("主人")
-                                            .font(.caption2.weight(.semibold))
-                                            .padding(.horizontal, 5.5)
-                                            .padding(.vertical, 1)
-                                            .foregroundStyle(MoMoPalette.success)
-                                            .background(MoMoPalette.successBackground, in: Capsule())
-                                    }
-                                    if !profile.aliases.isEmpty {
-                                        Text(profile.aliases.joined(separator: " / "))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                Text("\(profile.sampleCount) 条声纹样本 · 共 \(String(format: "%.1f", profile.totalCleanSeconds))s 清晰语音"
-                                     + (profile.rejectionCount > 0 ? " · \(profile.rejectionCount) 条排除样本" : ""))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button("录制样本") { recordingProfile = profile }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            Button("导入音频") { importAudioSample(for: profile) }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            Button("编辑") { editingProfile = profile }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(.secondary)
-                        }
 
-                        if !profile.samples.isEmpty {
-                            HStack(spacing: 6) {
-                                ForEach(profile.samples.prefix(6)) { sample in
-                                    HStack(spacing: 4) {
-                                        if sample.hasClip {
-                                            Button {
-                                                Task { await playSampleClip(profileID: profile.id, sampleID: sample.id) }
-                                            } label: {
-                                                Image(systemName: "play.circle.fill")
-                                                    .font(.caption)
-                                            }
-                                            .buttonStyle(.plain)
-                                            .help("试听声纹片段")
-                                        }
-                                        Text("\(String(format: "%.1fs", sample.cleanSeconds)) · \(sample.sourceDevice)")
-                                            .font(.caption2.monospacedDigit())
-                                            .foregroundStyle(.secondary)
-                                        Button {
-                                            Task { await deleteSample(profileID: profile.id, sampleID: sample.id) }
-                                        } label: {
-                                            Image(systemName: "xmark")
-                                                .font(.system(size: 8.5, weight: .bold))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help("删除此样本")
-                                    }
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 3)
-                                    .background(MoMoPalette.ink.opacity(0.05), in: Capsule())
-                                }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 3)
+            HStack(spacing: 6) {
+                Text(profile.name)
+                    .font(.callout.weight(.medium))
+                if profile.isOwner {
+                    Text("本人")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(MoMoPalette.success)
+                        .padding(.horizontal, 5.5)
+                        .padding(.vertical, 1)
+                        .background(MoMoPalette.successBackground, in: Capsule())
                 }
             }
 
-            HStack {
-                Button("添加人物") { showingNewProfileSheet = true }
-                if !profiles.contains(where: \.isOwner) {
-                    Button("锁定我的声音") { Task { await quickCreateOwner() } }
-                }
-                Spacer()
-                Button("重新匹配全部历史录音") {
-                    Task { await triggerRematch() }
-                }
-                .disabled(profiles.isEmpty || busyMessage != nil)
+            Spacer(minLength: 8)
+
+            if profile.sampleCount > 0 {
+                Text(String(format: "%.0fs", max(1, profile.totalCleanSeconds)))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.tertiary)
             }
-        } header: {
-            Text("人物与声纹名册（ReDimNet2+ 192-d）")
-        } footer: {
-            Text("名册中的人名与别名会自动作为热词注入 MOSS 转录模型，同时用于声纹自动锁定与毫秒级历史回填。")
+
+            if let sample = firstPlayable {
+                Button {
+                    Task { await togglePlay(profileID: profile.id, sampleID: sample.id) }
+                } label: {
+                    Image(systemName: isPlaying ? "stop.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(isPlaying ? MoMoPalette.success : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(isPlaying ? "停止试听" : "试听声纹")
+            }
+
+            Menu {
+                Button("编辑…") { editingProfile = profile }
+                Button("导入音频…") { importAudioSample(for: profile) }
+                Divider()
+                Button("删除", role: .destructive) {
+                    Task { await deleteProfile(profile) }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
         }
+        .padding(.vertical, 2)
     }
 
-    private var speechSettingsSection: some View {
-        Section("转录参数（手机端可远程同步修改）") {
-            Toggle("暂停 Mac 后台转录", isOn: Binding(
-                get: { settings.paused },
-                set: { val in
-                    settings.paused = val
-                    Task { await saveSettings() }
+    // MARK: - 2. Transcription (Auto-saving, clean, zero jargon)
+
+    private var transcriptionSection: some View {
+        Section("转录") {
+            Toggle(isOn: Binding(
+                get: { !settings.paused },
+                set: { active in
+                    settings.paused = !active
+                    Task { await saveSettings(silent: true) }
                 }
-            ))
-            Picker("主要语言提示", selection: Binding(
+            )) {
+                HStack(spacing: 6) {
+                    Text("自动转录")
+                    if let pending = txStatus?.queue.pending, pending > 0 {
+                        Text("处理中 · \(pending)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Picker("语言", selection: Binding(
                 get: { settings.languageHint },
                 set: { val in
                     settings.languageHint = val
-                    Task { await saveSettings() }
+                    Task { await saveSettings(silent: true) }
                 }
             )) {
-                Text("自动（多语混合）").tag("auto")
+                Text("自动").tag("auto")
                 Text("中文").tag("中文")
                 Text("English").tag("English")
                 Text("日本語").tag("日本語")
                 Text("한국어").tag("한국어")
             }
-            HStack {
-                Text("VAD 语音检测灵敏度")
-                Spacer()
-                Slider(value: $settings.vadThreshold, in: 0.15...0.85, step: 0.05)
-                    .frame(width: 180)
-                Text(String(format: "%.2f", settings.vadThreshold))
-                    .font(.callout.monospacedDigit())
-                    .frame(width: 36, alignment: .trailing)
-            }
-            HStack {
-                Text("声纹锁定阈值")
-                Spacer()
-                Slider(value: $settings.speakerLockThreshold, in: 0.40...0.80, step: 0.02)
-                    .frame(width: 180)
-                Text(String(format: "%.2f", settings.speakerLockThreshold))
-                    .font(.callout.monospacedDigit())
-                    .frame(width: 36, alignment: .trailing)
-            }
-            Stepper("原音保留天数：\(settings.audioRetentionDays) 天", value: $settings.audioRetentionDays, in: 1...365)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("自定义专有热词（逗号分隔，自动与声纹名册合并）")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                TextField("例如：MoMo Agent, Core ML, ReDimNet2", text: $hotwordsText)
-                    .textFieldStyle(.roundedBorder)
-            }
-            HStack {
-                Spacer()
-                Button("保存参数") { Task { await saveSettings() } }
-                    .buttonStyle(.borderedProminent)
+
+            TextField("热词", text: $hotwordsText, prompt: Text("人名、专有名词，逗号分隔"))
+                .onSubmit { Task { await saveSettings(silent: false) } }
+        }
+    }
+
+    // MARK: - 3. Advanced (Collapsed by default)
+
+    private var advancedSection: some View {
+        Section {
+            DisclosureGroup("高级", isExpanded: $showAdvanced) {
+                HStack {
+                    Text("语音灵敏度")
+                    Spacer()
+                    Slider(value: $settings.vadThreshold, in: 0.15...0.85, step: 0.05) { editing in
+                        if !editing { Task { await saveSettings(silent: true) } }
+                    }
+                    .frame(width: 160)
+                    Text(String(format: "%.2f", settings.vadThreshold))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, alignment: .trailing)
+                }
+
+                HStack {
+                    Text("声纹严格度")
+                    Spacer()
+                    Slider(value: $settings.speakerLockThreshold, in: 0.40...0.80, step: 0.02) { editing in
+                        if !editing { Task { await saveSettings(silent: true) } }
+                    }
+                    .frame(width: 160)
+                    Text(String(format: "%.2f", settings.speakerLockThreshold))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, alignment: .trailing)
+                }
+
+                Stepper("原音保留 \(settings.audioRetentionDays) 天", value: Binding(
+                    get: { settings.audioRetentionDays },
+                    set: { val in
+                        settings.audioRetentionDays = val
+                        Task { await saveSettings(silent: true) }
+                    }
+                ), in: 1...365)
+
+                if let st = txStatus?.storage {
+                    LabeledContent("原音缓存") {
+                        Text(String(format: "%.1f MB", st.totalMb))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Button("重新匹配历史") { Task { await triggerRematch() } }
+                        .disabled(profiles.isEmpty || busyMessage != nil)
+                    Button("释放模型内存") {
+                        model.speechHost.unloadHeavyModels()
+                        statusBanner = "已释放内存"
+                    }
+                }
             }
         }
     }
 
-    private func modelPill(_ name: String, ready: Bool) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: ready ? "checkmark.circle.fill" : "circle.dashed")
-                .font(.caption2)
-                .foregroundStyle(ready ? Color.green : Color.secondary)
-            Text(name)
-                .font(.caption)
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 2)
-        .background(MoMoPalette.ink.opacity(0.05), in: Capsule())
-    }
+    // MARK: - Actions
 
     private func reloadAll() async {
-        loading = true; error = nil
-        defer { loading = false }
+        error = nil
         model.speechHost.refreshStatus()
         do {
             async let p = model.voiceprintProfiles()
@@ -381,9 +278,8 @@ struct DesktopVoiceprintsAndSpeechView: View {
         }
     }
 
-    private func saveSettings() async {
-        busyMessage = "正在保存设置…"; error = nil
-        defer { busyMessage = nil }
+    private func saveSettings(silent: Bool) async {
+        error = nil
         settings.customHotwords = hotwordsText
             .split(whereSeparator: { $0 == "," || $0 == "，" || $0 == "\n" })
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -391,19 +287,17 @@ struct DesktopVoiceprintsAndSpeechView: View {
         do {
             settings = try await model.updateSpeechSettings(settings)
             hotwordsText = settings.customHotwords.joined(separator: ", ")
-            statusBanner = "已更新 Mac 转录设置。"
+            if !silent { statusBanner = "已保存" }
         } catch {
             self.error = error.localizedDescription
         }
     }
 
-    private func quickCreateOwner() async {
-        busyMessage = "正在创建「我」的声纹档案…"; error = nil
-        defer { busyMessage = nil }
+    private func deleteProfile(_ profile: VoiceprintProfile) async {
+        stopPlayback()
         do {
-            let owner = try await model.createVoiceprintProfile(name: "我", isOwner: true, aliases: [])
+            try await model.deleteVoiceprintProfile(id: profile.id)
             await reloadAll()
-            recordingProfile = owner
         } catch {
             self.error = error.localizedDescription
         }
@@ -413,10 +307,9 @@ struct DesktopVoiceprintsAndSpeechView: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.audio, .mpeg4Audio, .wav, .mp3, .aiff]
         panel.allowsMultipleSelection = false
-        panel.message = "选择一段 2–60 秒的清晰单人语音，导入为「\(profile.name)」的声纹样本"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task {
-            busyMessage = "正在提取 ReDimNet2+ 声纹向量…"; error = nil
+            busyMessage = "学习声纹中…"; error = nil
             defer { busyMessage = nil }
             do {
                 let data = try Data(contentsOf: url)
@@ -426,7 +319,9 @@ struct DesktopVoiceprintsAndSpeechView: View {
                     filename: url.lastPathComponent,
                     sourceDevice: "mac_import"
                 )
-                statusBanner = "已导入「\(profile.name)」声纹（清晰语音 \(String(format: "%.1fs", res.quality.cleanSeconds ?? 0))，回填 \(res.rematch.updatedSpans) 段）"
+                statusBanner = res.rematch.updatedSpans > 0
+                    ? "已学习「\(profile.name)」· 更新 \(res.rematch.updatedSpans) 处"
+                    : "已学习「\(profile.name)」"
                 await reloadAll()
             } catch {
                 self.error = error.localizedDescription
@@ -434,32 +329,45 @@ struct DesktopVoiceprintsAndSpeechView: View {
         }
     }
 
-    private func deleteSample(profileID: String, sampleID: String) async {
-        do {
-            try await model.deleteVoiceprintSample(profileID: profileID, sampleID: sampleID)
-            await reloadAll()
-        } catch {
-            self.error = error.localizedDescription
+    private func togglePlay(profileID: String, sampleID: String) async {
+        if playingProfileID == profileID {
+            stopPlayback()
+            return
         }
-    }
-
-    private func playSampleClip(profileID: String, sampleID: String) async {
+        stopPlayback()
         do {
             let data = try await model.fetchVoiceprintSampleAudio(profileID: profileID, sampleID: sampleID)
             let p = try AVAudioPlayer(data: data)
+            let pid = profileID
+            clipDelegate.onFinish = {
+                Task { @MainActor in
+                    if playingProfileID == pid {
+                        playingProfileID = nil
+                        clipPlayer = nil
+                    }
+                }
+            }
+            p.delegate = clipDelegate
             p.play()
             clipPlayer = p
+            playingProfileID = profileID
         } catch {
             self.error = error.localizedDescription
         }
     }
 
+    private func stopPlayback() {
+        clipPlayer?.stop()
+        clipPlayer = nil
+        playingProfileID = nil
+    }
+
     private func triggerRematch() async {
-        busyMessage = "正在回填历史录音…"; error = nil
+        busyMessage = "匹配中…"; error = nil
         defer { busyMessage = nil }
         do {
             let res = try await model.rematchVoiceprints()
-            statusBanner = "扫描 \(res.scannedClusters) 个说话人聚类，更新 \(res.updatedSpans) 条历史转录（耗时 \(String(format: "%.1f", res.elapsedMs)) ms）"
+            statusBanner = "更新 \(res.updatedSpans) 处"
             await model.loadContext(silent: true)
         } catch {
             self.error = error.localizedDescription
@@ -470,41 +378,41 @@ struct DesktopVoiceprintsAndSpeechView: View {
 private struct NewVoiceprintProfileSheet: View {
     let model: DesktopModel
     let hasOwner: Bool
-    let onCreated: (VoiceprintProfile) -> Void
+    let onCreated: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var name = ""
     @State private var isOwner = false
     @State private var aliasesText = ""
-    @State private var memoryFile = ""
     @State private var error: String?
     @State private var saving = false
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("添加声纹人物").font(.headline)
+            Text("添加人物").font(.headline)
             Form {
-                TextField("姓名（例如：张三、Alex）", text: $name)
+                TextField("姓名", text: $name)
+                    .focused($nameFocused)
                 if !hasOwner {
-                    Toggle("设为主人「我」", isOn: $isOwner)
+                    Toggle("这是我本人", isOn: $isOwner)
                 }
-                TextField("别名 / 常用称呼（逗号分隔，自动作为热词）", text: $aliasesText)
-                TextField("关联记忆文件（可选，如 people/alex.md）", text: $memoryFile)
+                TextField("别名", text: $aliasesText, prompt: Text("可选，逗号分隔"))
             }
             .formStyle(.grouped)
             if let error { Text(error).font(.caption).foregroundStyle(MoMoPalette.failure) }
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }
-                Button("下一步：录制声纹") {
-                    Task { await save() }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(saving || (!isOwner && name.trimmingCharacters(in: .whitespaces).isEmpty))
+                Button("添加") { Task { await save() } }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(saving || (!isOwner && name.trimmingCharacters(in: .whitespaces).isEmpty))
             }
         }
         .padding(18)
-        .frame(width: 400, height: 290)
+        .frame(width: 360, height: 240)
+        .onAppear { nameFocused = true }
     }
 
     private func save() async {
@@ -514,16 +422,15 @@ private struct NewVoiceprintProfileSheet: View {
             .split(whereSeparator: { $0 == "," || $0 == "，" })
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let mem = memoryFile.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            let prof = try await model.createVoiceprintProfile(
-                name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && isOwner ? "我" : name.trimmingCharacters(in: .whitespacesAndNewlines),
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            _ = try await model.createVoiceprintProfile(
+                name: trimmed.isEmpty && isOwner ? "我" : trimmed,
                 isOwner: isOwner,
-                aliases: aliases,
-                memoryFile: mem.isEmpty ? nil : mem
+                aliases: aliases
             )
             dismiss()
-            onCreated(prof)
+            onCreated()
         } catch {
             self.error = error.localizedDescription
         }
@@ -532,46 +439,76 @@ private struct NewVoiceprintProfileSheet: View {
 
 private struct EditVoiceprintProfileSheet: View {
     let model: DesktopModel
-    let profile: VoiceprintProfile
+    @State var profile: VoiceprintProfile
     let onSaved: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String
     @State private var isOwner: Bool
     @State private var aliasesText: String
-    @State private var memoryFile: String
     @State private var notes: String
     @State private var error: String?
     @State private var busy = false
+    @State private var clipPlayer: AVAudioPlayer?
 
     init(model: DesktopModel, profile: VoiceprintProfile, onSaved: @escaping () -> Void) {
         self.model = model
-        self.profile = profile
+        _profile = State(initialValue: profile)
         self.onSaved = onSaved
         _name = State(initialValue: profile.name)
         _isOwner = State(initialValue: profile.isOwner)
         _aliasesText = State(initialValue: profile.aliases.joined(separator: ", "))
-        _memoryFile = State(initialValue: profile.memoryFile ?? "")
         _notes = State(initialValue: profile.notes)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("编辑声纹人物").font(.headline)
+            Text(profile.name).font(.headline)
             Form {
-                TextField("姓名", text: $name)
-                Toggle("这是我本人", isOn: $isOwner)
-                TextField("别名 / 热词（逗号分隔）", text: $aliasesText)
-                TextField("关联记忆文件（如 people/alex.md）", text: $memoryFile)
-                TextField("备注", text: $notes)
+                Section {
+                    TextField("姓名", text: $name)
+                    TextField("别名", text: $aliasesText, prompt: Text("逗号分隔"))
+                    TextField("备注", text: $notes, prompt: Text("可选"))
+                    Toggle("本人", isOn: $isOwner)
+                }
+                if !profile.samples.isEmpty {
+                    Section("声音") {
+                        ForEach(profile.samples) { sample in
+                            HStack(spacing: 10) {
+                                if sample.hasClip {
+                                    Button {
+                                        Task { await playSample(sample) }
+                                    } label: {
+                                        Image(systemName: "play.circle.fill")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                Text(String(format: "%.1fs", sample.cleanSeconds))
+                                    .monospacedDigit()
+                                Text(friendlySource(sample))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button {
+                                    Task { await deleteSample(sample) }
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
             }
             .formStyle(.grouped)
             if let error { Text(error).font(.caption).foregroundStyle(MoMoPalette.failure) }
             HStack {
-                Button("删除人物", role: .destructive) {
+                Button("删除", role: .destructive) {
                     Task {
-                        busy = true
-                        defer { busy = false }
+                        busy = true; defer { busy = false }
                         do {
                             try await model.deleteVoiceprintProfile(id: profile.id)
                             onSaved()
@@ -582,123 +519,60 @@ private struct EditVoiceprintProfileSheet: View {
                 .disabled(busy)
                 Spacer()
                 Button("取消") { dismiss() }
-                Button("保存") {
-                    Task {
-                        busy = true; error = nil
-                        defer { busy = false }
-                        let aliases = aliasesText
-                            .split(whereSeparator: { $0 == "," || $0 == "，" })
-                            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                            .filter { !$0.isEmpty }
-                        let mem = memoryFile.trimmingCharacters(in: .whitespacesAndNewlines)
-                        do {
-                            _ = try await model.updateVoiceprintProfile(
-                                id: profile.id,
-                                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                                isOwner: isOwner,
-                                aliases: aliases,
-                                memoryFile: mem,
-                                notes: notes
-                            )
-                            onSaved()
-                            dismiss()
-                        } catch { self.error = error.localizedDescription }
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button("保存") { Task { await save() } }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(18)
-        .frame(width: 420, height: 340)
-    }
-}
-
-private struct MacVoiceprintEnrollSheet: View {
-    let model: DesktopModel
-    let profile: VoiceprintProfile
-    let onEnrolled: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var recorder = MacVoiceprintRecorder()
-    @State private var uploading = false
-    @State private var error: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("录制「\(profile.name)」的声纹样本")
-                .font(.headline)
-
-            Text("请在安静环境下自然朗读下面这句话（约 10–15 秒）：")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-
-            Text("“你好，我是\(profile.name)。今天天气不错，我们待会儿开会讨论一下项目的进展和接下来的安排。”")
-                .font(.system(size: 14))
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(MoMoPalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
-
-            HStack(spacing: 12) {
-                ProgressView(value: Double(recorder.level), total: 1.0)
-                    .frame(width: 160)
-                Text(String(format: "%.1f 秒", recorder.elapsedSeconds))
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if recorder.isRecording {
-                    Button("停止并提取声纹") {
-                        Task { await finishRecording() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(recorder.elapsedSeconds < 2.2 || uploading)
-                } else {
-                    Button("开始录音") { recorder.start() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(uploading)
-                }
-            }
-
-            if uploading {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("正在通过 ReDimNet2+ Core ML 提取声纹并回填历史记录…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if let err = error ?? recorder.error {
-                Text(err).font(.caption).foregroundStyle(MoMoPalette.failure)
-            }
-
-            HStack {
-                Spacer()
-                Button("关闭") {
-                    recorder.cancel()
-                    dismiss()
-                }
-            }
-        }
-        .padding(20)
-        .frame(width: 440)
-        .onDisappear { recorder.cancel() }
+        .frame(width: 390, height: 380)
+        .onDisappear { clipPlayer?.stop() }
     }
 
-    private func finishRecording() async {
-        guard let data = recorder.stopAndReadData() else {
-            error = "未录到有效音频，请重试。"
-            return
-        }
-        uploading = true; error = nil
-        defer { uploading = false }
+    private func friendlySource(_ s: VoiceprintSample) -> String {
+        if s.sourceKind == "transcript_bind" || s.sourceKind == "transcript_confirm" { return "录音" }
+        if s.sourceDevice.contains("iphone") { return "iPhone" }
+        if s.sourceDevice.contains("mac") { return "Mac" }
+        return "导入"
+    }
+
+    private func playSample(_ sample: VoiceprintSample) async {
         do {
-            let res = try await model.enrollVoiceprintSample(
-                profileID: profile.id,
-                audioData: data,
-                filename: "mac-mic.wav",
-                sourceDevice: "mac_mic"
+            let data = try await model.fetchVoiceprintSampleAudio(profileID: profile.id, sampleID: sample.id)
+            let p = try AVAudioPlayer(data: data)
+            p.play()
+            clipPlayer = p
+        } catch { self.error = error.localizedDescription }
+    }
+
+    private func deleteSample(_ sample: VoiceprintSample) async {
+        do {
+            try await model.deleteVoiceprintSample(profileID: profile.id, sampleID: sample.id)
+            if let fresh = try await model.voiceprintProfiles().first(where: { $0.id == profile.id }) {
+                profile = fresh
+            }
+            onSaved()
+        } catch { self.error = error.localizedDescription }
+    }
+
+    private func save() async {
+        busy = true; error = nil
+        defer { busy = false }
+        let aliases = aliasesText
+            .split(whereSeparator: { $0 == "," || $0 == "，" })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        do {
+            _ = try await model.updateVoiceprintProfile(
+                id: profile.id,
+                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                isOwner: isOwner,
+                aliases: aliases,
+                memoryFile: profile.memoryFile,
+                notes: notes
             )
-            onEnrolled("已录入「\(profile.name)」声纹（清晰语音 \(String(format: "%.1fs", res.quality.cleanSeconds ?? 0))，已回填 \(res.rematch.updatedSpans) 条历史记录）")
+            onSaved()
             dismiss()
         } catch {
             self.error = error.localizedDescription
