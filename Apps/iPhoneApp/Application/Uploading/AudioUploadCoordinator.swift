@@ -509,10 +509,36 @@ final class AudioUploadCoordinator {
         return PreparedWirePayload(data: rawData, sha256: localSHA, codec: chunk.codec, sampleRate: chunk.sampleRate)
     }
 
-    private static func transcodeToRelaySafeAAC(sourceURL: URL, cacheURL: URL) async throws -> Data {
+    /// Transcodes an imported voiceprint audio file into a Relay-safe 16 kHz mono AAC clip
+    /// capped at `maxDurationSeconds` (default 60s -> ~180 KB, safely under Relay's 512 KB cap).
+    static func transcodeVoiceprintClipToRelaySafeAAC(
+        sourceURL: URL,
+        maxDurationSeconds: Double = 60.0
+    ) async throws -> Data {
+        let tmpCache = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vp-import-\(UUID().uuidString).m4a")
+        defer { try? FileManager.default.removeItem(at: tmpCache) }
+        return try await transcodeToRelaySafeAAC(
+            sourceURL: sourceURL,
+            cacheURL: tmpCache,
+            maxDurationSeconds: maxDurationSeconds
+        )
+    }
+
+    private static func transcodeToRelaySafeAAC(
+        sourceURL: URL,
+        cacheURL: URL,
+        maxDurationSeconds: Double? = nil
+    ) async throws -> Data {
         try await Task.detached(priority: .utility) {
             let inputFile = try AVAudioFile(forReading: sourceURL)
             let inputFormat = inputFile.processingFormat
+            let maxInputFrames: AVAudioFramePosition
+            if let maxDurationSeconds, maxDurationSeconds > 0 {
+                maxInputFrames = min(inputFile.length, AVAudioFramePosition(maxDurationSeconds * inputFormat.sampleRate))
+            } else {
+                maxInputFrames = inputFile.length
+            }
             guard let targetPCM = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
                 sampleRate: 16_000,
@@ -574,14 +600,16 @@ final class AudioUploadCoordinator {
                                 outStatus.pointee = .endOfStream
                                 return nil
                             }
-                            if inputFile.framePosition >= inputFile.length {
+                            let remaining = maxInputFrames - inputFile.framePosition
+                            if remaining <= 0 {
                                 reachedEOF = true
                                 outStatus.pointee = .endOfStream
                                 return nil
                             }
                             readBuf.frameLength = 0
                             do {
-                                try inputFile.read(into: readBuf, frameCount: readCapacity)
+                                let toRead = AVAudioFrameCount(min(AVAudioFramePosition(readCapacity), remaining))
+                                try inputFile.read(into: readBuf, frameCount: toRead)
                                 if readBuf.frameLength == 0 {
                                     reachedEOF = true
                                     outStatus.pointee = .endOfStream
@@ -608,9 +636,10 @@ final class AudioUploadCoordinator {
                         if status == .inputRanDry && reachedEOF { break }
                     }
                 } else {
-                    while inputFile.framePosition < inputFile.length {
+                    while inputFile.framePosition < maxInputFrames {
                         readBuf.frameLength = 0
-                        try inputFile.read(into: readBuf, frameCount: readCapacity)
+                        let toRead = AVAudioFrameCount(min(AVAudioFramePosition(readCapacity), maxInputFrames - inputFile.framePosition))
+                        try inputFile.read(into: readBuf, frameCount: toRead)
                         if readBuf.frameLength == 0 { break }
                         try outputFile.write(from: readBuf)
                     }

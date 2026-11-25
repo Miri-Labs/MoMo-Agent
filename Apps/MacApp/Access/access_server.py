@@ -69,7 +69,8 @@ class AccessService:
         if not any(k.lower() == 'content-type' for k in h):
             h['Content-Type'] = 'application/json'
         stream_read = 300 if method == 'POST' else 45
-        timeout = ClientTimeout(total=None, sock_connect=10, sock_read=stream_read) if streaming else ClientTimeout(total=120, sock_connect=10)
+        long_speech_op = context and path.startswith(('/v1/audio/', '/v1/speech/', '/v1/voiceprints/', '/v1/transcription/'))
+        timeout = ClientTimeout(total=None, sock_connect=10, sock_read=stream_read) if streaming else ClientTimeout(total=120 if long_speech_op else 60, sock_connect=10)
         return await self.session.request(method, url, data=body, headers=h, allow_redirects=False, timeout=timeout)
 
     async def status(self):

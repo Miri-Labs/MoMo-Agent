@@ -447,29 +447,15 @@ final class RemoteContextSyncTests: XCTestCase {
             TranscriptSpan(chunkID: punctuationTicket.chunkID, frames: punctuationTicket.manifest.frames, text: "，。")
         ])
         // Newest recording without any transcript version yet (appears first on recordingsPage).
+        // In Mac-as-Backend mode, PhoneContextSync must skip empty untranscribed stubs (version == 0)
+        // so iPhone never races Mac's own audio pipeline, while still delivering older transcripts.
         let pendingSession = UUID()
         try await deliver(sessionID: pendingSession, anchor: Date(timeIntervalSince1970: 1_790_000_100))
         await sync.refresh()
         XCTAssertNil(sync.failure)
         XCTAssertEqual(sync.pendingSources, 0)
         let sourcePrefix = archive.libraryInstanceID.uuidString.lowercased() + "/"
-        XCTAssertEqual(MemoryResponse.state.syncedSourceIDs, [sourcePrefix + pendingSession.uuidString.lowercased(), sourcePrefix + transcribedSession.uuidString.lowercased()])
-        let pending = try XCTUnwrap(MemoryResponse.state.sourcePayloads.first)
-        XCTAssertTrue(pending.spans.isEmpty)
-        XCTAssertEqual(pending.pendingTranscriptionRanges, [.init(start: 1_790_000_100, end: 1_790_000_100.1)])
-        let claimedAnalysis = try await archive.claimEpochAnalysis(configurationFingerprint: fingerprint,
-            sessionID: pendingSession, expectedGeneration: pending.generation)
-        let analysis = try XCTUnwrap(claimedAnalysis)
-        let frames = try XCTUnwrap(analysis.inputs.first?.envelope.manifest.frames)
-        try await archive.commitAnalysisBatch(ticket: analysis, windows: [], analyzedCoverage: [frames],
-            noSpeechCoverage: [frames], checkpoint: nil, waitingForMoreAudio: true)
-        await sync.refresh()
-        XCTAssertNil(sync.failure)
-        let finished = try XCTUnwrap(MemoryResponse.state.sourcePayloads.last)
-        XCTAssertEqual(finished.sourceID, pending.sourceID)
-        XCTAssertEqual(finished.version, pending.version)
-        XCTAssertEqual(finished.textSha256, pending.textSha256)
-        XCTAssertEqual(finished.pendingTranscriptionRanges, [])
+        XCTAssertEqual(MemoryResponse.state.syncedSourceIDs, [sourcePrefix + transcribedSession.uuidString.lowercased()])
     }
     private func configuration() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MemoryResponse.self]; return config

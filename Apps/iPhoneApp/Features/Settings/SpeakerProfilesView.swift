@@ -653,11 +653,28 @@ private struct MacVoiceprintPersonDetailSheet: View {
     private func uploadAudioFile(_ url: URL) async {
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? Data(contentsOf: url), !data.isEmpty else {
+        guard let rawData = try? Data(contentsOf: url), !rawData.isEmpty else {
             error = "无法读取音频文件。"
             return
         }
-        await enrollBytes(data, filename: url.lastPathComponent, device: "iphone_import")
+        // Keep voiceprint imports strictly below Relay's 512 KB request limit by transcoding
+        // oversized files (>460 KB) into compact 16 kHz mono AAC (up to 60s -> ~180 KB).
+        if rawData.count > 460 * 1024 {
+            saving = true; error = nil; statusBanner = nil
+            do {
+                let transcoded = try await AudioUploadCoordinator.transcodeVoiceprintClipToRelaySafeAAC(
+                    sourceURL: url,
+                    maxDurationSeconds: 60.0
+                )
+                saving = false
+                await enrollBytes(transcoded, filename: "iphone-import.m4a", device: "iphone_import")
+            } catch {
+                saving = false
+                self.error = error.localizedDescription
+            }
+            return
+        }
+        await enrollBytes(rawData, filename: url.lastPathComponent, device: "iphone_import")
     }
 
     private func enrollBytes(_ data: Data, filename: String, device: String) async {

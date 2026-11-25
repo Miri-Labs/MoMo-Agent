@@ -438,18 +438,20 @@ final class PhoneContextSync {
     }
 
     /// Sends a deletion tombstone to Mac for a deleted Mac-authoritative recording so Mac removes it too.
+    /// Increments `generation` (matching `SourceEnvelope.tombstone()`) so explicit user deletion always
+    /// supersedes any concurrent speaker-relabel version bumps on Mac.
     func tombstoneMacSession(_ sessionID: UUID, generation: Int64, version: Int64, recordedAt: Date) async {
-        let nextGen = max(1, generation)
-        let nextVer = max(1, version) + 1
+        let nextGen = max(1, generation) + 1
         let tombstone = SourceEnvelope(
             library: archive.libraryInstanceID,
             session: sessionID,
             device: deviceID,
             generation: nextGen,
-            version: nextVer,
+            version: 0,
             deleted: true,
             recordedAt: recordedAt,
-            spans: []
+            spans: [],
+            pendingTranscriptionRanges: []
         )
         _ = try? await client.syncSource(tombstone)
     }
