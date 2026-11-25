@@ -24,7 +24,9 @@ final class TailnetLogin: NSObject, ASWebAuthenticationPresentationContextProvid
                 let web = ASWebAuthenticationSession(url: url, callbackURLScheme: "ipnauth", completionHandler: Self.completion(self, attempt: attempt))
                 web.presentationContextProvider = self; session = web
                 guard web.start() else { throw TailnetError.loginUnavailable }
-                while !Task.isCancelled, !["Running", "NeedsMachineAuth", "failed"].contains(network.state) {
+                let webDeadline = ContinuousClock.now.advanced(by: .seconds(600))
+                while !Task.isCancelled, ContinuousClock.now < webDeadline,
+                      !["Running", "NeedsMachineAuth", "failed"].contains(network.state) {
                     try await Task.sleep(for: .milliseconds(300))
                     guard generation == attempt, !Task.isCancelled else { break }
                     await network.refreshStatus()
@@ -60,7 +62,11 @@ final class TailnetLogin: NSObject, ASWebAuthenticationPresentationContextProvid
         #if os(macOS)
         NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? ASPresentationAnchor()
         #else
-        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first { $0.isKeyWindow } ?? ASPresentationAnchor()
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let active = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        return active?.windows.first(where: \.isKeyWindow)
+            ?? active?.windows.first
+            ?? ASPresentationAnchor()
         #endif
     }
 }

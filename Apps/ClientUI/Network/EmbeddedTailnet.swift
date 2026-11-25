@@ -200,6 +200,7 @@ final class EmbeddedTailnet {
         let address: String?
         let authURL: URL?
         let mappedAddresses: Set<String>
+        let pacError: Bool
     }
 
     nonisolated private static func parseStatusJSON(_ data: Data) throws -> ParsedTailnetStatus {
@@ -209,6 +210,8 @@ final class EmbeddedTailnet {
             .flatMap { $0["TailscaleIPs"] as? [String] ?? [] })
         let backendState = status["BackendState"] as? String ?? "starting"
         let resolvedAddress = (status["TailscaleIPs"] as? [String] ?? []).first(where: TailnetEndpoint.isAddress)
+        let health = status["Health"] as? [String] ?? []
+        let hasPacError = health.contains { $0.localizedCaseInsensitiveContains("PAC") }
         let resolvedAuthURL: URL?
         if let raw = status["AuthURL"] as? String, let url = URL(string: raw),
            url.scheme == "https", url.host == "login.tailscale.com" {
@@ -220,9 +223,12 @@ final class EmbeddedTailnet {
             backendState: backendState,
             address: resolvedAddress,
             authURL: resolvedAuthURL,
-            mappedAddresses: mapped
+            mappedAddresses: mapped,
+            pacError: hasPacError
         )
     }
+
+    @ObservationIgnored private var lastHealthPacError = false
 
     func refreshStatus(ignoreFailedRestartGate: Bool = false) async {
         guard let node, ignoreFailedRestartGate || !(needsRestart && state == "failed") else { return }
@@ -234,6 +240,7 @@ final class EmbeddedTailnet {
             }.value
             guard attempt == generation else { return }
             mappedAddresses = parsed.mappedAddresses
+            lastHealthPacError = parsed.pacError
             diagnostics.recordStatus(data)
             if state != parsed.backendState { state = parsed.backendState }
             if address != parsed.address { address = parsed.address }
@@ -254,7 +261,34 @@ final class EmbeddedTailnet {
         }
     }
 
-    func loginURL(timeout: Duration = .seconds(60)) async throws -> URL? {
+    /// Triggers Tailscale's `/localapi/v0/login-interactive` over an isolated `.ephemeral` loopback
+    /// session with a short timeout so iOS VPN/PAC proxies or reclaimed loopback listeners can never
+    /// wedge `loginURL()` for 60 seconds inside `LocalAPIClient`'s unisolated `.default` URLSession.
+    private static func requestLoginInteractive(_ node: TailscaleNode) async -> Bool {
+        do {
+            let (configuration, loopback) = try await Self.makeTailnetSessionConfiguration(node)
+            let probe = URLSession(configuration: configuration, delegate: TailnetNoRedirects(), delegateQueue: nil)
+            defer { probe.invalidateAndCancel() }
+            guard let url = URL(string: "http://\(loopback.address)/localapi/v0/login-interactive") else {
+                return false
+            }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 4
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("Basic " + Data("tsnet:\(loopback.localAPIKey)".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
+            request.setValue("localapi", forHTTPHeaderField: "Sec-Tailscale")
+            let (_, response) = try await probe.data(for: request)
+            if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+                return true
+            }
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    func loginURL(timeout: Duration = .seconds(30)) async throws -> URL? {
         guard !signingOut else { throw TailnetError.unavailable }
         signedOut = false
         try await start()
@@ -274,9 +308,15 @@ final class EmbeddedTailnet {
         if state == "NeedsMachineAuth" { throw TailnetError.approvalRequired }
         // Reopening the sheet must reuse an already issued login URL.
         if let authURL { return authURL }
-        try? await LocalAPIClient(localNode: node, logger: nil).startLoginInteractive()
-        // The request only starts login; network fallback and the auth URL arrive
-        // asynchronously. A 4.5-second UI deadline used to reject valid logins.
+        // Fire login-interactive asynchronously so a slow/proxied loopback call NEVER blocks
+        // statusJSON() polling (which uses tsnet's in-memory LocalClient and receives AuthURL immediately).
+        let interactiveTrigger = Task {
+            let sent = await Self.requestLoginInteractive(node)
+            if !sent, !Task.isCancelled {
+                try? await LocalAPIClient(localNode: node, logger: nil).startLoginInteractive()
+            }
+        }
+        defer { interactiveTrigger.cancel() }
         let deadline = ContinuousClock.now.advanced(by: timeout)
         while ContinuousClock.now < deadline {
             try Task.checkCancellation()
@@ -288,6 +328,9 @@ final class EmbeddedTailnet {
             if state == "NeedsMachineAuth" { throw TailnetError.approvalRequired }
             if state == "failed" { throw TailnetError.unavailable }
             if let authURL { return authURL }
+            if lastHealthPacError {
+                message = String(localized: "当前系统代理为 PAC 模式，内置 Tailscale 暂不支持。请改为全局/直连代理，或点右上角 ··· 使用「加密中继」。")
+            }
             let remaining = ContinuousClock.now.duration(to: deadline)
             if remaining > .zero { try await Task.sleep(for: min(.milliseconds(300), remaining)) }
         }

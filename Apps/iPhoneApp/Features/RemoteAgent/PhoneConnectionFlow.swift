@@ -66,8 +66,15 @@ struct PhoneConnectionFlow: View {
                             }
                                 .buttonStyle(ClientPrimaryButton(isLoading: login.busy)).disabled(login.busy)
                                 .accessibilityIdentifier("onboarding.loginTailscale")
-                        if let error = login.error ?? agent.tailnet.message, !login.busy {
+                        if login.busy {
+                            Button("取消") { login.cancel() }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(MoMoPalette.muted)
+                                .frame(minHeight: 40)
+                        }
+                        if let error = login.error ?? agent.tailnet.message {
                             Text(error).phoneText(.caption).foregroundStyle(MoMoPalette.failure)
+                                .multilineTextAlignment(.center)
                         }
                     }
                     if let deferConnection {
