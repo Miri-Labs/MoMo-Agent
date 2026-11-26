@@ -73,7 +73,7 @@ struct RecordingFixture {
     #expect(try await reopened.intent(sessionID: manifest.sessionID) == .stopped)
 }
 
-@available(macOS 15, iOS 18, watchOS 11, *)
+@available(macOS 15, iOS 18, watchOS 10, *)
 @Test func speechAACUsesLessStorageWithoutDroppingFrames() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoAACStorage-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -94,7 +94,7 @@ struct RecordingFixture {
     #expect(chunks.reduce(Int64(0)) { $0 + $1.envelope.manifest.byteCount } < 216_000)
 }
 
-@available(macOS 15, iOS 18, watchOS 11, *)
+@available(macOS 15, iOS 18, watchOS 10, *)
 @Test func continuousAACResamplingPreservesFullChunksAndShortTail() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoAAC-\(UUID())")
     defer { do { try FileManager.default.removeItem(at: root) } catch { Issue.record(error) } }
@@ -114,7 +114,7 @@ struct RecordingFixture {
     }
 }
 
-@available(macOS 15, iOS 18, watchOS 11, *)
+@available(macOS 15, iOS 18, watchOS 10, *)
 @Test func boundedHandoffFailureSealsAcceptedTailBeforeReportingFailure() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoCapture-\(UUID())")
     defer { do { try FileManager.default.removeItem(at: root) } catch { Issue.record(error) } }
@@ -136,7 +136,7 @@ struct RecordingFixture {
     #expect(chunks.count == 1 && chunks.first?.envelope.manifest.frames.count == 16_384)
 }
 
-@available(macOS 15, iOS 18, watchOS 11, *)
+@available(macOS 15, iOS 18, watchOS 10, *)
 @Test func closedAACRecoversWhenProcessStopsBeforeLedgerCommit() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoSpool-\(UUID())")
     defer { do { try FileManager.default.removeItem(at: root) } catch { Issue.record(error) } }

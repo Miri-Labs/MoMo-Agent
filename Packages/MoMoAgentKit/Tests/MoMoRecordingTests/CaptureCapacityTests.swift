@@ -1,6 +1,6 @@
 import CSQLite
 import Foundation
-import Synchronization
+import os
 import Testing
 import MoMoContracts
 @testable import MoMoRecording
@@ -45,7 +45,7 @@ struct CaptureCapacityTests {
     }
 
     @Test func firstChunkRefusalCreatesNeitherAudioNorDraft() async throws {
-        guard #available(macOS 15, iOS 18, watchOS 11, *) else { return }
+        guard #available(macOS 15, iOS 18, watchOS 10, *) else { return }
         let fixture = try RecordingFixture()
         defer { fixture.clean() }
         let store = try fixture.store()
@@ -67,7 +67,7 @@ struct CaptureCapacityTests {
     }
 
     @Test func rotationRefusalPreservesTheChunkClosedInsideTheSameInputBlock() async throws {
-        guard #available(macOS 15, iOS 18, watchOS 11, *) else { return }
+        guard #available(macOS 15, iOS 18, watchOS 10, *) else { return }
         let fixture = try RecordingFixture()
         defer { fixture.clean() }
         let store = try fixture.store()
@@ -130,7 +130,7 @@ struct CaptureCapacityTests {
     }
 
     @Test func anAdmittedShortTailStillSealsWithoutOpeningAnotherContainer() async throws {
-        guard #available(macOS 15, iOS 18, watchOS 11, *) else { return }
+        guard #available(macOS 15, iOS 18, watchOS 10, *) else { return }
         let fixture = try RecordingFixture()
         defer { fixture.clean() }
         let store = try fixture.store()
@@ -370,9 +370,9 @@ struct CaptureCapacityTests {
     }
 }
 
-@available(macOS 15, iOS 18, watchOS 11, *)
+@available(macOS 15, iOS 18, watchOS 10, *)
 private final class CapacityReadCount: Sendable {
-    private let count = Mutex(0)
+    private let count = OSAllocatedUnfairLock(initialState: 0)
     func next() -> Int { count.withLock { value in value += 1; return value } }
     var value: Int { count.withLock { $0 } }
 }

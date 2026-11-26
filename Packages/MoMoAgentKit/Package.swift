@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "MoMoAgentKit",
     defaultLocalization: "en",
-    platforms: [.macOS(.v14), .iOS(.v18), .watchOS(.v11)],
+    platforms: [.macOS(.v14), .iOS(.v18), .watchOS(.v10)],
     products: [
         .library(name: "MoMoContracts", targets: ["MoMoContracts"]),
         .library(name: "MoMoRecording", targets: ["MoMoRecording"]),

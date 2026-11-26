@@ -4,7 +4,7 @@ options:
   developmentLanguage: en
   deploymentTarget:
     iOS: "18.0"
-    watchOS: "11.0"
+    watchOS: "10.0"
     macOS: "14.0"
   xcodeVersion: "27.0"
 packages:

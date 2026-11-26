@@ -10,7 +10,7 @@
 
 [![Version](https://img.shields.io/badge/version-v0.5.3-1A1A19?style=flat-square)](https://github.com/Miri-Labs/MoMo-Agent/releases)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--only-3B82F6?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-watchOS%2010%2B%20%7C%20iOS%2017%2B%20%7C%20macOS%2015%2B-4A4A46?style=flat-square)](https://github.com/Miri-Labs/MoMo-Agent)
+[![Platform](https://img.shields.io/badge/platform-watchOS%2010%2B%20%7C%20iOS%2018%2B%20%7C%20macOS%2015%2B-4A4A46?style=flat-square)](https://github.com/Miri-Labs/MoMo-Agent)
 
 [English](./README.md) | 简体中文
 
@@ -89,7 +89,7 @@ Gmail 和 Outlook 是可选的数据源。启用后，Composio 托管邮箱 OAut
 完整的真机签名、端侧语音模型下载与常见问题排查，请参阅 [**`install.md`**](./install.md)。
 
 #### 准备条件
-1. **设备**：一台 Mac（`macOS 15.0+`，推荐 Apple Silicon）、一部 iPhone（`iOS 17.0+`），以及一块 Apple Watch（`watchOS 10.0+`，或蓝牙耳机）。
+1. **设备**：一台 Mac（`macOS 15.0+`，推荐 Apple Silicon）、一部 iPhone（`iOS 18.0+`），以及一块 Apple Watch（`watchOS 10.0+`，或蓝牙耳机）。
 2. **构建工具**：Xcode 16+ 与 `xcodegen`（`brew install xcodegen`）。
 3. **AI 订阅（任选其一）**：**OpenAI Codex**（ChatGPT Plus / Pro）、**Claude**（Claude Pro / Max），或任意兼容自定义 API。
 4. **Tailscale** *(可选，外网直连推荐)*：免费注册 [Tailscale](https://tailscale.com) 账号。

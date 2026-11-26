@@ -5,7 +5,7 @@ import MoMoContracts
 
 struct CaptureSealWriteFailureTests {
     @Test func realSealPublicationFailurePreservesUnacknowledgedAudioAndRecoversDraft() async throws {
-        guard #available(macOS 15, iOS 18, watchOS 11, *) else { return }
+        guard #available(macOS 15, iOS 18, watchOS 10, *) else { return }
         let fixture = try RecordingFixture()
         defer { fixture.clean() }
         let manifest = fixture.envelope.manifest
