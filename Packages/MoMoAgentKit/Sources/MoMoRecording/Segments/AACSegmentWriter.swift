@@ -2,7 +2,6 @@ import AVFAudio
 import CoreAudioTypes
 import Darwin
 import Foundation
-import Synchronization
 import MoMoContracts
 
 public enum AACWriterError: Error, Equatable {
@@ -10,27 +9,33 @@ public enum AACWriterError: Error, Equatable {
     case decodedFrameMismatch(expected: Int64, actual: Int64)
 }
 
-@available(macOS 15, iOS 18, watchOS 11, tvOS 18, *)
-private final class ConverterInput: Sendable {
-    struct State {
-        let buffer: AVAudioPCMBuffer
-        var available = false
-    }
-    let state: Mutex<State>
+private final class ConverterInput: @unchecked Sendable {
+    private let lock = NSLock()
+    private let buffer: AVAudioPCMBuffer
+    private var available = false
 
-    init(_ buffer: sending AVAudioPCMBuffer) { state = Mutex(State(buffer: buffer)) }
+    init(_ buffer: sending AVAudioPCMBuffer) { self.buffer = buffer }
 
     func prepare(_ mono: [Float]) {
-        state.withLock { state in
-            state.buffer.frameLength = AVAudioFrameCount(mono.count)
-            mono.withUnsafeBufferPointer { state.buffer.floatChannelData![0].update(from: $0.baseAddress!, count: $0.count) }
-            state.available = true
+        lock.withLock {
+            buffer.frameLength = AVAudioFrameCount(mono.count)
+            mono.withUnsafeBufferPointer { buffer.floatChannelData![0].update(from: $0.baseAddress!, count: $0.count) }
+            available = true
+        }
+    }
+
+    // The serial writer waits for conversion to finish before preparing the buffer again.
+    func take() -> AVAudioPCMBuffer? {
+        lock.withLock {
+            guard available else { return nil }
+            available = false
+            return buffer
         }
     }
 }
 
 /// One serial owner. The resampler stays alive across files; only the AAC container rotates.
-@available(macOS 15, iOS 18, watchOS 11, tvOS 18, *)
+@available(macOS 15, iOS 18, watchOS 10, tvOS 18, *)
 public final class AACSegmentWriter {
     public static let sampleRate: Double = 16_000
     // Speech capture: 25% less audio than the previous 32 kbps setting; existing chunks stay intact.
@@ -123,11 +128,7 @@ public final class AACSegmentWriter {
             output.frameLength = 0
             var error: NSError?
             let status = converter.convert(to: output, error: &error) { _, state in
-                if let next = pending.state.withLock({ value -> AVAudioPCMBuffer? in
-                    guard value.available else { return nil }
-                    value.available = false
-                    return value.buffer
-                }) {
+                if let next = pending.take() {
                     state.pointee = .haveData
                     return next
                 }

@@ -6,7 +6,7 @@ import MoMoContracts
 @testable import MoMoRecording
 
 @Test func capacityBudgetIsPreparedOncePerChunkInsteadOfEveryBoundaryTap() throws {
-    guard #available(macOS 15, iOS 18, watchOS 11, *) else { return }
+    guard #available(macOS 15, iOS 18, watchOS 10, *) else { return }
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let writer = try AACSegmentWriter(directory: directory, sessionID: UUID(), epochID: UUID(),

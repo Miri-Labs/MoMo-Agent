@@ -8,7 +8,7 @@ private enum EncoderExit: Error { case stopped }
 @Suite(.serialized)
 struct CaptureDraftRecoveryTests {
     @Test func backgroundRecoveryLeavesTheLiveEpochUntouched() async throws {
-        guard #available(macOS 15, iOS 18, watchOS 11, *) else { return }
+        guard #available(macOS 15, iOS 18, watchOS 10, *) else { return }
         let fixture = try RecordingFixture()
         defer { fixture.clean() }
         let m = fixture.envelope.manifest
@@ -38,7 +38,7 @@ struct CaptureDraftRecoveryTests {
     }
 
     @Test func closedContainerWithoutFinalSidecarRecoversItsOriginalFramePosition() async throws {
-        guard #available(macOS 15, iOS 18, watchOS 11, *) else { return }
+        guard #available(macOS 15, iOS 18, watchOS 10, *) else { return }
         let fixture = try RecordingFixture()
         defer { fixture.clean() }
         let m = fixture.envelope.manifest
@@ -75,7 +75,7 @@ struct CaptureDraftRecoveryTests {
     }
 
     @Test func interruptedUnclosedContainerKeepsDraftAndEveryOriginalByte() async throws {
-        guard #available(macOS 15, iOS 18, watchOS 11, *) else { return }
+        guard #available(macOS 15, iOS 18, watchOS 10, *) else { return }
         let fixture = try RecordingFixture()
         defer { fixture.clean() }
         let m = fixture.envelope.manifest
@@ -138,7 +138,7 @@ struct CaptureDraftRecoveryTests {
 
     @Test(arguments: [false, true])
     func malformedEntriesAndSymlinksCannotBlockHealthyAudioOrPendingDeletion(repairIsSymlink: Bool) async throws {
-        guard #available(macOS 15, iOS 18, watchOS 11, *) else { return }
+        guard #available(macOS 15, iOS 18, watchOS 10, *) else { return }
         let fixture = try RecordingFixture()
         defer { fixture.clean() }
         let m = fixture.envelope.manifest
@@ -192,7 +192,7 @@ struct CaptureDraftRecoveryTests {
     }
 
     @Test func interruptedLiveWriterWithPCMSidecarRecoversExactTailFramesIntoStore() async throws {
-        guard #available(macOS 15, iOS 18, watchOS 11, *) else { return }
+        guard #available(macOS 15, iOS 18, watchOS 10, *) else { return }
         let fixture = try RecordingFixture()
         defer { fixture.clean() }
         let m = fixture.envelope.manifest

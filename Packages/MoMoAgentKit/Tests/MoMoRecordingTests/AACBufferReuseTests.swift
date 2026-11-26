@@ -4,7 +4,7 @@ import Testing
 import MoMoContracts
 @testable import MoMoRecording
 
-@available(macOS 15, iOS 18, watchOS 11, *)
+@available(macOS 15, iOS 18, watchOS 10, *)
 @Test(arguments: [8_000.0, 16_000, 44_100, 48_000, 192_000])
 func variableAACBuffersPreserveSamplesAcrossChunkBoundaries(inputRate: Double) throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoAACBuffers-\(UUID())")

@@ -10,7 +10,7 @@
 
 [![Version](https://img.shields.io/badge/version-v0.5.3-1A1A19?style=flat-square)](https://github.com/Miri-Labs/MoMo-Agent/releases)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--only-3B82F6?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-watchOS%2010%2B%20%7C%20iOS%2017%2B%20%7C%20macOS%2015%2B-4A4A46?style=flat-square)](https://github.com/Miri-Labs/MoMo-Agent)
+[![Platform](https://img.shields.io/badge/platform-watchOS%2010%2B%20%7C%20iOS%2018%2B%20%7C%20macOS%2015%2B-4A4A46?style=flat-square)](https://github.com/Miri-Labs/MoMo-Agent)
 
 English | [简体中文](./README.zh-CN.md)
 
@@ -89,7 +89,7 @@ Optional Gmail and Outlook sync uses your own Composio project. Composio holds t
 For step-by-step signing, on-device speech model setup, and troubleshooting, see [**`install.md`**](./install.md).
 
 #### Prerequisites
-1. **Devices**: A Mac (`macOS 15.0+`, Apple Silicon recommended), an iPhone (`iOS 17.0+`), and an Apple Watch (`watchOS 10.0+`, or compatible Bluetooth earphones).
+1. **Devices**: A Mac (`macOS 15.0+`, Apple Silicon recommended), an iPhone (`iOS 18.0+`), and an Apple Watch (`watchOS 10.0+`, or compatible Bluetooth earphones).
 2. **Build Tools**: Xcode 16+ and `xcodegen` (`brew install xcodegen`).
 3. **AI Subscription (Choose Any)**: **OpenAI Codex** (ChatGPT Plus / Pro), **Claude** (Claude Pro / Max), or a custom OpenAI-compatible API.
 4. **Tailscale** *(Optional, for access outside home Wi-Fi)*: A free [Tailscale](https://tailscale.com) account.
