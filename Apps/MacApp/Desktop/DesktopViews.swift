@@ -1736,7 +1736,7 @@ struct DesktopSettings: View {
             case .runtime: terms = [String(localized: "运行环境"), String(localized: "智能体引擎"), String(localized: "应用更新"), String(localized: "结果文件夹"), "DeepSeek Harness", "SuperAgent", "Proactive"]
             case .model: terms = [String(localized: "模型"), String(localized: "聊天模式"), String(localized: "创作"), "Creator", "API", "Codex", "Claude"]
             case .pairing: terms = [String(localized: "设备"), String(localized: "配对手机"), String(localized: "网络代理"), "Tailscale", String(localized: "远程访问")]
-            case .connectors: terms = [String(localized: "连接器"), String(localized: "飞书"), "Feishu", "Lark", String(localized: "邮件"), "Email", "IMAP", "Gmail", "OAuth"]
+            case .connectors: terms = [String(localized: "连接器"), String(localized: "飞书"), "Feishu", "Lark", String(localized: "邮件"), "Email", "Composio", "Outlook", "Gmail", "OAuth"]
             }
             return terms.contains { $0.localizedStandardContains(query) }
         }

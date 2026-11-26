@@ -84,6 +84,8 @@ flowchart LR
 
 ### 快速开始（Self-Host 指南）
 
+Gmail 和 Outlook 是可选的数据源。启用后，Composio 托管邮箱 OAuth 凭据，并代理 MoMo 的邮件读取请求。[连接邮箱](./install.md#在-mac-上连接-gmail-或-outlook)
+
 完整的真机签名、端侧语音模型下载与常见问题排查，请参阅 [**`install.md`**](./install.md)。
 
 #### 准备条件

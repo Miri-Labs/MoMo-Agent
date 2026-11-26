@@ -1,14 +1,18 @@
-"""Unit tests for read-only Feishu personal OAuth & Generic IMAP Email connectors."""
+"""Unit tests for read-only Feishu personal OAuth & Composio email connectors."""
 from __future__ import annotations
 
 from email.message import EmailMessage
+import base64
 import json
 from pathlib import Path
 import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 for rel in ("Apps/MacApp/Context", "Apps/MacApp/Runtime"):
@@ -16,34 +20,11 @@ for rel in ("Apps/MacApp/Context", "Apps/MacApp/Runtime"):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+import composio_mail
 import connectors
+from context_server import ContextService
 from context_store import ContextStore
 from memory_search import MemorySearch
-
-
-class _FakeIMAP:
-    def __init__(self, messages: dict[bytes, bytes]):
-        self.messages = messages
-        self.readonly_selected = False
-
-    def select(self, folder="INBOX", readonly=False):
-        self.readonly_selected = bool(readonly)
-        return "OK", [str(len(self.messages)).encode()]
-
-    def uid(self, command, *args):
-        cmd = command.lower()
-        if cmd == "search":
-            return "OK", [b" ".join(self.messages.keys())]
-        if cmd == "fetch":
-            uid = args[0]
-            raw = self.messages.get(uid)
-            if raw is None:
-                return "NO", []
-            return "OK", [(b"1 (BODY[] {100})", raw)]
-        return "NO", []
-
-    def logout(self):
-        return "BYE", []
 
 
 class ConnectorsTests(unittest.TestCase):
@@ -59,7 +40,7 @@ class ConnectorsTests(unittest.TestCase):
         self.store.close()
         self.tmp.cleanup()
 
-    def test_imap_readonly_sync_decodes_chinese_and_indexes_into_memory_search(self):
+    def test_gmail_readonly_sync_decodes_chinese_and_indexes_into_memory_search(self):
         msg = EmailMessage()
         msg["Subject"] = "季度复盘会议纪要 - 浦东办公室"
         msg["From"] = "Alice <alice@example.com>"
@@ -74,40 +55,39 @@ class ConnectorsTests(unittest.TestCase):
         msg_html["Message-ID"] = "<msg-flight@example.com>"
         msg_html.add_alternative("<html><body><p>航班号 MU5101 已出票</p></body></html>", subtype="html")
 
-        fake = _FakeIMAP({b"101": msg.as_bytes(), b"102": msg_html.as_bytes()})
-        connectors.save_connectors_config(
-            self.data,
-            {
-                "email": {
-                    "preset": "gmail",
-                    "host": "imap.gmail.com",
-                    "port": 993,
-                    "username": "owner@example.com",
-                    "password": "super-secret-app-password",
-                    "folder": "INBOX",
-                    "sync_days": 7,
-                    "enabled": True,
-                    "connected": True,
-                },
-                "feishu": {},
-            },
-        )
+        cfg = {"mode": "composio", "provider": "gmail", "user_id": "owner", "account_id": "account",
+               "api_key": "test-project-key", "account_label": "owner@example.com", "enabled": True, "connected": True}
+        connectors.save_connectors_config(self.data, {"email": cfg, "feishu": {}})
+        messages = {"101": msg, "102": msg_html}
 
-        res = connectors.sync_email_connector(self.data, self.store, imap_factory=lambda *_: fake)
-        self.assertTrue(fake.readonly_selected)
-        self.assertEqual(res["synced"], 2)
-        self.assertEqual(res["changed"], 2)
+        fetched = []
+        internal_date = str(int(time.time() * 1000))
 
-        # Second sync is idempotent (0 changed)
-        res2 = connectors.sync_email_connector(self.data, self.store, imap_factory=lambda *_: fake)
-        self.assertEqual(res2["changed"], 0)
+        def proxy(key, path, *, method, body):
+            self.assertEqual(body["method"], "GET")
+            self.assertEqual(path, "/tools/execute/proxy")
+            message_id = body["endpoint"].rsplit("/", 1)[1]
+            if message_id == "messages":
+                return {"status": 200, "data": {"messages": [{"id": i} for i in messages]}}
+            self.assertEqual(body["parameters"][0]["value"], "full")
+            fetched.append(message_id)
+            msg = messages[message_id]
+            part = msg.get_body()
+            raw = base64.urlsafe_b64encode(part.get_payload(decode=True)).decode()
+            payload = {"headers": [{"name": k, "value": str(v)} for k, v in msg.items()],
+                       "parts": [{"mimeType": part.get_content_type(), "body": {"data": raw}},
+                                 {"filename": "attachment.txt", "mimeType": "text/plain", "body": {"attachmentId": "id"}}]}
+            return {"status": 200, "data": {"internalDate": internal_date, "payload": payload, "threadId": message_id}}
 
-        # Status never leaks password
+        with patch.object(composio_mail, "request", side_effect=proxy):
+            res = connectors.sync_email_connector(self.data, self.store)
+            self.assertEqual(res["synced"], 2)
+            self.assertEqual(res["changed"], 2)
+            self.assertEqual(connectors.sync_email_connector(self.data, self.store)["changed"], 0)
         status = connectors.connectors_status(self.data, self.store)
-        serialized = json.dumps(status, ensure_ascii=False)
-        self.assertNotIn("super-secret-app-password", serialized)
+        self.assertEqual(fetched, ["101", "102"])
+        self.assertNotIn("test-project-key", json.dumps(status))
         self.assertEqual(status["connectors"]["email"]["item_count"], 2)
-        self.assertTrue(status["connectors"]["email"]["has_password"])
 
         # Indexed into unified memory_search and readable via read_evidence
         searcher = MemorySearch(self.data)
@@ -123,13 +103,95 @@ class ConnectorsTests(unittest.TestCase):
         found_flight = searcher.search("MU5101", kind="connector")
         self.assertEqual(len(found_flight["matches"]), 1)
 
-    def test_infer_email_preset_from_domain(self):
-        self.assertEqual(connectors.infer_email_preset("alice@gmail.com"), "gmail")
-        self.assertEqual(connectors.infer_email_preset("bob@qq.com"), "qq")
-        self.assertEqual(connectors.infer_email_preset("carol@icloud.com"), "icloud")
-        self.assertEqual(connectors.infer_email_preset("dave@163.com"), "163")
-        self.assertEqual(connectors.infer_email_preset("erin@feishu.cn"), "feishu_mail")
-        self.assertEqual(connectors.infer_email_preset("frank@custom-corp.io"), "custom")
+    def test_upgrade_removes_legacy_password_and_keeps_existing_items(self):
+        connectors.save_connectors_config(self.data, {
+            "email": {"connected": True, "password": "old-value"}, "feishu": {"domain": "lark"}})
+        connectors._upsert_connector_item(self.store, item_id="email:historical", connector="email",
+            item_type="email", thread_id="1", title="旧邮件", sender="", channel="", content="旧邮件", occurred_at=1)
+        status = connectors.connectors_status(self.data, self.store)["connectors"]
+        self.assertFalse(status["email"]["connected"])
+        self.assertTrue(status["email"]["needs_reconnect"])
+        self.assertEqual(status["email"]["item_count"], 1)
+        self.assertNotIn("old-value", connectors._config_path(self.data).read_text())
+        self.assertEqual(status["feishu"]["domain"], "lark")
+
+    def test_outlook_connect_resume_import_and_revoke(self):
+        responses = []
+        def request(key, path, *, method="GET", body=None, missing_ok=False):
+            self.assertEqual(key, "project-key")
+            responses.append((method, path))
+            if path == "/auth_configs":
+                self.assertEqual(body["auth_config"]["credentials"]["scopes"], "offline_access,User.Read,Mail.Read")
+                return {"auth_config": {"id": "ac_test"}}
+            if path == "/connected_accounts/link":
+                self.user_id = body["user_id"]
+                return {"connected_account_id": "ca_test", "redirect_url": "https://connect.composio.dev/test"}
+            if path == "/connected_accounts/ca_test":
+                if method == "DELETE":
+                    return {}
+                return {"status": self.remote_state, "user_id": self.user_id, "toolkit": {"slug": "outlook"},
+                        "auth_config": {"id": "ac_test"}}
+            self.assertEqual(path, "/tools/execute/proxy")
+            self.assertEqual(body["method"], "GET")
+            if body["endpoint"] == "/v1.0/me":
+                return {"status": 200, "data": {"mail": "me@example.com"}}
+            self.assertEqual(body["endpoint"], "/v1.0/me/mailFolders/inbox/messages")
+            return {"status": 200, "data": {"value": [{"id": "msg", "internetMessageId": "<msg@example.com>",
+                "conversationId": "thread", "subject": "预算", "receivedDateTime": "2026-11-22T15:03:11Z",
+                "from": {"emailAddress": {"address": "me@example.com"}},
+                "body": {"contentType": "html", "content": "<p>Q4 预算</p>"}}]}}
+
+        with patch.object(composio_mail, "request", side_effect=request):
+            args = {"provider": "outlook", "api_key": "project-key"}
+            link = connectors.start_email_oauth(self.data, args)
+            self.assertEqual(connectors.start_email_oauth(self.data, args), link)
+            self.assertEqual(responses.count(("POST", "/connected_accounts/link")), 1)
+            self.remote_state = "INITIATED"
+            self.assertTrue(connectors.refresh_email_oauth(self.data)["pending"])
+            self.remote_state = "ACTIVE"
+            self.assertTrue(connectors.refresh_email_oauth(self.data)["connected"])
+            self.assertEqual(connectors.sync_email_connector(self.data, self.store)["changed"], 1)
+            connectors.disconnect_connector(self.data, self.store, "email")
+            self.assertIn(("DELETE", "/connected_accounts/ca_test"), responses)
+            state = connectors.connectors_status(self.data, self.store)["connectors"]["email"]
+            self.assertFalse(state["connected"])
+            self.assertEqual(state["item_count"], 1)
+
+    def test_http_pending_denial_retry_and_failed_disconnect(self):
+        (self.data / "api-key").write_text("test-local-key")
+        service = ContextService(self.data, {"data_url": "http://127.0.0.1:0", "workspace_id": "test"})
+        service.threads[0].start()
+        self.addCleanup(service.close)
+        base = f"http://127.0.0.1:{service.server.server_port}/v1/connectors"
+
+        def call(path="", payload=None):
+            req = Request(base + path, data=None if payload is None else json.dumps(payload).encode(),
+                          headers={"Authorization": "Bearer test-local-key", "Content-Type": "application/json"})
+            with urlopen(req) as response:
+                return json.load(response)
+
+        args = {"provider": "gmail", "api_key": "test-project"}
+        with patch.object(composio_mail, "create_config", return_value="config"), patch.object(
+            composio_mail, "link", return_value={"redirect_url": "https://connect.composio.dev/test",
+                                                "connected_account_id": "account"}):
+            call("/email/oauth/start", args)
+            self.assertTrue(call()["connectors"]["email"]["pending"])
+            with patch.object(composio_mail, "status", return_value="FAILED"), patch.object(composio_mail, "revoke"):
+                with self.assertRaises(HTTPError) as denied:
+                    call("/email/oauth/check", {})
+                self.assertEqual(denied.exception.code, 400)
+                denied.exception.close()
+            self.assertFalse(call()["connectors"]["email"]["pending"])
+            call("/email/oauth/start", args)
+            with patch.object(composio_mail, "revoke", side_effect=connectors.ConnectorError("服务暂不可用")):
+                with self.assertRaises(HTTPError) as unavailable:
+                    call("/disconnect", {"connector": "email"})
+                unavailable.exception.close()
+                self.assertTrue(call()["connectors"]["email"]["pending"])
+            with self.assertRaises(HTTPError) as removed:
+                call("/email/configure", {})
+            self.assertEqual(removed.exception.code, 404)
+            removed.exception.close()
 
     def test_feishu_oauth_start_token_refresh_and_sync_chats_plus_docs(self):
         started = connectors.start_feishu_oauth(

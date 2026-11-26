@@ -21,7 +21,9 @@ from health_store import read_health, sync_health
 from phone_sources import read_phone_sources, sync_phone_source
 from connectors import (
     ConnectorError,
-    configure_email_connector,
+    start_email_oauth,
+    update_email_key,
+    refresh_email_oauth,
     connectors_status,
     disconnect_connector,
     list_connector_items,
@@ -157,9 +159,15 @@ class ContextService:
                             result = {"job_id": job["id"], "state": job["state"], "enqueued": enqueued}
                         elif url.path == "/v1/speakers/ack":
                             result = store.ack_speaker_relabels(body.get("ids") or [])
-                        elif url.path == "/v1/connectors/email/configure":
-                            result = configure_email_connector(service.data, body)
-                            service.trigger_connector_sync("email")
+                        elif url.path == "/v1/connectors/email/oauth/start":
+                            result = start_email_oauth(service.data, body)
+                        elif url.path == "/v1/connectors/email/key":
+                            update_email_key(service.data, str(body.get("api_key") or ""))
+                            result = {"updated": True}
+                        elif url.path == "/v1/connectors/email/oauth/check":
+                            result = refresh_email_oauth(service.data)
+                            if result.get("new_connection"):
+                                service.trigger_connector_sync("email")
                         elif url.path == "/v1/connectors/feishu/oauth/start":
                             result = start_feishu_oauth(
                                 service.data,

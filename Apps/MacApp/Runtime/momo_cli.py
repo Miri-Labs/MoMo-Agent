@@ -235,7 +235,6 @@ def _context_server_post(data: Path, path: str, body: dict) -> dict | None:
 
 def _cmd_connectors(data: Path, args: argparse.Namespace) -> dict:
     from connectors import (
-        configure_email_connector,
         connector_policy_stats,
         connectors_status,
         delete_connector_policy_rule,
@@ -266,33 +265,6 @@ def _cmd_connectors(data: Path, args: argparse.Namespace) -> dict:
             return {"items": list_connector_items(store, connector=args.connector, limit=args.limit)}
         finally:
             store.close()
-    if action == "configure-email":
-        payload: dict[str, object] = {
-            "username": args.username,
-            "enabled": True,
-        }
-        if args.password:
-            payload["password"] = args.password
-        if args.preset:
-            payload["preset"] = args.preset
-        if args.host:
-            payload["host"] = args.host
-        if args.port:
-            payload["port"] = args.port
-        if args.folder:
-            payload["folder"] = args.folder
-        if args.sync_days:
-            payload["sync_days"] = args.sync_days
-        live = _context_server_post(data, "/v1/connectors/email/configure", payload)
-        if live is not None:
-            return live
-        res = configure_email_connector(data, payload)
-        store = _open_context(data)
-        try:
-            sync_connectors(data, store, connector="email")
-        finally:
-            store.close()
-        return res
     if action == "start-feishu-oauth":
         payload = {
             "domain": args.domain or "feishu",
@@ -846,7 +818,7 @@ def main() -> int:
     health.add_argument("--after", default="")
     health.add_argument("--limit", type=int, default=20)
 
-    conn_p = sub.add_parser("connectors", help="Read and configure read-only external connectors (Feishu personal OAuth & IMAP Email)")
+    conn_p = sub.add_parser("connectors", help="Read and configure read-only external connectors (Feishu personal OAuth & Composio mail)")
     conn_p.add_argument(
         "--action",
         choices=(
@@ -854,7 +826,6 @@ def main() -> int:
             "items",
             "item",
             "sync",
-            "configure-email",
             "start-feishu-oauth",
             "disconnect",
             "live-doc",
@@ -874,12 +845,6 @@ def main() -> int:
     conn_p.add_argument("--items", action="store_true", help="List recent synced connector items")
     conn_p.add_argument("--item-id", default="", help="Read full content of a specific connector item")
     conn_p.add_argument("--limit", type=int, default=25)
-    conn_p.add_argument("--username", default="", help="Email address for configure-email")
-    conn_p.add_argument("--password", default="", help="App password or IMAP authorization code for configure-email")
-    conn_p.add_argument("--preset", default="", help="Optional email preset (auto-inferred from email domain if omitted)")
-    conn_p.add_argument("--host", default="", help="Optional custom IMAP host")
-    conn_p.add_argument("--port", type=int, default=0, help="Optional custom IMAP port (default 993)")
-    conn_p.add_argument("--folder", default="", help="Optional IMAP folder (default INBOX)")
     conn_p.add_argument("--sync-days", type=int, default=0, help="Optional lookback days (1-30)")
     conn_p.add_argument("--app-id", default="", help="Feishu app_id for start-feishu-oauth")
     conn_p.add_argument("--app-secret", default="", help="Feishu app_secret for start-feishu-oauth")

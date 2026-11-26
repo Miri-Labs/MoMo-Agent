@@ -84,6 +84,8 @@ flowchart LR
 
 ### Quick Start (Self-Hosting Guide)
 
+Optional Gmail and Outlook sync uses your own Composio project. Composio holds the mailbox OAuth credentials and proxies read requests to the provider. [Connect a mailbox](./install.md#在-mac-上连接-gmail-或-outlook)
+
 For step-by-step signing, on-device speech model setup, and troubleshooting, see [**`install.md`**](./install.md).
 
 #### Prerequisites
