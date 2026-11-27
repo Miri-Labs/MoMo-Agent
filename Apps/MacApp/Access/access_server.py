@@ -62,11 +62,15 @@ class AccessService:
 
     async def upstream(self, method, path, body=None, context=False, headers=None, streaming=False):
         url = self.connection['data_url' if context else 'base_url'] + path
-        h = {'Authorization': 'Bearer ' + self.key, 'Content-Type': 'application/json',
+        h = {'Authorization': 'Bearer ' + self.key,
              'X-MoMo-Session-Key': 'momo:' + self.connection['assistant_id']}
-        h.update(headers or {})
+        if headers:
+            h.update(headers)
+        if not any(k.lower() == 'content-type' for k in h):
+            h['Content-Type'] = 'application/json'
         stream_read = 300 if method == 'POST' else 45
-        timeout = ClientTimeout(total=None, sock_connect=10, sock_read=stream_read) if streaming else ClientTimeout(total=60, sock_connect=10)
+        long_speech_op = context and path.startswith(('/v1/audio/', '/v1/speech/', '/v1/voiceprints/', '/v1/transcription/'))
+        timeout = ClientTimeout(total=None, sock_connect=10, sock_read=stream_read) if streaming else ClientTimeout(total=120 if long_speech_op else 60, sock_connect=10)
         return await self.session.request(method, url, data=body, headers=h, allow_redirects=False, timeout=timeout)
 
     async def status(self):
@@ -128,14 +132,18 @@ class AccessService:
                          and request.headers.get('Accept') == 'text/event-stream'):
             return await self.stream(request, target)
         headers = {'X-MoMo-Device': self.store.device_id(self.token(request)) or 'revoked'}
-        if 'Idempotency-Key' in request.headers: headers['Idempotency-Key'] = request.headers['Idempotency-Key']
-        body = await request.read() if request.method == 'POST' else None
+        for passthrough in ('Idempotency-Key', 'Content-Type', 'Range', 'X-MoMo-Chunk-Meta', 'X-MoMo-Filename', 'X-MoMo-Device-Kind'):
+            if passthrough in request.headers:
+                headers[passthrough] = request.headers[passthrough]
+        body = await request.read() if request.method in ('POST', 'PATCH', 'PUT', 'DELETE') else None
         async with await self.upstream(request.method, target, body, context, headers) as response:
             data = await response.read()
+            resp_headers = {'Cache-Control': response.headers.get('Cache-Control', 'no-store')}
+            for fwd in ('Retry-After', 'Accept-Ranges', 'Content-Range', 'X-MoMo-Chunk-Recorded-At'):
+                if fwd in response.headers:
+                    resp_headers[fwd] = response.headers[fwd]
             outgoing = web.Response(status=response.status, body=data, content_type=response.content_type,
-                zlib_executor_size=64 * 1024,
-                headers={'Cache-Control': response.headers.get('Cache-Control', 'no-store'),
-                         **({'Retry-After':response.headers['Retry-After']} if 'Retry-After' in response.headers else {})})
+                zlib_executor_size=64 * 1024, headers=resp_headers)
             if path in {'/momo/v1/conversation/snapshot', '/momo/v1/conversation/works'} and response.status == 200:
                 outgoing.headers['Vary'] = 'Accept-Encoding'
                 outgoing.enable_compression()

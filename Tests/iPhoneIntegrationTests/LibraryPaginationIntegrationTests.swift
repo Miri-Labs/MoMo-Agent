@@ -34,40 +34,18 @@ final class LibraryPaginationIntegrationTests: XCTestCase {
         catch ArchiveError.missingRecording { }
     }
 
-    func testTranscriptionStatusRequiresMatchingNativeWorkAndDoesNotSuspendFinishedRecordings() {
-        let session = UUID(), other = UUID()
-        func snapshot(_ phase: MoMoAgent.TranscriptionPhase, active: UUID? = nil, native: Bool = false,
-                      failed: UUID? = nil) -> MoMoAgent.TranscriptionSnapshot {
-            MoMoAgent.TranscriptionSnapshot(phase: phase, userPaused: phase == .paused, activeSessionID: active,
-                                  completedWindows: 0, failureCode: nil, execution: nil, batch: nil,
-                                  nativeInFlight: native, failedSessionID: failed)
+    func testMacBackendTranscriptionStatusPresentation() {
+        XCTAssertEqual(RecordingTranscriptionPresentation(state: .pending).activity, .queued)
+        XCTAssertEqual(RecordingTranscriptionPresentation(state: .processing).activity, .processing)
+        XCTAssertTrue(RecordingTranscriptionPresentation(state: .processing).isActive)
+        XCTAssertEqual(RecordingTranscriptionPresentation(state: .failed).activity, .failed)
+        for finished in [RecordingTranscriptionState.transcribed, .noSpeech, .completedWithoutText] {
+            XCTAssertEqual(RecordingTranscriptionPresentation(state: finished).activity, .finished)
+            XCTAssertNil(RecordingTranscriptionPresentation(state: finished).status)
         }
-        func presentation(_ state: RecordingTranscriptionState, _ value: MoMoAgent.TranscriptionSnapshot?) -> RecordingTranscriptionPresentation {
-            RecordingTranscriptionPresentation(sessionID: session, state: state, snapshot: value)
-        }
-        for stopped in [MoMoAgent.TranscriptionPhase.systemSuspended, .paused] {
-            XCTAssertEqual(presentation(.processing, snapshot(stopped)).activity, .deferred,
-                           "A cached running row cannot override a stopped runtime.")
-            XCTAssertFalse(presentation(.processing, snapshot(stopped)).isActive)
-            for finished in [RecordingTranscriptionState.transcribed, .noSpeech, .completedWithoutText] {
-                XCTAssertEqual(presentation(finished, snapshot(stopped)).activity, .finished,
-                               "Global suspension must not relabel completed recordings.")
-                XCTAssertNil(presentation(finished, snapshot(stopped)).status)
-            }
-        }
-        XCTAssertEqual(presentation(.processing, snapshot(.transcribing, active: session)).activity, .queued)
-        XCTAssertEqual(presentation(.processing, nil).activity, .queued)
-        XCTAssertEqual(presentation(.pending, snapshot(.transcribing, active: other, native: true)).activity, .queued)
-        XCTAssertEqual(presentation(.processing, snapshot(.transcribing, active: session, native: true)).activity, .transcribing)
-        XCTAssertEqual(presentation(.pending, snapshot(.preparing, active: session, native: true)).activity, .preparing)
-        XCTAssertEqual(presentation(.transcribed, snapshot(.transcribing, active: session, native: true)).activity, .transcribing,
-                       "A real newly appended window is active even before the archive list refreshes.")
-        XCTAssertEqual(presentation(.processing, snapshot(.failed, failed: session)).activity, .failed)
-        XCTAssertEqual(presentation(.processing, snapshot(.failed, failed: other)).activity, .queued)
-        XCTAssertEqual(presentation(.failed, snapshot(.transcribing, active: other, native: true)).activity, .failed)
     }
 
-    func testTimelineStatusUsesNativeWorkAndPreservesCompletedAndFailedCoverage() async throws {
+    func testTimelineStatusPreservesCompletedPendingAndFailedCoverage() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoTimelineStatus-\(UUID())")
         addTeardownBlock { try FileManager.default.removeItem(at: root) }
         let archive = try ArchiveStore(rootURL: root, receiverDeviceID: UUID())
@@ -77,50 +55,21 @@ final class LibraryPaginationIntegrationTests: XCTestCase {
         let completedValue = try await archive.timelineWindow(containing: document.source(for: first))
         let completed = try XCTUnwrap(completedValue)
         XCTAssertEqual(completed.state, .complete)
+        XCTAssertNil(TimelinePresentation.status(completed))
         var nextWriter = writer
         let chunk = try XCTUnwrap(nextWriter.append([Int16](repeating: 0, count: 1600)).first)
         _ = try await archive.commitReceivedChunk(archive.inbox.preserve(fileURL: chunk.audioURL, envelope: chunk.envelope))
         let pendingValue = try await archive.timelineWindow(completed.id)
         let pending = try XCTUnwrap(pendingValue)
         XCTAssertEqual(pending.state, .waitingForTranscription)
-        XCTAssertFalse(pending.references.isEmpty, "Previously completed text remains readable while more audio is pending.")
-
-        func snapshot(_ phase: MoMoAgent.TranscriptionPhase, active: UUID? = nil, native: Bool = false,
-                      failed: UUID? = nil) -> MoMoAgent.TranscriptionSnapshot {
-            MoMoAgent.TranscriptionSnapshot(phase: phase, userPaused: phase == .paused, activeSessionID: active,
-                completedWindows: 1, failureCode: nil, execution: nil, batch: nil,
-                nativeInFlight: native, failedSessionID: failed)
-        }
-        for phase in [MoMoAgent.TranscriptionPhase.paused, .systemSuspended] {
-            XCTAssertEqual(TimelinePresentation.status(pending, transcription: snapshot(phase), speechFailure: nil), "稍后继续")
-            XCTAssertNil(TimelinePresentation.status(completed, transcription: snapshot(phase), speechFailure: nil))
-        }
-        for phase in [MoMoAgent.TranscriptionPhase.preparing, .transcribing] {
-            XCTAssertEqual(TimelinePresentation.status(pending,
-                transcription: snapshot(phase, active: document.sessionID), speechFailure: nil), "等待整理",
-                "A session ID alone must not claim that the native call is still executing.")
-            XCTAssertEqual(TimelinePresentation.status(pending,
-                transcription: snapshot(phase, active: document.sessionID, native: true), speechFailure: nil), "正在整理")
-            XCTAssertEqual(TimelinePresentation.status(pending,
-                transcription: snapshot(phase, active: UUID(), native: true), speechFailure: nil), "等待整理")
-            XCTAssertNil(TimelinePresentation.status(completed,
-                transcription: snapshot(phase, active: document.sessionID, native: true), speechFailure: nil),
-                "Work on another window of the same recording must not relabel a completed window.")
-        }
-        XCTAssertEqual(TimelinePresentation.status(pending, transcription: nil, speechFailure: nil), "等待整理")
-        XCTAssertEqual(TimelinePresentation.status(pending, transcription: snapshot(.idle), speechFailure: "fixed-model-unavailable"), "未能整理")
-        XCTAssertEqual(TimelinePresentation.status(pending, transcription: snapshot(.failed, failed: UUID()), speechFailure: nil), "等待整理")
-        XCTAssertEqual(TimelinePresentation.status(pending,
-            transcription: snapshot(.failed, failed: document.sessionID), speechFailure: nil), "部分未完成")
-
+        XCTAssertEqual(TimelinePresentation.status(pending), "等待 Mac 转录")
         let claimed = try await archive.claimAnalysisJob(configurationHash: "reading-position")
         let ticket = try XCTUnwrap(claimed)
         try await archive.failAnalysis(ticket: ticket, errorCode: "fixture-native-failure", retryable: false)
         let failedValue = try await archive.timelineWindow(completed.id)
         let failed = try XCTUnwrap(failedValue)
         XCTAssertEqual(failed.state, .failed)
-        XCTAssertEqual(TimelinePresentation.status(failed, transcription: snapshot(.systemSuspended), speechFailure: nil), "部分未完成",
-                       "Known failed coverage must not be hidden behind global suspension.")
+        XCTAssertEqual(TimelinePresentation.status(failed), "部分未完成")
     }
 
     func testReadingAnchorSurvivesAppendAndRejectsRevisionDeletionAndLateCallbacks() async throws {

@@ -1389,6 +1389,9 @@ struct DesktopSourceReader: View {
     @State private var composedDocument: MacSourceTranscriptComposer.ComposedTranscript?
     @State private var loading = false
     @State private var error: String?
+    @State private var audioPlayer = DesktopRecordingAudioPlayer()
+    @State private var speakerBanner: String?
+    @State private var speakerBannerTask: Task<Void, Never>?
 
     private static let clockFormat = Date.FormatStyle().hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
 
@@ -1398,7 +1401,17 @@ struct DesktopSourceReader: View {
     private var startOffset: Int { window?.offset ?? 0 }
     private var endOffset: Int { window?.end ?? source.totalCharacters }
     private var documentID: String { "\(source.id)|\(window?.id ?? "full")" }
-    private var composeTriggerKey: String { "\(documentID)|\(source.revision)|\(spans.count)|\(text.utf8.count)" }
+    private var speakerSignature: Int {
+        var h = Hasher()
+        for sp in spans {
+            h.combine(sp.id)
+            h.combine(sp.speaker)
+            h.combine(sp.isOwner)
+            h.combine(sp.voiceProfileId)
+        }
+        return h.finalize()
+    }
+    private var composeTriggerKey: String { "\(documentID)|\(source.revision)|\(spans.count)|\(text.utf8.count)|\(speakerSignature)" }
     private var hasMore: Bool {
         guard let page else { return true }
         guard let next = page.nextOffset else { return false }
@@ -1472,10 +1485,61 @@ struct DesktopSourceReader: View {
                     .allowsHitTesting(false)
             }
 
+            if audioPlayer.hasAudio || speakerBanner != nil {
+                VStack(alignment: .leading, spacing: 8) {
+                    if audioPlayer.hasAudio {
+                        DesktopAudioPlaybackBar(player: audioPlayer)
+                    }
+                    if let speakerBanner {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(MoMoPalette.success)
+                            Text(speakerBanner)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(MoMoPalette.ink)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(MoMoPalette.successBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(MoMoPalette.pane)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(MoMoPalette.borderSubtle).frame(height: 0.5)
+                }
+            }
+
             MacSourceTranscriptReader(
                 composed: composedDocument,
                 scrollSpanID: pendingScrollSpanID,
-                onConsumedScrollSpan: { pendingScrollSpanID = nil }
+                onConsumedScrollSpan: { pendingScrollSpanID = nil },
+                makeSpeakerPopoverView: { spanID, closePopover in
+                    guard let target = spans.first(where: { $0.id == spanID }) else { return nil }
+                    return AnyView(
+                        DesktopSpeakerLockSheet(
+                            model: model,
+                            sourceID: source.id,
+                            span: target,
+                            onCommitted: { banner in
+                                if let banner {
+                                    speakerBanner = banner
+                                    speakerBannerTask?.cancel()
+                                    speakerBannerTask = Task {
+                                        try? await Task.sleep(for: .seconds(3.5))
+                                        guard !Task.isCancelled else { return }
+                                        speakerBanner = nil
+                                    }
+                                }
+                                Task { await more(replacing: true) }
+                            },
+                            onClose: closePopover
+                        )
+                    )
+                }
             )
             .momoScrollEdgeFade(top: 12, bottom: 20, surface: MoMoPalette.pane)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1556,7 +1620,16 @@ struct DesktopSourceReader: View {
             guard !Task.isCancelled else { return }
             composedDocument = built
         }
-        .task(id: "\(documentID)|\(source.revision)") { await more(replacing: true) }
+        .task(id: "\(documentID)|\(source.revision)") {
+            await more(replacing: true)
+            if let chunks = try? await model.sourceAudioChunks(sourceID: source.id) {
+                audioPlayer.load(sourceID: source.id, chunks: chunks)
+            }
+        }
+        .onDisappear {
+            audioPlayer.stop()
+            speakerBannerTask?.cancel()
+        }
     }
 
     private func more(replacing: Bool = false) async {
@@ -1606,7 +1679,18 @@ struct DesktopSourceReader: View {
 
 // MARK: - Native AppKit 120fps Tiled Transcript Reader
 
+private extension NSAttributedString.Key {
+    static let momoSpeakerSpanID = NSAttributedString.Key("com.momo.transcript.speakerSpanID")
+}
+
 private enum MacSourceTranscriptComposer {
+    struct SpeakerPill: Sendable {
+        let range: NSRange
+        let spanID: String
+        let isOwner: Bool
+        let isBound: Bool
+    }
+
     final class ComposedTranscript: NSObject, @unchecked Sendable {
         let key: String
         let documentID: String
@@ -1614,6 +1698,7 @@ private enum MacSourceTranscriptComposer {
         let summaryCardRange: NSRange?
         let summaryQuoteRanges: [NSRange]
         let spanCharRanges: [String: NSRange]
+        let speakerPills: [SpeakerPill]
 
         init(
             key: String,
@@ -1621,7 +1706,8 @@ private enum MacSourceTranscriptComposer {
             attributedString: NSAttributedString,
             summaryCardRange: NSRange?,
             summaryQuoteRanges: [NSRange],
-            spanCharRanges: [String: NSRange]
+            spanCharRanges: [String: NSRange],
+            speakerPills: [SpeakerPill]
         ) {
             self.key = key
             self.documentID = documentID
@@ -1629,6 +1715,7 @@ private enum MacSourceTranscriptComposer {
             self.summaryCardRange = summaryCardRange
             self.summaryQuoteRanges = summaryQuoteRanges
             self.spanCharRanges = spanCharRanges
+            self.speakerPills = speakerPills
         }
     }
 
@@ -1640,6 +1727,7 @@ private enum MacSourceTranscriptComposer {
 
     private nonisolated static var inkColor: NSColor { NSColor(named: "PhoneInk") ?? .labelColor }
     private nonisolated static var mutedColor: NSColor { NSColor(named: "PhoneMuted") ?? .secondaryLabelColor }
+    private nonisolated static var successColor: NSColor { NSColor(named: "PhoneSuccess") ?? .systemGreen }
 
     private nonisolated static func formatWallClock(timestamp: Double, offsetSeconds: Int) -> String {
         let localSeconds = Int(floor(timestamp)) + offsetSeconds
@@ -1669,9 +1757,14 @@ private enum MacSourceTranscriptComposer {
         hasher.combine(spans.count)
         hasher.combine(spans.first?.id)
         hasher.combine(spans.last?.id)
+        for sp in spans {
+            hasher.combine(sp.speaker)
+            hasher.combine(sp.isOwner)
+            hasher.combine(sp.voiceProfileId)
+        }
         hasher.combine(fallbackText.utf8.count)
         hasher.combine(defaultTimeZone.identifier)
-        return "v4|\(documentID)|\(sourceRevision)|\(spans.count)|\(fallbackText.utf8.count)|\(hasher.finalize())"
+        return "v5|\(documentID)|\(sourceRevision)|\(spans.count)|\(fallbackText.utf8.count)|\(hasher.finalize())"
     }
 
     nonisolated static func cached(
@@ -1724,11 +1817,14 @@ private enum MacSourceTranscriptComposer {
 
         let ink = inkColor
         let muted = mutedColor
+        let success = successColor
         let result = NSMutableAttributedString()
         var summaryCardRange: NSRange?
         var summaryQuotes: [NSRange] = []
         var spanRanges: [String: NSRange] = [:]
+        var speakerPills: [SpeakerPill] = []
         spanRanges.reserveCapacity(spans.count)
+        speakerPills.reserveCapacity(spans.count)
 
         if let dateLabel, !dateLabel.isEmpty {
             let dateStyle = NSMutableParagraphStyle()
@@ -1820,26 +1916,71 @@ private enum MacSourceTranscriptComposer {
 
             let firstStampStyle = NSMutableParagraphStyle()
             firstStampStyle.paragraphSpacingBefore = summaryCardRange != nil ? 42 : 6
-            firstStampStyle.paragraphSpacing = 5
+            firstStampStyle.paragraphSpacing = 6
             let stampStyle = NSMutableParagraphStyle()
-            stampStyle.paragraphSpacing = 5
+            stampStyle.paragraphSpacing = 6
             let stampFont = NSFont.monospacedDigitSystemFont(ofSize: PhoneTextStyle.caption.size, weight: .regular)
+            let speakerPillFont = NSFont.systemFont(ofSize: 11.5, weight: .medium)
 
             let fixedDefaultOffset: Int? = defaultTimeZone.isDaylightSavingTime() ? nil : defaultTimeZone.secondsFromGMT()
 
             for (idx, span) in visibleSpans.enumerated() {
                 let spanStart = result.length
-                if let spanTime = span.recordedAt {
-                    let offsetSec = span.timezoneOffset
-                        ?? fixedDefaultOffset
-                        ?? defaultTimeZone.secondsFromGMT(for: Date(timeIntervalSince1970: spanTime))
-                    let clock = formatWallClock(timestamp: spanTime, offsetSeconds: offsetSec)
+                let headerStyle = (idx == 0) ? firstStampStyle : stampStyle
+                let trimmedSpeaker = span.speaker?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let hasTime = span.recordedAt != nil
+                let hasSpeaker = !trimmedSpeaker.isEmpty
+
+                if hasTime || hasSpeaker {
+                    if let spanTime = span.recordedAt {
+                        let offsetSec = span.timezoneOffset
+                            ?? fixedDefaultOffset
+                            ?? defaultTimeZone.secondsFromGMT(for: Date(timeIntervalSince1970: spanTime))
+                        let clock = formatWallClock(timestamp: spanTime, offsetSeconds: offsetSec)
+                        result.append(NSAttributedString(
+                            string: clock,
+                            attributes: [
+                                .font: stampFont,
+                                .foregroundColor: muted,
+                                .paragraphStyle: headerStyle,
+                            ]
+                        ))
+                        if hasSpeaker {
+                            result.append(NSAttributedString(
+                                string: "   ",
+                                attributes: [
+                                    .font: stampFont,
+                                    .paragraphStyle: headerStyle,
+                                ]
+                            ))
+                        }
+                    }
+                    if hasSpeaker {
+                        let isOwner = (span.isOwner == true || trimmedSpeaker == "我")
+                        let isBound = isOwner || (span.voiceProfileId != nil)
+                        let fg = isOwner ? success : (isBound ? ink : muted)
+                        let pillStart = result.length
+                        result.append(NSAttributedString(
+                            string: " \(trimmedSpeaker) ▾ ",
+                            attributes: [
+                                .font: speakerPillFont,
+                                .foregroundColor: fg,
+                                .paragraphStyle: headerStyle,
+                                .momoSpeakerSpanID: span.id,
+                            ]
+                        ))
+                        speakerPills.append(SpeakerPill(
+                            range: NSRange(location: pillStart, length: result.length - pillStart),
+                            spanID: span.id,
+                            isOwner: isOwner,
+                            isBound: isBound
+                        ))
+                    }
                     result.append(NSAttributedString(
-                        string: clock + "\n",
+                        string: "\n",
                         attributes: [
                             .font: stampFont,
-                            .foregroundColor: muted,
-                            .paragraphStyle: idx == 0 ? firstStampStyle : stampStyle,
+                            .paragraphStyle: headerStyle,
                         ]
                     ))
                 } else if idx == 0, summaryCardRange != nil {
@@ -1880,7 +2021,8 @@ private enum MacSourceTranscriptComposer {
             attributedString: result,
             summaryCardRange: summaryCardRange,
             summaryQuoteRanges: summaryQuotes,
-            spanCharRanges: spanRanges
+            spanCharRanges: spanRanges,
+            speakerPills: speakerPills
         )
         cache.setObject(composed, forKey: nsKey)
         return composed
@@ -1900,16 +2042,88 @@ private final class MacSourceDocumentTextView: NSTextView {
         didSet { cachedSummaryCardRect = nil }
     }
     var summaryQuoteRanges: [NSRange] = []
+    var speakerPills: [MacSourceTranscriptComposer.SpeakerPill] = []
+    var onSelectSpeakerPill: ((String, NSRect) -> Void)?
 
     private var cachedSummaryCardRect: NSRect?
     private var cachedSummaryWidth: CGFloat = -1
     private var cachedSummaryOrigin: NSPoint = .zero
+    private var hoveredSpeakerSpanID: String?
+    private var speakerTrackingArea: NSTrackingArea?
 
     override func setFrameSize(_ newSize: NSSize) {
         if abs(newSize.width - frame.size.width) >= 0.5 {
             cachedSummaryCardRect = nil
         }
         super.setFrameSize(newSize)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = speakerTrackingArea {
+            removeTrackingArea(existing)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        speakerTrackingArea = area
+    }
+
+    private func speakerPillHit(at viewPoint: NSPoint) -> (spanID: String, rectInView: NSRect)? {
+        guard !speakerPills.isEmpty,
+              let lm = layoutManager, let tc = textContainer, let ts = textStorage, ts.length > 0 else {
+            return nil
+        }
+        let origin = textContainerOrigin
+        let containerPt = NSPoint(x: viewPoint.x - origin.x, y: viewPoint.y - origin.y)
+        var fraction: CGFloat = 0
+        let charIndex = lm.characterIndex(for: containerPt, in: tc, fractionOfDistanceBetweenInsertionPoints: &fraction)
+        guard charIndex < ts.length,
+              let spanID = ts.attribute(.momoSpeakerSpanID, at: charIndex, effectiveRange: nil) as? String else {
+            return nil
+        }
+        var effective = NSRange(location: 0, length: 0)
+        _ = ts.attribute(.momoSpeakerSpanID, at: charIndex, effectiveRange: &effective)
+        let glyphRange = lm.glyphRange(forCharacterRange: effective, actualCharacterRange: nil)
+        let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc).insetBy(dx: -4, dy: -3)
+        guard rect.contains(containerPt) else { return nil }
+        let viewRect = rect.offsetBy(dx: origin.x, dy: origin.y)
+        return (spanID, viewRect)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let pt = convert(event.locationInWindow, from: nil)
+        let hit = speakerPillHit(at: pt)?.spanID
+        if hit != hoveredSpeakerSpanID {
+            hoveredSpeakerSpanID = hit
+            needsDisplay = true
+        }
+        if hit != nil {
+            NSCursor.pointingHand.set()
+        } else {
+            super.mouseMoved(with: event)
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if hoveredSpeakerSpanID != nil {
+            hoveredSpeakerSpanID = nil
+            needsDisplay = true
+        }
+        super.mouseExited(with: event)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let pt = convert(event.locationInWindow, from: nil)
+        if let hit = speakerPillHit(at: pt) {
+            onSelectSpeakerPill?(hit.spanID, hit.rectInView)
+            return
+        }
+        super.mouseDown(with: event)
     }
 
     private func resolvedSummaryCardRect() -> NSRect? {
@@ -1949,6 +2163,42 @@ private final class MacSourceDocumentTextView: NSTextView {
             (NSColor(named: "PhoneInk") ?? .labelColor).withAlphaComponent(0.065).setStroke()
             path.lineWidth = 0.5
             path.stroke()
+        }
+        // Draw soft rounded capsule backgrounds behind inline clickable speaker pills
+        if !speakerPills.isEmpty,
+           let lm = layoutManager, let tc = textContainer, let ts = textStorage {
+            let origin = textContainerOrigin
+            let totalLen = ts.length
+            let containerDirty = dirtyRect.offsetBy(dx: -origin.x, dy: -origin.y)
+            let visibleGlyphs = lm.glyphRange(forBoundingRectWithoutAdditionalLayout: containerDirty, in: tc)
+            if visibleGlyphs.length > 0 {
+                let visibleChars = lm.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
+                let inkBase = NSColor(named: "PhoneInk") ?? .labelColor
+                let successBg = NSColor(named: "PhoneSuccess") ?? .systemGreen
+                for pill in speakerPills where pill.range.location >= 0 && NSMaxRange(pill.range) <= totalLen {
+                    guard NSIntersectionRange(pill.range, visibleChars).length > 0 else { continue }
+                    let glyphRange = lm.glyphRange(forCharacterRange: pill.range, actualCharacterRange: nil)
+                    let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+                    guard rect.width > 4, rect.height > 4 else { continue }
+                    let pillRect = NSRect(
+                        x: origin.x + rect.minX - 2.5,
+                        y: origin.y + rect.minY - 1.5,
+                        width: rect.width + 5.0,
+                        height: rect.height + 3.0
+                    )
+                    guard pillRect.intersects(dirtyRect) else { continue }
+                    let isHovered = (hoveredSpeakerSpanID == pill.spanID)
+                    let fill: NSColor = if pill.isOwner {
+                        successBg.withAlphaComponent(isHovered ? 0.18 : 0.11)
+                    } else if pill.isBound {
+                        inkBase.withAlphaComponent(isHovered ? 0.11 : 0.06)
+                    } else {
+                        inkBase.withAlphaComponent(isHovered ? 0.095 : 0.045)
+                    }
+                    fill.setFill()
+                    NSBezierPath(roundedRect: pillRect, xRadius: pillRect.height * 0.5, yRadius: pillRect.height * 0.5).fill()
+                }
+            }
         }
         super.draw(dirtyRect)
         if !summaryQuoteRanges.isEmpty,
@@ -1999,9 +2249,30 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
     let composed: MacSourceTranscriptComposer.ComposedTranscript?
     let scrollSpanID: String?
     let onConsumedScrollSpan: () -> Void
+    var makeSpeakerPopoverView: ((String, @escaping () -> Void) -> AnyView?)? = nil
 
     final class Coordinator: NSObject {
         weak var textView: MacSourceDocumentTextView?
+        var activePopover: NSPopover?
+        var makeSpeakerPopoverView: ((String, @escaping () -> Void) -> AnyView?)?
+
+        @MainActor
+        func showSpeakerPopover(spanID: String, relativeTo rect: NSRect) {
+            guard let textView, let makeView = makeSpeakerPopoverView else { return }
+            activePopover?.performClose(nil)
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.animates = true
+            let closeFn: () -> Void = { [weak popover] in
+                popover?.performClose(nil)
+            }
+            guard let content = makeView(spanID, closeFn) else { return }
+            let host = NSHostingController(rootView: content)
+            host.sizingOptions = [.preferredContentSize]
+            popover.contentViewController = host
+            activePopover = popover
+            popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -2043,7 +2314,14 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
         textView.layoutManager?.allowsNonContiguousLayout = true
         textView.setAccessibilityIdentifier("desktop.source.text")
 
-        context.coordinator.textView = textView
+        let coord = context.coordinator
+        coord.textView = textView
+        coord.makeSpeakerPopoverView = makeSpeakerPopoverView
+        textView.onSelectSpeakerPill = { [weak coord] spanID, rect in
+            Task { @MainActor in
+                coord?.showSpeakerPopover(spanID: spanID, relativeTo: rect)
+            }
+        }
         scrollView.documentView = textView
         apply(to: textView, in: scrollView)
         return scrollView
@@ -2051,6 +2329,7 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
 
     func updateNSView(_ scrollView: MacSourceDocumentScrollView, context: Context) {
         guard let textView = context.coordinator.textView else { return }
+        context.coordinator.makeSpeakerPopoverView = makeSpeakerPopoverView
         apply(to: textView, in: scrollView)
     }
 
@@ -2063,6 +2342,7 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
             textView.currentDocumentID = composed.documentID
             textView.summaryCardRange = composed.summaryCardRange
             textView.summaryQuoteRanges = composed.summaryQuoteRanges
+            textView.speakerPills = composed.speakerPills
             if documentChanged, textView.selectedRange().length > 0 {
                 textView.setSelectedRange(NSRange(location: 0, length: 0))
             }
@@ -2101,6 +2381,7 @@ struct DesktopRecordingCitation: View {
     @State private var state: LoadState = .loading
     @State private var retry = 0
     @State private var showingFullTranscript = false
+    @State private var citationPlayer = DesktopRecordingAudioPlayer()
 
     private enum LoadState {
         case loading, loaded(ResolvedRecordingCitation), failed(String)
@@ -2139,6 +2420,20 @@ struct DesktopRecordingCitation: View {
                             }
                             TranscriptParagraphText(text: resolved.span.text ?? "", accessibilityID: "desktop.citation.text")
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                            if citationPlayer.hasAudio {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    DesktopAudioPlaybackBar(player: citationPlayer)
+                                    if let ts = resolved.span.recordedAt {
+                                        Button {
+                                            citationPlayer.play(atWallClock: ts)
+                                        } label: {
+                                            Label("从该句位置播放原音", systemImage: "play.circle")
+                                                .font(.system(size: 12.5, weight: .medium))
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
+                                }
+                            }
                         }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     Divider()
@@ -2151,12 +2446,16 @@ struct DesktopRecordingCitation: View {
         }
         .frame(width: 640, height: 540)
         .background(MoMoPalette.canvas)
+        .onDisappear { citationPlayer.stop() }
         .task(id: retry) {
             state = .loading
             do {
                 let result = try await model.readRecordingCitation(citation)
                 try Task.checkCancellation()
                 state = .loaded(result)
+                if let chunks = try? await model.sourceAudioChunks(sourceID: result.source.id) {
+                    citationPlayer.load(sourceID: result.source.id, chunks: chunks)
+                }
             } catch is CancellationError { }
             catch { state = .failed(error.localizedDescription) }
         }

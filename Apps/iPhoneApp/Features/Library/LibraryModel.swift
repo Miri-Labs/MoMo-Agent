@@ -620,36 +620,27 @@ private struct RecordingReadingPosition {
     let spanID: UUID
 }
 
-/// Archive state describes durable work, while the runtime snapshot describes what is executing.
-/// A cached `processing` row alone must not claim that native recognition is still running.
+/// Archive state describes durable Mac-backend transcription status cached on iPhone.
 struct RecordingTranscriptionPresentation {
-    enum Activity: Equatable { case preparing, transcribing, queued, deferred, failed, finished }
+    enum Activity: Equatable { case processing, queued, failed, finished }
     let activity: Activity
 
-    init(sessionID: UUID, state: RecordingTranscriptionState, snapshot: TranscriptionSnapshot?) {
-        if snapshot?.phase == .failed, snapshot?.failedSessionID == sessionID {
-            activity = .failed
-        } else if let snapshot, snapshot.activeSessionID == sessionID, snapshot.nativeInFlight,
-                  snapshot.phase == .preparing || snapshot.phase == .transcribing {
-            activity = snapshot.phase == .preparing ? .preparing : .transcribing
-        } else {
-            switch state {
-            case .failed: activity = .failed
-            case .transcribed, .noSpeech, .completedWithoutText: activity = .finished
-            case .pending, .processing:
-                activity = snapshot?.phase == .paused || snapshot?.phase == .systemSuspended ? .deferred : .queued
-            }
+    init(state: RecordingTranscriptionState) {
+        switch state {
+        case .failed: activity = .failed
+        case .transcribed, .noSpeech, .completedWithoutText: activity = .finished
+        case .processing: activity = .processing
+        case .pending: activity = .queued
         }
     }
 
-    var isActive: Bool { activity == .preparing || activity == .transcribing }
+    var isActive: Bool { activity == .processing }
 
     var status: String? {
         switch activity {
-        case .preparing, .transcribing: String(localized: "正在本机转写，已有内容可以先看")
-        case .queued: String(localized: "等待本机整理")
-        case .deferred: String(localized: "稍后继续整理，回到 App 后会自动继续")
-        case .failed: String(localized: "转写暂未完成，音频已保留")
+        case .processing: String(localized: "Mac 端正在转录，完成后自动同步")
+        case .queued: String(localized: "等待同步到 Mac 转录")
+        case .failed: String(localized: "转录暂未完成，原音已保留")
         case .finished: nil
         }
     }

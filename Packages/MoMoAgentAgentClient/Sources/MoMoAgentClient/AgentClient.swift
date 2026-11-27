@@ -132,6 +132,65 @@ public struct AgentClient: Sendable {
         return data
     }
 
+    /// Sends a request with custom Content-Type / extra headers. For binary payloads (>24 KB) or when
+    /// `bypassDataChannel` is true, avoids the 32 KB WebRTC DataChannel limit by going directly over
+    /// Tailscale/LAN/Relay HTTPS (still using `transport` if it provides exclusive Tailnet routing).
+    func rawRequest(
+        path: [String],
+        method: String = "GET",
+        body: Data? = nil,
+        contentType: String = "application/json",
+        extraHeaders: [String: String] = [:],
+        query: [URLQueryItem] = [],
+        timeout: TimeInterval = 90,
+        bypassDataChannel: Bool = false
+    ) async throws -> Data {
+        var req = try makeRequest(path: path, method: method, body: body, query: query)
+        req.timeoutInterval = timeout
+        req.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        for (k, v) in extraHeaders {
+            req.setValue(v, forHTTPHeaderField: k)
+        }
+        let useTransport: Bool
+        if let transport {
+            if transport.requiresExclusiveRouting {
+                useTransport = true
+            } else {
+                useTransport = !bypassDataChannel && (body?.count ?? 0) <= 24 * 1024
+            }
+        } else {
+            useTransport = false
+        }
+        let data: Data
+        let status: Int
+        let retryAfter: String?
+        if useTransport, let stream = try await transport?.open(req) {
+            var received = Data()
+            for try await chunk in stream.chunks {
+                try Task.checkCancellation()
+                guard received.count + chunk.count <= 8 * 1024 * 1024 else { throw AgentClientError.responseTooLarge }
+                received.append(chunk)
+            }
+            data = received; status = stream.status; retryAfter = stream.retryAfter
+        } else {
+            guard transport?.requiresExclusiveRouting != true else { throw URLError(.notConnectedToInternet) }
+            defer { _ = managedSession }
+            let result = try await session.data(for: req, delegate: NoRedirects.shared)
+            guard let response = result.1 as? HTTPURLResponse else { throw AgentClientError.invalidResponse }
+            data = result.0; status = response.statusCode; retryAfter = response.value(forHTTPHeaderField: "Retry-After")
+        }
+        guard (200..<300).contains(status) else {
+            let failure = try? JSONDecoder().decode(FailureEnvelope.self, from: data)
+            throw AgentClientError.http(status: status, code: failure?.error.code,
+                                        message: failure?.error.message, retryAfter: Self.retryDelay(retryAfter))
+        }
+        return data
+    }
+
+    public func authorizedURLRequest(path: [String], query: [URLQueryItem] = []) throws -> URLRequest {
+        try makeRequest(path: path, method: "GET", query: query)
+    }
+
     struct SubmissionFeed: Sendable {
         let receipt: AgentRun
         let events: AsyncThrowingStream<AgentRunEvent, Error>

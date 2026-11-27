@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Network
 import Observation
@@ -39,7 +40,12 @@ final class PhoneRemoteAgent {
     @ObservationIgnored private let deviceID: UUID
     private(set) var store: RemoteTaskStore?
     private(set) var desktopClient: AgentClient?
+    private(set) var speechDataClient: AgentClient?
     private(set) var desktopClientID = UUID()
+    @ObservationIgnored var hasPendingAudioUpload: (@MainActor () -> Bool)?
+    @ObservationIgnored var onAudioRelayCycle: (@MainActor () async throws -> Void)?
+    @ObservationIgnored var onAudioRelayCancel: (@MainActor () -> Void)?
+    @ObservationIgnored var onNetworkPathRecovered: (@MainActor () -> Void)?
     private(set) var connection: AgentConnection?
     var failure: String?
     @ObservationIgnored private(set) var readingPosition: ChatReadingPosition?
@@ -67,9 +73,17 @@ final class PhoneRemoteAgent {
     @ObservationIgnored lazy var contextDelivery = PhoneContextDelivery(
         needsDelivery: { [weak self] in
             guard let self, self.store?.canContactServer != false else { return false }
-            return self.context?.needsDelivery == true || self.context?.needsIllustrationRefresh == true
+            return self.hasPendingAudioUpload?() == true
+                || self.context?.needsDelivery == true
+                || self.context?.needsIllustrationRefresh == true
         }, deliver: { [weak self] in
             guard let self, let context = self.context else { throw CancellationError() }
+            do {
+                try await self.onAudioRelayCycle?()
+            } catch {
+                if case AgentClientError.http(401, _, _, _) = error { self.store?.recordConnectionFailure(error) }
+                throw error
+            }
             if context.needsDelivery { try await context.synchronize(includeMemories: false) }
             let sourceRevision = context.sourceChangeRevision
             do {
@@ -89,12 +103,15 @@ final class PhoneRemoteAgent {
         }, suspend: { [weak self] in self?.suspendTransportIfIdle() },
         cancel: { [weak self] in
             guard let self else { return }
+            self.onAudioRelayCancel?()
             self.context?.cancelSynchronization()
             self.lifeIllustrations.cancelSynchronization()
         },
         schedule: { [weak self] pending in
             guard let self else { return }
-            let urgent = self.context?.needsDelivery == true || self.lifeIllustrations.error != nil
+            let urgent = self.hasPendingAudioUpload?() == true
+                || self.context?.needsDelivery == true
+                || self.lifeIllustrations.error != nil
                 || self.context?.hasUnfinishedIllustrationDownload == true
                 || self.lifeIllustrations.settings.pendingCount > 0
             PhoneContextDeliveryScheduler.schedule(pending: pending, minimumDelay: urgent ? 5 * 60 : 15 * 60)
@@ -133,7 +150,7 @@ final class PhoneRemoteAgent {
                 if let connection {
                     let key = try Self.readKey(connection.instanceID)
                     let restored = try makeStore(connection, key: key)
-                    store = restored.tasks; context = restored.sync; deviceTelemetry = restored.telemetry; health = restored.health; sources = restored.sources; network = restored.network; desktopClient = restored.desktop
+                    store = restored.tasks; context = restored.sync; deviceTelemetry = restored.telemetry; health = restored.health; sources = restored.sources; network = restored.network; desktopClient = restored.desktop; speechDataClient = restored.dataClient
                     if let pending = pairing.pending, pending.invitation.canReuseCredential(from: connection), pending.credential == key {
                         try? pairing.clear()
                         if setupStep == .connect { advanceSetup(.completed) }
@@ -182,7 +199,7 @@ final class PhoneRemoteAgent {
             cancelRecovery()
             contextDelivery.expire()
             store?.background(); context?.background(); deviceTelemetry?.background(); health?.background(); sources?.background(); network?.suspend()
-            connection = proposed; store = restored.tasks; context = restored.sync; deviceTelemetry = restored.telemetry; health = restored.health; sources = restored.sources; network = restored.network; desktopClient = restored.desktop; failure = nil
+            connection = proposed; store = restored.tasks; context = restored.sync; deviceTelemetry = restored.telemetry; health = restored.health; sources = restored.sources; network = restored.network; desktopClient = restored.desktop; speechDataClient = restored.dataClient; failure = nil
             desktopClientID = UUID()
             notifications.start()
             pairingInProgress = false
@@ -451,6 +468,7 @@ final class PhoneRemoteAgent {
                 guard path.status == .satisfied, previous != nil, previous != signature,
                       self.store?.canContactServer != false else { return }
                 self.beginRecovery(trigger: "network-path")
+                self.onNetworkPathRecovered?()
             }
         }
         monitor.start(queue: DispatchQueue(label: "com.momoagent.remote.path"))
@@ -512,7 +530,92 @@ final class PhoneRemoteAgent {
         return connection.network == "tailscale" ? EmbeddedTailnetTransport(network: tailnet, endpoint: connection.baseURL) : nil
     }
 
-    private func makeStore(_ connection: AgentConnection, key: String, configuration: URLSessionConfiguration = .ephemeral) throws -> (tasks: RemoteTaskStore, sync: PhoneContextSync, telemetry: PhoneDeviceTelemetrySync?, health: PhoneHealthSync?, sources: PhoneSourcesSync?, network: AgentRTCTransport?, desktop: AgentClient) {
+    /// Routes iPhone short dictation to Mac's CoreML MOSS engine (`POST /context/v1/speech/dictate`).
+    /// Encodes to compact 16 kHz AAC (.m4a, ~4 KB/s) so clips up to 120s stay well below Relay's 512 KB cap.
+    func dictateAudio(samples: [Float]) async throws -> String {
+        guard let client = speechDataClient else {
+            throw ChatVoiceFailure.unavailable
+        }
+        guard !samples.isEmpty else {
+            throw ChatVoiceFailure.empty
+        }
+        let (audioBytes, filename): (Data, String)
+        if let aac = Self.encodeAAC(samples: samples, sampleRate: 16_000) {
+            audioBytes = aac
+            filename = "dictate.m4a"
+        } else {
+            audioBytes = Self.encodePCM16WAV(samples: samples, sampleRate: 16_000)
+            filename = "dictate.wav"
+        }
+        let response = try await client.dictateAudio(audioBytes, filename: filename)
+        return response.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func encodeAAC(samples: [Float], sampleRate: Double) -> Data? {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("dictate-\(UUID().uuidString).m4a")
+        defer { try? FileManager.default.removeItem(at: url) }
+        guard let pcmFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false),
+              let buffer = AVAudioPCMBuffer(pcmFormat: pcmFormat, frameCapacity: AVAudioFrameCount(samples.count)),
+              let ch = buffer.floatChannelData?[0] else { return nil }
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { src in
+            if let base = src.baseAddress {
+                ch.update(from: base, count: samples.count)
+            }
+        }
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: 32_000,
+        ]
+        do {
+            do {
+                let file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+                try file.write(from: buffer)
+            }
+            let data = try Data(contentsOf: url)
+            return data.isEmpty ? nil : data
+        } catch {
+            return nil
+        }
+    }
+
+    private nonisolated static func encodePCM16WAV(samples: [Float], sampleRate: UInt32) -> Data {
+        let numChannels: UInt16 = 1
+        let bitsPerSample: UInt16 = 16
+        let byteRate: UInt32 = sampleRate * UInt32(numChannels) * UInt32(bitsPerSample / 8)
+        let blockAlign: UInt16 = numChannels * (bitsPerSample / 8)
+        let dataSize: UInt32 = UInt32(samples.count * 2)
+        let chunkSize: UInt32 = 36 + dataSize
+
+        var data = Data(capacity: Int(44 + dataSize))
+        func appendLE<T: FixedWidthInteger>(_ v: T) {
+            var le = v.littleEndian
+            withUnsafeBytes(of: &le) { data.append(contentsOf: $0) }
+        }
+        data.append(contentsOf: "RIFF".utf8)
+        appendLE(chunkSize)
+        data.append(contentsOf: "WAVE".utf8)
+        data.append(contentsOf: "fmt ".utf8)
+        appendLE(UInt32(16))
+        appendLE(UInt16(1))
+        appendLE(numChannels)
+        appendLE(sampleRate)
+        appendLE(byteRate)
+        appendLE(blockAlign)
+        appendLE(bitsPerSample)
+        data.append(contentsOf: "data".utf8)
+        appendLE(dataSize)
+        for s in samples {
+            let clamped = max(-1.0, min(1.0, s))
+            let sample16 = Int16((clamped * 32767.0).rounded())
+            appendLE(sample16)
+        }
+        return data
+    }
+
+    private func makeStore(_ connection: AgentConnection, key: String, configuration: URLSessionConfiguration = .ephemeral) throws -> (tasks: RemoteTaskStore, sync: PhoneContextSync, telemetry: PhoneDeviceTelemetrySync?, health: PhoneHealthSync?, sources: PhoneSourcesSync?, network: AgentRTCTransport?, desktop: AgentClient, dataClient: AgentClient?) {
         let network = connection.network == nil ? try AgentRTCTransport(connection: connection, credential: key) : nil
         let route = try transport(for: connection) ?? network
         let client = try AgentClient(baseURL: connection.baseURL, credential: key, assistantID: connection.assistantID, configuration: configuration, transport: route)
@@ -563,11 +666,15 @@ final class PhoneRemoteAgent {
         tasks.prepareSubmission = { task in
             try await sync.prepareSubmission(input: task.input, attachments: task.attachments ?? [])
         }
+        let dataClient: AgentClient?
         if let endpoint = connection.dataURL {
-            let dataClient = try AgentClient(baseURL: endpoint, credential: key, assistantID: connection.assistantID, transport: route)
-            lifeIllustrations.configure(client: dataClient, scope: connection.workspaceID.uuidString)
+            let dc = try AgentClient(baseURL: endpoint, credential: key, assistantID: connection.assistantID, configuration: configuration, transport: route)
+            lifeIllustrations.configure(client: dc, scope: connection.workspaceID.uuidString)
+            dataClient = dc
+        } else {
+            dataClient = nil
         }
-        return (tasks, sync, telemetry, health, sources, network, client)
+        return (tasks, sync, telemetry, health, sources, network, client, dataClient)
     }
 
     private static func openTaskStore(file: URL, connection: AgentConnection, client: AgentClient) throws -> RemoteTaskStore {

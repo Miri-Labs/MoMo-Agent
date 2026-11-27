@@ -9,22 +9,47 @@ struct PhoneConnectionFlow: View {
     @State private var networkPrepared = false
     @State private var login = TailnetLogin()
     @State private var showingHelp = false
+    @State private var showingVoiceprintOnboarding = false
     private var canScan: Bool { networkPrepared || agent.pairing.pending != nil || agent.tailnet.state == "Running" }
     private var ready: Bool { agent.store != nil && agent.pairing.pending == nil && (!reconnecting || agent.pairing.completionGeneration > (initialGeneration ?? agent.pairing.completionGeneration)) }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                VStack(spacing: 8) {
-                    PersonalAgentSlot(size: ready || canScan ? 120 : 64, active: false, expression: ready ? .settled : .present)
-                    PhoneBrandWordmark(.momo, size: ready || canScan ? 24 : 18)
-                }
-                Text(ready ? "配对成功" : canScan ? "扫码连接 Mac" : "连接 Mac")
-                    .phoneText(.heading).multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
-                if ready {
-                    Label("配对已验证", systemImage: "checkmark.circle")
-                    Button("开始聊天", action: finish).buttonStyle(ClientPrimaryButton()).accessibilityIdentifier("onboarding.finish")
-                } else {
+        Group {
+            if ready && showingVoiceprintOnboarding {
+                VoiceprintOnboardingView(
+                    remoteAgent: agent,
+                    onFinish: finish,
+                    onSkip: finish
+                )
+            } else {
+                ScrollView {
+                    VStack(spacing: 20) {
+                        VStack(spacing: 8) {
+                            PersonalAgentSlot(size: ready || canScan ? 120 : 64, active: false, expression: ready ? .settled : .present)
+                            PhoneBrandWordmark(.momo, size: ready || canScan ? 24 : 18)
+                        }
+                        Text(ready ? "已连接 Mac" : canScan ? "扫码连接 Mac" : "连接 Mac")
+                            .phoneText(.heading).multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
+                        if ready {
+                            if !reconnecting && agent.speechDataClient != nil {
+                                VStack(spacing: 12) {
+                                    Button {
+                                        showingVoiceprintOnboarding = true
+                                    } label: {
+                                        Label("录下我的声音", systemImage: "waveform")
+                                    }
+                                    .buttonStyle(ClientPrimaryButton())
+                                    .accessibilityIdentifier("onboarding.voiceprint")
+                                    Button("跳过", action: finish)
+                                        .buttonStyle(.plain)
+                                        .foregroundStyle(MoMoPalette.muted)
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                        .accessibilityIdentifier("onboarding.finish")
+                                }
+                            } else {
+                                Button("开始使用", action: finish).buttonStyle(ClientPrimaryButton()).accessibilityIdentifier("onboarding.finish")
+                            }
+                        } else {
                     if canScan {
                         PhonePairingControls(agent: agent)
                     } else {
@@ -41,8 +66,15 @@ struct PhoneConnectionFlow: View {
                             }
                                 .buttonStyle(ClientPrimaryButton(isLoading: login.busy)).disabled(login.busy)
                                 .accessibilityIdentifier("onboarding.loginTailscale")
-                        if let error = login.error ?? agent.tailnet.message, !login.busy {
+                        if login.busy {
+                            Button("取消") { login.cancel() }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(MoMoPalette.muted)
+                                .frame(minHeight: 40)
+                        }
+                        if let error = login.error ?? agent.tailnet.message {
                             Text(error).phoneText(.caption).foregroundStyle(MoMoPalette.failure)
+                                .multilineTextAlignment(.center)
                         }
                     }
                     if let deferConnection {
@@ -56,8 +88,10 @@ struct PhoneConnectionFlow: View {
                     }
                 }
             }.frame(maxWidth: 480).padding(24).frame(maxWidth: .infinity)
+                }
+                .phoneScrollHeader { connectionHeader }
+            }
         }
-        .phoneScrollHeader { connectionHeader }
         .phonePageSurface()
         .task { try? await agent.tailnet.start() }
         .onAppear { if initialGeneration == nil { initialGeneration = agent.pairing.completionGeneration } }

@@ -6,8 +6,6 @@ struct RecordingDetailView: View {
     let sessionID: UUID
     let library: LibraryModel
     let playback: AudioPlaybackController
-    var transcription: TranscriptionSnapshot? = nil
-    var retryTranscription: ((UUID, Int64) async throws -> Void)? = nil
     let delete: (UUID) async throws -> Void
     let canDiscuss: Bool
     let discuss: (SourceReference) -> Void
@@ -24,8 +22,6 @@ struct RecordingDetailView: View {
     @State private var failure: String?
     @State private var confirmingDeletion = false
     @State private var deleting = false
-    @State private var retrying = false
-    @State private var retryFailure: String?
     @State private var resolvingFiles = false
     @State private var fileResolutionFailure: String?
     @State private var playbackSpanID: UUID?
@@ -83,38 +79,6 @@ struct RecordingDetailView: View {
                                 .background(isProcessing ? MoMoPalette.surface : MoMoPalette.successBackground, in: Capsule())
                                 .accessibilityIdentifier("transcript.progress")
                         }
-                if canRetryTranscription, let retryTranscription, let recording {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Button(retrying ? String(localized: "正在重试这段录音…") : String(localized: "重试未完成的转写")) {
-                            retrying = true
-                            retryFailure = nil
-                            Task {
-                                defer { retrying = false }
-                                do { try await retryTranscription(sessionID, recording.generation) }
-                                catch let error as ArchiveError {
-                                    retryFailure = switch error {
-                                    case .sessionDeleted, .missingRecording: String(localized: "这次录音已删除或不可用。")
-                                    case .staleSource, .staleAttempt: String(localized: "录音资料已发生变化，请返回列表刷新后再试。")
-                                    case .operationConflict: String(localized: "这段录音仍在处理批次中，暂时不能单独重试；已有内容可以继续阅读。")
-                                    default: String(localized: "转写暂时无法重试，已收到的原音和文字会保留。")
-                                    }
-                                } catch is TranscriptionExecutionError {
-                                    retryFailure = RecordingTranscriptionRetryError.busy.localizedDescription
-                                } catch {
-                                    retryFailure = (error as? RecordingTranscriptionRetryError)?.localizedDescription
-                                        ?? String(localized: "转写暂时无法重试，已收到的原音和文字会保留。")
-                                }
-                            }
-                        }
-                        .phoneText(.menu).frame(minHeight: 44)
-                        .disabled(retrying || deleting)
-                        .accessibilityIdentifier("transcript.retry")
-                        if let retryFailure {
-                            Text(retryFailure).phoneText(.metadata).foregroundStyle(MoMoPalette.failure)
-                                .accessibilityIdentifier("transcript.retry.failure")
-                        }
-                    }
-                }
                 if let issue = fileIssue {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("资料文件当前不可用，已有记录仍保留。")
@@ -325,7 +289,6 @@ struct RecordingDetailView: View {
         .task(id: sessionID) { library.setFocusedSession(sessionID) }
         .onDisappear { library.clearFocusedSession(sessionID) }
         .task(id: loadIdentity) { await load() }
-        .task(id: coverageRefreshToken) { await refreshLiveCoverageIfNeeded() }
     }
 
     private func rememberVisibleParagraph() {
@@ -444,23 +407,12 @@ struct RecordingDetailView: View {
         }
     }
 
-    private var canRetryTranscription: Bool {
-        fileIssue == nil && (retrying || retryFailure != nil || recording?.transcriptionState == .failed
-            || (recording?.transcriptionState == .pending && transcription == nil)
-            || (transcription?.phase == .failed && transcription?.failedSessionID == sessionID))
-    }
-
     private var isProcessing: Bool {
         transcriptionPresentation?.isActive == true
     }
 
     private var transcriptionPresentation: RecordingTranscriptionPresentation? {
-        recording.map { RecordingTranscriptionPresentation(sessionID: sessionID, state: $0.transcriptionState, snapshot: transcription) }
-    }
-
-    private var coverageRefreshToken: Int {
-        guard isProcessing else { return 0 }
-        return (transcription?.completedPreparations ?? 0) &+ (transcription?.completedWindows ?? 0)
+        recording.map { RecordingTranscriptionPresentation(state: $0.transcriptionState) }
     }
 
     private static func formatCoverageDuration(_ seconds: TimeInterval, reference: TimeInterval) -> String {
@@ -473,38 +425,23 @@ struct RecordingDetailView: View {
 
     private var completionBadge: String? {
         if isProcessing {
-            if let coverage, let processed = coverage.processedDuration, coverage.receivedDuration > 0 {
-                let pct = min(99, max(0, Int((processed / coverage.receivedDuration * 100).rounded(.down))))
-                let doneText = Self.formatCoverageDuration(processed, reference: coverage.receivedDuration)
-                let totalText = Self.formatCoverageDuration(coverage.receivedDuration, reference: coverage.receivedDuration)
-                return String(localized: "正在本机转写 · \(pct)%（\(doneText) / \(totalText)）")
-            }
-            return String(localized: "正在本机转写")
+            return String(localized: "Mac 端正在转录")
         }
         guard recording?.transcriptionState == .transcribed,
               coverage?.epochs.contains(where: { !$0.pending.isEmpty || !$0.failed.isEmpty }) != true else { return nil }
-        return String(localized: "已收到的内容已转写")
+        return String(localized: "已完成转录")
     }
 
     private var trailingProgressPrompt: String {
-        if transcription?.activeSessionID == sessionID, transcription?.phase == .preparing,
-           let coverage, let analyzed = coverage.analyzedDuration, coverage.receivedDuration > 0 {
-            let scannedText = Self.formatCoverageDuration(analyzed, reference: coverage.receivedDuration)
-            let totalText = Self.formatCoverageDuration(coverage.receivedDuration, reference: coverage.receivedDuration)
-            return String(localized: "正在快速跳过静音段（已扫描 \(scannedText) / \(totalText)），后续文字会自动追加。")
-        }
-        return String(localized: "后面的文字会继续出现在这里。")
+        String(localized: "Mac 转录完成后，后续文字会自动同步到这里。")
     }
 
     private var processingStatus: String? {
         if transcriptionPresentation?.activity == .failed {
-            return String(localized: "部分内容未能完成转写，已收到的音频会保留。")
+            return String(localized: "部分内容未能完成转录，已收到的音频会保留。")
         }
         if isProcessing {
-            if let active = transcription?.activeSessionID, active != sessionID {
-                return String(localized: "正在优先转写最新语音，随后自动继续这段录音；已有内容可先阅读。")
-            }
-            return String(localized: "正在转写，已有内容可以先阅读。")
+            return String(localized: "Mac 端正在转录，已有内容可以先阅读。")
         }
         if coverage?.epochs.contains(where: { !$0.notReceived.isEmpty }) == true { return String(localized: "还有录音未传到手机，已收到的内容可以先阅读。") }
         if let status = transcriptionPresentation?.status { return status }
@@ -512,22 +449,8 @@ struct RecordingDetailView: View {
         case .expired: return String(localized: "原音已按保留设置清理，文字仍可阅读。")
         case .partiallyExpired: return String(localized: "部分原音已清理，文字仍可阅读。")
         case .expiryPending: return String(localized: "正在清理到期原音，文字仍可阅读。")
-        case .missingUnexpected: return String(localized: "部分原音文件缺失，请查看同步与转写详情。")
+        case .missingUnexpected: return String(localized: "部分原音文件缺失，请查看同步与转录详情。")
         default: return nil
-        }
-    }
-
-    private func refreshLiveCoverageIfNeeded() async {
-        guard coverageRefreshToken > 0, let expected = loadIdentity else { return }
-        do {
-            let loadedCoverage = try await library.archive.recordingCoverage(
-                sessionID: sessionID,
-                configurationFingerprint: library.configurationFingerprint
-            )
-            guard !Task.isCancelled, loadIdentity == expected else { return }
-            coverage = loadedCoverage
-        } catch {
-            // Supplemental live cursor refresh never overwrites existing document or error state.
         }
     }
 

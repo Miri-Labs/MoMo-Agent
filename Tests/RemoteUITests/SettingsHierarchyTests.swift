@@ -81,7 +81,7 @@ final class SettingsHierarchyTests: XCTestCase {
             back(app)
         }
         for (identifier, title) in [("health", "健康"), ("visits", "到访地点"), ("calendar", "日历"), ("reminders", "提醒事项"),
-                                    ("speech.model", "转录模型"), ("speech.language", "识别语言"), ("speech.detection", "语音检测"), ("storage", "储存空间")] {
+                                    ("speech.mac", "Mac 转录设置"), ("speakers", "人物与声纹"), ("storage", "储存空间")] {
             let row = app.buttons["settings." + identifier]
             for _ in 0..<5 where !row.isHittable { app.swipeUp() }
             XCTAssertTrue(row.isHittable, identifier)
@@ -166,5 +166,127 @@ final class MemoryReadingTests: XCTestCase {
     private func capture(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    }
+}
+
+@MainActor
+final class VoiceprintUIJourneyTests: XCTestCase {
+    func testVoiceprintRosterOnboardingPlaybackAndTranscriptBinding() throws {
+#if targetEnvironment(simulator)
+        guard let runID = ProcessInfo.processInfo.environment["MOMO_VOICEPRINT_UI_RUN_ID"],
+              UUID(uuidString: runID) != nil else {
+            throw XCTSkip("Requires MOMO_VOICEPRINT_UI_RUN_ID backed by local voiceprint fixture server")
+        }
+        continueAfterFailure = false
+        let shotDir = ProcessInfo.processInfo.environment["MOMO_VOICEPRINT_SHOT_DIR"]
+        func snap(_ app: XCUIApplication, _ name: String) {
+            let shot = app.screenshot()
+            let att = XCTAttachment(screenshot: shot)
+            att.name = name; att.lifetime = .keepAlways; add(att)
+            if let shotDir {
+                let url = URL(fileURLWithPath: shotDir).appendingPathComponent("\(name).png")
+                try? shot.pngRepresentation.write(to: url, options: .atomic)
+            }
+        }
+
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchEnvironment["MOMO_UI_TEST_RUN_ID"] = runID
+        app.launchEnvironment["MOMO_UI_TEST_TIMELINE_FIXTURE"] = "remote"
+        app.launch()
+        defer { app.terminate() }
+
+        if app.buttons["welcome.skip"].waitForExistence(timeout: 5) { app.buttons["welcome.skip"].tap() }
+        if app.buttons["welcome.start"].waitForExistence(timeout: 5) { app.buttons["welcome.start"].tap() }
+        if app.buttons["onboarding.voiceprint"].waitForExistence(timeout: 15) {
+            snap(app, "ios_01_pairing_voiceprint_prompt")
+            app.buttons["onboarding.voiceprint"].tap()
+            XCTAssertTrue(app.buttons["voiceprint.onboarding.record"].waitForExistence(timeout: 8), app.debugDescription)
+            snap(app, "ios_02_voiceprint_onboarding")
+            app.buttons["voiceprint.onboarding.skip"].tap()
+        } else if app.buttons["onboarding.finish"].waitForExistence(timeout: 15) {
+            app.buttons["onboarding.finish"].tap()
+        }
+
+        // 1. Open Settings -> Mac 转录设置 & 人物与声纹
+        if app.tabBars.buttons["聊天"].exists { app.tabBars.buttons["聊天"].tap() }
+        let settingsBtn = app.buttons["remote.settings"]
+        XCTAssertTrue(settingsBtn.waitForExistence(timeout: 25), app.debugDescription)
+        settingsBtn.tap()
+
+        let macSpeechRow = app.buttons["settings.speech.mac"]
+        for _ in 0..<4 where !macSpeechRow.isHittable { app.swipeUp() }
+        XCTAssertTrue(macSpeechRow.waitForExistence(timeout: 8))
+        macSpeechRow.tap()
+        XCTAssertTrue(app.navigationBars["Mac 转录设置"].waitForExistence(timeout: 8))
+        sleep(1)
+        snap(app, "ios_03_mac_speech_settings")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        let speakersRow = app.buttons["settings.speakers"]
+        for _ in 0..<4 where !speakersRow.isHittable { app.swipeUp() }
+        XCTAssertTrue(speakersRow.waitForExistence(timeout: 8))
+        speakersRow.tap()
+        XCTAssertTrue(app.navigationBars["人物与声纹"].waitForExistence(timeout: 8))
+        let alexCell = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Alex")).firstMatch
+        XCTAssertTrue(alexCell.waitForExistence(timeout: 10), app.debugDescription)
+        sleep(1)
+        snap(app, "ios_04_voiceprint_roster")
+
+        // 2. Open owner onboarding from toolbar overflow menu
+        let moreMenu = app.buttons["speaker.more.menu"]
+        XCTAssertTrue(moreMenu.waitForExistence(timeout: 8), app.debugDescription)
+        moreMenu.tap()
+        let onboardItem = app.buttons["录下我的声音"]
+        XCTAssertTrue(onboardItem.waitForExistence(timeout: 8), app.debugDescription)
+        onboardItem.tap()
+        XCTAssertTrue(app.buttons["voiceprint.onboarding.record"].waitForExistence(timeout: 8))
+        snap(app, "ios_05_owner_onboarding_sheet")
+        app.buttons["关闭"].tap()
+
+        // 3. Open Alex profile detail -> verify sample clip playback button
+        XCTAssertTrue(alexCell.waitForExistence(timeout: 8), app.debugDescription)
+        alexCell.tap()
+        XCTAssertTrue(app.navigationBars["Alex"].waitForExistence(timeout: 8))
+        let playBtn = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "voiceprint.sample.play.")).firstMatch
+        XCTAssertTrue(playBtn.waitForExistence(timeout: 8), app.debugDescription)
+        snap(app, "ios_06_person_detail_with_clip_play")
+        playBtn.tap()
+        usleep(600_000)
+        snap(app, "ios_07_person_detail_playing")
+        app.buttons["完成"].tap()
+
+        // 4. Trigger global rematch from toolbar overflow menu
+        XCTAssertTrue(moreMenu.waitForExistence(timeout: 8))
+        moreMenu.tap()
+        let rematchItem = app.buttons["重新匹配历史录音"]
+        XCTAssertTrue(rematchItem.waitForExistence(timeout: 8))
+        rematchItem.tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "已匹配")).firstMatch.waitForExistence(timeout: 10))
+        snap(app, "ios_08_rematch_done")
+
+        // 5. Navigate back to Transcripts -> open recording -> open SpeakerFeedbackMenu
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        if app.tabBars.buttons["转录"].exists {
+            app.tabBars.buttons["转录"].tap()
+        } else if app.buttons["assistant.library"].exists {
+            app.buttons["assistant.library"].tap()
+        }
+        let windowBtn = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "timeline.window.")).firstMatch
+        if windowBtn.waitForExistence(timeout: 15) {
+            windowBtn.tap()
+            let speakerBtn = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "transcript.speaker.")).firstMatch
+            if speakerBtn.waitForExistence(timeout: 10) {
+                snap(app, "ios_09_transcript_detail")
+                speakerBtn.tap()
+                XCTAssertTrue(app.switches["speaker.enroll.toggle"].waitForExistence(timeout: 8), app.debugDescription)
+                snap(app, "ios_10_speaker_bind_sheet")
+                app.buttons["取消"].tap()
+            }
+        }
+#else
+        throw XCTSkip("Simulator only")
+#endif
     }
 }

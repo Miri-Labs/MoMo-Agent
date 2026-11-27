@@ -41,22 +41,9 @@ struct TimelineIssuePresentation: Identifiable {
     }
     var retryTitle: String { failure != nil || issue.kind == .transcriptionFailed ? String(localized: "重试这一段") : String(localized: "整理这一段") }
 
-    static func rows(for window: TimelineWindow, failureScope: TranscriptionFailureScope?) -> [Self] {
-        window.issues.flatMap { issue -> [Self] in
-            let normal = Self(issue: issue, frames: issue.source.frames, failure: nil)
-            guard let failureScope, failureScope.configurationFingerprint == window.configurationFingerprint,
-                  failureScope.sessionID == issue.source.sessionID, failureScope.epochID == issue.source.epochID,
-                  failureScope.generation == issue.source.generation,
-                  (failureScope.stage == .analysis && issue.kind == .waitingForAnalysis)
-                    || (failureScope.stage == .transcription && issue.kind == .waitingForTranscription) else { return [normal] }
-            let range = issue.source.frames
-            let start = max(range.start, failureScope.frames.start), end = min(range.end, failureScope.frames.end)
-            guard end > start else { return [normal] }
-            // Only non-empty intersections of already validated frame ranges can be constructed.
-            return [(range.start, start, false), (start, end, true), (end, range.end, false)].compactMap { from, through, failed in
-                guard through > from, let frames = try? FrameRange(start: from, count: through - from) else { return nil }
-                return Self(issue: issue, frames: frames, failure: failed ? failureScope.reason : nil)
-            }
+    static func rows(for window: TimelineWindow) -> [Self] {
+        window.issues.map { issue in
+            Self(issue: issue, frames: issue.source.frames, failure: nil)
         }
     }
 }

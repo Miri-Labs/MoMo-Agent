@@ -6,15 +6,19 @@ import MoMoAgentClient
 struct SettingsView: View {
     let archive: ArchiveStore
     let remoteAgent: PhoneRemoteAgent
-    let modelDirectory: URL?
-    let modelStatus: LocalSpeechModelStatus
+    var uploader: AudioUploadCoordinator? = nil
     let speechSettings: PhoneSpeechSettings
     var illustrations: LifeIllustrationStore? = nil
     var earphone: EarphoneCaptureRuntime? = nil
-    var speakerRematch: SpeakerRematchController = SpeakerRematchController()
     var onSpeakersChanged: (() async -> Void)? = nil
     @State private var versionTapCount = 0
     @State private var previewingWelcome = false
+
+    private var macSpeechRowValue: String {
+        if remoteAgent.speechDataClient == nil { return String(localized: "未连接") }
+        if uploader?.macStatus?.settings.paused == true { return String(localized: "已暂停") }
+        return "Mac Core ML"
+    }
 
     var body: some View {
         List {
@@ -59,32 +63,27 @@ struct SettingsView: View {
                     }
                 }
             }
-            Section("转录") {
+            Section("录音与声纹") {
                 if let earphone {
                     settingsLink("录音设备", symbol: "mic", value: earphone.settings.device.title, id: "settings.captureDevice") {
                         CaptureDeviceSettingsView(runtime: earphone)
                     }
                 }
-                settingsLink("转录模型", symbol: "waveform", value: speechSettings.models.choice.title, id: "settings.speech.model") {
-                    SpeechModelSettingsView(settings: speechSettings.models)
-                }
-                settingsLink("识别语言", symbol: "globe", value: speechSettings.language.title, id: "settings.speech.language") {
-                    SpeechLanguageSettingsView(settings: speechSettings)
-                }
-                settingsLink("语音检测", symbol: "waveform.badge.magnifyingglass",
-                             value: speechSettings.vadThreshold.formatted(.number.precision(.fractionLength(2))), id: "settings.speech.detection") {
-                    SpeechDetectionSettingsView(settings: speechSettings)
-                }
-                settingsLink("说话人分段", symbol: "person.2", value: speechSettings.speakerSegmentationModel.title, id: "settings.speech.segmentation") {
-                    SpeakerSegmentationSettingsView(settings: speechSettings)
+                settingsLink("Mac 转录设置", symbol: "waveform", value: macSpeechRowValue, id: "settings.speech.mac") {
+                    MacSpeechSettingsView(remoteAgent: remoteAgent, uploader: uploader)
                 }
                 settingsLink("人物与声纹", symbol: "person.wave.2", id: "settings.speakers") {
-                    SpeakerProfilesView(archive: archive, rematch: speakerRematch, onSpeakersChanged: onSpeakersChanged)
+                    SpeakerProfilesView(
+                        archive: archive,
+                        remoteAgent: remoteAgent,
+                        uploader: uploader,
+                        onSpeakersChanged: onSpeakersChanged
+                    )
                 }
             }
             Section {
                 settingsLink("储存空间", symbol: "internaldrive", id: "settings.storage") {
-                    StorageUsageView(archive: archive, modelDirectory: modelDirectory, modelStatus: modelStatus)
+                    StorageUsageView(archive: archive)
                 }
             } footer: {
                 Button {

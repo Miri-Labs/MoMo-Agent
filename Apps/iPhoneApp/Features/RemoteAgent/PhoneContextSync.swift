@@ -353,12 +353,21 @@ final class PhoneContextSync {
                 }
             }
         }
-        guard !candidateNames.isEmpty,
-              let profiles = try? await archive.speakerProfiles() else { return }
-        for profile in profiles where !profile.isUser {
-            let trimmed = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            if candidateNames.contains(trimmed) {
-                try? await archive.forgetVoiceprint(personID: profile.id)
+        guard !candidateNames.isEmpty else { return }
+        if let macProfiles = try? await client.voiceprintProfiles() {
+            for profile in macProfiles where !profile.isOwner {
+                let trimmed = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                if candidateNames.contains(trimmed) {
+                    try? await client.deleteVoiceprintProfile(id: profile.id)
+                }
+            }
+        }
+        if let profiles = try? await archive.speakerProfiles() {
+            for profile in profiles where !profile.isUser {
+                let trimmed = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                if candidateNames.contains(trimmed) {
+                    try? await archive.forgetVoiceprint(personID: profile.id)
+                }
             }
         }
     }
@@ -385,9 +394,12 @@ final class PhoneContextSync {
         }
     }
     func prepareSubmission(input: String, attachments: [AgentAttachment] = []) async throws {
+        let macOwnedSessions = (try? await archive.macAuthoritativeSessionIDs()) ?? []
         for reference in attachments.compactMap(\.recording) {
             guard reference.libraryID == archive.libraryInstanceID else { throw RemoteTaskStore.StoreError.recordingReferenceChanged }
             for selection in reference.sessions {
+                // Mac already owns authoritative transcripts for Mac-transcribed sessions.
+                if macOwnedSessions.contains(selection.sessionID) { continue }
                 let source: Source
                 do {
                     let summary = try await archive.recordingSummary(sessionID: selection.sessionID)
@@ -416,12 +428,32 @@ final class PhoneContextSync {
             guard parts.count == 2, let session = UUID(uuidString: String(parts[0])), let span = UUID(uuidString: String(parts[1])),
                   let version = query.first(where: { $0.name == "version" })?.value.flatMap(Int64.init),
                   let generation = query.first(where: { $0.name == "generation" })?.value.flatMap(Int64.init) else { throw SyncError.sourceChanged }
+            if macOwnedSessions.contains(session) { continue }
             let recording = try await archive.recordingSummary(sessionID: session)
             let source = try await stage(recording)
             guard source.envelope.version == version, source.envelope.generation == generation,
                   source.envelope.spans.contains(where: { $0.id == span.uuidString.lowercased() }) else { throw SyncError.sourceChanged }
             try await deliver(source)
         }
+    }
+
+    /// Sends a deletion tombstone to Mac for a deleted Mac-authoritative recording so Mac removes it too.
+    /// Increments `generation` (matching `SourceEnvelope.tombstone()`) so explicit user deletion always
+    /// supersedes any concurrent speaker-relabel version bumps on Mac.
+    func tombstoneMacSession(_ sessionID: UUID, generation: Int64, version: Int64, recordedAt: Date) async {
+        let nextGen = max(1, generation) + 1
+        let tombstone = SourceEnvelope(
+            library: archive.libraryInstanceID,
+            session: sessionID,
+            device: deviceID,
+            generation: nextGen,
+            version: 0,
+            deleted: true,
+            recordedAt: recordedAt,
+            spans: [],
+            pendingTranscriptionRanges: []
+        )
+        _ = try? await client.syncSource(tombstone)
     }
     private func stage(_ recording: RecordingSummary, allowEmptyInitial: Bool = true, checkpoint: Bool = true, forceRebuild: Bool = false) async throws -> Source {
         let id = recording.sessionID.uuidString.lowercased()
@@ -544,6 +576,7 @@ final class PhoneContextSync {
     }
     private func uploadSources() async throws {
         let changeRevision = state.sourceChangeRevision
+        let macOwnedSessions = (try? await archive.macAuthoritativeSessionIDs()) ?? []
         var cursor: String?
         var firstError: Error?
         var hadDeferredProjection = false
@@ -552,6 +585,9 @@ final class PhoneContextSync {
             try Task.checkCancellation()
             let page = try await archive.recordingsPage(limit: 100, cursor: cursor)
             for recording in page.items {
+                if macOwnedSessions.contains(recording.sessionID) { continue }
+                // In Mac-as-Backend mode, never stage empty untranscribed stubs (prevents pre-upload race with Mac).
+                if recording.transcriptVersion == 0 { continue }
                 do { _ = try await stage(recording, allowEmptyInitial: false, checkpoint: false) }
                 catch ArchiveError.missingTranscript, ArchiveError.sessionDeleted { continue }
                 catch ArchiveError.projectionConflict {

@@ -1,0 +1,4 @@
+module CMoMoMacSpeechCoreML {
+    header "CMoMoMacSpeechCoreML.h"
+    export *
+}

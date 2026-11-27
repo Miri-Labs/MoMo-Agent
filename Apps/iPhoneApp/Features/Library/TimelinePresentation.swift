@@ -145,15 +145,6 @@ enum TimelinePresentation {
         }
     }
 
-    static func resourceExplanation(_ snapshot: TranscriptionSnapshot?) -> String? {
-        guard snapshot?.nativeInFlight != true else { return nil }
-        switch snapshot?.historicalResourceConstraint {
-        case .thermalPressure: return String(localized: "手机温度过高，历史录音将在降温后自动继续整理")
-        case .lowPower: return String(localized: "低电量模式已开启，历史录音将在关闭后自动继续整理")
-        case nil: return nil
-        }
-    }
-
     static func preview(_ window: TimelineWindow, summary: String?) -> String {
         if window.canSummarize, let summary {
             let preview = MarkdownDocument.plainTextPreview(summary)
@@ -168,7 +159,7 @@ enum TimelinePresentation {
         if !text.isEmpty { return String(text.prefix(256)).replacingOccurrences(of: "\n", with: " ") }
         switch window.state {
         case .waitingForTranscription: return ""
-        case .waitingForSync: return String(localized: "等待原音传到手机后自动整理。")
+        case .waitingForSync: return String(localized: "等待原音传到手机后自动上传至 Mac 转录。")
         case .failed: return String(localized: "暂未生成文字，原音仍保留。")
         case .complete:
             return window.speechDuration > 0 ? String(localized: "这段有语音，可回听原音。") : String(localized: "未识别到语音")
@@ -176,50 +167,31 @@ enum TimelinePresentation {
     }
 
     private enum PreparationStatus {
-        case partialFailure, failed, waitingForSync, processing, deferred, pending
+        case partialFailure, failed, waitingForSync, pending
         var title: String {
             switch self {
             case .partialFailure: String(localized: "部分未完成")
             case .failed: String(localized: "未能整理")
             case .waitingForSync: String(localized: "等待同步")
-            case .processing: String(localized: "正在整理")
-            case .deferred: String(localized: "稍后继续")
-            case .pending: String(localized: "等待整理")
+            case .pending: String(localized: "等待 Mac 转录")
             }
         }
     }
-    static func status(_ window: TimelineWindow, transcription: TranscriptionSnapshot?, speechFailure: String?) -> String? {
-        statusKind(window, transcription: transcription, speechFailure: speechFailure)?.title
+    static func status(_ window: TimelineWindow) -> String? {
+        statusKind(window)?.title
     }
-    static func hasRetryableFailure(_ window: TimelineWindow, transcription: TranscriptionSnapshot?, speechFailure: String?) -> Bool {
-        switch statusKind(window, transcription: transcription, speechFailure: speechFailure) {
-        case .partialFailure, .failed: true
-        default: false
-        }
-    }
-    private static func statusKind(_ window: TimelineWindow, transcription: TranscriptionSnapshot?, speechFailure: String?) -> PreparationStatus? {
+    private static func statusKind(_ window: TimelineWindow) -> PreparationStatus? {
         switch window.state {
         case .failed: return window.paragraphs.contains(where: \.hasReadableText) ? .partialFailure : .failed
         case .waitingForSync: return .waitingForSync
         case .complete: return nil
-        case .waitingForTranscription:
-            // A pending window can span several recordings. Durable completion/sync/failure
-            // above takes precedence; only matching, in-flight native work is active.
-            let sources = window.sources.map {
-                RecordingTranscriptionPresentation(sessionID: $0.sessionID, state: .pending, snapshot: transcription)
-            }
-            if sources.contains(where: { $0.activity == .failed }) { return .partialFailure }
-            if sources.contains(where: \.isActive) { return .processing }
-            if sources.contains(where: { $0.activity == .deferred }) { return .deferred }
-            return speechFailure == nil ? .pending : .failed
+        case .waitingForTranscription: return .pending
         }
     }
-    static func explanation(_ window: TimelineWindow, transcription: TranscriptionSnapshot?, speechFailure: String?) -> String? {
-        switch statusKind(window, transcription: transcription, speechFailure: speechFailure) {
+    static func explanation(_ window: TimelineWindow) -> String? {
+        switch statusKind(window) {
         case .waitingForSync: String(localized: "还有原音尚未传到手机，已收到的文字和原音可以先查看。")
-        case .processing: String(localized: "正在整理，后续文字会自动补上。")
-        case .pending: String(localized: "原音已收到，文字将自动整理。")
-        case .deferred: String(localized: "回到 App 或系统允许后会继续整理，已有内容已保留。")
+        case .pending: String(localized: "原音已收到，将自动上传到 Mac 完成 Core ML 转录与声纹识别。")
         case .partialFailure, .failed: String(localized: "部分文字未能生成，已有文字和原音会保留。")
         default: nil
         }

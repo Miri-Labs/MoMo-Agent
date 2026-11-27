@@ -14,7 +14,6 @@ final class PhoneAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificatio
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
-        bootstrap.background.register()
         PhoneContextDeliveryScheduler.register(bootstrap: bootstrap)
         PhoneInboxRefresh.register(bootstrap: bootstrap)
         // WatchConnectivity can launch the process without creating a SwiftUI scene.
@@ -114,16 +113,9 @@ final class PhoneAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificatio
 final class PhoneBootstrap {
     private(set) var runtime: PhoneRuntime?
     private(set) var failure: String?
-    @ObservationIgnored private let makeRuntime: @MainActor (PhoneBackgroundTasks) throws -> PhoneRuntime
-    @ObservationIgnored lazy var background = PhoneBackgroundTasks { [weak self] in
-        guard let self else { throw BackgroundTranscriptionError.runtimeUnavailable }
-        initialize()
-        guard let runtime else { throw BackgroundTranscriptionError.runtimeUnavailable }
-        await runtime.start(backgroundOnly: true)
-        return try runtime.backgroundCoordinator()
-    }
-    init(makeRuntime: @escaping @MainActor (PhoneBackgroundTasks) throws -> PhoneRuntime = {
-        try PhoneComposition.make(background: $0)
+    @ObservationIgnored private let makeRuntime: @MainActor () throws -> PhoneRuntime
+    init(makeRuntime: @escaping @MainActor () throws -> PhoneRuntime = {
+        try PhoneComposition.make()
     }) {
         self.makeRuntime = makeRuntime
     }
@@ -138,7 +130,7 @@ final class PhoneBootstrap {
     func initialize() {
         guard runtime == nil else { return }
         do {
-            runtime = try makeRuntime(background)
+            runtime = try makeRuntime()
             failure = nil
         } catch { failure = error.localizedDescription }
     }

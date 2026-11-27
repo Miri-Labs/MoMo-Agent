@@ -227,6 +227,10 @@ public struct SourceTextSpan: Decodable, Sendable, Identifiable, Equatable {
     public let recordedAt: Double?
     public let text: String?
     public let citationUrl: String?
+    public let speaker: String?
+    public let isOwner: Bool?
+    public let clusterKey: String?
+    public let voiceProfileId: String?
 }
 public struct SourceTextPage: Decodable, Sendable {
     public let sourceRevision: String

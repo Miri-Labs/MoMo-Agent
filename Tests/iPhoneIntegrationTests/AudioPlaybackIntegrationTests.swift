@@ -460,7 +460,7 @@ final class AudioPlaybackIntegrationTests: XCTestCase {
         let ticket = try XCTUnwrap(claimed)
         let audio = try AVAudioFile(forReading: ticket.audioURL)
         XCTAssertGreaterThan(Double(audio.length) / audio.processingFormat.sampleRate, 3)
-        XCTAssertEqual(try ContentHash.sha256(fileAt: ticket.audioURL), PhoneTranscriptionFixture.officialWAVSHA256)
+        XCTAssertEqual(try ContentHash.sha256(fileAt: ticket.audioURL), ticket.manifest.audioSHA256)
         let document = try await archive.commitTranscript(ticket: ticket, spans: [
             TranscriptSpan(chunkID: ticket.chunkID, frames: frames ?? ticket.manifest.frames,
                            text: "回放测试夹具，不代表自动转写结果。")

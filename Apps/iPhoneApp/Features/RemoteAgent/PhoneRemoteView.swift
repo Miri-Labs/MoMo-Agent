@@ -1,7 +1,6 @@
 import SwiftUI
 import MoMoAgentClient
 import MoMoArchive
-import MoMoSpeech
 
 struct PhoneRemoteView: View {
     let agent: PhoneRemoteAgent
@@ -10,7 +9,7 @@ struct PhoneRemoteView: View {
     var requestWatchStatus: (() -> Void)?
     let openLibrary: () -> Void
     var openMemory: () -> Void = {}
-    var speech: SpeechEngine? = nil
+    var dictate: (@Sendable ([Float]) async throws -> String)? = nil
     var stopPlayback: () async -> Void = {}
     var chatIsVisible = true
     var chatIsSelected = true
@@ -30,7 +29,7 @@ struct PhoneRemoteView: View {
                 RemoteConversationView(store: store, agent: agent, watchStatus: watchStatus,
                     requestWatchStatus: requestWatchStatus, openLibrary: openLibrary, reconnect: { reconnecting = true },
                     openDesktop: { showingDesktop = true }, openNotebook: openMemory,
-                    speech: speech, stopPlayback: stopPlayback,
+                    dictate: dictate, stopPlayback: stopPlayback,
                     chatIsVisible: chatIsVisible && !showingDesktop && !showingTasks && !reconnecting, chatIsSelected: chatIsSelected)
             } else {
                 VStack(spacing: 24) {
@@ -152,7 +151,7 @@ private struct RemoteConversationView: View {
     let reconnect: () -> Void
     let openDesktop: () -> Void
     let openNotebook: () -> Void
-    let speech: SpeechEngine?
+    let dictate: (@Sendable ([Float]) async throws -> String)?
     let stopPlayback: () async -> Void
     let chatIsVisible: Bool
     let chatIsSelected: Bool
@@ -278,7 +277,7 @@ private struct RemoteConversationView: View {
                            prompt: "发消息给 MoMo",
                            onCompose: { composeRevision += 1 },
                            onPreviewAttachment: { previewAttachment = $0 },
-                           onError: { sendFailure = $0 }, speech: speech, stopPlayback: stopPlayback,
+                           onError: { sendFailure = $0 }, dictate: dictate, stopPlayback: stopPlayback,
                            voiceInputEnabled: chatIsVisible && previewAttachment == nil) {
                 do { try store.enqueue(); sendFailure = nil; Task { await store.refresh(userInitiated: true) } }
                 catch { sendFailure = error.localizedDescription }

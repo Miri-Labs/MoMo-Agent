@@ -14,10 +14,7 @@ private struct TimelineDestination: Hashable {
 struct LibraryView: View {
     @Bindable var model: LibraryModel
     let playback: AudioPlaybackController
-    let transcription: TranscriptionSnapshot?
-    var modelStatus: LocalSpeechModelStatus? = nil
-    let speechFailure: String?
-    let batches: [TranscriptionBatch]
+    var uploader: AudioUploadCoordinator? = nil
     let delete: (UUID) async throws -> Void
     let refresh: () async -> Void
     var onAppearRefresh: (() async -> Void)? = nil
@@ -25,16 +22,10 @@ struct LibraryView: View {
     let discuss: (SourceReference) -> Void
     var illustrations: LifeIllustrationStore? = nil
     var openSettings: (() -> Void)? = nil
-    var retryTranscription: ((UUID, Int64) async throws -> Void)? = nil
     var discussSources: (([SourceReference], TimelineWindow) -> Void)? = nil
-    var retryTimeline: ((TimelineRetryRequest) async throws -> Void)? = nil
-    var continueInBackground: (() async throws -> Void)? = nil
-    var hasBackgroundContinuation = false
     var requestWatchStatus: (() -> Void)? = nil
     var onSpeakersChanged: (() async -> Void)? = nil
     var resolveFiles: ((RecordingFileIssue, RecordingFileRecoveryAction) async throws -> Void)? = nil
-    @State private var requestingContinuation = false
-    @State private var continuationFailure: String?
     @State private var resolvingDayFiles = false
     @State private var fileResolutionFailure: String?
     @State private var query = ""
@@ -63,6 +54,9 @@ struct LibraryView: View {
             if !searching, !selectedDayFileIssues.isEmpty {
                 fileIssueBanner(selectedDayFileIssues).padding(.horizontal, 24)
             }
+            if !searching, let uploader, shouldShowMacRelayBanner(uploader) {
+                macRelayBanner(uploader).padding(.horizontal, 24)
+            }
             if !searching, let progress = timeline.processingProgress[timeline.selectedDay], progress.received > 0,
                progress.processed == nil || (progress.remaining ?? 0) >= 0.01 || progress.awaitingSync > 0 {
                 processingProgress(progress).padding(.horizontal, 24)
@@ -84,8 +78,7 @@ struct LibraryView: View {
         }
         .navigationDestination(item: $selectedWindow) { destination in
             TimelineDetailView(id: destination.windowID, library: model, playback: playback,
-                transcription: transcription, speechFailure: speechFailure,
-                retryTimeline: retryTimeline, canDiscuss: canDiscuss, discuss: { sources, window in
+                canDiscuss: canDiscuss, discuss: { sources, window in
                     if let discussSources { discussSources(sources, window) }
                     else if let first = sources.first { discuss(first) }
                 }, initialMarkID: destination.markID, initialSpanID: destination.spanID, onSpeakersChanged: onSpeakersChanged,
@@ -94,7 +87,6 @@ struct LibraryView: View {
         }
         .navigationDestination(item: $recordingID) { id in
             RecordingDetailView(sessionID: id, library: model, playback: playback,
-                transcription: transcription, retryTranscription: retryTranscription,
                 delete: delete, canDiscuss: canDiscuss, discuss: discuss,
                 onSpeakersChanged: onSpeakersChanged, resolveFiles: resolveFiles,
                 requestWatchStatus: requestWatchStatus)
@@ -247,19 +239,53 @@ struct LibraryView: View {
         .foregroundStyle(MoMoPalette.ink).padding(.horizontal, 16)
     }
 
-    private var isActivelyProcessingTranscription: Bool {
-        if TimelinePresentation.resourceExplanation(transcription) != nil { return false }
-        if case .preparing = modelStatus { return true }
-        guard let transcription else { return false }
-        return transcription.nativeInFlight
-            || transcription.phase == .preparing
-            || transcription.phase == .transcribing
+    private func shouldShowMacRelayBanner(_ uploader: AudioUploadCoordinator) -> Bool {
+        let macQueue = (uploader.macStatus?.queue.pending ?? 0) + (uploader.macStatus?.queue.processing ?? 0)
+        return uploader.pendingCount > 0 || uploader.failedCount > 0 || uploader.isUploading || macQueue > 0
+    }
+
+    private func macRelayBanner(_ uploader: AudioUploadCoordinator) -> some View {
+        let macQueue = (uploader.macStatus?.queue.pending ?? 0) + (uploader.macStatus?.queue.processing ?? 0)
+        return HStack(spacing: 10) {
+            if uploader.isUploading || macQueue > 0 {
+                ProgressView().controlSize(.mini).accessibilityHidden(true)
+            } else {
+                Image(systemName: "arrow.triangle.2.circlepath.circle")
+                    .foregroundStyle(MoMoPalette.muted)
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                if uploader.isUploading {
+                    Text("正在同步原音到 Mac（待传 \(uploader.pendingCount) 段）…")
+                        .phoneText(.metadata).monospacedDigit()
+                } else if macQueue > 0 {
+                    Text("Mac 正在 Core ML 转录（队列 \(macQueue) 段）…")
+                        .phoneText(.metadata).monospacedDigit()
+                } else if uploader.pendingCount > 0 || uploader.failedCount > 0 {
+                    Text("有 \(uploader.pendingCount + uploader.failedCount) 段录音等待同步到 Mac 转录")
+                        .phoneText(.metadata).monospacedDigit()
+                }
+                if let err = uploader.lastError {
+                    Text(err).phoneText(.caption).foregroundStyle(MoMoPalette.muted).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            if !uploader.isUploading && (uploader.pendingCount > 0 || uploader.failedCount > 0) {
+                Button("同步") {
+                    uploader.requestUpload()
+                }
+                .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small)
+                .tint(MoMoPalette.ink)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(MoMoPalette.surface, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func processingProgress(_ progress: TimelineDayProgress) -> some View {
         let isToday = timeline.selectedDay == TimelineDay(Date())
         let remaining = progress.remaining ?? progress.received
-        let active = remaining >= 0.01 && isActivelyProcessingTranscription
+        let active = remaining >= 0.01 && (uploader?.isUploading == true || ((uploader?.macStatus?.queue.processing ?? 0) > 0))
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
                 HStack(spacing: 7) {
@@ -273,7 +299,7 @@ struct LibraryView: View {
                             .accessibilityHidden(true)
                     }
                     if !isToday, let processed = progress.processed, remaining >= 0.01 {
-                        Text(active ? "正在整理" : "整理进度")
+                        Text(active ? "Mac 正在转录" : "转录进度")
                         Text("\(Int(min(1, processed / progress.received) * 100))%")
                             .foregroundStyle(MoMoPalette.muted)
                     } else {
@@ -284,44 +310,16 @@ struct LibraryView: View {
                 .phoneText(.metadata).monospacedDigit()
                 .foregroundStyle(MoMoPalette.ink)
                 .accessibilityElement(children: .combine)
-                .accessibilityHint(processingNotice ?? "")
                 Spacer(minLength: 0)
-                if remaining >= 0.01, let continueInBackground {
-                    Button {
-                        requestingContinuation = true
-                        continuationFailure = nil
-                        Task {
-                            defer { requestingContinuation = false }
-                            do { try await continueInBackground() }
-                            catch let error as BackgroundTranscriptionError { continuationFailure = error.localizedDescription }
-                            catch is TranscriptionExecutionError { continuationFailure = String(localized: "当前整理任务正在切换，请稍后再试。") }
-                            catch { continuationFailure = String(localized: "暂未能申请后台整理，已有原音和进度会保留。") }
-                        }
-                    } label: {
-                        Text(requestingContinuation ? String(localized: "正在申请…") : hasBackgroundContinuation ? String(localized: "已申请") : String(localized: "后台整理"))
-                            .phoneText(.metadata)
-                    }
-                    .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small)
-                    .tint(MoMoPalette.ink)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                    .disabled(requestingContinuation || hasBackgroundContinuation)
-                    .accessibilityLabel(requestingContinuation ? String(localized: "正在申请…") : hasBackgroundContinuation ? String(localized: "后台整理已申请") : String(localized: "后台继续整理"))
-                    .accessibilityIdentifier("timeline.continueInBackground")
-                }
             }
             if !isToday, let processed = progress.processed, remaining >= 0.01 {
                 ProgressView(value: processed, total: progress.received).tint(MoMoPalette.muted)
-                    .accessibilityLabel("录音整理进度")
+                    .accessibilityLabel("录音转录进度")
                     .accessibilityIdentifier("timeline.processingProgress")
             }
             if progress.awaitingSync > 0, remaining >= 0.01 {
-                Text("另有 \(TimelineDate.duration(progress.awaitingSync)) 原音待同步")
+                Text("另有 \(TimelineDate.duration(progress.awaitingSync)) 原音待从手表同步")
                     .phoneText(.caption).foregroundStyle(MoMoPalette.muted)
-            }
-            if let continuationFailure {
-                Text(continuationFailure).phoneText(.caption).foregroundStyle(MoMoPalette.failure)
-                    .accessibilityIdentifier("timeline.continueInBackground.status")
             }
         }.accessibilityElement(children: .contain)
     }
@@ -333,27 +331,13 @@ struct LibraryView: View {
         guard remaining >= 0.01 else {
             return Text("\(TimelineDate.duration(progress.awaitingSync))原音待同步")
         }
-        if TimelinePresentation.resourceExplanation(transcription) != nil {
-            return Text("整理已暂停")
+        if uploader?.isUploading == true {
+            return Text("正在上传到 Mac · \(TimelineDate.liveDuration(remaining))待转录")
         }
-        let isModelPreparing: Bool = {
-            if case .preparing = modelStatus { return true }
-            return false
-        }()
-        switch transcription?.phase {
-        case .paused: return Text("整理已暂停")
-        case .systemSuspended: return Text("后台已暂停 · \(TimelineDate.duration(remaining))待整理")
-        case .failed: return Text("整理暂未完成")
-        case .waitingForAudio: return Text("等待原音同步")
-        case .audioUnavailable: return Text("部分原音暂不可用")
-        case .preparing, .transcribing:
-            return Text("正在转写 · \(TimelineDate.liveDuration(remaining))待整理")
-        default:
-            if isModelPreparing || transcription?.nativeInFlight == true {
-                return Text("正在转写 · \(TimelineDate.liveDuration(remaining))待整理")
-            }
-            return Text("\(TimelineDate.duration(remaining))待整理")
+        if (uploader?.macStatus?.queue.processing ?? 0) > 0 {
+            return Text("Mac 正在转录 · \(TimelineDate.liveDuration(remaining))待完成")
         }
+        return Text("\(TimelineDate.duration(remaining))等待 Mac 转录")
     }
 
     private var selectedDayFileIssues: [RecordingFileIssue] {
@@ -414,27 +398,13 @@ struct LibraryView: View {
         .accessibilityIdentifier("timeline.fileIssues")
     }
 
-    private var processingNotice: String? {
-        if let explanation = TimelinePresentation.resourceExplanation(transcription) { return explanation }
-        return switch transcription?.phase {
-        case .idle, .preparing, .transcribing, .queued, nil: nil
-        case .paused: String(localized: "处理已暂停，已有进度已保存")
-        case .systemSuspended: String(localized: "系统已暂停后台处理，回到 App 后继续")
-        case .failed: String(localized: "处理未完成，已有文字和原音已保留")
-        case .waitingForAudio: String(localized: "正在等待缺失的原音或同步信息")
-        case .waitingForContext: String(localized: "最新片段等待后续音频，前面的内容会先整理")
-        case .waitingForRetry: String(localized: "部分片段稍后自动重试，其余录音已继续处理")
-        case .audioUnavailable: String(localized: "部分原音不可用，可用的录音已继续处理")
-        }
-    }
-
     private var dayPager: some View {
         GeometryReader { geometry in
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: 0) {
                     ForEach(timeline.days) { day in
                         TimelineDayPage(day: day, timeline: timeline, reading: readingStates.state(for: day),
-                            transcription: transcription, speechFailure: speechFailure, dateRange: dateRange,
+                            dateRange: dateRange,
                             illustrations: illustrations, dayIllustrations: illustrations(for: day),
                             refresh: refresh, open: { selectedWindow = $0 },
                             openIllustration: { selectedIllustration = $0 },
@@ -759,8 +729,6 @@ private struct TimelineDayPage: View {
     let day: TimelineDay
     let timeline: TimelineModel
     @Bindable var reading: TimelineDayReadingState
-    let transcription: TranscriptionSnapshot?
-    let speechFailure: String?
     let dateRange: TimelineDateRange
     let illustrations: LifeIllustrationStore?
     let dayIllustrations: [LifeIllustration]
@@ -793,7 +761,7 @@ private struct TimelineDayPage: View {
         VStack(alignment: .leading, spacing: 0) {
             Button { open(TimelineDestination(windowID: window.id)) } label: {
                 TimelineRow(window: window, summary: timeline.summary(for: window),
-                    status: TimelinePresentation.status(window, transcription: transcription, speechFailure: speechFailure),
+                    status: TimelinePresentation.status(window),
                     connected: window.id != windows.last?.id,
                     continuesFromPrevious: window.id != windows.first?.id,
                     includeUTCOffset: repeatedClockRanges.contains(window.id))

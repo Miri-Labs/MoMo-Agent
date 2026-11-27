@@ -64,7 +64,10 @@ struct PhoneRootView: View {
                         watchStatus: runtime.library.watchStatus, requestWatchStatus: runtime.requestWatchStatus,
                         openLibrary: { selectedTab = .transcripts },
                         openMemory: { selectedTab = .memory },
-                        speech: runtime.speech,
+                        dictate: runtime.remoteAgent.speechDataClient != nil ? { [weak agent = runtime.remoteAgent] samples in
+                            guard let agent else { throw ChatVoiceFailure.unavailable }
+                            return try await agent.dictateAudio(samples: samples)
+                        } : nil,
                         stopPlayback: { await runtime.playback.stop(deactivateImmediately: true) },
                         chatIsVisible: selectedTab == .chat && !showingSettings, chatIsSelected: selectedTab == .chat)
                         .recordingSourceLinks(archive: runtime.archive, playback: runtime.playback)
@@ -73,21 +76,13 @@ struct PhoneRootView: View {
             Tab(String(localized: "转录"), systemImage: "doc.text", value: .transcripts) {
                 NavigationStack {
                     LibraryView(model: runtime.library, playback: runtime.playback,
-                        transcription: runtime.transcriptionSnapshot,
-                        modelStatus: runtime.modelStatus,
-                        speechFailure: runtime.speechFailure,
-                        batches: runtime.activeBatches,
+                        uploader: runtime.uploader,
                         delete: { try await runtime.delete(sessionID: $0) },
                         refresh: { await runtime.refresh() },
                         onAppearRefresh: { await runtime.refreshLibraryOnAppear() },
                         canDiscuss: runtime.remoteAgent.store != nil,
                         discuss: { discuss([$0]) }, illustrations: runtime.lifeIllustrations, openSettings: { showingSettings = true },
-                        retryTranscription: { try await runtime.retryTranscription(sessionID: $0, expectedGeneration: $1) },
                         discussSources: { sources, window in discuss(sources, window: window) },
-                        retryTimeline: { try await runtime.retryTimeline($0) },
-                        continueInBackground: runtime.supportsTranscriptionContinuation
-                            ? { try await runtime.continueTranscriptionInBackground() } : nil,
-                        hasBackgroundContinuation: runtime.hasTranscriptionContinuation,
                         requestWatchStatus: runtime.requestWatchStatus,
                         onSpeakersChanged: { await runtime.didCommitTargetedSpeakerFeedback() },
                         resolveFiles: { try await runtime.resolveFiles($0, choosing: $1) })
@@ -125,14 +120,14 @@ struct PhoneRootView: View {
         }
         .tint(MoMoPalette.ink)
         .phonePageSurface()
-        // Status surfaces switch between the watch and the earphone without threading it through every view.
         .environment(runtime.earphone)
+        .environment(runtime.remoteAgent)
+        .environment(runtime.uploader)
         .sheet(isPresented: $showingSettings) {
             NavigationStack {
                 SettingsView(archive: runtime.archive, remoteAgent: runtime.remoteAgent,
-                    modelDirectory: runtime.modelDirectory, modelStatus: runtime.modelStatus,
+                    uploader: runtime.uploader,
                     speechSettings: runtime.speechSettings, illustrations: runtime.lifeIllustrations, earphone: runtime.earphone,
-                    speakerRematch: runtime.speakerRematch,
                     onSpeakersChanged: { await runtime.didMutateSpeakers() })
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showingSettings = false } } }
             }

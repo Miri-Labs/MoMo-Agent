@@ -4,10 +4,8 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER).transcription.processing</string>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).context.delivery</string>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).chat.refresh</string>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER).transcription.continued.*</string>
 	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
@@ -68,7 +66,7 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>在你启用地点上下文后记录手机到访的位置、精度和时间。相关片段会发送到你选用的 AI 服务，与日历和录音一起帮助 MoMo 理解生活事件。</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>选择蓝牙耳机作为录音设备后，持续录制耳机麦克风的声音，在手机上转写；点击语音输入时录制声音并识别为可编辑文字。</string>
+	<string>选择蓝牙耳机作为录音设备后持续录制音频并同步至 Mac 转录；录入声纹或点击语音输入时录制声音。</string>
 	<key>NSMotionUsageDescription</key>
 	<string>开启后，读取近 24 小时步行、跑步、骑行或乘车等出行状态并同步到配对的 Mac，帮助 MoMo 结合你的出行处境安排提醒与事项。</string>
 	<key>NSRemindersFullAccessUsageDescription</key>

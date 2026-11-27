@@ -168,6 +168,22 @@ final class ArchiveDatabase: @unchecked Sendable {
             try execute("CREATE TABLE IF NOT EXISTS voice_match_cutoffs(person_id TEXT PRIMARY KEY REFERENCES voice_profiles(id) ON DELETE CASCADE,recorded_from REAL NOT NULL)")
             try execute("CREATE TABLE IF NOT EXISTS speaker_delivery_receipts(id TEXT PRIMARY KEY)")
             try execute("CREATE TABLE IF NOT EXISTS waveform_preparations(chunk_id TEXT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,manifest_hash TEXT NOT NULL,generation INTEGER NOT NULL,cache_generation TEXT NOT NULL)")
+            try execute("CREATE TABLE IF NOT EXISTS mac_audio_uploads(chunk_id TEXT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,upload_state TEXT NOT NULL DEFAULT 'pending',remote_sha256 TEXT,remote_source_id TEXT,uploaded_at REAL,last_error TEXT,retry_count INTEGER NOT NULL DEFAULT 0,next_retry_at REAL)")
+            let uploadColumns = Set(try rows("PRAGMA table_info(mac_audio_uploads)").compactMap { $0.string(1) })
+            var migratedUploadIndex = false
+            if !uploadColumns.contains("retry_count") {
+                try execute("ALTER TABLE mac_audio_uploads ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0")
+                migratedUploadIndex = true
+            }
+            if !uploadColumns.contains("next_retry_at") {
+                try execute("ALTER TABLE mac_audio_uploads ADD COLUMN next_retry_at REAL")
+                migratedUploadIndex = true
+            }
+            if migratedUploadIndex {
+                try execute("DROP INDEX IF EXISTS mac_audio_uploads_state")
+            }
+            try execute("CREATE INDEX IF NOT EXISTS mac_audio_uploads_state ON mac_audio_uploads(upload_state, next_retry_at, chunk_id)")
+            try execute("CREATE TABLE IF NOT EXISTS mac_synced_source_revisions(source_id TEXT PRIMARY KEY,revision TEXT NOT NULL,updated_at REAL NOT NULL)")
             // Overlap joining reads one durable neighbor, not every completed window in a long recording.
             try execute("CREATE INDEX IF NOT EXISTS analysis_windows_core_ends ON analysis_windows(configuration_hash,epoch_id,json_extract(CAST(descriptor AS TEXT),'$.coreFrames.start')+json_extract(CAST(descriptor AS TEXT),'$.coreFrames.count')) WHERE state='complete'")
             try ensurePerformanceSchema()
