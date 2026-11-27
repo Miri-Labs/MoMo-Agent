@@ -102,7 +102,13 @@ final class AudioUploadCoordinator {
 
     func foreground() {
         batchEndpointSupported = nil
-        requestUpload()
+        consecutiveTransportOutages = 0
+        Task { [weak self] in
+            guard let self else { return }
+            try? await self.archive.resetTransientMacAudioUploadBackoff()
+            await self.refreshCounts()
+            self.requestUpload()
+        }
         guard pollTask == nil else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -151,6 +157,18 @@ final class AudioUploadCoordinator {
             if self.pendingCount > 0 || self.failedCount > 0 {
                 self.requestUpload()
             }
+        }
+    }
+
+    func retryNow() {
+        lastError = nil
+        consecutiveTransportOutages = 0
+        batchEndpointSupported = nil
+        Task { [weak self] in
+            guard let self else { return }
+            try? await self.archive.resetTransientMacAudioUploadBackoff()
+            await self.refreshCounts()
+            self.requestUpload()
         }
     }
 

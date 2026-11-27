@@ -58,7 +58,7 @@ struct LibraryView: View {
                 macRelayBanner(uploader).padding(.horizontal, 24)
             }
             if !searching, let progress = timeline.processingProgress[timeline.selectedDay], progress.received > 0,
-               progress.processed == nil || (progress.remaining ?? 0) >= 0.01 || progress.awaitingSync > 0 {
+               (progress.remaining ?? 0) >= 0.01 || progress.awaitingSync > 0 {
                 processingProgress(progress).padding(.horizontal, 24)
             }
             if searching { searchField.padding(.horizontal, 24) }
@@ -246,8 +246,10 @@ struct LibraryView: View {
 
     private func macRelayBanner(_ uploader: AudioUploadCoordinator) -> some View {
         let macQueue = (uploader.macStatus?.queue.pending ?? 0) + (uploader.macStatus?.queue.processing ?? 0)
+        let pendingTotal = uploader.pendingCount + uploader.failedCount
+        let activelySyncing = uploader.isUploading || (pendingTotal > 0 && uploader.lastError == nil)
         return HStack(spacing: 10) {
-            if uploader.isUploading || macQueue > 0 {
+            if activelySyncing || macQueue > 0 {
                 ProgressView().controlSize(.mini).accessibilityHidden(true)
             } else {
                 Image(systemName: "arrow.triangle.2.circlepath.circle")
@@ -255,14 +257,14 @@ struct LibraryView: View {
                     .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: 2) {
-                if uploader.isUploading {
-                    Text("正在同步原音到 Mac（待传 \(uploader.pendingCount + uploader.failedCount) 段）…")
+                if activelySyncing {
+                    Text("正在自动同步到 Mac（待传 \(pendingTotal) 段）…")
                         .phoneText(.metadata).monospacedDigit()
                 } else if macQueue > 0 {
-                    Text("Mac 正在 Core ML 转录（队列 \(macQueue) 段）…")
+                    Text("Mac 正在转录（队列 \(macQueue) 段）…")
                         .phoneText(.metadata).monospacedDigit()
-                } else if uploader.pendingCount > 0 || uploader.failedCount > 0 {
-                    Text("有 \(uploader.pendingCount + uploader.failedCount) 段录音等待同步到 Mac 转录")
+                } else if pendingTotal > 0 {
+                    Text("等待自动同步到 Mac（\(pendingTotal) 段）")
                         .phoneText(.metadata).monospacedDigit()
                 }
                 if let err = uploader.lastError {
@@ -270,9 +272,9 @@ struct LibraryView: View {
                 }
             }
             Spacer(minLength: 0)
-            if !uploader.isUploading && (uploader.pendingCount > 0 || uploader.failedCount > 0) {
-                Button("同步") {
-                    uploader.requestUpload()
+            if !uploader.isUploading && pendingTotal > 0 && uploader.lastError != nil {
+                Button("重试") {
+                    uploader.retryNow()
                 }
                 .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small)
                 .tint(MoMoPalette.ink)
