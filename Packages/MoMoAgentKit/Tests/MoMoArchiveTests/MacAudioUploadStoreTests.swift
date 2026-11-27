@@ -159,24 +159,37 @@ struct MacAudioUploadStoreTests {
         #expect(try await reopened.macSyncedSourceRevisions().isEmpty)
     }
 
-    /// Untranscribed live recordings MUST jump ahead of already-transcribed historical backfill chunks.
-    @Test func untranscribedChunksPrioritizedAheadOfAlreadyTranscribedBackfill() async throws {
+    /// Legacy already-transcribed historical chunks (complete with no upload row) MUST NOT be
+    /// automatically backfilled on upgrade, while untranscribed chunks and explicitly re-queued chunks upload.
+    @Test func legacyAlreadyTranscribedChunksAreNotAutoBackfilled() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let store = try fixture.store()
         let t0 = Date(timeIntervalSince1970: 1_790_000_000)
 
-        let olderUntranscribed = UUID()
-        let newerAlreadyTranscribed = UUID()
-        let envOlder = try fixture.envelope(chunkID: olderUntranscribed, startFrame: 0, frameCount: 16_000, sequence: 0, sealedAt: t0)
-        let envNewer = try fixture.envelope(chunkID: newerAlreadyTranscribed, startFrame: 16_000, frameCount: 16_000, sequence: 1, sealedAt: t0.addingTimeInterval(60))
-        _ = try await store.commitReceivedChunk(try fixture.deliver(envOlder, to: store))
-        _ = try await store.commitReceivedChunk(try fixture.deliver(envNewer, to: store))
+        let untranscribed = UUID()
+        let legacyComplete = UUID()
+        let legacySilent = UUID()
+        let envNew = try fixture.envelope(chunkID: untranscribed, startFrame: 0, frameCount: 16_000, sequence: 0, sealedAt: t0)
+        let envDone = try fixture.envelope(chunkID: legacyComplete, startFrame: 16_000, frameCount: 16_000, sequence: 1, sealedAt: t0.addingTimeInterval(60))
+        let envSilent = try fixture.envelope(chunkID: legacySilent, startFrame: 32_000, frameCount: 16_000, sequence: 2, sealedAt: t0.addingTimeInterval(120))
+        for env in [envNew, envDone, envSilent] {
+            _ = try await store.commitReceivedChunk(try fixture.deliver(env, to: store))
+        }
 
-        // Mark newer chunk's legacy transcription job as already complete while older chunk is untranscribed.
-        _ = try await store.markMacAudioChunksStatus([newerAlreadyTranscribed: "done"])
+        // Simulate legacy on-device ASR having already settled envDone & envSilent before upgrading.
+        _ = try await store.markMacAudioChunksStatus([legacyComplete: "done", legacySilent: "silent"])
 
         let ordered = try await store.pendingMacAudioUploads(limit: 8)
-        #expect(ordered.map(\.chunkID) == [olderUntranscribed, newerAlreadyTranscribed])
+        #expect(ordered.map(\.chunkID) == [untranscribed])
+        let counts = try await store.macAudioUploadCounts()
+        #expect(counts.pending == 1)
+
+        // Explicitly re-queuing a previously uploaded chunk (e.g. after Mac DB reset) still uploads even if complete.
+        try await store.markMacAudioChunkUploaded(chunkID: legacyComplete, remoteSHA256: envDone.manifest.audioSHA256, remoteSourceID: "lib/sess")
+        let requeued = try await store.requeueMissingRemoteMacAudioChunks([legacyComplete])
+        #expect(requeued == 1)
+        let afterRequeue = try await store.pendingMacAudioUploads(limit: 8)
+        #expect(afterRequeue.map(\.chunkID) == [untranscribed, legacyComplete])
     }
 }

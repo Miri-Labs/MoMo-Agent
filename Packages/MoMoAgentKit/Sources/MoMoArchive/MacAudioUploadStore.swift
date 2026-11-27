@@ -62,9 +62,11 @@ public struct MacRemoteTranscriptSpanInput: Sendable, Equatable {
 }
 
 extension ArchiveStore {
-    /// Returns locally stored audio chunks that are ready to upload to Mac (excluding already uploaded,
-    /// permanently failed, and transiently backed-off chunks whose `next_retry_at > now`).
-    /// Preserves each chunk's immutable `manifest.sequence` so out-of-order Watch delivery never collides.
+    /// Returns locally stored audio chunks that need to be uploaded to Mac:
+    /// - All chunks that have not yet been transcribed (`j.state IS NULL OR j.state != 'complete'`)
+    /// - Any chunk explicitly queued/retrying in `mac_audio_uploads` (`pending` / `failed`)
+    /// Skips legacy already-transcribed historical chunks (`j.state = 'complete'` with no upload row)
+    /// so upgrading from on-device ASR never backfills tens of thousands of settled/silent old segments.
     public func pendingMacAudioUploads(limit: Int = 16, now: Date = Date()) throws -> [PendingMacAudioChunk] {
         guard (1...128).contains(limit) else { throw ArchiveError.invalidQuery }
         let rows = try database.rows("""
@@ -75,7 +77,10 @@ extension ArchiveStore {
             LEFT JOIN transcription_jobs j ON j.chunk_id = c.id
             WHERE s.deleted = 0
               AND c.retention = 'present'
-              AND (u.upload_state IS NULL OR u.upload_state IN ('pending', 'failed'))
+              AND (
+                u.upload_state IN ('pending', 'failed')
+                OR (u.upload_state IS NULL AND (j.state IS NULL OR j.state != 'complete'))
+              )
               AND (u.next_retry_at IS NULL OR u.next_retry_at <= ?)
             ORDER BY CASE WHEN j.state IS NULL OR j.state != 'complete' THEN 0 ELSE 1 END ASC,
                      c.sealed_at DESC,
@@ -301,8 +306,12 @@ extension ArchiveStore {
             SELECT COUNT(*) FROM chunks c
             JOIN sessions s ON s.id = c.session_id
             LEFT JOIN mac_audio_uploads u ON u.chunk_id = c.id
+            LEFT JOIN transcription_jobs j ON j.chunk_id = c.id
             WHERE c.retention = 'present' AND s.deleted = 0
-              AND (u.upload_state IS NULL OR u.upload_state = 'pending')
+              AND (
+                u.upload_state = 'pending'
+                OR (u.upload_state IS NULL AND (j.state IS NULL OR j.state != 'complete'))
+              )
             """).first?.integer(0) ?? 0
         let uploaded = try database.rows(
             "SELECT COUNT(*) FROM mac_audio_uploads WHERE upload_state = 'uploaded'"
