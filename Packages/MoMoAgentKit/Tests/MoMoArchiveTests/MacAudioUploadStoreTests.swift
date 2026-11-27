@@ -192,4 +192,54 @@ struct MacAudioUploadStoreTests {
         let afterRequeue = try await store.pendingMacAudioUploads(limit: 8)
         #expect(afterRequeue.map(\.chunkID) == [untranscribed, legacyComplete])
     }
+
+    /// Reclaiming locally uploaded Mac audio frees older settled chunks while protecting recent,
+    /// unuploaded, or unsettled chunks, and keeps playback timelines playable via Mac streaming.
+    @Test func pruneUploadedMacAudioReclaimsOldSettledChunksAndPreservesRemotePlaybackAvailability() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let store = try fixture.store()
+        let now = Date(timeIntervalSince1970: 1_795_000_000)
+
+        let oldUploadedSettled = UUID()
+        let recentUploadedSettled = UUID()
+        let oldUploadedUnsettled = UUID()
+        let oldUnuploadedSettled = UUID()
+
+        let envs = [
+            try fixture.envelope(chunkID: oldUploadedSettled, startFrame: 0, frameCount: 16_000, sequence: 0, sealedAt: now.addingTimeInterval(-7200)),
+            try fixture.envelope(chunkID: recentUploadedSettled, startFrame: 16_000, frameCount: 16_000, sequence: 1, sealedAt: now.addingTimeInterval(-600)),
+            try fixture.envelope(chunkID: oldUploadedUnsettled, startFrame: 32_000, frameCount: 16_000, sequence: 2, sealedAt: now.addingTimeInterval(-7200)),
+            try fixture.envelope(chunkID: oldUnuploadedSettled, startFrame: 48_000, frameCount: 16_000, sequence: 3, sealedAt: now.addingTimeInterval(-7200)),
+        ]
+        for env in envs {
+            guard case .accepted(let receipt) = try await store.commitReceivedChunk(try fixture.deliver(env, to: store)) else {
+                Issue.record("Expected accepted chunk")
+                return
+            }
+            try await store.applyReceipt(ReceiptApplied(receipt: receipt))
+        }
+        try await store.markMacAudioChunkUploaded(chunkID: oldUploadedSettled, remoteSHA256: envs[0].manifest.audioSHA256, remoteSourceID: "lib/s")
+        try await store.markMacAudioChunkUploaded(chunkID: recentUploadedSettled, remoteSHA256: envs[1].manifest.audioSHA256, remoteSourceID: "lib/s")
+        try await store.markMacAudioChunkUploaded(chunkID: oldUploadedUnsettled, remoteSHA256: envs[2].manifest.audioSHA256, remoteSourceID: "lib/s")
+        _ = try await store.markMacAudioChunksStatus([
+            oldUploadedSettled: "done",
+            recentUploadedSettled: "done",
+            oldUnuploadedSettled: "done",
+        ])
+
+        let reclaimed = try await store.pruneUploadedMacAudio(keepRecentSeconds: 3600, maxUploadedLocalBytes: 128 * 1024 * 1024, limit: 16, now: now)
+        #expect(reclaimed == [oldUploadedSettled], "Only old + uploaded + settled chunk should be reclaimed locally")
+
+        // Recording remains playable via Mac streaming even though oldUploadedSettled was removed from local disk!
+        let summary = try await store.recordingSummary(sessionID: fixture.sessionID)
+        #expect(summary.audioState == .available)
+        let timeline = try await store.playbackTimeline(sessionID: fixture.sessionID, expectedGeneration: 0)
+        let reclaimedPart = try #require(timeline.parts.first { $0.manifest.chunkID == oldUploadedSettled })
+        #expect(reclaimedPart.audioAvailable == true)
+        #expect(reclaimedPart.remoteMacAvailable == true)
+        let localPart = try #require(timeline.parts.first { $0.manifest.chunkID == recentUploadedSettled })
+        #expect(localPart.audioAvailable == true)
+        #expect(localPart.remoteMacAvailable == false)
+    }
 }

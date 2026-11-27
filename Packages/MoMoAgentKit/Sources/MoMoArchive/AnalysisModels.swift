@@ -106,4 +106,9 @@ public struct TranscriptAudioRange: Codable, Equatable, Sendable {
 public struct AudioPlaybackPart: Sendable {
     public let lease: AudioLease
     public let frames: FrameRange
+
+    public init(lease: AudioLease, frames: FrameRange) {
+        self.lease = lease
+        self.frames = frames
+    }
 }

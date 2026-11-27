@@ -7,6 +7,22 @@ public struct ArchivedPlaybackPart: Sendable, Equatable {
     public let manifestSHA256: String
     public let frames: FrameRange
     public let audioAvailable: Bool
+    /// True when local audio was reclaimed after verified Mac upload and can be streamed from Mac.
+    public let remoteMacAvailable: Bool
+
+    public init(
+        manifest: ChunkManifest,
+        manifestSHA256: String,
+        frames: FrameRange,
+        audioAvailable: Bool,
+        remoteMacAvailable: Bool = false
+    ) {
+        self.manifest = manifest
+        self.manifestSHA256 = manifestSHA256
+        self.frames = frames
+        self.audioAvailable = audioAvailable
+        self.remoteMacAvailable = remoteMacAvailable
+    }
 }
 
 public struct ArchivedPlaybackTimeline: Sendable {
@@ -77,7 +93,7 @@ extension ArchiveStore {
         try Task.checkCancellation()
         try validatePlaybackTimeline(timeline)
         var result: [UUID: PlaybackPreviewFileStamp] = [:]
-        for part in timeline.parts where part.audioAvailable && result[part.manifest.chunkID] == nil {
+        for part in timeline.parts where part.audioAvailable && !part.remoteMacAvailable && result[part.manifest.chunkID] == nil {
             result[part.manifest.chunkID] = try readPlaybackPreviewFileStamp(part)
             // No file handle or SQL statement survives this yield; reception and playback can run.
             await Task.yield()
@@ -123,17 +139,20 @@ extension ArchiveStore {
             try validatePlaybackIdentity(sessionID: source.sessionID, generation: source.generation, source: nil)
             // A short timeline selection must not decode every manifest in a day-long recording.
             let rows = try database.rows("""
-                SELECT manifest,manifest_hash,retention,relative_path FROM chunks
-                WHERE session_id=? AND epoch_id=?
-                  AND start_frame < ?
-                  AND end_frame > ?
-                ORDER BY start_frame,id
+                SELECT c.manifest,c.manifest_hash,c.retention,c.relative_path,COALESCE(u.upload_state,'')
+                FROM chunks c
+                LEFT JOIN mac_audio_uploads u ON u.chunk_id=c.id
+                WHERE c.session_id=? AND c.epoch_id=?
+                  AND c.start_frame < ?
+                  AND c.end_frame > ?
+                ORDER BY c.start_frame,c.id
                 """, [.text(source.sessionID.uuidString), .text(source.epochID.uuidString),
                        .integer(source.frames.end), .integer(source.frames.start)])
             let parts = try playbackParts(rows).map { part -> ArchivedPlaybackPart in
                 let start = max(part.frames.start, source.frames.start), end = min(part.frames.end, source.frames.end)
                 return ArchivedPlaybackPart(manifest: part.manifest, manifestSHA256: part.manifestSHA256,
-                    frames: try FrameRange(start: start, count: end - start), audioAvailable: part.audioAvailable)
+                    frames: try FrameRange(start: start, count: end - start), audioAvailable: part.audioAvailable,
+                    remoteMacAvailable: part.remoteMacAvailable)
             }
             return ArchivedPlaybackTimeline(sessionID: source.sessionID, generation: source.generation,
                 source: nil, parts: parts, windowSource: source)
@@ -161,13 +180,19 @@ extension ArchiveStore {
         let rows: [SQLRow]
         if let ranges {
             rows = try Set(ranges.map(\.chunkID)).flatMap { id in
-                try database.rows("SELECT manifest,manifest_hash,retention,relative_path FROM chunks WHERE id=? AND session_id=?",
-                    [.text(id.uuidString), .text(sessionID.uuidString)])
+                try database.rows("""
+                    SELECT c.manifest,c.manifest_hash,c.retention,c.relative_path,COALESCE(u.upload_state,'')
+                    FROM chunks c
+                    LEFT JOIN mac_audio_uploads u ON u.chunk_id=c.id
+                    WHERE c.id=? AND c.session_id=?
+                    """, [.text(id.uuidString), .text(sessionID.uuidString)])
             }
         } else {
           rows = try database.rows("""
-            SELECT c.manifest,c.manifest_hash,c.retention,c.relative_path FROM chunks c
-            JOIN epochs e ON e.id=c.epoch_id WHERE c.session_id=?
+            SELECT c.manifest,c.manifest_hash,c.retention,c.relative_path,COALESCE(u.upload_state,'') FROM chunks c
+            JOIN epochs e ON e.id=c.epoch_id
+            LEFT JOIN mac_audio_uploads u ON u.chunk_id=c.id
+            WHERE c.session_id=?
             ORDER BY e.wall_clock_anchor,c.epoch_id,c.start_frame,c.id
             """, [.text(sessionID.uuidString)])
         }
@@ -180,7 +205,8 @@ extension ArchiveStore {
                     throw ArchiveError.invalidTranscript
                 }
                 return ArchivedPlaybackPart(manifest: chunk.manifest, manifestSHA256: chunk.manifestSHA256,
-                                            frames: range.frames, audioAvailable: chunk.audioAvailable)
+                                            frames: range.frames, audioAvailable: chunk.audioAvailable,
+                                            remoteMacAvailable: chunk.remoteMacAvailable)
             }
         } else { parts = chunks }
         return ArchivedPlaybackTimeline(sessionID: sessionID, generation: expectedGeneration, source: source, parts: parts)
@@ -190,10 +216,12 @@ extension ArchiveStore {
         try rows.map { row in
             let envelope = try ManifestEnvelope(manifestData: row.requireData(0), manifestSHA256: row.requireString(1))
             let relativePath = try row.requireString(3)
-            let available = row.string(2) == "present"
+            let localAvailable = row.string(2) == "present"
                 && files.fileExists(atPath: rootURL.appendingPathComponent(relativePath).path)
+            let remoteAvailable = !localAvailable && row.string(4) == "uploaded"
             return ArchivedPlaybackPart(manifest: envelope.manifest, manifestSHA256: envelope.manifestSHA256,
-                                        frames: envelope.manifest.frames, audioAvailable: available)
+                                        frames: envelope.manifest.frames, audioAvailable: localAvailable || remoteAvailable,
+                                        remoteMacAvailable: remoteAvailable)
         }
     }
 

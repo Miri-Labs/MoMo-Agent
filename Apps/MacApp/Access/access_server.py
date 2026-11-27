@@ -292,7 +292,8 @@ def public_application(service):
               '/momo/v1/conversation/messages', '/momo/v1/conversation/runs', '/momo/v1/conversation/read',
               '/momo/v1/conversation/works',
               '/context/v1/audio/chunks', '/context/v1/audio/chunks/batch',
-              '/context/v1/audio/chunks/batch-status', '/context/v1/transcription/status'}
+              '/context/v1/audio/chunks/batch-status', '/context/v1/audio/stream',
+              '/context/v1/transcription/status'}
     sink = RotatingFileHandler(service.data / 'access/phone-link.log', maxBytes=256 * 1024,
                                backupCount=2, delay=True, encoding='utf-8')
     log = logging.Logger('phone-link')

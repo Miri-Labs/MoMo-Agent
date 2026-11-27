@@ -182,6 +182,7 @@ final class TailnetDiagnostics: @unchecked Sendable {
         case "/context/v1/audio/chunks": return "audio-upload"
         case "/context/v1/audio/chunks/batch": return "audio-upload-batch"
         case "/context/v1/audio/chunks/batch-status": return "audio-status"
+        case "/context/v1/audio/stream": return "audio-stream"
         case "/context/v1/transcription/status": return "transcription-status"
         default:
             if path.hasPrefix("/desktop/") {
