@@ -1,6 +1,23 @@
 # MoMo Agent 项目规则
 
-三端界面、品牌组件与宣发原图的使用方式见[设计指南](design.md)。
+按任务分支按需查阅：
+- **真机安装 / Apple Watch 联调 / DDI 与隧道恢复**：先读 [install.md](install.md)，严格串行操作手表并独立读回版本。
+- **网络传输 / SQLite / 音频中继 / 评审**：先读 [CODING_STANDARDS.md](CODING_STANDARDS.md)，提交前跑 `python3 Tests/Support/check-architecture-invariants.py`。
+- **界面与品牌**：三端界面、品牌组件与宣发原图见 [design.md](design.md)。
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues in `Miri-Labs/MoMo-Agent` via `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical five-role triage labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context (`GLOSSARY.md` when present + `docs/adr/`). See `docs/agents/domain.md`.
 
 ## 当前品牌（2026-10-30）
 
@@ -123,13 +140,8 @@ MoMo 使用 DeepSeek Harness 和 SuperAgent 作为唯一的 Agent 运行时。�
 
 ## Git 工作流
 
-- **2026-10-31 用户更新：仓库开源后正常保留提交历史，后续修改使用新增 commit 和正常 PR 合并，不再把 `main` 压成单一首发 commit，也不为整理历史而强推 `main`。已整理的历史保持现状，不追溯改写。本条取代 2026-10-29 的单 commit 要求。**
-
-- **2026-10-27 用户授权 Hermes 合入 main，并替换手机与手表正式版、删除手机 Beta；手机产品以 Hermes 远程 Agent 为主，设置可借鉴 main 的布局与开关，不恢复本地 Pi。此条覆盖旧的 Hermes 仅独立分支和只装 Beta 限制。删除 Beta 不备份（用户明确要求）；正式版覆盖升级保留其数据。**
-
-- Mac Beta 安装前执行 `Tests/Support/verify-mac-beta.py`，确认 `com.momoagent.mac.beta`、Apple 签名及稳定的 designated requirement；拒绝 ad-hoc/cdhash 签名，避免每次更新使录屏、辅助功能授权失效。系统已有失效授权只能在用户明确同意后清除；配对和远程请求不得自动打开系统设置。
-- **2026-10-23 手机安装隔离：** 此分支交付手机端只用 `MoMoAgentBeta` scheme 与 `Beta` configuration。安装前读取产物，必须同时确认名称为 `MoMoAgent Beta`、Bundle ID 为 `com.momoagent.ios.beta`；安装后从设备分别读取正式版与 Beta 的版本。不得用此分支的 `Release` 包覆盖 `com.momoagent.ios`，除非用户明确要求。恢复误装的正式版应使用原 main 版本源码，不能将 Hermes 包改名冒充。
-- **2026-10-21 用户明确纠正：Hermes 新 App 在 `codex/hermes-app-20261021` 长期独立开发。该分支的实现、修复和文档只提交并推送到该分支，不自动合并或推送到 `main`。本条覆盖下方默认的任务完成后合入规则；只有用户后续明确要求合入时才操作。**
+- **2026-10-31 用户更新：仓库开源后正常保留提交历史，后续修改使用新增 commit 和正常 PR 合并，不再把 `main` 压成单一首发 commit，也不为整理历史而强推 `main`。已整理的历史保持现状，不追溯改写。**
+- **2026-10-27 正式版交付边界：** Hermes 远程 Agent 已合入 `main` 并作为手机与手表正式版交付（不再限制在独立分支或 Beta）；覆盖升级必须保留应用容器与用户数据。Mac 安装/签名校验确保使用稳定的 Apple 签名身份，拒绝 ad-hoc/cdhash 签名，避免每次更新使录屏/辅助功能授权失效。
 - `main` 是后续任务的统一基线。每个新任务开始前，获取远端更新并同步 `main`，再从最新 `main` 创建新的任务分支。
 - 实现、修复和文档修改都在任务分支中完成；提交只包含本次任务的改动，不直接在 `main` 上开发。
 - 完成本次任务及必要检查后，将任务分支合并回 `main`，同步远端并核对结果。下一项任务继续从更新后的 `main` 创建新分支，不复用已合并的旧分支。
