@@ -707,4 +707,85 @@ final class MacAudioTransferRobustnessTests: XCTestCase {
         XCTAssertEqual(counts.permanentFailed, 0, "Transient SOCKS5 -1000 must never permanently fail chunks")
         XCTAssertEqual(counts.failed, 1)
     }
+
+    /// Slow DERP regression: when a multi-chunk batch times out (`URLError.timedOut`), the coordinator
+    /// MUST immediately downshift `adaptiveMaxChunksPerBatch` to 1 and upload all chunks serially via
+    /// `/v1/audio/chunks` without getting trapped retrying an oversized batch forever.
+    func testBatchTimeoutImmediatelyDownshiftsToSerialSingleChunkUpload() async throws {
+        final class TimeoutBatchTransport: AgentTransport, @unchecked Sendable {
+            private let lock = NSLock()
+            var batchAttempts = 0
+            var singleAttempts = 0
+            var requiresExclusiveRouting: Bool { true }
+
+            func open(_ request: URLRequest) async throws -> AgentByteStream? {
+                let path = request.url?.path ?? ""
+                if path.hasSuffix("/v1/audio/chunks/batch") {
+                    lock.withLock { batchAttempts += 1 }
+                    throw URLError(.timedOut)
+                }
+                if path.hasSuffix("/v1/audio/chunks") {
+                    lock.withLock { singleAttempts += 1 }
+                    let body = request.httpBody ?? Data()
+                    let b64 = request.value(forHTTPHeaderField: "X-MoMo-Chunk-Meta") ?? ""
+                    let meta = (Data(base64Encoded: b64).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+                    let receipt: [String: Any] = [
+                        "accepted": true,
+                        "deduplicated": false,
+                        "chunk_id": (meta["chunk_id"] as? String ?? "").lowercased(),
+                        "source_id": "\(meta["library_id"] ?? "")/\(meta["session_id"] ?? "")",
+                        "sha256": MacAudioTransferRobustnessTests.sha256Hex(body),
+                        "transcription_status": "pending",
+                    ]
+                    let data = try JSONSerialization.data(withJSONObject: receipt)
+                    return AgentByteStream(
+                        status: 200,
+                        contentType: "application/json",
+                        retryAfter: nil,
+                        chunks: AsyncThrowingStream { c in c.yield(data); c.finish() }
+                    )
+                }
+                let ok = Data("{\"settings\":{\"enabled\":true,\"paused\":false,\"vad_threshold\":0.45,\"speaker_lock_threshold\":0.56,\"speaker_lock_margin\":0.08,\"window_max_seconds\":180,\"window_flush_silence_seconds\":12,\"language_hint\":\"auto\",\"custom_hotwords\":[],\"audio_retention_days\":30,\"audio_max_gb\":10.0,\"auto_enroll_from_confirm\":true},\"queue\":{\"pending\":0,\"processing\":0,\"done\":0,\"silent\":0,\"failed\":0},\"storage\":{\"chunk_count\":0,\"total_bytes\":0,\"total_mb\":0},\"voiceprint_count\":0}".utf8)
+                return AgentByteStream(
+                    status: 200,
+                    contentType: "application/json",
+                    retryAfter: nil,
+                    chunks: AsyncThrowingStream { c in c.yield(ok); c.finish() }
+                )
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoDERPDownshift-\(UUID())", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let deviceID = UUID()
+        let archive = try ArchiveStore(rootURL: root, receiverDeviceID: deviceID)
+
+        for i in 0..<6 {
+            _ = try await stagePCMChunk(
+                in: archive,
+                root: root,
+                sessionID: UUID(),
+                seconds: 1,
+                wallClock: Date().addingTimeInterval(Double(-360 + i * 60))
+            )
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        let transport = TimeoutBatchTransport()
+        let client = try AgentClient(
+            baseURL: URL(string: "http://100.64.0.10:8767/context")!,
+            credential: "test-token-1234",
+            assistantID: UUID(),
+            transport: transport
+        )
+        let uploader = AudioUploadCoordinator(archive: archive, deviceID: deviceID, dataClientProvider: { client })
+        await uploader.drainUploadQueue()
+
+        let counts = try await archive.macAudioUploadCounts()
+        XCTAssertEqual(counts.uploaded, 6, "All 6 chunks must finish uploading after batch timeout falls back to single chunks!")
+        XCTAssertEqual(counts.pending, 0)
+        XCTAssertEqual(counts.failed, 0)
+        XCTAssertGreaterThanOrEqual(transport.singleAttempts, 4, "Timed-out batch must immediately fall back to serial single-chunk uploads")
+        XCTAssertNil(uploader.lastError, "Clearing the queue must clear transient lastError")
+    }
 }

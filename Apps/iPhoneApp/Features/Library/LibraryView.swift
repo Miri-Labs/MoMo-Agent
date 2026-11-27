@@ -247,7 +247,7 @@ struct LibraryView: View {
     private func macRelayBanner(_ uploader: AudioUploadCoordinator) -> some View {
         let macQueue = (uploader.macStatus?.queue.pending ?? 0) + (uploader.macStatus?.queue.processing ?? 0)
         let pendingTotal = uploader.pendingCount + uploader.failedCount
-        let activelySyncing = uploader.isUploading || (pendingTotal > 0 && uploader.lastError == nil)
+        let activelySyncing = uploader.isUploading
         return HStack(spacing: 10) {
             if activelySyncing || macQueue > 0 {
                 ProgressView().controlSize(.mini).accessibilityHidden(true)
@@ -272,8 +272,8 @@ struct LibraryView: View {
                 }
             }
             Spacer(minLength: 0)
-            if !uploader.isUploading && pendingTotal > 0 && uploader.lastError != nil {
-                Button("重试") {
+            if !uploader.isUploading && pendingTotal > 0 {
+                Button(uploader.lastError != nil ? "重试" : "同步") {
                     uploader.retryNow()
                 }
                 .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small)

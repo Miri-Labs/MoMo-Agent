@@ -91,6 +91,12 @@ struct EmbeddedTailnetTransport: AgentTransport {
         guard idempotent else { return false }
         if nsError.domain == NSURLErrorDomain {
             let code = URLError.Code(rawValue: nsError.code)
+            if code == .timedOut, (request.httpBody?.count ?? 0) > 64 * 1024 {
+                // Do not blindly repeat a timed-out large upload (e.g. multi-chunk audio batch) inside
+                // the transport layer; surface it immediately so the uploader can downshift batch size
+                // instead of saturating slow DERP links for 3x timeout.
+                return false
+            }
             return [.badURL, .timedOut, .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet].contains(code)
         }
         return AgentTransportFailure.isSocketOrLinkFailure(error)

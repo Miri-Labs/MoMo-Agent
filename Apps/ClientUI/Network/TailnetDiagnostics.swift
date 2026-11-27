@@ -179,6 +179,10 @@ final class TailnetDiagnostics: @unchecked Sendable {
         case "/momo/v1/conversation": return "conversation"
         case "/v1/capabilities": return "capabilities"
         case "/pair/identity": return "identity"
+        case "/context/v1/audio/chunks": return "audio-upload"
+        case "/context/v1/audio/chunks/batch": return "audio-upload-batch"
+        case "/context/v1/audio/chunks/batch-status": return "audio-status"
+        case "/context/v1/transcription/status": return "transcription-status"
         default:
             if path.hasPrefix("/desktop/") {
                 return ["frame", "frames", "status"].contains(url?.lastPathComponent ?? "") ? "desktop-" + (url?.lastPathComponent ?? "") : "desktop-control"
