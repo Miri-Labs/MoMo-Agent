@@ -9,7 +9,7 @@ public struct CaptureProgress: Sendable {
 }
 
 /// A single detached consumer owns the resampler and AAC encoder for an entire epoch.
-@available(macOS 15, iOS 18, watchOS 11, tvOS 18, *)
+@available(macOS 15, iOS 18, watchOS 10, tvOS 18, *)
 public enum CaptureEncoder {
     public static func run(input: AudioCaptureInput, directory: URL,
                            sessionID: UUID, epochID: UUID, sourceDeviceID: UUID,

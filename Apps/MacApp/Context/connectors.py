@@ -1,4 +1,4 @@
-"""Unified read-only external Connectors (Feishu personal OAuth & Generic IMAP Email) for MoMo Agent.
+"""Unified read-only external Connectors (Feishu personal OAuth & Composio email) for MoMo Agent.
 
 All synced items are stored locally in `context.sqlite` (`connector_items`), indexed into
 `memory_search` (BM25 + RRF), and surfaced to Dream & Morning Briefing without ever
@@ -6,25 +6,27 @@ exposing credentials to the UI or LLM.
 """
 from __future__ import annotations
 
-from email import message_from_bytes
+from contextlib import contextmanager
+import fcntl
 from email.header import decode_header, make_header
-from email.utils import parsedate_to_datetime
+from email.utils import parseaddr
 import hashlib
 from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, HTTPServer
-import imaplib
 import json
 import os
 from pathlib import Path
 import re
 import secrets
-import ssl
 import threading
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
+
+import composio_mail
+from composio_mail import ConnectorError
 
 CONNECTOR_KINDS = ("feishu", "email")
 MAX_ITEM_CONTENT_CHARS = 16_000
@@ -57,21 +59,6 @@ FEISHU_READONLY_SCOPES = (
     "drive:drive:readonly "
     "offline_access"
 )
-
-EMAIL_PRESETS: dict[str, dict[str, Any]] = {
-    "gmail": {"label": "Gmail", "host": "imap.gmail.com", "port": 993, "note": "需使用 Google 应用专用密码"},
-    "icloud": {"label": "iCloud 邮件", "host": "imap.mail.me.com", "port": 993, "note": "需使用 Apple ID 应用专用密码"},
-    "outlook": {"label": "Outlook / Office 365", "host": "outlook.office365.com", "port": 993, "note": "需开启 IMAP 访问"},
-    "qq": {"label": "QQ 邮箱", "host": "imap.qq.com", "port": 993, "note": "在 QQ 邮箱设置中开启 IMAP 并获取授权码"},
-    "163": {"label": "网易 163 邮箱", "host": "imap.163.com", "port": 993, "note": "在 163 邮箱设置中开启 IMAP 并获取授权码"},
-    "feishu_mail": {"label": "飞书邮箱", "host": "imap.feishu.cn", "port": 993, "note": "在飞书邮箱设置中生成第三方客户端专用密码"},
-    "custom": {"label": "自定义 IMAP", "host": "", "port": 993, "note": "填写任意支持 IMAP over SSL (993) 的邮箱服务器"},
-}
-
-
-class ConnectorError(RuntimeError):
-    """User-safe connector error message (never contains raw credentials)."""
-
 
 class _HTMLTextExtractor(HTMLParser):
     def __init__(self) -> None:
@@ -117,47 +104,6 @@ def _decode_mime_header(value: str | None) -> str:
         return str(make_header(decode_header(value))).strip()
     except Exception:
         return str(value).strip()
-
-
-def _extract_email_body(msg) -> str:
-    plain_parts: list[str] = []
-    html_parts: list[str] = []
-    if msg.is_multipart():
-        for part in msg.walk():
-            if part.get_content_maintype() == "multipart":
-                continue
-            disp = str(part.get("Content-Disposition") or "").lower()
-            if "attachment" in disp:
-                continue
-            ctype = str(part.get_content_type() or "").lower()
-            payload = part.get_payload(decode=True)
-            if not payload:
-                continue
-            charset = part.get_content_charset() or "utf-8"
-            try:
-                text = payload.decode(charset, errors="replace")
-            except LookupError:
-                text = payload.decode("utf-8", errors="replace")
-            if ctype == "text/plain":
-                plain_parts.append(text.strip())
-            elif ctype == "text/html":
-                html_parts.append(text)
-    else:
-        payload = msg.get_payload(decode=True)
-        if payload:
-            charset = msg.get_content_charset() or "utf-8"
-            try:
-                text = payload.decode(charset, errors="replace")
-            except LookupError:
-                text = payload.decode("utf-8", errors="replace")
-            if str(msg.get_content_type() or "").lower() == "text/html":
-                html_parts.append(text)
-            else:
-                plain_parts.append(text.strip())
-    body = "\n\n".join(p for p in plain_parts if p).strip()
-    if not body and html_parts:
-        body = _html_to_text("\n".join(html_parts))
-    return body[:MAX_ITEM_CONTENT_CHARS]
 
 
 def _atomic_private_json(path: Path, data: dict[str, Any]) -> None:
@@ -206,37 +152,51 @@ def _config_path(data_dir: Path) -> Path:
     return Path(data_dir) / "connectors" / "config.json"
 
 
-_CONFIG_LOCK = threading.Lock()
+@contextmanager
+def _connector_lock(data_dir: Path, name: str):
+    # The Mac service and the offline CLI both write this directory.
+    directory = _config_path(data_dir).parent
+    directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+    with (directory / f".{name}.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
 
 
 def load_connectors_config(data_dir: Path) -> dict[str, Any]:
+    with _connector_lock(data_dir, "config"):
+        return _load_connectors_config(data_dir)
+
+
+def _load_connectors_config(data_dir: Path) -> dict[str, Any]:
     path = _config_path(data_dir)
-    if not path.is_file():
-        return {"email": {}, "feishu": {}}
     try:
-        parsed = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(parsed, dict):
-            parsed.setdefault("email", {})
-            parsed.setdefault("feishu", {})
-            return parsed
-    except (OSError, ValueError):
-        pass
-    return {"email": {}, "feishu": {}}
+        cfg = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {"email": {}, "feishu": {}}
+    except (OSError, ValueError) as exc:
+        raise ConnectorError("无法读取连接器配置，请检查本机配置文件。") from exc
+    if not isinstance(cfg, dict):
+        raise ConnectorError("本机连接器配置格式有误。")
+    email = cfg.setdefault("email", {})
+    cfg.setdefault("feishu", {})
+    if email and email.get("mode") != "composio":
+        cfg["email"] = {"mode": "composio", "needs_reconnect": True}
+        _atomic_private_json(path, cfg)
+    return cfg
 
 
 def save_connectors_config(data_dir: Path, config: dict[str, Any]) -> None:
-    with _CONFIG_LOCK:
+    with _connector_lock(data_dir, "config"):
         _atomic_private_json(_config_path(data_dir), config)
 
 
 def _update_connector_section(data_dir: Path, kind: str, updates: dict[str, Any]) -> dict[str, Any]:
-    with _CONFIG_LOCK:
-        cfg = load_connectors_config(data_dir)
-        sec = dict(cfg.get(kind) or {})
-        sec.update(updates)
-        cfg[kind] = sec
+    with _connector_lock(data_dir, "config"):
+        cfg = _load_connectors_config(data_dir)
+        section = cfg.setdefault(kind, {})
+        section.update(updates)
         _atomic_private_json(_config_path(data_dir), cfg)
-        return sec
+        return section
 
 
 def _upsert_connector_item(
@@ -303,210 +263,133 @@ def _upsert_connector_item(
     return True
 
 
-# ── Generic IMAP Email Connector (Read-Only) ───────────────────────────────────
+def start_email_oauth(data_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    provider = payload.get("provider")
+    if provider not in composio_mail.SCOPES:
+        raise ConnectorError("请选择 Gmail 或 Outlook。")
+    with _connector_lock(data_dir, "mail"):
+        cfg = load_connectors_config(data_dir)["email"]
+        if cfg.get("account_id"):
+            if cfg.get("authorize_url") and cfg.get("provider") == provider:
+                return {"authorize_url": cfg["authorize_url"]}
+            raise ConnectorError("请先断开当前邮箱连接。")
+        key = str(payload.get("api_key") or cfg.get("api_key") or os.environ.get("COMPOSIO_API_KEY") or "").strip()
+        configs = dict(cfg.get("configs", {})) if key == cfg.get("api_key") else {}
+        if provider not in configs:
+            configs[provider] = composio_mail.create_config(key, provider)
+        user_id = cfg.get("user_id") or "momo-" + secrets.token_hex(16)
+        _update_connector_section(data_dir, "email", {"mode": "composio", "api_key": key,
+                                  "configs": configs, "user_id": user_id})
+        link = composio_mail.link(key, configs[provider], user_id)
+        _update_connector_section(data_dir, "email", {
+            "provider": provider, "config_id": configs[provider], "account_id": link["connected_account_id"],
+            "authorize_url": link["redirect_url"], "connected": False, "enabled": False, "last_error": None,
+        })
+        return {"authorize_url": link["redirect_url"]}
 
 
-def _imap_connect(host: str, port: int, username: str, password: str, timeout: float = 20.0) -> imaplib.IMAP4_SSL:
-    if not host or not username or not password:
-        raise ConnectorError("请填写完整的 IMAP 服务器地址、邮箱账号和密码/授权码。")
-    if not (1 <= int(port) <= 65535):
-        raise ConnectorError("IMAP 端口号无效。")
-    ctx = ssl.create_default_context()
-    try:
-        conn = imaplib.IMAP4_SSL(host=host, port=int(port), ssl_context=ctx, timeout=timeout)
-        conn.login(username, password)
-        return conn
-    except imaplib.IMAP4.error as exc:
-        raise ConnectorError(f"IMAP 登录失败，请检查账号或应用专用密码/授权码。（{str(exc)[:120]}）") from exc
-    except OSError as exc:
-        raise ConnectorError(f"无法连接到 IMAP 服务器 {host}:{port}，请检查网络或服务器地址。") from exc
+def update_email_key(data_dir: Path, key: str) -> None:
+    with _connector_lock(data_dir, "mail"):
+        cfg = load_connectors_config(data_dir)["email"]
+        if not cfg.get("account_id"):
+            raise ConnectorError("请在连接邮箱时填写新的项目 API key。")
+        candidate = {**cfg, "api_key": key.strip()}
+        # A different project cannot see this connected account.
+        composio_mail.status(candidate, missing_ok=False)
+        _update_connector_section(data_dir, "email", {"api_key": candidate["api_key"], "last_error": None})
 
 
-EMAIL_DOMAIN_TO_PRESET: dict[str, str] = {
-    "gmail.com": "gmail",
-    "googlemail.com": "gmail",
-    "icloud.com": "icloud",
-    "me.com": "icloud",
-    "mac.com": "icloud",
-    "outlook.com": "outlook",
-    "hotmail.com": "outlook",
-    "live.com": "outlook",
-    "msn.com": "outlook",
-    "qq.com": "qq",
-    "foxmail.com": "qq",
-    "163.com": "163",
-    "feishu.cn": "feishu_mail",
-    "larksuite.com": "feishu_mail",
-}
+def refresh_email_oauth(data_dir: Path) -> dict[str, Any]:
+    with _connector_lock(data_dir, "mail"):
+        cfg = load_connectors_config(data_dir)["email"]
+        if not cfg.get("account_id"):
+            return {"connected": False, "pending": False}
+        if cfg.get("connected"):
+            return {"connected": True, "pending": False}
+        state = composio_mail.status(cfg)
+        if state in ("INITIATED", "INITIALIZING", "PENDING"):
+            return {"connected": False, "pending": True}
+        if state != "ACTIVE":
+            _disconnect_email_locked(data_dir, cfg)
+            raise ConnectorError("邮箱授权已结束，请重新连接。")
+        address = composio_mail.mailbox(cfg)
+        if not address:
+            raise ConnectorError("邮箱服务未返回账号地址，请检查授权。")
+        _update_connector_section(data_dir, "email", {"connected": True, "enabled": True, "account_label": address,
+                                  "authorize_url": "", "needs_reconnect": False, "last_error": None})
+        return {"connected": True, "pending": False, "new_connection": True}
 
 
-def infer_email_preset(username: str) -> str:
-    addr = str(username or "").strip().lower()
-    if "@" not in addr:
-        return "custom"
-    domain = addr.rsplit("@", 1)[-1].strip()
-    return EMAIL_DOMAIN_TO_PRESET.get(domain, "custom")
+def disconnect_email(data_dir: Path) -> None:
+    with _connector_lock(data_dir, "mail"):
+        cfg = load_connectors_config(data_dir)["email"]
+        _disconnect_email_locked(data_dir, cfg)
 
 
-def configure_email_connector(data_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
-    username = str(payload.get("username") or "").strip()
-    raw_preset = str(payload.get("preset") or "").strip().lower()
-    if raw_preset in EMAIL_PRESETS and raw_preset != "custom":
-        preset = raw_preset
-    elif not payload.get("host"):
-        preset = infer_email_preset(username)
-    else:
-        preset = raw_preset if raw_preset in EMAIL_PRESETS else "custom"
-    preset_info = EMAIL_PRESETS[preset]
-    host = str(payload.get("host") or preset_info["host"] or "").strip()
-    port = int(payload.get("port") or preset_info["port"] or 993)
-    existing = load_connectors_config(data_dir).get("email") or {}
-    password = str(payload.get("password") or "").strip() or str(existing.get("password") or "").strip()
-    folder = str(payload.get("folder") or existing.get("folder") or "INBOX").strip() or "INBOX"
-    sync_days = max(1, min(30, int(payload.get("sync_days") or existing.get("sync_days") or DEFAULT_SYNC_DAYS)))
-    enabled = bool(payload.get("enabled", True))
-
-    if enabled:
-        conn = _imap_connect(host, port, username, password)
-        try:
-            typ, _ = conn.select(folder, readonly=True)
-            if typ != "OK":
-                raise ConnectorError(f"无法以只读方式打开邮箱文件夹 `{folder}`。")
-        finally:
-            try:
-                conn.logout()
-            except Exception:
-                pass
-
-    _update_connector_section(
-        data_dir,
-        "email",
-        {
-            "preset": preset,
-            "host": host,
-            "port": port,
-            "username": username,
-            "password": password,
-            "folder": folder,
-            "sync_days": sync_days,
-            "enabled": enabled,
-            "connected": bool(host and username and password),
-            "last_error": None,
-            "updated_at": time.time(),
-        },
-    )
-    return {"connector": "email", "connected": True, "enabled": enabled, "account_label": username}
+def _disconnect_email_locked(data_dir: Path, cfg: dict[str, Any]) -> None:
+    if cfg.get("account_id"):
+        composio_mail.revoke(cfg)
+    _update_connector_section(data_dir, "email", {
+        "mode": "composio", "enabled": False, "connected": False, "account_id": "", "account_label": "",
+        "authorize_url": "", "last_synced": None, "last_error": None, "needs_reconnect": False,
+    })
 
 
-def sync_email_connector(data_dir: Path, store, *, imap_factory=None) -> dict[str, Any]:
-    cfg = load_connectors_config(data_dir).get("email") or {}
-    if not cfg.get("enabled") or not cfg.get("connected"):
+def sync_email_connector(data_dir: Path, store) -> dict[str, Any]:
+    cfg = load_connectors_config(data_dir)["email"]
+    if cfg.get("authorize_url"):
+        refresh_email_oauth(data_dir)
+        cfg = load_connectors_config(data_dir)["email"]
+    if not cfg.get("connected") or not cfg.get("enabled"):
         return {"connector": "email", "skipped": True, "synced": 0}
-    host = str(cfg.get("host") or "").strip()
-    port = int(cfg.get("port") or 993)
-    username = str(cfg.get("username") or "").strip()
-    password = str(cfg.get("password") or "").strip()
-    folder = str(cfg.get("folder") or "INBOX").strip() or "INBOX"
-    sync_days = max(1, min(30, int(cfg.get("sync_days") or DEFAULT_SYNC_DAYS)))
-
-    since_ts = time.time() - sync_days * 86400
-    since_str = time.strftime("%d-%b-%Y", time.gmtime(since_ts))
-    synced = 0
-    changed = 0
+    account = cfg["account_label"]
+    channel = f"{account}/INBOX"
+    since = time.time() - DEFAULT_SYNC_DAYS * 86400
+    policy = load_connector_policy(data_dir)
+    synced = changed = 0
     try:
-        conn = imap_factory(host, port, username, password) if imap_factory else _imap_connect(host, port, username, password)
-        try:
-            typ, _ = conn.select(folder, readonly=True)
-            if typ != "OK":
-                raise ConnectorError(f"无法打开文件夹 {folder}")
-            typ, data = conn.uid("search", None, "SINCE", since_str)
-            if typ != "OK" or not data or not data[0]:
-                uids: list[bytes] = []
-            else:
-                uids = data[0].split()[-DEFAULT_MAX_EMAILS:]
-
-            for raw_uid in uids:
-                uid_str = raw_uid.decode("ascii", errors="ignore")
-                typ, fetched = conn.uid("fetch", raw_uid, "(BODY.PEEK[])")
-                if typ != "OK" or not fetched:
-                    continue
-                raw_bytes = None
-                for entry in fetched:
-                    if isinstance(entry, tuple) and len(entry) >= 2 and isinstance(entry[1], (bytes, bytearray)):
-                        raw_bytes = bytes(entry[1])
-                        break
-                if not raw_bytes:
-                    continue
-                msg = message_from_bytes(raw_bytes)
-                subject = _decode_mime_header(msg.get("Subject")) or "(无主题邮件)"
-                sender = _decode_mime_header(msg.get("From"))
-                to_hdr = _decode_mime_header(msg.get("To"))
-                msg_id_hdr = str(msg.get("Message-ID") or "").strip()
-                date_hdr = msg.get("Date")
-                occurred_at = time.time()
-                if date_hdr:
-                    try:
-                        dt = parsedate_to_datetime(date_hdr)
-                        if dt is not None:
-                            occurred_at = dt.timestamp()
-                    except Exception:
-                        pass
-                body = _extract_email_body(msg)
-                stable_key = msg_id_hdr or f"{username}:{folder}:{uid_str}"
-                item_id = "email:" + hashlib.sha256(stable_key.encode("utf-8")).hexdigest()[:24]
-                thread_id = str(msg.get("In-Reply-To") or msg_id_hdr or item_id).strip()
-                header_summary = f"主题：{subject}\n发件人：{sender}\n收件人：{to_hdr}\n\n{body}".strip()
-                is_self = bool(username and username.lower() in sender.lower())
-                policy = load_connector_policy(data_dir)
-                p_action, p_rule = evaluate_connector_policy(
-                    policy,
-                    {
-                        "connector": "email",
-                        "sender": sender,
-                        "sender_type": "user",
-                        "channel": f"{username}/{folder}",
-                        "title": subject,
-                        "content": header_summary,
-                        "msg_type": "email",
-                        "is_self": is_self,
-                    },
-                )
-                if p_action == "drop":
-                    continue
-                if _upsert_connector_item(
-                    store,
-                    item_id=item_id,
-                    connector="email",
-                    item_type="email",
-                    thread_id=thread_id,
-                    title=subject,
-                    sender=sender,
-                    channel=f"{username}/{folder}",
-                    content=header_summary,
-                    occurred_at=occurred_at,
-                    metadata={
-                        "folder": folder,
-                        "uid": uid_str,
-                        "to": to_hdr[:240],
-                        "account": username,
-                        "is_self": is_self,
-                        "policy_action": p_action,
-                        "policy_rule": p_rule or "",
-                    },
-                ):
-                    changed += 1
-                synced += 1
-        finally:
-            try:
-                conn.logout()
-            except Exception:
-                pass
-        _update_connector_section(data_dir, "email", {"last_synced": time.time(), "last_error": None})
-        return {"connector": "email", "synced": synced, "changed": changed}
-    except Exception as exc:
-        err_msg = str(exc)[:300]
-        _update_connector_section(data_dir, "email", {"last_error": err_msg})
-        raise ConnectorError(err_msg) from exc
+        if cfg["provider"] == "gmail":
+            ensure_connector_tables(store.db)
+            known_ids = {row[0] for row in store.db.execute(
+                """SELECT json_extract(metadata, '$.uid') FROM connector_items
+                   WHERE connector='email' AND channel=? AND occurred_at>=?
+                     AND json_extract(metadata, '$.provider')='gmail'""", (channel, since)
+            )}
+            messages = composio_mail.gmail_messages(cfg, since, DEFAULT_MAX_EMAILS, _decode_mime_header,
+                                                   _html_to_text, known_ids)
+        else:
+            messages = composio_mail.outlook_messages(cfg, since, DEFAULT_MAX_EMAILS, _html_to_text)
+        for uid, message_id, thread, subject, sender, to, body, occurred in messages:
+            stable_key = (message_id or f"{account}:INBOX:{uid}").strip()
+            item_id = "email:" + hashlib.sha256(stable_key.encode()).hexdigest()[:24]
+            subject = subject or "(无主题邮件)"
+            content = f"主题：{subject}\n发件人：{sender}\n收件人：{to}\n\n{body}".strip()[:MAX_ITEM_CONTENT_CHARS]
+            is_self = parseaddr(sender)[1].casefold() == account.casefold()
+            action, rule = evaluate_connector_policy(policy, {
+                "connector": "email", "sender": sender, "sender_type": "user", "channel": channel,
+                "title": subject, "content": content, "msg_type": "email", "is_self": is_self,
+            })
+            with _connector_lock(data_dir, "mail"):
+                if load_connectors_config(data_dir)["email"].get("account_id") != cfg["account_id"]:
+                    return {"connector": "email", "synced": synced, "changed": changed}
+                if action != "drop":
+                    changed += _upsert_connector_item(
+                        store, item_id=item_id, connector="email", item_type="email", thread_id=thread,
+                        title=subject[:500], sender=sender[:240], channel=channel, content=content, occurred_at=occurred,
+                        metadata={"folder": "INBOX", "provider": cfg["provider"], "uid": uid, "to": to[:240], "account": account,
+                                  "is_self": is_self, "policy_action": action, "policy_rule": rule or ""},
+                    )
+                    synced += 1
+    except (ConnectorError, ValueError, KeyError, TypeError) as exc:
+        message = str(exc) if isinstance(exc, ConnectorError) else "邮箱服务返回了无法读取的邮件。"
+        with _connector_lock(data_dir, "mail"):
+            if load_connectors_config(data_dir)["email"].get("account_id") == cfg["account_id"]:
+                _update_connector_section(data_dir, "email", {"last_error": message})
+        raise ConnectorError(message) from exc
+    with _connector_lock(data_dir, "mail"):
+        if load_connectors_config(data_dir)["email"].get("account_id") == cfg["account_id"]:
+            _update_connector_section(data_dir, "email", {"last_synced": time.time(), "last_error": None})
+    return {"connector": "email", "synced": synced, "changed": changed}
 
 
 # ── Feishu Personal OAuth 2.0 Connector (Read-Only) ───────────────────────────
@@ -1280,26 +1163,19 @@ def connectors_status(data_dir: Path, store) -> dict[str, Any]:
             },
             "email": {
                 "kind": "email",
-                "mode": "readonly_imap",
+                "mode": "composio",
                 "enabled": bool(email_cfg.get("enabled")),
                 "connected": bool(email_cfg.get("connected")),
-                "preset": str(email_cfg.get("preset") or "gmail"),
-                "host": str(email_cfg.get("host") or ""),
-                "port": int(email_cfg.get("port") or 993),
-                "username": str(email_cfg.get("username") or ""),
-                "has_password": bool(email_cfg.get("password")),
-                "folder": str(email_cfg.get("folder") or "INBOX"),
-                "sync_days": int(email_cfg.get("sync_days") or DEFAULT_SYNC_DAYS),
-                "account_label": str(email_cfg.get("username") or ""),
+                "pending": bool(email_cfg.get("authorize_url")),
+                "needs_reconnect": bool(email_cfg.get("needs_reconnect")),
+                "has_api_key": bool(email_cfg.get("api_key") or os.environ.get("COMPOSIO_API_KEY")),
+                "provider": email_cfg.get("provider") or "gmail",
+                "account_label": email_cfg.get("account_label") or "",
                 "last_synced": email_cfg.get("last_synced"),
                 "last_error": email_cfg.get("last_error"),
                 "item_count": int(counts.get("email") or 0),
             },
         },
-        "email_presets": [
-            {"id": k, "label": v["label"], "host": v["host"], "port": v["port"], "note": v["note"]}
-            for k, v in EMAIL_PRESETS.items()
-        ],
     }
 
 
@@ -1321,16 +1197,7 @@ def disconnect_connector(data_dir: Path, store, connector: str, *, clear_data: b
             },
         )
     else:
-        _update_connector_section(
-            data_dir,
-            "email",
-            {
-                "enabled": False,
-                "connected": False,
-                "password": "",
-                "last_error": None,
-            },
-        )
+        disconnect_email(data_dir)
     removed = 0
     if clear_data:
         ensure_connector_tables(store.db)
@@ -1769,7 +1636,7 @@ def load_connector_policy(data_dir: Path) -> dict[str, Any]:
 
 
 def save_connector_policy(data_dir: Path, policy: dict[str, Any]) -> None:
-    with _CONFIG_LOCK:
+    with _connector_lock(data_dir, "policy"):
         _atomic_private_json(_policy_path(data_dir), policy)
 
 

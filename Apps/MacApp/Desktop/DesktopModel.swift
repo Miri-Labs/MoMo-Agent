@@ -1618,7 +1618,11 @@ final class DesktopModel {
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.timeoutInterval = 30
+        if path == "/v1/connectors/sync", body?["connector"] as? String == "email" {
+            request.timeoutInterval = 1800 // Up to 80 sequential provider reads.
+        } else {
+            request.timeoutInterval = path.hasPrefix("/v1/connectors/email/") ? 90 : 30
+        }
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         if let body {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)

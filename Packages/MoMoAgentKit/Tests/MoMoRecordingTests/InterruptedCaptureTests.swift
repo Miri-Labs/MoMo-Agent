@@ -45,7 +45,7 @@ struct InterruptedCaptureTests {
 
     @Test(arguments: [false, true])
     func damagedTailKeepsItsMarkWithoutInventingAnEpochEnd(interruptionFirst: Bool) async throws {
-        guard #available(macOS 15, iOS 18, watchOS 11, *) else { return }
+        guard #available(macOS 15, iOS 18, watchOS 10, *) else { return }
         let fixture = try RecordingFixture()
         defer { fixture.clean() }
         let m = fixture.envelope.manifest

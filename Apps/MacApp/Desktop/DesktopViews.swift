@@ -1739,7 +1739,7 @@ struct DesktopSettings: View {
             case .model: terms = [String(localized: "模型"), String(localized: "聊天模式"), String(localized: "创作"), "Creator", "API", "Codex", "Claude"]
             case .speech: terms = [String(localized: "声纹与转录"), String(localized: "声纹"), String(localized: "转录"), String(localized: "说话人"), "MOSS", "ReDimNet2", "Core ML", String(localized: "热词")]
             case .pairing: terms = [String(localized: "设备"), String(localized: "配对手机"), String(localized: "网络代理"), "Tailscale", String(localized: "远程访问")]
-            case .connectors: terms = [String(localized: "连接器"), String(localized: "飞书"), "Feishu", "Lark", String(localized: "邮件"), "Email", "IMAP", "Gmail", "OAuth"]
+            case .connectors: terms = [String(localized: "连接器"), String(localized: "飞书"), "Feishu", "Lark", String(localized: "邮件"), "Email", "Composio", "Outlook", "Gmail", "OAuth"]
             }
             return terms.contains { $0.localizedStandardContains(query) }
         }
