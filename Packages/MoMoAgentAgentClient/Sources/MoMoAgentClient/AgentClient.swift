@@ -10,6 +10,12 @@ public struct AgentClient: Sendable {
     private var session: URLSession { managedSession.session }
     private let transport: (any AgentTransport)?
 
+    /// True when the active transport supports multi-megabyte batch payloads (Tailscale / direct HTTPS),
+    /// false when bounded by Relay's 512 KB per-frame cap.
+    public var supportsLargePayloads: Bool {
+        !(transport is RelayTransport)
+    }
+
     public init(
         baseURL: URL,
         credential: String,

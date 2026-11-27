@@ -72,11 +72,14 @@ extension ArchiveStore {
             FROM chunks c
             JOIN sessions s ON s.id = c.session_id
             LEFT JOIN mac_audio_uploads u ON u.chunk_id = c.id
+            LEFT JOIN transcription_jobs j ON j.chunk_id = c.id
             WHERE s.deleted = 0
               AND c.retention = 'present'
               AND (u.upload_state IS NULL OR u.upload_state IN ('pending', 'failed'))
               AND (u.next_retry_at IS NULL OR u.next_retry_at <= ?)
-            ORDER BY c.sealed_at DESC, c.storage_sequence DESC
+            ORDER BY CASE WHEN j.state IS NULL OR j.state != 'complete' THEN 0 ELSE 1 END ASC,
+                     c.sealed_at DESC,
+                     c.storage_sequence DESC
             LIMIT ?
             """, [.double(now.timeIntervalSince1970), .integer(Int64(limit))])
 
@@ -115,19 +118,29 @@ extension ArchiveStore {
     }
 
     public func markMacAudioChunkUploaded(chunkID: UUID, remoteSHA256: String, remoteSourceID: String) throws {
-        try database.execute("""
-            INSERT INTO mac_audio_uploads(chunk_id, upload_state, remote_sha256, remote_source_id, uploaded_at, last_error, retry_count, next_retry_at)
-            VALUES(?, 'uploaded', ?, ?, ?, NULL, 0, NULL)
-            ON CONFLICT(chunk_id) DO UPDATE SET
-                upload_state='uploaded', remote_sha256=excluded.remote_sha256,
-                remote_source_id=excluded.remote_source_id, uploaded_at=excluded.uploaded_at,
-                last_error=NULL, retry_count=0, next_retry_at=NULL
-            """, [
-            .text(chunkID.uuidString),
-            .text(remoteSHA256),
-            .text(remoteSourceID),
-            .double(Date().timeIntervalSince1970)
-        ])
+        try markMacAudioChunksUploaded([(chunkID: chunkID, remoteSHA256: remoteSHA256, remoteSourceID: remoteSourceID)])
+    }
+
+    public func markMacAudioChunksUploaded(_ receipts: [(chunkID: UUID, remoteSHA256: String, remoteSourceID: String)]) throws {
+        guard !receipts.isEmpty else { return }
+        let now = Date().timeIntervalSince1970
+        try database.transaction {
+            for item in receipts {
+                try database.execute("""
+                    INSERT INTO mac_audio_uploads(chunk_id, upload_state, remote_sha256, remote_source_id, uploaded_at, last_error, retry_count, next_retry_at)
+                    VALUES(?, 'uploaded', ?, ?, ?, NULL, 0, NULL)
+                    ON CONFLICT(chunk_id) DO UPDATE SET
+                        upload_state='uploaded', remote_sha256=excluded.remote_sha256,
+                        remote_source_id=excluded.remote_source_id, uploaded_at=excluded.uploaded_at,
+                        last_error=NULL, retry_count=0, next_retry_at=NULL
+                    """, [
+                    .text(item.chunkID.uuidString),
+                    .text(item.remoteSHA256),
+                    .text(item.remoteSourceID),
+                    .double(now)
+                ])
+            }
+        }
     }
 
     public func markMacAudioChunkFailed(

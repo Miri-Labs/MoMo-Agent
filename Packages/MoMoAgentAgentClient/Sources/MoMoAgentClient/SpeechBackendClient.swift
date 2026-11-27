@@ -55,6 +55,21 @@ public struct AudioChunkUploadReceipt: Codable, Sendable, Equatable {
     public let transcriptionStatus: String
 }
 
+public struct AudioChunkBatchItemResult: Codable, Sendable, Equatable {
+    public let accepted: Bool
+    public let deduplicated: Bool?
+    public let chunkId: String
+    public let sourceId: String?
+    public let sha256: String?
+    public let transcriptionStatus: String?
+    public let status: Int?
+    public let error: String?
+}
+
+public struct AudioChunkBatchUploadResponse: Codable, Sendable, Equatable {
+    public let results: [AudioChunkBatchItemResult]
+}
+
 public struct AudioChunkStatusEntry: Codable, Sendable, Equatable {
     public let uploaded: Bool
     public let sha256: String?
@@ -261,6 +276,8 @@ extension AgentClient {
     }
 
     /// Uploads a single 60s AAC/WAV chunk to Mac backend over direct HTTPS (bypassing WebRTC 32 KB limit).
+    /// Sets `Idempotency-Key` because ingestion is strictly idempotent by `(chunk_id, sha256)`, allowing
+    /// `EmbeddedTailnetTransport` to transparently retry cold SOCKS5 `-1000` (`badURL`) hiccups.
     public func uploadAudioChunk(
         meta: AudioChunkUploadMeta,
         audioData: Data,
@@ -270,22 +287,96 @@ extension AgentClient {
         let metaB64 = metaBytes.base64EncodedString()
         let isWav = ["wav", "pcm", "pcmint16", "pcmfloat32"].contains(meta.codec.lowercased())
         let contentType = isWav ? "audio/wav" : "audio/mp4"
+        let idempotencyKey = "chunk-\(meta.chunkId.lowercased())-\(meta.sha256.prefix(16))"
         let data = try await rawRequest(
             path: ["v1", "audio", "chunks"],
             method: "POST",
             body: audioData,
             contentType: contentType,
-            extraHeaders: ["X-MoMo-Chunk-Meta": metaB64],
+            extraHeaders: [
+                "X-MoMo-Chunk-Meta": metaB64,
+                "Idempotency-Key": idempotencyKey
+            ],
             timeout: timeout,
             bypassDataChannel: true
         )
         return try Self.speechDecoder().decode(AudioChunkUploadReceipt.self, from: data)
     }
 
+    /// Uploads a batch of audio chunks in one binary-framed HTTP request (`4-byte BE manifest len + JSON + raw bytes`).
+    /// Eliminates per-chunk RTT and per-chunk SQLite commit overhead on Tailscale/LAN links.
+    public func uploadAudioChunksBatch(
+        items: [(meta: AudioChunkUploadMeta, audioData: Data)],
+        timeout: TimeInterval = 60
+    ) async throws -> AudioChunkBatchUploadResponse {
+        guard !items.isEmpty else { return AudioChunkBatchUploadResponse(results: []) }
+        struct BatchEntry: Encodable {
+            let chunkId: String
+            let libraryId: String
+            let sessionId: String
+            let deviceId: String
+            let chunkSeq: Int
+            let recordedAt: Double
+            let durationSec: Double
+            let timezoneOffset: Int?
+            let sourceKind: String
+            let codec: String
+            let sampleRate: Int
+            let sha256: String
+            let byteSize: Int
+        }
+        struct BatchManifest: Encodable {
+            let chunks: [BatchEntry]
+        }
+
+        let entries = items.map { pair in
+            BatchEntry(
+                chunkId: pair.meta.chunkId,
+                libraryId: pair.meta.libraryId,
+                sessionId: pair.meta.sessionId,
+                deviceId: pair.meta.deviceId,
+                chunkSeq: pair.meta.chunkSeq,
+                recordedAt: pair.meta.recordedAt,
+                durationSec: pair.meta.durationSec,
+                timezoneOffset: pair.meta.timezoneOffset,
+                sourceKind: pair.meta.sourceKind,
+                codec: pair.meta.codec,
+                sampleRate: pair.meta.sampleRate,
+                sha256: pair.meta.sha256,
+                byteSize: pair.audioData.count
+            )
+        }
+        let manifestData = try Self.speechEncoder().encode(BatchManifest(chunks: entries))
+        let totalAudioBytes = items.reduce(0) { $0 + $1.audioData.count }
+        var body = Data(capacity: 4 + manifestData.count + totalAudioBytes)
+        var headerLenBE = UInt32(manifestData.count).bigEndian
+        withUnsafeBytes(of: &headerLenBE) { body.append(contentsOf: $0) }
+        body.append(manifestData)
+        for pair in items {
+            body.append(pair.audioData)
+        }
+        let batchDigest = SHA256.hash(data: manifestData).prefix(12).map { String(format: "%02x", $0) }.joined()
+        let data = try await rawRequest(
+            path: ["v1", "audio", "chunks", "batch"],
+            method: "POST",
+            body: body,
+            contentType: "application/octet-stream",
+            extraHeaders: ["Idempotency-Key": "batch-\(batchDigest)"],
+            timeout: timeout,
+            bypassDataChannel: true
+        )
+        return try Self.speechDecoder().decode(AudioChunkBatchUploadResponse.self, from: data)
+    }
+
     public func audioChunkBatchStatus(chunkIDs: [String]) async throws -> AudioChunkBatchStatusResponse {
         struct Payload: Encodable { let chunkIds: [String] }
         let body = try Self.speechEncoder().encode(Payload(chunkIds: chunkIDs))
-        let data = try await rawRequest(path: ["v1", "audio", "chunks", "batch-status"], method: "POST", body: body)
+        let data = try await rawRequest(
+            path: ["v1", "audio", "chunks", "batch-status"],
+            method: "POST",
+            body: body,
+            extraHeaders: ["Idempotency-Key": "batch-status-\(UUID().uuidString.lowercased())"]
+        )
         // Decode outer `statuses` dictionary preserving raw chunk_id keys (do not snake-case-convert UUID/ID keys)
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let rawStatuses = root["statuses"] as? [String: Any] else {
@@ -328,7 +419,12 @@ extension AgentClient {
     public func requestRetranscribe(sourceID: String) async throws {
         struct Payload: Encodable { let sourceId: String }
         let body = try Self.speechEncoder().encode(Payload(sourceId: sourceID))
-        _ = try await rawRequest(path: ["v1", "transcription", "retranscribe"], method: "POST", body: body)
+        _ = try await rawRequest(
+            path: ["v1", "transcription", "retranscribe"],
+            method: "POST",
+            body: body,
+            extraHeaders: ["Idempotency-Key": "retranscribe-\(sourceID.lowercased())"]
+        )
     }
 
     public func speechSettings() async throws -> MacSpeechSettings {
@@ -344,12 +440,16 @@ extension AgentClient {
 
     public func dictateAudio(_ audioData: Data, filename: String = "dictate.m4a") async throws -> DictateResponse {
         let contentType = filename.lowercased().hasSuffix(".wav") ? "audio/wav" : "audio/mp4"
+        let digest = SHA256.hash(data: audioData).prefix(12).map { String(format: "%02x", $0) }.joined()
         let data = try await rawRequest(
             path: ["v1", "speech", "dictate"],
             method: "POST",
             body: audioData,
             contentType: contentType,
-            extraHeaders: ["X-MoMo-Filename": filename],
+            extraHeaders: [
+                "X-MoMo-Filename": filename,
+                "Idempotency-Key": "dictate-\(digest)"
+            ],
             timeout: 60,
             bypassDataChannel: true
         )
@@ -521,7 +621,12 @@ extension AgentClient {
     public func rematchVoiceprints(profileIDs: [String]? = nil) async throws -> VoiceprintRematchSummary {
         struct Payload: Encodable { let profileIds: [String]? }
         let body = try Self.speechEncoder().encode(Payload(profileIds: profileIDs))
-        let data = try await rawRequest(path: ["v1", "voiceprints", "rematch"], method: "POST", body: body)
+        let data = try await rawRequest(
+            path: ["v1", "voiceprints", "rematch"],
+            method: "POST",
+            body: body,
+            extraHeaders: ["Idempotency-Key": "rematch-\(UUID().uuidString.lowercased())"]
+        )
         return try Self.speechDecoder().decode(VoiceprintRematchSummary.self, from: data)
     }
 }

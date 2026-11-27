@@ -79,7 +79,7 @@ def permitted_route(method, path):
         return None
     if context and target.startswith('/v1/audio/'):
         suffix = target.removeprefix('/v1/audio/')
-        if method == 'POST' and suffix in ('chunks', 'chunks/batch-status'):
+        if method == 'POST' and suffix in ('chunks', 'chunks/batch', 'chunks/batch-status'):
             return target + ('?' + parts.query if parts.query else ''), True, False
         if method == 'GET' and suffix in ('chunks', 'stream'):
             return target + ('?' + parts.query if parts.query else ''), True, False
