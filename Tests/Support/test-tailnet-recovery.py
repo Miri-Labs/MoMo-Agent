@@ -174,6 +174,8 @@ final class PolicyFailureProtocol: URLProtocol, @unchecked Sendable {
         let safe = String(data: try JSONSerialization.data(withJSONObject: direct), encoding: .utf8)!
         precondition(!safe.contains("private") && !safe.contains("192.168") && !safe.contains("100.64"))
         precondition(TailnetDiagnostics.category(URL(string: "http://100.64.0.2/v1/runs/private-id/events?token=secret")) == "events")
+        precondition(TailnetDiagnostics.category(URL(string: "http://100.64.0.2/context/v1/audio/chunks")) == "audio-upload")
+        precondition(TailnetDiagnostics.category(URL(string: "http://100.64.0.2/context/v1/audio/chunks/batch")) == "audio-upload-batch")
         precondition(TailnetDiagnostics.category(URL(string: "http://100.64.0.2/private/path")) == nil)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -519,6 +521,26 @@ final class PolicyFailureProtocol: URLProtocol, @unchecked Sendable {
             preconditionFailure("Non-idempotent POST without Idempotency-Key must not auto-retry")
         } catch let error as URLError where error.code == .badURL {}
         precondition(TransientPeerProtocol.attempts == 1, "Non-idempotent POST attempted only once")
+
+        // Large idempotent audio upload: MUST still transparently retry fast SOCKS5 -1000 dial failure,
+        // but MUST NOT blindly repeat a slow .timedOut 3x inside transport (let caller downshift batch size).
+        TransientPeerProtocol.reset(failures: 1, code: .badURL)
+        var largeAudioPost = URLRequest(url: endpoint.appendingPathComponent("context/v1/audio/chunks/batch"))
+        largeAudioPost.httpMethod = "POST"
+        largeAudioPost.setValue("batch-test-key", forHTTPHeaderField: "Idempotency-Key")
+        largeAudioPost.httpBody = Data(repeating: 0x41, count: 128 * 1024)
+        let audioRecovered = try await transport.open(largeAudioPost)!
+        for try await _ in audioRecovered.chunks {}
+        precondition(audioRecovered.status == 200 && TransientPeerProtocol.attempts == 2,
+                     "Large idempotent audio upload must still recover from fast SOCKS5 -1000 cutoff")
+
+        TransientPeerProtocol.reset(failures: 3, code: .timedOut)
+        do {
+            _ = try await transport.open(largeAudioPost)
+            preconditionFailure("Large timed-out audio upload must fail fast to caller without transport retry")
+        } catch let error as URLError where error.code == .timedOut {}
+        precondition(TransientPeerProtocol.attempts == 1,
+                     "Large timed-out upload (>64 KB) must not be repeated 3x inside EmbeddedTailnetTransport")
 
         // Regression 7: System VPN/PAC proxy-bypass (-1022 ATS) on a Tailnet session must invalidate
         // the poisoned URLSession pool (preserving the TailscaleNode), transparently retry /context/v1/memories,

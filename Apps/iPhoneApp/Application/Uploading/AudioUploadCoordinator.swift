@@ -41,12 +41,18 @@ final class AudioUploadCoordinator {
 
     private nonisolated static let relaySafeMaxBytes = 460 * 1024
     private nonisolated static let relayHardCapBytes = 512 * 1024
-    private nonisolated static let fetchBatchLimit = 24
+    private nonisolated static let maxFetchBatchLimit = 24
+    private nonisolated static let initialBatchChunks = 4
+    private nonisolated static let initialBatchBytes = 500_000
+    private nonisolated static let mediumBatchChunks = 4
+    private nonisolated static let mediumBatchBytes = 900_000
     private nonisolated static let maxChunksPerHTTPBatch = 12
     private nonisolated static let maxBytesPerHTTPBatch = 3_200_000
     private nonisolated static let maxConcurrentBatchUploads = 2
     private nonisolated static let maxConcurrentSingleUploads = 3
     private nonisolated static let maxConcurrentPrepares = 4
+    private nonisolated static let fastThroughputBytesPerSec: Double = 400_000
+    private nonisolated static let mediumThroughputBytesPerSec: Double = 120_000
 
     private(set) var pendingCount = 0
     private(set) var uploadedCount = 0
@@ -80,6 +86,12 @@ final class AudioUploadCoordinator {
     @ObservationIgnored private var hydratedSourceRevisions = false
     @ObservationIgnored private var batchEndpointSupported: Bool?
     @ObservationIgnored private var consecutiveTransportOutages = 0
+    @ObservationIgnored private(set) var adaptiveMaxChunksPerBatch = initialBatchChunks
+    @ObservationIgnored private(set) var adaptiveMaxBytesPerBatch = initialBatchBytes
+    @ObservationIgnored private(set) var adaptiveMaxConcurrentBatches = 1
+    @ObservationIgnored private(set) var adaptiveMaxConcurrentSingles = 1
+    @ObservationIgnored private var slowLinkBreatherRequired = false
+    @ObservationIgnored private var consecutiveBatchTimeouts = 0
     @ObservationIgnored private let logger = Logger(subsystem: "com.momoagent.ios", category: "MacAudioRelay")
 
     init(
@@ -100,9 +112,78 @@ final class AudioUploadCoordinator {
         pendingUploadHint = true
     }
 
+    private func resetAdaptiveSizing() {
+        adaptiveMaxChunksPerBatch = Self.initialBatchChunks
+        adaptiveMaxBytesPerBatch = Self.initialBatchBytes
+        adaptiveMaxConcurrentBatches = 1
+        adaptiveMaxConcurrentSingles = 1
+        slowLinkBreatherRequired = false
+        consecutiveBatchTimeouts = 0
+    }
+
+    private func recordSuccessfulTransfer(bytes: Int, elapsedSeconds: TimeInterval, fromBatch: Bool = false) {
+        guard bytes > 0 else { return }
+        if fromBatch {
+            consecutiveBatchTimeouts = 0
+        }
+        let elapsed = max(0.005, elapsedSeconds)
+        let throughput = Double(bytes) / elapsed
+        // If multi-chunk batches have already timed out repeatedly in this session, stay in
+        // single-chunk mode until network recovery or foreground reset to avoid oscillating.
+        if consecutiveBatchTimeouts >= 2 {
+            adaptiveMaxChunksPerBatch = 1
+            adaptiveMaxBytesPerBatch = Self.initialBatchBytes
+            adaptiveMaxConcurrentBatches = 1
+            adaptiveMaxConcurrentSingles = 1
+            slowLinkBreatherRequired = throughput < Self.mediumThroughputBytesPerSec
+            return
+        }
+        if throughput >= Self.fastThroughputBytesPerSec {
+            if adaptiveMaxChunksPerBatch <= 1 {
+                // Gradual AIMD recovery: step 1 -> 4 before jumping to 12x2.
+                adaptiveMaxChunksPerBatch = Self.mediumBatchChunks
+                adaptiveMaxBytesPerBatch = Self.initialBatchBytes
+                adaptiveMaxConcurrentBatches = 1
+                adaptiveMaxConcurrentSingles = 2
+            } else {
+                adaptiveMaxChunksPerBatch = Self.maxChunksPerHTTPBatch
+                adaptiveMaxBytesPerBatch = Self.maxBytesPerHTTPBatch
+                adaptiveMaxConcurrentBatches = Self.maxConcurrentBatchUploads
+                adaptiveMaxConcurrentSingles = Self.maxConcurrentSingleUploads
+            }
+            slowLinkBreatherRequired = false
+        } else if throughput >= Self.mediumThroughputBytesPerSec {
+            adaptiveMaxChunksPerBatch = Self.mediumBatchChunks
+            adaptiveMaxBytesPerBatch = Self.mediumBatchBytes
+            adaptiveMaxConcurrentBatches = 1
+            adaptiveMaxConcurrentSingles = 2
+            slowLinkBreatherRequired = false
+        } else {
+            // Slow link (e.g. Tailscale DERP at 10-80 KB/s): send 1 chunk serially at a time
+            // with a short breather between chunks so chat/SSE never suffer bufferbloat or 5s SOCKS5 timeouts.
+            adaptiveMaxChunksPerBatch = 1
+            adaptiveMaxBytesPerBatch = Self.initialBatchBytes
+            adaptiveMaxConcurrentBatches = 1
+            adaptiveMaxConcurrentSingles = 1
+            slowLinkBreatherRequired = true
+        }
+    }
+
+    private func downshiftAfterTransportFailure(batchTimedOut: Bool = false) {
+        if batchTimedOut {
+            consecutiveBatchTimeouts += 1
+        }
+        adaptiveMaxChunksPerBatch = 1
+        adaptiveMaxBytesPerBatch = Self.initialBatchBytes
+        adaptiveMaxConcurrentBatches = 1
+        adaptiveMaxConcurrentSingles = 1
+        slowLinkBreatherRequired = true
+    }
+
     func foreground() {
         batchEndpointSupported = nil
         consecutiveTransportOutages = 0
+        resetAdaptiveSizing()
         Task { [weak self] in
             guard let self else { return }
             try? await self.archive.resetTransientMacAudioUploadBackoff()
@@ -122,17 +203,20 @@ final class AudioUploadCoordinator {
                    !due.isEmpty {
                     self.requestUpload()
                 }
-                // During active bulk upload, throttle transcript polling to avoid competing for
-                // Tailscale/Relay sockets while still refreshing transcripts periodically.
+                // Never block upload retry polling on remote transcript sync (which can take 15-30s on slow DERP).
+                // While uploads are active or queued, throttle transcript sync to avoid competing for DERP sockets.
+                let busyUploading = self.isUploading || self.pendingCount > 0 || self.failedCount > 0
                 let shouldSyncTranscripts: Bool
-                if self.isUploading {
+                if busyUploading {
                     let last = self.lastSyncedTranscriptsAt ?? .distantPast
                     shouldSyncTranscripts = Date().timeIntervalSince(last) >= 25
                 } else {
                     shouldSyncTranscripts = true
                 }
-                if shouldSyncTranscripts {
-                    await self.syncRemoteTranscriptsFromMac()
+                if shouldSyncTranscripts && self.syncTask == nil {
+                    Task { [weak self] in
+                        await self?.syncRemoteTranscriptsFromMac()
+                    }
                 }
                 let sleepSeconds: Double = (!self.isUploading && (self.pendingCount > 0 || self.failedCount > 0)) ? 3 : 8
                 try? await Task.sleep(for: .seconds(sleepSeconds))
@@ -152,6 +236,7 @@ final class AudioUploadCoordinator {
             guard let self else { return }
             self.consecutiveTransportOutages = 0
             self.batchEndpointSupported = nil
+            self.resetAdaptiveSizing()
             try? await self.archive.resetTransientMacAudioUploadBackoff()
             await self.refreshCounts()
             if self.pendingCount > 0 || self.failedCount > 0 {
@@ -164,6 +249,7 @@ final class AudioUploadCoordinator {
         lastError = nil
         consecutiveTransportOutages = 0
         batchEndpointSupported = nil
+        resetAdaptiveSizing()
         Task { [weak self] in
             guard let self else { return }
             try? await self.archive.resetTransientMacAudioUploadBackoff()
@@ -278,9 +364,11 @@ final class AudioUploadCoordinator {
     ) async -> Error? {
         await refreshCounts()
         guard let client = dataClientProvider() else {
-            return pendingCount > 0 || failedCount > 0
-                ? UploadError.transientDeliveryIncomplete("尚未连接 Mac")
-                : nil
+            if pendingCount > 0 || failedCount > 0 {
+                lastError = String(localized: "正在等待连接 Mac…")
+                return UploadError.transientDeliveryIncomplete("尚未连接 Mac")
+            }
+            return nil
         }
 
         final class BGGrantBox: @unchecked Sendable {
@@ -343,9 +431,19 @@ final class AudioUploadCoordinator {
         var firstBlockingError: Error?
         var reportedAuthError = false
         var attemptedInPass = Set<UUID>()
+        let effectiveTimeout: TimeInterval = ownsBackgroundGrant ? max(requestTimeout, 60) : requestTimeout
 
         while !Task.isCancelled {
-            guard let pending = try? await archive.pendingMacAudioUploads(limit: Self.fetchBatchLimit) else { break }
+            let fetchLimit: Int
+            if adaptiveMaxChunksPerBatch <= 1 {
+                fetchLimit = 1
+            } else {
+                fetchLimit = min(
+                    Self.maxFetchBatchLimit,
+                    max(adaptiveMaxChunksPerBatch, adaptiveMaxChunksPerBatch * adaptiveMaxConcurrentBatches)
+                )
+            }
+            guard let pending = try? await archive.pendingMacAudioUploads(limit: fetchLimit) else { break }
             let batch = pending.filter { !attemptedInPass.contains($0.chunkID) }
             if batch.isEmpty { break }
             for chunk in batch {
@@ -408,22 +506,41 @@ final class AudioUploadCoordinator {
             var hitTransportOutage = false
             var fallbackSingles: [ReadyUploadItem] = []
 
-            if client.supportsLargePayloads && batchEndpointSupported != false && readyItems.count >= 2 {
-                let httpBatches = Self.packHTTPBatches(readyItems)
-                let batchResults = await Self.uploadHTTPBatchesConcurrently(
-                    batches: httpBatches,
-                    client: client,
-                    timeout: max(requestTimeout, 45)
+            if client.supportsLargePayloads && batchEndpointSupported != false && adaptiveMaxChunksPerBatch >= 2 && readyItems.count >= 2 {
+                let allBatches = Self.packHTTPBatches(
+                    readyItems,
+                    maxChunks: adaptiveMaxChunksPerBatch,
+                    maxBytes: adaptiveMaxBytesPerBatch
                 )
+                let maxInFlight = max(1, adaptiveMaxConcurrentBatches)
+                let activeBatches = Array(allBatches.prefix(maxInFlight))
+                if allBatches.count > maxInFlight {
+                    // Defer overflow batches to the next iteration so throughput measurement adapts batch size first.
+                    for deferredBatch in allBatches.dropFirst(maxInFlight) {
+                        for item in deferredBatch {
+                            attemptedInPass.remove(item.chunk.chunkID)
+                        }
+                    }
+                }
+                let batchStart = Date()
+                let batchResults = await Self.uploadHTTPBatchesConcurrently(
+                    batches: activeBatches,
+                    client: client,
+                    timeout: effectiveTimeout,
+                    maxConcurrency: maxInFlight
+                )
+                let batchElapsed = Date().timeIntervalSince(batchStart)
                 if Task.isCancelled { break }
 
                 var verifiedReceipts: [(chunkID: UUID, remoteSHA256: String, remoteSourceID: String)] = []
                 var transcodeCleanupChunks: [PendingMacAudioChunk] = []
+                var succeededBatchBytes = 0
 
                 for (groupItems, result) in batchResults {
                     switch result {
                     case .success(let response):
                         batchEndpointSupported = true
+                        succeededBatchBytes += groupItems.reduce(0) { $0 + $1.payload.data.count }
                         var byID: [String: AudioChunkBatchItemResult] = [:]
                         byID.reserveCapacity(response.results.count)
                         for r in response.results {
@@ -436,6 +553,7 @@ final class AudioUploadCoordinator {
                                     expectedChunkID: expectedID,
                                     expectedSHA: item.payload.sha256
                                 )
+                                lastError = mismatch.localizedDescription
                                 try? await archive.markMacAudioChunkFailed(
                                     chunkID: item.chunk.chunkID,
                                     error: mismatch.localizedDescription,
@@ -453,6 +571,7 @@ final class AudioUploadCoordinator {
                                         expectedChunkID: expectedID,
                                         expectedSHA: item.payload.sha256
                                     )
+                                    lastError = mismatch.localizedDescription
                                     try? await archive.markMacAudioChunkFailed(
                                         chunkID: item.chunk.chunkID,
                                         error: mismatch.localizedDescription,
@@ -479,6 +598,7 @@ final class AudioUploadCoordinator {
                                     )
                                     Self.removeCachedTranscodeIfPresent(for: item.chunk)
                                 } else {
+                                    lastError = Self.userFacingErrorMessage(for: itemErr)
                                     try? await archive.markMacAudioChunkFailed(
                                         chunkID: item.chunk.chunkID,
                                         error: r.error ?? itemErr.localizedDescription,
@@ -492,12 +612,13 @@ final class AudioUploadCoordinator {
                     case .failure(let error):
                         if Task.isCancelled { break }
                         if Self.shouldFallbackFromBatchEndpoint(error) {
-                            logger.info("Mac batch upload endpoint unsupported; falling back to concurrent single-chunk upload")
+                            logger.info("Mac batch upload endpoint unsupported; falling back to single-chunk upload")
                             batchEndpointSupported = false
                             fallbackSingles.append(contentsOf: groupItems)
                             continue
                         }
                         if case AgentClientError.http(413, _, _, _) = error {
+                            downshiftAfterTransportFailure()
                             fallbackSingles.append(contentsOf: groupItems)
                             continue
                         }
@@ -522,17 +643,25 @@ final class AudioUploadCoordinator {
                             firstBlockingError = firstBlockingError ?? error
                             hitTransportOutage = true
                         case .transportOutage:
-                            let delay = nextTransportRetryDelay()
-                            for item in groupItems {
-                                try? await archive.markMacAudioChunkFailed(
-                                    chunkID: item.chunk.chunkID,
-                                    error: displayMsg,
-                                    permanent: false,
-                                    retryDelay: delay
-                                )
+                            let timedOut = Self.isTimeoutError(error)
+                            downshiftAfterTransportFailure(batchTimedOut: timedOut)
+                            // If a multi-chunk batch timed out (common on slow DERP links), immediately fall back
+                            // to serial single-chunk upload instead of parking the whole batch in backoff.
+                            if timedOut && groupItems.count > 1 && ownsBackgroundGrant {
+                                fallbackSingles.append(contentsOf: groupItems)
+                            } else {
+                                let delay = nextTransportRetryDelay()
+                                for item in groupItems {
+                                    try? await archive.markMacAudioChunkFailed(
+                                        chunkID: item.chunk.chunkID,
+                                        error: displayMsg,
+                                        permanent: false,
+                                        retryDelay: delay
+                                    )
+                                }
+                                firstBlockingError = firstBlockingError ?? error
+                                hitTransportOutage = true
                             }
-                            firstBlockingError = firstBlockingError ?? error
-                            hitTransportOutage = true
                         default:
                             // Isolate per-chunk by retrying each chunk individually.
                             fallbackSingles.append(contentsOf: groupItems)
@@ -546,9 +675,12 @@ final class AudioUploadCoordinator {
                         for chunk in transcodeCleanupChunks {
                             Self.removeCachedTranscodeIfPresent(for: chunk)
                         }
-                        consecutiveTransportOutages = 0
+                        if !hitTransportOutage && firstBlockingError == nil && fallbackSingles.isEmpty {
+                            recordSuccessfulTransfer(bytes: succeededBatchBytes, elapsedSeconds: batchElapsed, fromBatch: true)
+                            consecutiveTransportOutages = 0
+                            lastError = nil
+                        }
                         lastUploadedAt = Date()
-                        lastError = nil
                         uploadedAny = true
                     } catch {
                         firstBlockingError = firstBlockingError ?? error
@@ -560,113 +692,224 @@ final class AudioUploadCoordinator {
             }
 
             if !fallbackSingles.isEmpty && !hitTransportOutage && !Task.isCancelled {
-                let singleResults = await Self.uploadSingleChunksConcurrently(
-                    items: fallbackSingles,
-                    client: client,
-                    timeout: requestTimeout
-                )
-                if Task.isCancelled { break }
-
-                var verifiedReceipts: [(chunkID: UUID, remoteSHA256: String, remoteSourceID: String)] = []
-                var transcodeCleanupChunks: [PendingMacAudioChunk] = []
-
-                for (item, result) in singleResults {
-                    switch result {
-                    case .success(let receipt):
-                        let expectedChunkID = item.chunk.chunkID.uuidString.lowercased()
-                        guard receipt.accepted,
-                              receipt.chunkId.lowercased() == expectedChunkID,
-                              receipt.sha256.lowercased() == item.payload.sha256.lowercased() else {
-                            let mismatch = UploadError.receiptIntegrityMismatch(
-                                expectedChunkID: expectedChunkID,
-                                expectedSHA: item.payload.sha256
-                            )
-                            lastError = mismatch.localizedDescription
-                            try? await archive.markMacAudioChunkFailed(
-                                chunkID: item.chunk.chunkID,
-                                error: mismatch.localizedDescription,
-                                permanent: false
-                            )
-                            firstBlockingError = firstBlockingError ?? mismatch
-                            continue
-                        }
-                        verifiedReceipts.append((chunkID: item.chunk.chunkID, remoteSHA256: receipt.sha256, remoteSourceID: receipt.sourceId))
-                        transcodeCleanupChunks.append(item.chunk)
-
-                    case .failure(let error):
+                if adaptiveMaxConcurrentSingles <= 1 || fallbackSingles.count == 1 {
+                    // Serial single-chunk mode: persist & refresh UI after every single chunk and abort
+                    // immediately on the first transport outage without hammering a congested/dead link.
+                    for (idx, item) in fallbackSingles.enumerated() {
                         if Task.isCancelled { break }
-                        let kind = Self.classifyUploadError(error)
-                        let displayMsg = Self.userFacingErrorMessage(for: error)
-                        logger.warning("Failed uploading chunk \(item.chunk.chunkID.uuidString, privacy: .public) [\(String(describing: kind), privacy: .public)]: \(error.localizedDescription, privacy: .public)")
-                        lastError = displayMsg
-                        switch kind {
-                        case .unauthorized:
-                            try? await archive.markMacAudioChunkFailed(
-                                chunkID: item.chunk.chunkID,
-                                error: error.localizedDescription,
-                                permanent: false,
-                                retryDelay: 60
+                        let singleStart = Date()
+                        do {
+                            let receipt = try await client.uploadAudioChunk(
+                                meta: item.meta,
+                                audioData: item.payload.data,
+                                timeout: effectiveTimeout
                             )
-                            if !reportedAuthError {
-                                reportedAuthError = true
-                                onAuthenticationRequired(error)
+                            let singleElapsed = Date().timeIntervalSince(singleStart)
+                            let expectedChunkID = item.chunk.chunkID.uuidString.lowercased()
+                            guard receipt.accepted,
+                                  receipt.chunkId.lowercased() == expectedChunkID,
+                                  receipt.sha256.lowercased() == item.payload.sha256.lowercased() else {
+                                let mismatch = UploadError.receiptIntegrityMismatch(
+                                    expectedChunkID: expectedChunkID,
+                                    expectedSHA: item.payload.sha256
+                                )
+                                lastError = mismatch.localizedDescription
+                                try? await archive.markMacAudioChunkFailed(
+                                    chunkID: item.chunk.chunkID,
+                                    error: mismatch.localizedDescription,
+                                    permanent: false
+                                )
+                                firstBlockingError = firstBlockingError ?? mismatch
+                                continue
                             }
-                            firstBlockingError = firstBlockingError ?? error
-                            hitTransportOutage = true
-                        case .permanentChunkError:
-                            // Isolate poison/missing/corrupt chunk permanently so older healthy chunks are NEVER head-of-line blocked.
-                            try? await archive.markMacAudioChunkFailed(
+                            try await archive.markMacAudioChunkUploaded(
                                 chunkID: item.chunk.chunkID,
-                                error: error.localizedDescription,
-                                permanent: true
+                                remoteSHA256: receipt.sha256,
+                                remoteSourceID: receipt.sourceId
                             )
                             Self.removeCachedTranscodeIfPresent(for: item.chunk)
-                        case .transientChunkError:
-                            // Back off just this chunk (e.g. receipt/in-transit SHA mismatch) and keep advancing healthy chunks.
-                            try? await archive.markMacAudioChunkFailed(
-                                chunkID: item.chunk.chunkID,
-                                error: error.localizedDescription,
-                                permanent: false
-                            )
-                            firstBlockingError = firstBlockingError ?? error
-                        case .transportOutage:
-                            let delay = nextTransportRetryDelay()
-                            try? await archive.markMacAudioChunkFailed(
-                                chunkID: item.chunk.chunkID,
-                                error: displayMsg,
-                                permanent: false,
-                                retryDelay: delay
-                            )
+                            recordSuccessfulTransfer(bytes: item.payload.data.count, elapsedSeconds: singleElapsed)
+                            consecutiveTransportOutages = 0
+                            lastUploadedAt = Date()
+                            if firstBlockingError == nil {
+                                lastError = nil
+                            }
+                            uploadedAny = true
+                            await refreshCounts()
+                            if slowLinkBreatherRequired && idx + 1 < fallbackSingles.count && !Task.isCancelled {
+                                try? await Task.sleep(for: .milliseconds(150))
+                            }
+                        } catch {
+                            if Task.isCancelled { break }
+                            let kind = Self.classifyUploadError(error)
+                            let displayMsg = Self.userFacingErrorMessage(for: error)
+                            logger.warning("Failed uploading chunk \(item.chunk.chunkID.uuidString, privacy: .public) [\(String(describing: kind), privacy: .public)]: \(error.localizedDescription, privacy: .public)")
+                            lastError = displayMsg
+                            switch kind {
+                            case .unauthorized:
+                                try? await archive.markMacAudioChunkFailed(
+                                    chunkID: item.chunk.chunkID,
+                                    error: error.localizedDescription,
+                                    permanent: false,
+                                    retryDelay: 60
+                                )
+                                if !reportedAuthError {
+                                    reportedAuthError = true
+                                    onAuthenticationRequired(error)
+                                }
+                                firstBlockingError = firstBlockingError ?? error
+                                hitTransportOutage = true
+                            case .permanentChunkError:
+                                try? await archive.markMacAudioChunkFailed(
+                                    chunkID: item.chunk.chunkID,
+                                    error: error.localizedDescription,
+                                    permanent: true
+                                )
+                                Self.removeCachedTranscodeIfPresent(for: item.chunk)
+                            case .transientChunkError:
+                                try? await archive.markMacAudioChunkFailed(
+                                    chunkID: item.chunk.chunkID,
+                                    error: error.localizedDescription,
+                                    permanent: false
+                                )
+                                firstBlockingError = firstBlockingError ?? error
+                            case .transportOutage:
+                                downshiftAfterTransportFailure()
+                                let delay = nextTransportRetryDelay()
+                                try? await archive.markMacAudioChunkFailed(
+                                    chunkID: item.chunk.chunkID,
+                                    error: displayMsg,
+                                    permanent: false,
+                                    retryDelay: delay
+                                )
+                                firstBlockingError = firstBlockingError ?? error
+                                hitTransportOutage = true
+                            }
+                            if hitTransportOutage { break }
+                        }
+                    }
+                } else {
+                    let singlesStart = Date()
+                    let singleResults = await Self.uploadSingleChunksConcurrently(
+                        items: fallbackSingles,
+                        client: client,
+                        timeout: effectiveTimeout,
+                        maxConcurrency: adaptiveMaxConcurrentSingles
+                    )
+                    let singlesElapsed = Date().timeIntervalSince(singlesStart)
+                    if Task.isCancelled { break }
+
+                    var verifiedReceipts: [(chunkID: UUID, remoteSHA256: String, remoteSourceID: String)] = []
+                    var transcodeCleanupChunks: [PendingMacAudioChunk] = []
+                    var succeededBytes = 0
+
+                    for (item, result) in singleResults {
+                        switch result {
+                        case .success(let receipt):
+                            let expectedChunkID = item.chunk.chunkID.uuidString.lowercased()
+                            guard receipt.accepted,
+                                  receipt.chunkId.lowercased() == expectedChunkID,
+                                  receipt.sha256.lowercased() == item.payload.sha256.lowercased() else {
+                                let mismatch = UploadError.receiptIntegrityMismatch(
+                                    expectedChunkID: expectedChunkID,
+                                    expectedSHA: item.payload.sha256
+                                )
+                                lastError = mismatch.localizedDescription
+                                try? await archive.markMacAudioChunkFailed(
+                                    chunkID: item.chunk.chunkID,
+                                    error: mismatch.localizedDescription,
+                                    permanent: false
+                                )
+                                firstBlockingError = firstBlockingError ?? mismatch
+                                continue
+                            }
+                            succeededBytes += item.payload.data.count
+                            verifiedReceipts.append((chunkID: item.chunk.chunkID, remoteSHA256: receipt.sha256, remoteSourceID: receipt.sourceId))
+                            transcodeCleanupChunks.append(item.chunk)
+
+                        case .failure(let error):
+                            if Task.isCancelled { break }
+                            let kind = Self.classifyUploadError(error)
+                            let displayMsg = Self.userFacingErrorMessage(for: error)
+                            logger.warning("Failed uploading chunk \(item.chunk.chunkID.uuidString, privacy: .public) [\(String(describing: kind), privacy: .public)]: \(error.localizedDescription, privacy: .public)")
+                            lastError = displayMsg
+                            switch kind {
+                            case .unauthorized:
+                                try? await archive.markMacAudioChunkFailed(
+                                    chunkID: item.chunk.chunkID,
+                                    error: error.localizedDescription,
+                                    permanent: false,
+                                    retryDelay: 60
+                                )
+                                if !reportedAuthError {
+                                    reportedAuthError = true
+                                    onAuthenticationRequired(error)
+                                }
+                                firstBlockingError = firstBlockingError ?? error
+                                hitTransportOutage = true
+                            case .permanentChunkError:
+                                // Isolate poison/missing/corrupt chunk permanently so older healthy chunks are NEVER head-of-line blocked.
+                                try? await archive.markMacAudioChunkFailed(
+                                    chunkID: item.chunk.chunkID,
+                                    error: error.localizedDescription,
+                                    permanent: true
+                                )
+                                Self.removeCachedTranscodeIfPresent(for: item.chunk)
+                            case .transientChunkError:
+                                // Back off just this chunk (e.g. receipt/in-transit SHA mismatch) and keep advancing healthy chunks.
+                                try? await archive.markMacAudioChunkFailed(
+                                    chunkID: item.chunk.chunkID,
+                                    error: error.localizedDescription,
+                                    permanent: false
+                                )
+                                firstBlockingError = firstBlockingError ?? error
+                            case .transportOutage:
+                                downshiftAfterTransportFailure()
+                                let delay = nextTransportRetryDelay()
+                                try? await archive.markMacAudioChunkFailed(
+                                    chunkID: item.chunk.chunkID,
+                                    error: displayMsg,
+                                    permanent: false,
+                                    retryDelay: delay
+                                )
+                                firstBlockingError = firstBlockingError ?? error
+                                hitTransportOutage = true
+                            }
+                        }
+                    }
+
+                    if !verifiedReceipts.isEmpty {
+                        do {
+                            try await archive.markMacAudioChunksUploaded(verifiedReceipts)
+                            for chunk in transcodeCleanupChunks {
+                                Self.removeCachedTranscodeIfPresent(for: chunk)
+                            }
+                            if !hitTransportOutage && firstBlockingError == nil {
+                                recordSuccessfulTransfer(bytes: succeededBytes, elapsedSeconds: singlesElapsed)
+                                consecutiveTransportOutages = 0
+                                lastError = nil
+                            }
+                            lastUploadedAt = Date()
+                            uploadedAny = true
+                        } catch {
                             firstBlockingError = firstBlockingError ?? error
                             hitTransportOutage = true
                         }
-                    }
-                }
-
-                if !verifiedReceipts.isEmpty {
-                    do {
-                        try await archive.markMacAudioChunksUploaded(verifiedReceipts)
-                        for chunk in transcodeCleanupChunks {
-                            Self.removeCachedTranscodeIfPresent(for: chunk)
-                        }
-                        consecutiveTransportOutages = 0
-                        lastUploadedAt = Date()
-                        if !hitTransportOutage {
-                            lastError = nil
-                        }
-                        uploadedAny = true
-                    } catch {
-                        firstBlockingError = firstBlockingError ?? error
-                        hitTransportOutage = true
                     }
                 }
             }
 
             await refreshCounts()
             if hitTransportOutage { break }
+            if slowLinkBreatherRequired && !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(150))
+            }
         }
 
         await refreshCounts()
+        if pendingCount == 0 && failedCount == 0 && firstBlockingError == nil {
+            lastError = nil
+        }
         if syncAfterUpload && uploadedAny && !Task.isCancelled {
             await syncRemoteTranscriptsFromMac()
         }
@@ -677,6 +920,18 @@ final class AudioUploadCoordinator {
         let step = min(3, consecutiveTransportOutages)
         consecutiveTransportOutages += 1
         return min(20.0, 3.0 * pow(2.0, Double(step)))
+    }
+
+    private static func isTimeoutError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain,
+           URLError.Code(rawValue: nsError.code) == .timedOut {
+            return true
+        }
+        if case AgentClientError.http(let status, _, _, _) = error, status == 408 || status == 504 {
+            return true
+        }
+        return false
     }
 
     private static func shouldFallbackFromBatchEndpoint(_ error: Error) -> Bool {
@@ -764,13 +1019,19 @@ final class AudioUploadCoordinator {
         let meta: AudioChunkUploadMeta
     }
 
-    private nonisolated static func packHTTPBatches(_ items: [ReadyUploadItem]) -> [[ReadyUploadItem]] {
+    private nonisolated static func packHTTPBatches(
+        _ items: [ReadyUploadItem],
+        maxChunks: Int,
+        maxBytes: Int
+    ) -> [[ReadyUploadItem]] {
+        let chunkCap = max(1, maxChunks)
+        let byteCap = max(1, maxBytes)
         var batches: [[ReadyUploadItem]] = []
         var current: [ReadyUploadItem] = []
         var currentBytes = 0
         for item in items {
             let sz = item.payload.data.count
-            if !current.isEmpty && (current.count >= maxChunksPerHTTPBatch || currentBytes + sz > maxBytesPerHTTPBatch) {
+            if !current.isEmpty && (current.count >= chunkCap || currentBytes + sz > byteCap) {
                 batches.append(current)
                 current = []
                 currentBytes = 0
@@ -787,7 +1048,8 @@ final class AudioUploadCoordinator {
     private nonisolated static func uploadHTTPBatchesConcurrently(
         batches: [[ReadyUploadItem]],
         client: AgentClient,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        maxConcurrency: Int
     ) async -> [([ReadyUploadItem], Result<AudioChunkBatchUploadResponse, Error>)] {
         if batches.count == 1 {
             let group = batches[0]
@@ -802,7 +1064,7 @@ final class AudioUploadCoordinator {
         return await withTaskGroup(of: (Int, Result<AudioChunkBatchUploadResponse, Error>).self) { group in
             var results = Array<Result<AudioChunkBatchUploadResponse, Error>?>(repeating: nil, count: batches.count)
             var nextIdx = 0
-            let limit = min(maxConcurrentBatchUploads, batches.count)
+            let limit = min(max(1, maxConcurrency), batches.count)
             for _ in 0..<limit {
                 let idx = nextIdx
                 let wire = batches[idx].map { (meta: $0.meta, audioData: $0.payload.data) }
@@ -837,7 +1099,8 @@ final class AudioUploadCoordinator {
     private nonisolated static func uploadSingleChunksConcurrently(
         items: [ReadyUploadItem],
         client: AgentClient,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        maxConcurrency: Int
     ) async -> [(ReadyUploadItem, Result<AudioChunkUploadReceipt, Error>)] {
         if items.count == 1 {
             let item = items[0]
@@ -851,7 +1114,7 @@ final class AudioUploadCoordinator {
         return await withTaskGroup(of: (Int, Result<AudioChunkUploadReceipt, Error>).self) { group in
             var results = Array<Result<AudioChunkUploadReceipt, Error>?>(repeating: nil, count: items.count)
             var nextIdx = 0
-            let limit = min(maxConcurrentSingleUploads, items.count)
+            let limit = min(max(1, maxConcurrency), items.count)
             for _ in 0..<limit {
                 let idx = nextIdx
                 let item = items[idx]

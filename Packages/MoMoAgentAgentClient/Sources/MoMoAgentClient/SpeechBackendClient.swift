@@ -375,7 +375,8 @@ extension AgentClient {
             path: ["v1", "audio", "chunks", "batch-status"],
             method: "POST",
             body: body,
-            extraHeaders: ["Idempotency-Key": "batch-status-\(UUID().uuidString.lowercased())"]
+            extraHeaders: ["Idempotency-Key": "batch-status-\(UUID().uuidString.lowercased())"],
+            timeout: 20
         )
         // Decode outer `statuses` dictionary preserving raw chunk_id keys (do not snake-case-convert UUID/ID keys)
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -412,7 +413,7 @@ extension AgentClient {
     }
 
     public func transcriptionStatus() async throws -> MacTranscriptionStatus {
-        let data = try await rawRequest(path: ["v1", "transcription", "status"], method: "GET")
+        let data = try await rawRequest(path: ["v1", "transcription", "status"], method: "GET", timeout: 15)
         return try Self.speechDecoder().decode(MacTranscriptionStatus.self, from: data)
     }
 
