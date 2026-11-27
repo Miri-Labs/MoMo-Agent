@@ -217,6 +217,8 @@ enum AudioPlaybackFailure {
         switch error {
         case ArchiveError.staleSource, ArchiveError.sessionDeleted, ArchiveError.missingTranscript, ArchiveError.projectionConflict:
             return String(localized: "原文已修改或删除，这条引用不再可用。")
+        case PlaybackError.macAudioUnavailable:
+            return String(localized: "原音已归档到 Mac，请连接 Mac 后回听。")
         case ArchiveError.missingRecording:
             do {
                 let state = try await archive.recordingSummary(sessionID: source.sessionID).audioState

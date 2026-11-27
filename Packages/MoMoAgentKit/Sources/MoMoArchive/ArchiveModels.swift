@@ -208,4 +208,11 @@ public struct AudioLease: Sendable, Identifiable {
     public let chunkID: UUID
     public let audioURL: URL
     public let manifest: ChunkManifest
+
+    public init(id: UUID, chunkID: UUID, audioURL: URL, manifest: ChunkManifest) {
+        self.id = id
+        self.chunkID = chunkID
+        self.audioURL = audioURL
+        self.manifest = manifest
+    }
 }

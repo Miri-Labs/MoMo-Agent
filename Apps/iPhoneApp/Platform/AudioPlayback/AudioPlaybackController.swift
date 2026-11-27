@@ -1,7 +1,9 @@
 import AVFoundation
 import Observation
 import OSLog
+import MoMoAgentClient
 import MoMoArchive
+import MoMoContracts
 
 @MainActor @Observable
 final class AudioPlaybackController {
@@ -26,9 +28,13 @@ final class AudioPlaybackController {
     /// Another owner of the shared AVAudioSession, such as earphone capture, steps aside while playback runs.
     @ObservationIgnored var sessionWillActivate: () async -> Void = {}
     @ObservationIgnored var sessionDidDeactivate: () -> Void = {}
+    /// Optional Mac backend client for on-demand streaming of audio chunks reclaimed locally after upload.
+    @ObservationIgnored var remoteClientProvider: @MainActor () -> AgentClient? = { nil }
     @ObservationIgnored private let archive: ArchiveStore
     @ObservationIgnored private let audioSession: PlaybackAudioSession
     @ObservationIgnored private let waveformCache: PlaybackWaveformCache
+    @ObservationIgnored private let remoteCacheDirectory: URL
+    private nonisolated static let remoteCacheMaxBytes: Int64 = 64 * 1024 * 1024
     @ObservationIgnored private var timeline: PlaybackTimeline?
     @ObservationIgnored private var activePart: AudioPlaybackPart?
     @ObservationIgnored private var activeIndex: Int?
@@ -54,6 +60,7 @@ final class AudioPlaybackController {
         self.archive = archive
         self.audioSession = audioSession
         waveformCache = PlaybackWaveformCache(directory: archive.rootURL.appendingPathComponent("Library/Caches/MoMoAgent/waveforms-v2", isDirectory: true))
+        remoteCacheDirectory = archive.rootURL.appendingPathComponent("Library/Caches/MoMoAgent/remote-audio-v1", isDirectory: true)
         interruptions = PlaybackInterruptions { [weak self] in
             Task { @MainActor in await self?.pauseForInterruption() }
         }
@@ -434,8 +441,17 @@ final class AudioPlaybackController {
             throw PlaybackError.unavailable
         }
         let segment = currentTimeline.segments[index]
+        let member = currentTimeline.archives[segment.archiveIndex]
+        if segment.part.remoteMacAvailable {
+            return try await acquireRemoteMacPlaybackPart(segment.part, in: member)
+        }
         do {
-            return try await archive.acquirePlaybackPart(segment.part, in: currentTimeline.archives[segment.archiveIndex])
+            return try await archive.acquirePlaybackPart(segment.part, in: member)
+        } catch ArchiveError.missingRecording {
+            if remoteClientProvider() != nil {
+                return try await acquireRemoteMacPlaybackPart(segment.part, in: member)
+            }
+            throw ArchiveError.missingRecording(segment.part.manifest.chunkID)
         } catch ArchiveError.staleSource {
             guard let currentTarget = snapshot?.target else { throw ArchiveError.staleSource }
             let refreshed = try await loadTimeline(currentTarget)
@@ -443,13 +459,154 @@ final class AudioPlaybackController {
                   refreshed.segments[index].part == segment.part else {
                 throw ArchiveError.staleSource
             }
-            let part = try await archive.acquirePlaybackPart(
-                refreshed.segments[index].part,
-                in: refreshed.archives[refreshed.segments[index].archiveIndex]
-            )
+            let refreshedMember = refreshed.archives[refreshed.segments[index].archiveIndex]
+            let part: AudioPlaybackPart
+            if refreshed.segments[index].part.remoteMacAvailable {
+                part = try await acquireRemoteMacPlaybackPart(refreshed.segments[index].part, in: refreshedMember)
+            } else {
+                part = try await archive.acquirePlaybackPart(refreshed.segments[index].part, in: refreshedMember)
+            }
             self.timeline = refreshed
             return part
         }
+    }
+
+    private func acquireRemoteMacPlaybackPart(_ part: ArchivedPlaybackPart, in member: ArchivedPlaybackTimeline) async throws -> AudioPlaybackPart {
+        try await archive.validatePlaybackTimeline(member)
+        let chunkID = part.manifest.chunkID
+        let cacheDir = remoteCacheDirectory
+        let existingURL = Self.existingCachedRemoteAudioURL(chunkID: chunkID, in: cacheDir)
+        let cachedURL: URL
+        if let existingURL {
+            cachedURL = existingURL
+            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: existingURL.path)
+        } else {
+            guard let client = remoteClientProvider() else {
+                throw PlaybackError.macAudioUnavailable
+            }
+            let data: Data
+            do {
+                data = try await client.fetchAudioChunkStream(chunkID: chunkID.uuidString.lowercased(), timeout: 30)
+            } catch {
+                if error is CancellationError { throw error }
+                throw PlaybackError.macAudioUnavailable
+            }
+            guard !data.isEmpty else { throw PlaybackError.macAudioUnavailable }
+            cachedURL = try await Task.detached(priority: .userInitiated) {
+                try Self.persistRemoteAudioCache(data: data, chunkID: chunkID, in: cacheDir)
+            }.value
+            try await archive.validatePlaybackTimeline(member)
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            try Self.buildRemotePlaybackPart(for: part, fileURL: cachedURL)
+        }.value
+    }
+
+    private nonisolated static func existingCachedRemoteAudioURL(chunkID: UUID, in directory: URL) -> URL? {
+        let base = chunkID.uuidString.lowercased()
+        for ext in ["m4a", "wav"] {
+            let candidate = directory.appendingPathComponent("\(base).\(ext)")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    private nonisolated static func persistRemoteAudioCache(data: Data, chunkID: UUID, in directory: URL) throws -> URL {
+        let fm = FileManager.default
+        let protection: [FileAttributeKey: Any] = [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true, attributes: protection)
+        var dirURL = directory
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? dirURL.setResourceValues(values)
+
+        let ext = data.prefix(4) == Data("RIFF".utf8) ? "wav" : "m4a"
+        let finalURL = directory.appendingPathComponent("\(chunkID.uuidString.lowercased()).\(ext)")
+        try data.write(to: finalURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        // Validate container readability before returning so corrupt responses never pollute cache.
+        do {
+            _ = try AVAudioFile(forReading: finalURL)
+        } catch {
+            try? fm.removeItem(at: finalURL)
+            throw PlaybackError.macAudioUnavailable
+        }
+        pruneRemoteAudioCache(in: directory, maxBytes: remoteCacheMaxBytes)
+        return finalURL
+    }
+
+    private nonisolated static func pruneRemoteAudioCache(in directory: URL, maxBytes: Int64) {
+        let fm = FileManager.default
+        guard let urls = try? fm.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        var entries: [(url: URL, size: Int64, modified: Date)] = []
+        var total: Int64 = 0
+        for url in urls {
+            guard let rv = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+                  let size = rv.fileSize else { continue }
+            let sz = Int64(size)
+            total += sz
+            entries.append((url, sz, rv.contentModificationDate ?? .distantPast))
+        }
+        guard total > maxBytes else { return }
+        for entry in entries.sorted(by: { $0.modified < $1.modified }) {
+            guard total > maxBytes else { break }
+            try? fm.removeItem(at: entry.url)
+            total -= entry.size
+        }
+    }
+
+    private nonisolated static func buildRemotePlaybackPart(for part: ArchivedPlaybackPart, fileURL: URL) throws -> AudioPlaybackPart {
+        let file = try AVAudioFile(forReading: fileURL, commonFormat: .pcmFormatFloat32, interleaved: false)
+        let orig = part.manifest
+        let adaptedManifest: ChunkManifest
+        let adaptedFrames: FrameRange
+        if file.processingFormat.sampleRate == orig.sampleRate,
+           Int(file.processingFormat.channelCount) == orig.channels,
+           file.length == orig.decodedFrameCount {
+            adaptedManifest = orig
+            adaptedFrames = part.frames
+        } else {
+            let sr = file.processingFormat.sampleRate
+            let ch = max(1, min(2, Int(file.processingFormat.channelCount)))
+            let len = max(1, file.length)
+            let scaledCount = max(1, Int64((Double(len) / max(1.0, sr) * orig.timebaseHz).rounded()))
+            let newRange = try FrameRange(start: orig.frames.start, count: scaledCount)
+            let clippedStart = min(max(part.frames.start, newRange.start), max(newRange.start, newRange.end - 1))
+            let clippedEnd = max(clippedStart + 1, min(part.frames.end, newRange.end))
+            adaptedFrames = try FrameRange(start: clippedStart, count: clippedEnd - clippedStart)
+            let fileSize = Int64((try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? orig.byteCount)
+            adaptedManifest = try ChunkManifest(
+                sessionID: orig.sessionID,
+                epochID: orig.epochID,
+                chunkID: orig.chunkID,
+                sourceDeviceID: orig.sourceDeviceID,
+                sourceBuild: orig.sourceBuild,
+                sequence: orig.sequence,
+                frames: newRange,
+                timebaseHz: orig.timebaseHz,
+                wallClockAnchor: orig.wallClockAnchor,
+                timezoneOffset: orig.timezoneOffset,
+                codec: fileURL.pathExtension == "wav" ? .pcmInt16 : .aac,
+                sampleRate: sr,
+                channels: ch,
+                decodedFrameCount: len,
+                primingFrames: 0,
+                paddingFrames: 0,
+                byteCount: max(1, fileSize),
+                audioSHA256: orig.audioSHA256,
+                sealedAt: orig.sealedAt,
+                representation: orig.representation,
+                sourceRanges: orig.representation == .full ? nil : [newRange],
+                sourceKind: orig.sourceKind
+            )
+        }
+        let lease = AudioLease(id: UUID(), chunkID: orig.chunkID, audioURL: fileURL, manifest: adaptedManifest)
+        return AudioPlaybackPart(lease: lease, frames: adaptedFrames)
     }
 
     private func start(index: Int, position: Double, attempt: UInt64) async throws {
@@ -654,7 +811,19 @@ final class AudioPlaybackController {
     }
 }
 
-enum PlaybackError: Error { case unavailable }
+enum PlaybackError: Error, LocalizedError {
+    case unavailable
+    case macAudioUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            return String(localized: "原音暂不可用。")
+        case .macAudioUnavailable:
+            return String(localized: "原音已归档到 Mac，请连接 Mac 后回听。")
+        }
+    }
+}
 
 private final class PlaybackInterruptions: @unchecked Sendable {
     private var tokens: [NSObjectProtocol] = []

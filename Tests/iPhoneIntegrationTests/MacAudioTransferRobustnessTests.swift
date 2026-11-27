@@ -788,4 +788,75 @@ final class MacAudioTransferRobustnessTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(transport.singleAttempts, 4, "Timed-out batch must immediately fall back to serial single-chunk uploads")
         XCTAssertNil(uploader.lastError, "Clearing the queue must clear transient lastError")
     }
+
+    /// On-demand Mac audio streaming: once a verified uploaded chunk is reclaimed locally on iPhone,
+    /// `AudioPlaybackController` fetches it from Mac `GET /v1/audio/stream?chunk_id=...`, caches it
+    /// locally for subsequent replays, and surfaces a clear error when Mac is offline.
+    func testReclaimedMacAudioPlaysOnDemandFromMacStreamAndCachesLocally() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoRemotePlay-\(UUID())", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let deviceID = UUID()
+        let archive = try ArchiveStore(rootURL: root, receiverDeviceID: deviceID)
+        let sessionID = UUID()
+        let staged = try await stagePCMChunk(
+            in: archive,
+            root: root,
+            sessionID: sessionID,
+            seconds: 1,
+            wallClock: Date().addingTimeInterval(-7200)
+        )
+        // Grab the original valid WAV bytes before local reclaim so stub Mac /v1/audio/stream can serve them.
+        let beforeLease = try await archive.acquireAudioLease(chunkID: staged.chunkID)
+        let originalBytes = try Data(contentsOf: beforeLease.audioURL)
+        await archive.releaseAudioLease(id: beforeLease.id)
+
+        // Mark verified uploaded + settled, then reclaim local file on iPhone!
+        try await archive.markMacAudioChunkUploaded(
+            chunkID: staged.chunkID,
+            remoteSHA256: staged.sha256,
+            remoteSourceID: "\(archive.libraryInstanceID.uuidString.lowercased())/\(sessionID.uuidString.lowercased())"
+        )
+        _ = try await archive.markMacAudioChunksStatus([staged.chunkID: "done"])
+        let reclaimed = try await archive.pruneUploadedMacAudio(keepRecentSeconds: 0, maxUploadedLocalBytes: 0, limit: 8)
+        XCTAssertEqual(reclaimed, [staged.chunkID], "Chunk should be reclaimed from local iPhone storage")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: beforeLease.audioURL.path))
+
+        // 1. Offline: playback fails cleanly with macAudioUnavailable.
+        let offlineSession = PlaybackAudioSession(activate: {}, deactivate: {}, prepare: { _ in true }, start: { _ in true })
+        let playback = AudioPlaybackController(archive: archive, audioSession: offlineSession)
+        do {
+            try await playback.play(.recording(sessionID, 0), startPaused: true)
+            XCTFail("Expected macAudioUnavailable when offline and uncached")
+        } catch PlaybackError.macAudioUnavailable {}
+
+        // 2. Connected to Mac: fetches from GET /v1/audio/stream?chunk_id=... and caches locally!
+        final class StreamCounter: @unchecked Sendable {
+            private let lock = NSLock()
+            var hits = 0
+            func inc() { lock.withLock { hits += 1 } }
+            var value: Int { lock.withLock { hits } }
+        }
+        let counter = StreamCounter()
+        let expectedID = staged.chunkID.uuidString.lowercased()
+        let client = try makeStubClient { req, _ in
+            let path = req.url?.path ?? ""
+            let query = req.url?.query ?? ""
+            if path.hasSuffix("/v1/audio/stream") && query.contains(expectedID) {
+                counter.inc()
+                return (200, ["Content-Type": "audio/wav"], originalBytes)
+            }
+            return (404, ["Content-Type": "application/json"], Data("{}".utf8))
+        }
+        playback.remoteClientProvider = { client }
+
+        try await playback.play(.recording(sessionID, 0), startPaused: true)
+        XCTAssertEqual(counter.value, 1, "First playback of reclaimed chunk must stream from Mac")
+        XCTAssertEqual(playback.playbackState, .paused)
+
+        // 3. Second playback hits local LRU cache without calling Mac again!
+        await playback.stop()
+        try await playback.play(.recording(sessionID, 0), startPaused: true)
+        XCTAssertEqual(counter.value, 1, "Cached remote chunk must replay locally without re-downloading from Mac")
+        await playback.stop()
+    }
 }

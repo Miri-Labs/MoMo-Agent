@@ -93,16 +93,16 @@ actor PlaybackWaveformCache {
     private func readWaveform(for timeline: PlaybackTimeline, archive: ArchiveStore,
                               progress: (@Sendable (Update) async -> Void)?, requirePersistence: Bool) async throws -> [Float] {
         guard let duration = timeline.duration, duration > 0,
-              timeline.segments.contains(where: { $0.part.audioAvailable }) else { return [] }
+              timeline.segments.contains(where: { $0.part.audioAvailable && !$0.part.remoteMacAvailable }) else { return [] }
         let binCount = 512
         var sums = [Double](repeating: 0, count: binCount)
         var weights = [Double](repeating: 0, count: binCount)
-        let total = timeline.segments.filter { $0.part.audioAvailable }.count
+        let total = timeline.segments.filter { $0.part.audioAvailable && !$0.part.remoteMacAvailable }.count
         var stamps: [[UUID: PlaybackPreviewFileStamp]] = []
         for member in timeline.archives { stamps.append(try await archive.playbackPreviewFileStamps(in: member)) }
         var completed = 0
         var lastPublication: ContinuousClock.Instant?
-        for segment in timeline.segments where segment.part.audioAvailable {
+        for segment in timeline.segments where segment.part.audioAvailable && !segment.part.remoteMacAvailable {
             try Task.checkCancellation()
             let member = timeline.archives[segment.archiveIndex]
             guard let stamp = stamps[segment.archiveIndex][segment.part.manifest.chunkID] else { throw PlaybackError.unavailable }

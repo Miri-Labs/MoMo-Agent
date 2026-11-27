@@ -116,6 +116,10 @@ final class PhoneRuntime {
         remoteAgent.onConnectionConfirmed = { [weak uploader] in
             uploader?.handleNetworkPathRecovered()
         }
+        playback.remoteClientProvider = { [weak remoteAgent] in
+            guard let remoteAgent, remoteAgent.store?.canContactServer != false else { return nil }
+            return remoteAgent.speechDataClient
+        }
 
         speechSettings.onDayStartHourChanged = { [weak self] in
             guard let self else { return }
@@ -462,6 +466,17 @@ final class PhoneRuntime {
                         let removed = try await self.archive.applyRetention(replayFloors: [:], limit: 128)
                         changed = changed || !removed.isEmpty
                         if removed.count < 128 { break }
+                        await Task.yield()
+                    }
+                    while !Task.isCancelled {
+                        // Reclaim older local copies already verified on Mac and settled; playback streams on-demand from Mac.
+                        let reclaimed = try await self.archive.pruneUploadedMacAudio(
+                            keepRecentSeconds: 3600,
+                            maxUploadedLocalBytes: 128 * 1024 * 1024,
+                            limit: 128
+                        )
+                        changed = changed || !reclaimed.isEmpty
+                        if reclaimed.count < 128 { break }
                         await Task.yield()
                     }
                     self.lastAudioMaintenance = Date()

@@ -176,6 +176,7 @@ final class PolicyFailureProtocol: URLProtocol, @unchecked Sendable {
         precondition(TailnetDiagnostics.category(URL(string: "http://100.64.0.2/v1/runs/private-id/events?token=secret")) == "events")
         precondition(TailnetDiagnostics.category(URL(string: "http://100.64.0.2/context/v1/audio/chunks")) == "audio-upload")
         precondition(TailnetDiagnostics.category(URL(string: "http://100.64.0.2/context/v1/audio/chunks/batch")) == "audio-upload-batch")
+        precondition(TailnetDiagnostics.category(URL(string: "http://100.64.0.2/context/v1/audio/stream")) == "audio-stream")
         precondition(TailnetDiagnostics.category(URL(string: "http://100.64.0.2/private/path")) == nil)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

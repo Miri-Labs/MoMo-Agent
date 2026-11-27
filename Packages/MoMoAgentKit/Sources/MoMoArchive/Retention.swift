@@ -63,9 +63,23 @@ extension ArchiveStore {
     }
 
     func recordingAudioState(sessionID: UUID) throws -> RecordingAudioState {
-        let values = try database.rows("SELECT DISTINCT retention FROM chunks WHERE session_id=?", [.text(sessionID.uuidString)]).map { try $0.requireString(0) }
-        guard !values.isEmpty else { return .unavailable }
-        guard values.allSatisfy({ ["present", "expired", "expiry_pending", "missing_unexpected"].contains($0) }) else { throw ArchiveError.database(11) }
+        let rows = try database.rows("""
+            SELECT c.retention, COALESCE(u.upload_state, '')
+            FROM chunks c
+            LEFT JOIN mac_audio_uploads u ON u.chunk_id = c.id
+            WHERE c.session_id = ?
+            """, [.text(sessionID.uuidString)])
+        guard !rows.isEmpty else { return .unavailable }
+        var values: Set<String> = []
+        for row in rows {
+            let retention = try row.requireString(0)
+            guard ["present", "expired", "expiry_pending", "missing_unexpected"].contains(retention) else {
+                throw ArchiveError.database(11)
+            }
+            let uploadedToMac = row.string(1) == "uploaded"
+            // Chunks verified uploaded to Mac remain playable on demand even after local cache reclaim.
+            values.insert((retention == "expired" && uploadedToMac) ? "present" : retention)
+        }
         if values.contains("missing_unexpected") { return .missingUnexpected }
         if values.contains("expiry_pending") { return .expiryPending }
         if values.contains("expired") { return values.contains("present") ? .partiallyExpired : .expired }
@@ -202,6 +216,63 @@ extension ArchiveStore {
             if cutoff == nil && bytes <= (maximumBytes ?? .max) { break }
         }
         return expired
+    }
+
+    /// Reclaims local audio files that have BOTH a verified Mac upload receipt (`upload_state = 'uploaded'`
+    /// with non-empty `remote_sha256`) AND settled transcription (`j.state = 'complete'`), keeping only a
+    /// short hot window (`keepRecentSeconds`, bounded by `maxUploadedLocalBytes`) on iPhone for instant
+    /// offline replay while older recordings stream on-demand from Mac.
+    public func pruneUploadedMacAudio(
+        keepRecentSeconds: TimeInterval = 3600,
+        maxUploadedLocalBytes: Int64 = 128 * 1024 * 1024,
+        limit: Int = 128,
+        now: Date = Date()
+    ) throws -> [UUID] {
+        guard (1...256).contains(limit), keepRecentSeconds >= 0, maxUploadedLocalBytes >= 0 else {
+            throw ArchiveError.invalidQuery
+        }
+        let cutoff = now.addingTimeInterval(-keepRecentSeconds)
+        var uploadedLocalBytes = try database.rows("""
+            SELECT COALESCE(SUM(c.byte_count), 0)
+            FROM chunks c
+            JOIN mac_audio_uploads u ON u.chunk_id = c.id
+            WHERE c.retention = 'present' AND u.upload_state = 'uploaded'
+            """).first?.requireInt(0) ?? 0
+        let leasedSessions = try Set(Set(audioLeases.values).map { id in
+            guard let row = try database.rows("SELECT session_id FROM chunks WHERE id=?", [.text(id.uuidString)]).first else {
+                throw ArchiveError.database(11)
+            }
+            return try row.requireUUID(0)
+        })
+        var reclaimed: [UUID] = []
+        for row in try database.rows("""
+            SELECT c.id, c.manifest, c.relative_path, c.session_id
+            FROM chunks c
+            JOIN sessions s ON s.id = c.session_id
+            JOIN mac_audio_uploads u ON u.chunk_id = c.id
+            JOIN transcription_jobs j ON j.chunk_id = c.id
+            WHERE c.retention = 'present'
+              AND c.receipt_applied = 1
+              AND s.deleted = 0
+              AND s.keep_audio = 0
+              AND u.upload_state = 'uploaded'
+              AND u.remote_sha256 IS NOT NULL AND u.remote_sha256 != ''
+              AND j.state = 'complete'
+            ORDER BY c.sealed_at ASC, c.storage_sequence ASC
+            """) {
+            try Task.checkCancellation()
+            let chunkID = try row.requireUUID(0)
+            let manifest = try WireJSON.decode(ChunkManifest.self, from: row.requireData(1))
+            let overQuota = uploadedLocalBytes > maxUploadedLocalBytes
+            guard manifest.sealedAt < cutoff || overQuota else { break }
+            guard !leasedSessions.contains(try row.requireUUID(3)), try !pendingWindowNeeds(manifest) else { continue }
+            try database.execute("UPDATE chunks SET retention='expiry_pending' WHERE id=?", [.text(chunkID.uuidString)])
+            try finishExpiry(chunkID: chunkID, relativePath: row.requireString(2))
+            reclaimed.append(chunkID)
+            uploadedLocalBytes = max(0, uploadedLocalBytes - manifest.byteCount)
+            if reclaimed.count == limit { break }
+        }
+        return reclaimed
     }
 
     public func recoverPendingExpirations() throws {

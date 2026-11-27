@@ -412,6 +412,18 @@ extension AgentClient {
         return try authorizedURLRequest(path: ["v1", "audio", "stream"], query: query)
     }
 
+    /// Downloads an uploaded audio chunk from Mac's `GET /v1/audio/stream?chunk_id=...` over Tailscale/Relay HTTPS
+    /// (bypassing WebRTC 32 KB limit) for on-demand playback after local iPhone audio reclaim.
+    public func fetchAudioChunkStream(chunkID: String, timeout: TimeInterval = 30) async throws -> Data {
+        try await rawRequest(
+            path: ["v1", "audio", "stream"],
+            method: "GET",
+            query: [URLQueryItem(name: "chunk_id", value: chunkID.lowercased())],
+            timeout: timeout,
+            bypassDataChannel: true
+        )
+    }
+
     public func transcriptionStatus() async throws -> MacTranscriptionStatus {
         let data = try await rawRequest(path: ["v1", "transcription", "status"], method: "GET", timeout: 15)
         return try Self.speechDecoder().decode(MacTranscriptionStatus.self, from: data)
