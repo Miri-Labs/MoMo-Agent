@@ -398,6 +398,7 @@ final class EmbeddedTailnet {
         // History and uploads must not occupy the chat connection pool.
         if let cached = cached() { return cached }
         configuration.timeoutIntervalForRequest = 45
+        configuration.httpMaximumConnectionsPerHost = 6
         let created = URLSession(configuration: configuration, delegate: TailnetNoRedirects(diagnostics: diagnostics), delegateQueue: nil)
         if media { desktopMediaSession = created }
         else if desktopControl { desktopControlSession = created }

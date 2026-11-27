@@ -256,7 +256,7 @@ struct LibraryView: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 if uploader.isUploading {
-                    Text("正在同步原音到 Mac（待传 \(uploader.pendingCount) 段）…")
+                    Text("正在同步原音到 Mac（待传 \(uploader.pendingCount + uploader.failedCount) 段）…")
                         .phoneText(.metadata).monospacedDigit()
                 } else if macQueue > 0 {
                     Text("Mac 正在 Core ML 转录（队列 \(macQueue) 段）…")

@@ -60,6 +60,8 @@ class ContextService:
         service = self
 
         class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
             def log_message(self, *_):
                 pass  # Do not put personal source content or credentials into access logs.
 
@@ -91,6 +93,7 @@ class ContextService:
                         if start > end or start >= total_size:
                             self.send_response(416)
                             self.send_header("Content-Range", f"bytes */{total_size}")
+                            self.send_header("Content-Length", "0")
                             self.end_headers()
                             return
                         partial = True
@@ -133,6 +136,32 @@ class ContextService:
                     except Exception:
                         meta = json.loads(meta_hdr)
                 return raw, meta
+
+            def _read_audio_batch_payload(self) -> list[tuple[dict, bytes]]:
+                raw = self._read_body_bytes(8_000_000)
+                if len(raw) < 4:
+                    raise ValueError("Truncated audio batch header")
+                header_len = int.from_bytes(raw[:4], "big")
+                if header_len <= 0 or header_len > 262_144 or 4 + header_len > len(raw):
+                    raise ValueError("Invalid audio batch manifest length")
+                manifest = json.loads(raw[4 : 4 + header_len].decode("utf-8"))
+                entries = manifest.get("chunks") if isinstance(manifest, dict) else None
+                if not isinstance(entries, list) or not (1 <= len(entries) <= 64):
+                    raise ValueError("Audio batch manifest must contain 1..64 chunks")
+                offset = 4 + header_len
+                items: list[tuple[dict, bytes]] = []
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        raise ValueError("Audio batch entry must be an object")
+                    byte_size = int(entry.get("byte_size") or 0)
+                    if byte_size <= 0 or offset + byte_size > len(raw):
+                        raise ValueError("Invalid byte_size in audio batch payload")
+                    chunk_bytes = raw[offset : offset + byte_size]
+                    offset += byte_size
+                    items.append((entry, chunk_bytes))
+                if offset != len(raw):
+                    raise ValueError("Trailing bytes in audio batch payload")
+                return items
 
             def handle_request(self):
                 supplied = self.headers.get("Authorization", "")
@@ -202,12 +231,17 @@ class ContextService:
                         or url.path.startswith("/v1/voiceprints/")
                     ):
                         pipeline = MacAudioPipeline(store, data_dir=service.data)
-                        vp = pipeline.voiceprints
 
                         if url.path == "/v1/audio/chunks" and self.command == "POST":
                             audio_bytes, meta = self._read_audio_payload()
                             result = pipeline.ingest_audio_chunk(meta=meta, audio_bytes=audio_bytes)
                             service.audio_wake.set()
+                            self.respond(200, result); return
+                        if url.path == "/v1/audio/chunks/batch" and self.command == "POST":
+                            items = self._read_audio_batch_payload()
+                            result = pipeline.ingest_audio_chunks_batch(items)
+                            if any(r.get("accepted") for r in result.get("results") or []):
+                                service.audio_wake.set()
                             self.respond(200, result); return
                         if url.path == "/v1/audio/chunks" and self.command == "GET":
                             sid = query.get("source_id", [""])[0]
@@ -250,6 +284,11 @@ class ContextService:
                             fname = self.headers.get("X-MoMo-Filename") or str(meta.get("filename") or "dictate.m4a")
                             result = pipeline.dictate_audio(service.speech_bridge, audio_bytes=audio_bytes, filename=fname)
                             self.respond(200, result); return
+
+                        if url.path.startswith("/v1/voiceprints/"):
+                            vp = pipeline.voiceprints
+                        else:
+                            vp = None
 
                         if url.path == "/v1/voiceprints/profiles":
                             if self.command == "GET":

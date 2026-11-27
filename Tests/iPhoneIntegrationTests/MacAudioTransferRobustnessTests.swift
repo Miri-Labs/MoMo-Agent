@@ -600,4 +600,111 @@ final class MacAudioTransferRobustnessTests: XCTestCase {
         XCTAssertEqual(snap2.document.spans.first?.text, "第二段成功", "Source 2 must still sync despite Source 1 returning HTTP 409!")
         XCTAssertEqual(uiNotified, 1, "onTranscriptsUpdated must still fire when earlier/later sources synced!")
     }
+
+    /// Multi-chunk batch upload packs multiple chunks into one binary HTTP request with `Idempotency-Key`
+    /// so Tailscale/LAN transfers avoid per-chunk RTT and allow transparent SOCKS5 `-1000` retry.
+    func testBatchUploadPacksChunksWithIdempotencyKey() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoBatchUpload-\(UUID())", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let deviceID = UUID()
+        let archive = try ArchiveStore(rootURL: root, receiverDeviceID: deviceID)
+
+        for i in 0..<4 {
+            _ = try await stagePCMChunk(
+                in: archive,
+                root: root,
+                sessionID: UUID(),
+                seconds: 1,
+                wallClock: Date().addingTimeInterval(Double(-240 + i * 60))
+            )
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        final class BatchCapture: @unchecked Sendable {
+            private let lock = NSLock()
+            var batchRequests = 0
+            var singleRequests = 0
+            var idempotencyKeys: [String] = []
+            func recordBatch(key: String?) {
+                lock.withLock {
+                    batchRequests += 1
+                    if let key { idempotencyKeys.append(key) }
+                }
+            }
+            func recordSingle() { lock.withLock { singleRequests += 1 } }
+        }
+        let cap = BatchCapture()
+
+        let client = try makeStubClient { req, body in
+            let path = req.url?.path ?? ""
+            if path.hasSuffix("/v1/audio/chunks/batch") {
+                cap.recordBatch(key: req.value(forHTTPHeaderField: "Idempotency-Key"))
+                guard body.count >= 4 else { return (400, [:], Data()) }
+                let headerLen = Int(body.prefix(4).withUnsafeBytes { $0.load(as: UInt32.self).bigEndian })
+                let manifestData = body.subdata(in: 4..<(4 + headerLen))
+                let manifest = (try? JSONSerialization.jsonObject(with: manifestData)) as? [String: Any]
+                let entries = manifest?["chunks"] as? [[String: Any]] ?? []
+                var offset = 4 + headerLen
+                var results: [[String: Any]] = []
+                for entry in entries {
+                    let sz = entry["byte_size"] as? Int ?? 0
+                    let slice = body.subdata(in: offset..<(offset + sz))
+                    offset += sz
+                    results.append([
+                        "accepted": true,
+                        "deduplicated": false,
+                        "chunk_id": (entry["chunk_id"] as? String ?? "").lowercased(),
+                        "source_id": "\(entry["library_id"] ?? "")/\(entry["session_id"] ?? "")",
+                        "sha256": Self.sha256Hex(slice),
+                        "transcription_status": "pending",
+                    ])
+                }
+                return (200, ["Content-Type": "application/json"], try! JSONSerialization.data(withJSONObject: ["results": results]))
+            }
+            if path.hasSuffix("/v1/audio/chunks") {
+                cap.recordSingle()
+            }
+            return (200, ["Content-Type": "application/json"], Data("{\"settings\":{\"enabled\":true,\"paused\":false,\"vad_threshold\":0.45,\"speaker_lock_threshold\":0.56,\"speaker_lock_margin\":0.08,\"window_max_seconds\":180,\"window_flush_silence_seconds\":12,\"language_hint\":\"auto\",\"custom_hotwords\":[],\"audio_retention_days\":30,\"audio_max_gb\":10.0,\"auto_enroll_from_confirm\":true},\"queue\":{\"pending\":0,\"processing\":0,\"done\":0,\"silent\":0,\"failed\":0},\"storage\":{\"chunk_count\":0,\"total_bytes\":0,\"total_mb\":0},\"voiceprint_count\":0}".utf8))
+        }
+
+        let uploader = AudioUploadCoordinator(archive: archive, deviceID: deviceID, dataClientProvider: { client })
+        await uploader.drainUploadQueue()
+
+        let counts = try await archive.macAudioUploadCounts()
+        XCTAssertEqual(counts.uploaded, 4)
+        XCTAssertEqual(counts.pending, 0)
+        XCTAssertEqual(cap.batchRequests, 1, "All 4 small chunks must pack into a single batch HTTP POST!")
+        XCTAssertEqual(cap.singleRequests, 0)
+        XCTAssertFalse(cap.idempotencyKeys.isEmpty, "Batch upload must set Idempotency-Key for safe SOCKS5 retry")
+    }
+
+    /// CFNetwork SOCKS5 cold-proxy `URLError(.badURL)` (-1000) must never leak raw "错误的 URL" to the UI.
+    func testBadURLTransportFailureUsesFriendlyErrorMessage() async throws {
+        final class BadURLTransport: AgentTransport {
+            var requiresExclusiveRouting: Bool { true }
+            func open(_ request: URLRequest) async throws -> AgentByteStream? {
+                throw URLError(.badURL)
+            }
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MoMoBadURL-\(UUID())", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let deviceID = UUID()
+        let archive = try ArchiveStore(rootURL: root, receiverDeviceID: deviceID)
+        _ = try await stagePCMChunk(in: archive, root: root, sessionID: UUID(), seconds: 1, wallClock: Date().addingTimeInterval(-60))
+
+        let client = try AgentClient(
+            baseURL: URL(string: "http://100.64.0.10:8767/context")!,
+            credential: "test-token-1234",
+            assistantID: UUID(),
+            transport: BadURLTransport()
+        )
+        let uploader = AudioUploadCoordinator(archive: archive, deviceID: deviceID, dataClientProvider: { client })
+        await uploader.drainUploadQueue()
+
+        let err = try XCTUnwrap(uploader.lastError)
+        XCTAssertFalse(err.contains("URL"), "Must not expose raw CFNetwork '错误的 URL' / 'bad URL' string: \(err)")
+        let counts = try await archive.macAudioUploadCounts()
+        XCTAssertEqual(counts.permanentFailed, 0, "Transient SOCKS5 -1000 must never permanently fail chunks")
+        XCTAssertEqual(counts.failed, 1)
+    }
 }

@@ -206,6 +206,9 @@ def build_profile_subcenters(
     return centers
 
 
+_VOICEPRINT_SCHEMA_READY_PATHS: set[str] = set()
+
+
 class VoiceprintStore:
     """High-level voiceprint roster, open-set speaker locking, and fast historical rematch."""
 
@@ -214,8 +217,13 @@ class VoiceprintStore:
         self.db = context_store.db
         self.data_dir = Path(data_dir) if data_dir else context_store.directory.parent
         self.clips_dir = context_store.directory / "voiceprints"
-        self.clips_dir.mkdir(parents=True, exist_ok=True)
-        init_voiceprint_schema(self.db)
+        db_key = str((context_store.directory / "context.sqlite").resolve())
+        if not getattr(context_store, "_voiceprint_schema_ready", False):
+            if db_key not in _VOICEPRINT_SCHEMA_READY_PATHS:
+                self.clips_dir.mkdir(parents=True, exist_ok=True)
+                init_voiceprint_schema(self.db)
+                _VOICEPRINT_SCHEMA_READY_PATHS.add(db_key)
+            context_store._voiceprint_schema_ready = True
 
     # ------------------------------------------------------------------
     # Profile CRUD & Sample Management

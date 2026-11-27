@@ -186,6 +186,7 @@ class MacSpeechBridgeClient:
         self.speech_url = speech_url.rstrip("/")
         self.api_key = api_key
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        self._health_cache: tuple[float, dict[str, Any]] | None = None
 
     def _call(self, method: str, path: str, body: dict | None = None, timeout: float = 180.0) -> dict[str, Any]:
         headers = {"Authorization": f"Bearer {self.api_key}"}
@@ -198,7 +199,23 @@ class MacSpeechBridgeClient:
             return json.loads(resp.read().decode("utf-8"))
 
     def health(self, timeout: float = 3.0) -> dict[str, Any]:
-        return self._call("GET", "/internal/v1/health", timeout=timeout)
+        res = self._call("GET", "/internal/v1/health", timeout=timeout)
+        self._health_cache = (time.monotonic(), dict(res))
+        return res
+
+    def health_cached(self, ttl_sec: float = 5.0, timeout: float = 1.5) -> dict[str, Any]:
+        now = time.monotonic()
+        cached = self._health_cache
+        if cached is not None and (now - cached[0]) < ttl_sec:
+            return dict(cached[1])
+        try:
+            return self.health(timeout=timeout)
+        except Exception:
+            if cached is not None and (now - cached[0]) < 30.0:
+                stale = dict(cached[1])
+                stale["busy"] = True
+                return stale
+            raise
 
     def vad(self, audio_path: str, threshold: float = 0.45) -> dict[str, Any]:
         return self._call("POST", "/internal/v1/vad", {"audio_path": audio_path, "threshold": threshold}, timeout=30.0)
@@ -261,14 +278,20 @@ class MacAudioPipeline:
         self.db = context_store.db
         self.data_dir = Path(data_dir) if data_dir else context_store.directory.parent
         self.audio_root = context_store.directory / "audio"
-        self.audio_root.mkdir(parents=True, exist_ok=True)
         db_key = str((context_store.directory / "context.sqlite").resolve())
         if not getattr(context_store, "_audio_pipeline_schema_ready", False):
             if db_key not in _AUDIO_SCHEMA_READY_PATHS:
+                self.audio_root.mkdir(parents=True, exist_ok=True)
                 init_audio_pipeline_schema(self.db)
                 _AUDIO_SCHEMA_READY_PATHS.add(db_key)
             context_store._audio_pipeline_schema_ready = True
-        self.voiceprints = VoiceprintStore(context_store, data_dir=self.data_dir)
+        self._voiceprints: VoiceprintStore | None = None
+
+    @property
+    def voiceprints(self) -> VoiceprintStore:
+        if self._voiceprints is None:
+            self._voiceprints = VoiceprintStore(self.store, data_dir=self.data_dir)
+        return self._voiceprints
 
     def recover_interrupted(self) -> int:
         """Resets any chunks/windows left in 'processing'/'running' after a crash or app quit."""
@@ -381,7 +404,13 @@ class MacAudioPipeline:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _atomic_write_bytes(dest_file: Path, data: bytes) -> None:
+    def _atomic_write_bytes(
+        dest_file: Path,
+        data: bytes,
+        *,
+        fsync_file: bool = False,
+        fsync_dir: bool = False,
+    ) -> None:
         dest_file.parent.mkdir(parents=True, exist_ok=True)
         tmp_path: str | None = None
         try:
@@ -394,17 +423,19 @@ class MacAudioPipeline:
                 tmp_path = tmp.name
                 tmp.write(data)
                 tmp.flush()
-                os.fsync(tmp.fileno())
+                if fsync_file:
+                    os.fsync(tmp.fileno())
             os.replace(tmp_path, dest_file)
             tmp_path = None
-            try:
-                dir_fd = os.open(str(dest_file.parent), os.O_RDONLY)
+            if fsync_dir:
                 try:
-                    os.fsync(dir_fd)
-                finally:
-                    os.close(dir_fd)
-            except OSError:
-                pass
+                    dir_fd = os.open(str(dest_file.parent), os.O_RDONLY)
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
+                except OSError:
+                    pass
         finally:
             if tmp_path:
                 try:
@@ -438,7 +469,7 @@ class MacAudioPipeline:
         repaired = False
         tx_status = existing["transcription_status"]
         if not intact:
-            self._atomic_write_bytes(existing_file, audio_bytes)
+            self._atomic_write_bytes(existing_file, audio_bytes, fsync_file=True, fsync_dir=True)
             repaired = True
             with self.store.write():
                 self.db.execute(
@@ -585,6 +616,246 @@ class MacAudioPipeline:
             "transcription_status": "pending",
         }
 
+    def ingest_audio_chunks_batch(
+        self,
+        items: list[tuple[dict[str, Any], bytes]],
+    ) -> dict[str, Any]:
+        """Batch-ingests up to 64 audio chunks in one SQLite transaction with per-chunk SHA-256 verification.
+
+        Isolates malformed/corrupt entries per-chunk so healthy chunks in the same batch always commit.
+        """
+        if not items:
+            return {"results": []}
+        if len(items) > 64:
+            raise ValueError("Batch exceeds maximum of 64 chunks")
+
+        parsed: list[dict[str, Any] | None] = [None] * len(items)
+        results: list[dict[str, Any] | None] = [None] * len(items)
+        candidate_ids: list[str] = []
+
+        for idx, (meta, audio_bytes) in enumerate(items):
+            raw_cid = str((meta or {}).get("chunk_id") or "").strip().lower()
+            try:
+                if not isinstance(meta, dict):
+                    raise ValueError("Chunk metadata must be a JSON object")
+                if not audio_bytes or len(audio_bytes) > 7_500_000:
+                    raise ValueError("Audio chunk size must be between 1 byte and 7.5 MB")
+                library_id = str(uuid.UUID(str(meta["library_id"]))).lower()
+                session_id = str(uuid.UUID(str(meta["session_id"]))).lower()
+                device_id = str(uuid.UUID(str(meta.get("device_id") or meta["library_id"]))).lower()
+                chunk_id = str(meta.get("chunk_id") or f"{session_id}:{int(meta['chunk_seq']):06d}").strip().lower()
+                chunk_seq = int(meta["chunk_seq"])
+                if chunk_seq < 0:
+                    raise ValueError("chunk_seq must be >= 0")
+                recorded_at = float(meta["recorded_at"])
+                duration_sec = float(meta.get("duration_sec") or 60.0)
+                if duration_sec <= 0 or duration_sec > 3600:
+                    raise ValueError("duration_sec out of range")
+                tz_offset = meta.get("timezone_offset")
+                if tz_offset is not None:
+                    tz_offset = int(tz_offset)
+                source_kind = str(meta.get("source_kind") or "watch").strip()[:32]
+                codec = str(meta.get("codec") or "aac").strip().lower()[:16]
+                sample_rate = int(meta.get("sample_rate") or 16000)
+
+                actual_sha = hashlib.sha256(audio_bytes).hexdigest()
+                expected_sha = str(meta.get("sha256") or "").strip().lower()
+                if expected_sha and expected_sha != actual_sha:
+                    raise ValueError(f"Audio chunk SHA-256 mismatch: expected {expected_sha[:12]}, got {actual_sha[:12]}")
+
+                source_id = f"{library_id}/{session_id}"
+                parsed[idx] = {
+                    "idx": idx,
+                    "chunk_id": chunk_id,
+                    "library_id": library_id,
+                    "session_id": session_id,
+                    "source_id": source_id,
+                    "device_id": device_id,
+                    "chunk_seq": chunk_seq,
+                    "recorded_at": recorded_at,
+                    "duration_sec": duration_sec,
+                    "tz_offset": tz_offset,
+                    "source_kind": source_kind,
+                    "codec": codec,
+                    "sample_rate": sample_rate,
+                    "actual_sha": actual_sha,
+                    "audio_bytes": audio_bytes,
+                }
+                candidate_ids.append(chunk_id)
+            except (ValueError, KeyError, TypeError) as exc:
+                results[idx] = {
+                    "accepted": False,
+                    "deduplicated": False,
+                    "chunk_id": raw_cid,
+                    "source_id": "",
+                    "sha256": "",
+                    "transcription_status": "failed",
+                    "status": 400,
+                    "error": str(exc),
+                }
+
+        existing_map: dict[str, sqlite3.Row] = {}
+        if candidate_ids:
+            uniq_ids = list(dict.fromkeys(candidate_ids))
+            placeholders = ",".join("?" for _ in uniq_ids)
+            for row in self.db.execute(
+                f"SELECT chunk_id, sha256, vad_status, transcription_status, relative_path, error "
+                f"FROM audio_chunks WHERE chunk_id IN ({placeholders})",
+                tuple(uniq_ids),
+            ).fetchall():
+                existing_map[row["chunk_id"]] = row
+
+        # Write new files atomically to disk OUTSIDE SQLite write lock so DB lock time stays < 2ms.
+        pending_inserts: list[dict[str, Any]] = []
+        seen_new_ids: dict[str, dict[str, Any]] = {}
+        for item in parsed:
+            if item is None:
+                continue
+            idx = item["idx"]
+            cid = item["chunk_id"]
+            if cid in existing_map:
+                try:
+                    results[idx] = self._verify_or_repair_existing_chunk(
+                        existing=existing_map[cid],
+                        source_id=item["source_id"],
+                        actual_sha=item["actual_sha"],
+                        audio_bytes=item["audio_bytes"],
+                    )
+                except ValueError as exc:
+                    results[idx] = {
+                        "accepted": False,
+                        "deduplicated": False,
+                        "chunk_id": cid,
+                        "source_id": item["source_id"],
+                        "sha256": item["actual_sha"],
+                        "transcription_status": "failed",
+                        "status": 400,
+                        "error": str(exc),
+                    }
+                continue
+            if cid in seen_new_ids:
+                prev = seen_new_ids[cid]
+                if prev["actual_sha"] != item["actual_sha"]:
+                    results[idx] = {
+                        "accepted": False,
+                        "deduplicated": False,
+                        "chunk_id": cid,
+                        "source_id": item["source_id"],
+                        "sha256": item["actual_sha"],
+                        "transcription_status": "failed",
+                        "status": 400,
+                        "error": f"Conflicting duplicate chunk_id {cid} inside batch",
+                    }
+                else:
+                    results[idx] = {
+                        "accepted": True,
+                        "deduplicated": True,
+                        "chunk_id": cid,
+                        "source_id": item["source_id"],
+                        "sha256": item["actual_sha"],
+                        "transcription_status": "pending",
+                    }
+                continue
+
+            ext = "wav" if item["codec"] in ("wav", "pcm", "pcmint16", "pcmfloat32") else "m4a"
+            day_str = _dt.datetime.fromtimestamp(item["recorded_at"]).strftime("%Y-%m-%d")
+            dest_dir = self.audio_root / day_str / item["session_id"]
+            safe_cid = re.sub(r"[^a-z0-9_-]", "", cid)[:16] or "chunk"
+            dest_file = dest_dir / f"{int(item['recorded_at'])}_{safe_cid}_{item['actual_sha'][:8]}.{ext}"
+            self._atomic_write_bytes(dest_file, item["audio_bytes"])
+            item["rel_path"] = str(dest_file.relative_to(self.store.directory))
+            seen_new_ids[cid] = item
+            pending_inserts.append(item)
+
+        if pending_inserts:
+            now = time.time()
+            raced_items: list[dict[str, Any]] = []
+            with self.store.write():
+                stub_sources: set[str] = set()
+                inserted_any = False
+                for item in pending_inserts:
+                    cur = self.db.execute(
+                        """
+                        INSERT OR IGNORE INTO audio_chunks(
+                            chunk_id, library_id, session_id, source_id, device_id, chunk_seq,
+                            recorded_at, duration_sec, timezone_offset, source_kind, codec, sample_rate,
+                            sha256, byte_size, relative_path, vad_status, speech_seconds, vad_intervals,
+                            transcription_status, created_at, updated_at
+                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',0.0,'[]','pending',?,?)
+                        """,
+                        (
+                            item["chunk_id"],
+                            item["library_id"],
+                            item["session_id"],
+                            item["source_id"],
+                            item["device_id"],
+                            item["chunk_seq"],
+                            item["recorded_at"],
+                            item["duration_sec"],
+                            item["tz_offset"],
+                            item["source_kind"],
+                            item["codec"],
+                            item["sample_rate"],
+                            item["actual_sha"],
+                            len(item["audio_bytes"]),
+                            item["rel_path"],
+                            now,
+                            now,
+                        ),
+                    )
+                    if cur.rowcount == 0:
+                        raced_items.append(item)
+                        continue
+                    inserted_any = True
+                    if item["source_id"] not in stub_sources:
+                        stub_sources.add(item["source_id"])
+                        self._ensure_source_stub(
+                            source_id=item["source_id"],
+                            library_id=item["library_id"],
+                            session_id=item["session_id"],
+                            device_id=item["device_id"],
+                            recorded_at=item["recorded_at"],
+                            end_at=item["recorded_at"] + item["duration_sec"],
+                            timezone_offset=item["tz_offset"],
+                        )
+                    results[item["idx"]] = {
+                        "accepted": True,
+                        "deduplicated": False,
+                        "chunk_id": item["chunk_id"],
+                        "source_id": item["source_id"],
+                        "sha256": item["actual_sha"],
+                        "transcription_status": "pending",
+                    }
+                if inserted_any:
+                    self.store.advance()
+
+            for item in raced_items:
+                raced = self.db.execute(
+                    "SELECT chunk_id, sha256, vad_status, transcription_status, relative_path, error FROM audio_chunks WHERE chunk_id=?",
+                    (item["chunk_id"],),
+                ).fetchone()
+                if raced:
+                    try:
+                        results[item["idx"]] = self._verify_or_repair_existing_chunk(
+                            existing=raced,
+                            source_id=item["source_id"],
+                            actual_sha=item["actual_sha"],
+                            audio_bytes=item["audio_bytes"],
+                        )
+                    except ValueError as exc:
+                        results[item["idx"]] = {
+                            "accepted": False,
+                            "deduplicated": False,
+                            "chunk_id": item["chunk_id"],
+                            "source_id": item["source_id"],
+                            "sha256": item["actual_sha"],
+                            "transcription_status": "failed",
+                            "status": 400,
+                            "error": str(exc),
+                        }
+
+        return {"results": [r for r in results if r is not None]}
+
     def batch_chunk_status(self, chunk_ids: list[str]) -> dict[str, Any]:
         clean = [str(cid).strip() for cid in chunk_ids if str(cid).strip()][:200]
         if not clean:
@@ -623,7 +894,7 @@ class MacAudioPipeline:
         engine_health = None
         if speech_bridge is not None:
             try:
-                engine_health = speech_bridge.health(timeout=2.0)
+                engine_health = speech_bridge.health_cached(ttl_sec=5.0, timeout=1.5)
             except Exception as exc:
                 engine_health = {"reachable": False, "error": str(exc)}
             else:

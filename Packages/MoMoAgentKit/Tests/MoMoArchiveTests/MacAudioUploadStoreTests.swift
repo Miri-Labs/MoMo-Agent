@@ -158,4 +158,25 @@ struct MacAudioUploadStoreTests {
         try await reopened.clearMacSyncedSourceRevisions()
         #expect(try await reopened.macSyncedSourceRevisions().isEmpty)
     }
+
+    /// Untranscribed live recordings MUST jump ahead of already-transcribed historical backfill chunks.
+    @Test func untranscribedChunksPrioritizedAheadOfAlreadyTranscribedBackfill() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let store = try fixture.store()
+        let t0 = Date(timeIntervalSince1970: 1_790_000_000)
+
+        let olderUntranscribed = UUID()
+        let newerAlreadyTranscribed = UUID()
+        let envOlder = try fixture.envelope(chunkID: olderUntranscribed, startFrame: 0, frameCount: 16_000, sequence: 0, sealedAt: t0)
+        let envNewer = try fixture.envelope(chunkID: newerAlreadyTranscribed, startFrame: 16_000, frameCount: 16_000, sequence: 1, sealedAt: t0.addingTimeInterval(60))
+        _ = try await store.commitReceivedChunk(try fixture.deliver(envOlder, to: store))
+        _ = try await store.commitReceivedChunk(try fixture.deliver(envNewer, to: store))
+
+        // Mark newer chunk's legacy transcription job as already complete while older chunk is untranscribed.
+        _ = try await store.markMacAudioChunksStatus([newerAlreadyTranscribed: "done"])
+
+        let ordered = try await store.pendingMacAudioUploads(limit: 8)
+        #expect(ordered.map(\.chunkID) == [olderUntranscribed, newerAlreadyTranscribed])
+    }
 }

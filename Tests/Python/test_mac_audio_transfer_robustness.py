@@ -239,6 +239,56 @@ class MacAudioTransferRobustnessTests(unittest.TestCase):
         self.assertEqual(third["transcription_status"], "pending", "Repaired failed chunk must reset to pending for VAD/transcription")
         self.assertEqual(stored_file.read_bytes(), wav_bytes, "Retransmission must repair corrupted audio file on disk")
 
+    def test_batch_ingest_commits_healthy_and_isolates_corrupt_chunk_with_dedup(self):
+        """POST /v1/audio/chunks/batch must commit healthy chunks in one transaction, isolate SHA mismatch
+        per-chunk without failing neighbors, deduplicate cleanly on retry, and be allowlisted in rtc_transport."""
+        import importlib.util
+        if importlib.util.find_spec("aiohttp") is not None:
+            access_dir = str(Path(__file__).resolve().parents[2] / "Apps" / "MacApp" / "Access")
+            if access_dir not in sys.path:
+                sys.path.insert(0, access_dir)
+            from rtc_transport import permitted_route
+
+            self.assertEqual(
+                permitted_route("POST", "/context/v1/audio/chunks/batch"),
+                ("/v1/audio/chunks/batch", True, False),
+            )
+
+        lib_id, sess_id, dev_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+        c1, c2, c3 = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+        b1, b2, b3 = _fake_wav(b"BATCH_1_"), _fake_wav(b"BATCH_2_"), _fake_wav(b"BATCH_3_")
+        items = [
+            ({
+                "chunk_id": c1, "library_id": lib_id, "session_id": sess_id, "device_id": dev_id,
+                "chunk_seq": 0, "recorded_at": 1_750_000_000.0, "duration_sec": 60.0, "codec": "wav",
+                "sha256": hashlib.sha256(b1).hexdigest(),
+            }, b1),
+            ({
+                "chunk_id": c2, "library_id": lib_id, "session_id": sess_id, "device_id": dev_id,
+                "chunk_seq": 1, "recorded_at": 1_750_000_060.0, "duration_sec": 60.0, "codec": "wav",
+                "sha256": "0" * 64,  # Corrupt SHA-256!
+            }, b2),
+            ({
+                "chunk_id": c3, "library_id": lib_id, "session_id": sess_id, "device_id": dev_id,
+                "chunk_seq": 2, "recorded_at": 1_750_000_120.0, "duration_sec": 60.0, "codec": "wav",
+                "sha256": hashlib.sha256(b3).hexdigest(),
+            }, b3),
+        ]
+
+        res = self.pipeline.ingest_audio_chunks_batch(items)
+        results = res["results"]
+        self.assertEqual(len(results), 3)
+        self.assertTrue(results[0]["accepted"] and not results[0]["deduplicated"])
+        self.assertFalse(results[1]["accepted"])
+        self.assertIn("SHA-256 mismatch", results[1]["error"])
+        self.assertTrue(results[2]["accepted"] and not results[2]["deduplicated"])
+
+        # Replay of c1 + c3 must deduplicate cleanly without duplicating rows
+        replay = self.pipeline.ingest_audio_chunks_batch([items[0], items[2]])
+        self.assertTrue(all(r["accepted"] and r["deduplicated"] for r in replay["results"]))
+        listed = self.pipeline.list_source_audio_chunks(f"{lib_id}/{sess_id}")
+        self.assertEqual([c["chunk_id"] for c in listed], [c1, c3])
+
 
 if __name__ == "__main__":
     unittest.main()
