@@ -46,6 +46,7 @@ final class PhoneRemoteAgent {
     @ObservationIgnored var onAudioRelayCycle: (@MainActor () async throws -> Void)?
     @ObservationIgnored var onAudioRelayCancel: (@MainActor () -> Void)?
     @ObservationIgnored var onNetworkPathRecovered: (@MainActor () -> Void)?
+    @ObservationIgnored var onConnectionConfirmed: (@MainActor () -> Void)?
     private(set) var connection: AgentConnection?
     var failure: String?
     @ObservationIgnored private(set) var readingPosition: ChatReadingPosition?
@@ -353,6 +354,7 @@ final class PhoneRemoteAgent {
         deviceTelemetry?.foreground(); health?.foreground(); sources?.foreground(); notifications.foreground()
         lifeIllustrations.startPolling()
         contextDelivery.request()
+        onConnectionConfirmed?()
     }
 
     private func hasBackgroundBudget(minimumSeconds: TimeInterval) -> Bool {

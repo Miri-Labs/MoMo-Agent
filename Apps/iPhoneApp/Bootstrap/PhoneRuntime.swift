@@ -113,6 +113,9 @@ final class PhoneRuntime {
         remoteAgent.onNetworkPathRecovered = { [weak uploader] in
             uploader?.handleNetworkPathRecovered()
         }
+        remoteAgent.onConnectionConfirmed = { [weak uploader] in
+            uploader?.handleNetworkPathRecovered()
+        }
 
         speechSettings.onDayStartHourChanged = { [weak self] in
             guard let self else { return }
