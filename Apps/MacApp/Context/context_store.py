@@ -923,7 +923,8 @@ class ContextStore:
         reason: str = "",
         enqueue_phone_sync: bool = True,
     ) -> dict:
-        clean_target = "我" if is_owner else str(target_speaker or "").strip()
+        raw_target = str(target_speaker or "").strip()
+        clean_target = (raw_target or "我") if is_owner else raw_target
         if clean_target == "身份待确认":
             raise ValueError("Use exclude_speaker to reject a name without assigning a new identity")
         if not clean_target or len(clean_target) > 80:
