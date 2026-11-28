@@ -40,6 +40,9 @@ struct SSEFrameParser {
     var maximumBytes = 512 * 1024
     private var line = Data()
     private var payload = Data()
+    init(maximumBytes: Int = 512 * 1024) {
+        self.maximumBytes = maximumBytes
+    }
     mutating func append(_ byte: UInt8) throws -> Data? {
         guard line.count + payload.count < maximumBytes else { throw AgentClientError.invalidResponse }
         if byte != 10 { line.append(byte); return nil }

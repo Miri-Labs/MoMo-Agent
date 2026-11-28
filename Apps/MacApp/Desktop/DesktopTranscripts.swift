@@ -1390,6 +1390,7 @@ struct DesktopSourceReader: View {
     @State private var loading = false
     @State private var error: String?
     @State private var audioPlayer = DesktopRecordingAudioPlayer()
+    @State private var audioChunksLoaded = false
     @State private var speakerBanner: String?
     @State private var speakerBannerTask: Task<Void, Never>?
 
@@ -1401,6 +1402,30 @@ struct DesktopSourceReader: View {
     private var startOffset: Int { window?.offset ?? 0 }
     private var endOffset: Int { window?.end ?? source.totalCharacters }
     private var documentID: String { "\(source.id)|\(window?.id ?? "full")" }
+    private var playableSpanIDs: Set<String> {
+        guard !audioPlayer.timeline.isEmpty else { return [] }
+        var ids = Set<String>()
+        ids.reserveCapacity(spans.count)
+        for sp in spans {
+            if let ts = sp.recordedAt, audioPlayer.timeline.canPlay(startWallClock: ts, endWallClock: sp.endAt) {
+                ids.insert(sp.id)
+            }
+        }
+        return ids
+    }
+    private var spanAudioIntervals: [DesktopAudioSpanInterval] {
+        spans.compactMap { sp in
+            sp.recordedAt.map { DesktopAudioSpanInterval(id: sp.id, startWallClock: $0, endWallClock: sp.endAt) }
+        }
+    }
+    private var effectiveAudioWindowBounds: (start: Double?, end: Double?) {
+        guard let window else { return (nil, nil) }
+        let spanStarts = spans.compactMap(\.recordedAt)
+        let spanEnds = spans.compactMap { $0.endAt ?? $0.recordedAt }
+        let wStart = [window.recordedAt, spanStarts.min()].compactMap { $0 }.min()
+        let wEnd = [window.endAt ?? window.recordedAt, spanEnds.max()].compactMap { $0 }.max()
+        return (wStart, wEnd)
+    }
     private var speakerSignature: Int {
         var h = Hasher()
         for sp in spans {
@@ -1411,7 +1436,9 @@ struct DesktopSourceReader: View {
         }
         return h.finalize()
     }
-    private var composeTriggerKey: String { "\(documentID)|\(source.revision)|\(spans.count)|\(text.utf8.count)|\(speakerSignature)" }
+    private var composeTriggerKey: String {
+        "\(documentID)|\(source.revision)|\(spans.count)|\(text.utf8.count)|\(speakerSignature)|\(audioPlayer.chunksRevision)"
+    }
     private var hasMore: Bool {
         guard let page else { return true }
         guard let next = page.nextOffset else { return false }
@@ -1485,10 +1512,24 @@ struct DesktopSourceReader: View {
                     .allowsHitTesting(false)
             }
 
-            if audioPlayer.hasAudio || speakerBanner != nil {
+            let showUnavailableAudioHint = audioChunksLoaded && !audioPlayer.hasAudio && !loading && !spans.isEmpty
+            if audioPlayer.hasAudio || showUnavailableAudioHint || speakerBanner != nil {
                 VStack(alignment: .leading, spacing: 8) {
                     if audioPlayer.hasAudio {
                         DesktopAudioPlaybackBar(player: audioPlayer)
+                    } else if showUnavailableAudioHint {
+                        HStack(spacing: 6) {
+                            Image(systemName: "waveform.slash")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(MoMoPalette.muted)
+                            Text("该段录音原音未同步至此 Mac 或已按保留策略清理，仅展示转写文字")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(MoMoPalette.muted)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .accessibilityIdentifier("desktop.source.audio.unavailable")
                     }
                     if let speakerBanner {
                         HStack(spacing: 6) {
@@ -1515,8 +1556,17 @@ struct DesktopSourceReader: View {
 
             MacSourceTranscriptReader(
                 composed: composedDocument,
+                activePlayingSpanID: audioPlayer.activeSpanID,
+                isAudioPlaying: audioPlayer.isPlaying,
                 scrollSpanID: pendingScrollSpanID,
                 onConsumedScrollSpan: { pendingScrollSpanID = nil },
+                onToggleSpanPlayback: { pill in
+                    audioPlayer.toggleSpan(
+                        id: pill.spanID,
+                        startWallClock: pill.startWallClock,
+                        endWallClock: pill.endWallClock
+                    )
+                },
                 makeSpeakerPopoverView: { spanID, closePopover in
                     guard let target = spans.first(where: { $0.id == spanID }) else { return nil }
                     return AnyView(
@@ -1590,6 +1640,7 @@ struct DesktopSourceReader: View {
             let tLabel = headerTimeLabel
             let sum = summary
             let curSpans = spans
+            let curPlayableIDs = playableSpanIDs
             let curText = text
             let tz = sourceTimeZone
             if let hit = MacSourceTranscriptComposer.cached(
@@ -1599,6 +1650,7 @@ struct DesktopSourceReader: View {
                 timeLabel: tLabel,
                 summary: sum,
                 spans: curSpans,
+                playableSpanIDs: curPlayableIDs,
                 fallbackText: curText,
                 defaultTimeZone: tz
             ) {
@@ -1613,6 +1665,7 @@ struct DesktopSourceReader: View {
                     timeLabel: tLabel,
                     summary: sum,
                     spans: curSpans,
+                    playableSpanIDs: curPlayableIDs,
                     fallbackText: curText,
                     defaultTimeZone: tz
                 )
@@ -1621,10 +1674,25 @@ struct DesktopSourceReader: View {
             composedDocument = built
         }
         .task(id: "\(documentID)|\(source.revision)") {
+            audioChunksLoaded = false
             await more(replacing: true)
+            guard !Task.isCancelled else { return }
+            let bounds = effectiveAudioWindowBounds
+            let intervals = spanAudioIntervals
             if let chunks = try? await model.sourceAudioChunks(sourceID: source.id) {
-                audioPlayer.load(sourceID: source.id, chunks: chunks)
+                guard !Task.isCancelled else { return }
+                audioPlayer.load(
+                    sourceID: source.id,
+                    chunks: chunks,
+                    windowStart: bounds.start,
+                    windowEnd: bounds.end,
+                    spans: intervals
+                )
             }
+            audioChunksLoaded = true
+        }
+        .onChange(of: spans) { _, _ in
+            audioPlayer.updateSpanIntervals(spanAudioIntervals)
         }
         .onDisappear {
             audioPlayer.stop()
@@ -1681,6 +1749,7 @@ struct DesktopSourceReader: View {
 
 private extension NSAttributedString.Key {
     static let momoSpeakerSpanID = NSAttributedString.Key("com.momo.transcript.speakerSpanID")
+    static let momoAudioSpanID = NSAttributedString.Key("com.momo.transcript.audioSpanID")
 }
 
 private enum MacSourceTranscriptComposer {
@@ -1691,6 +1760,13 @@ private enum MacSourceTranscriptComposer {
         let isBound: Bool
     }
 
+    struct AudioPlayPill: Sendable, Equatable {
+        let range: NSRange
+        let spanID: String
+        let startWallClock: Double
+        let endWallClock: Double?
+    }
+
     final class ComposedTranscript: NSObject, @unchecked Sendable {
         let key: String
         let documentID: String
@@ -1699,6 +1775,7 @@ private enum MacSourceTranscriptComposer {
         let summaryQuoteRanges: [NSRange]
         let spanCharRanges: [String: NSRange]
         let speakerPills: [SpeakerPill]
+        let audioPills: [AudioPlayPill]
 
         init(
             key: String,
@@ -1707,7 +1784,8 @@ private enum MacSourceTranscriptComposer {
             summaryCardRange: NSRange?,
             summaryQuoteRanges: [NSRange],
             spanCharRanges: [String: NSRange],
-            speakerPills: [SpeakerPill]
+            speakerPills: [SpeakerPill],
+            audioPills: [AudioPlayPill]
         ) {
             self.key = key
             self.documentID = documentID
@@ -1716,6 +1794,7 @@ private enum MacSourceTranscriptComposer {
             self.summaryQuoteRanges = summaryQuoteRanges
             self.spanCharRanges = spanCharRanges
             self.speakerPills = speakerPills
+            self.audioPills = audioPills
         }
     }
 
@@ -1745,6 +1824,7 @@ private enum MacSourceTranscriptComposer {
         timeLabel: String?,
         summary: String?,
         spans: [SourceTextSpan],
+        playableSpanIDs: Set<String>,
         fallbackText: String,
         defaultTimeZone: TimeZone
     ) -> String {
@@ -1755,16 +1835,18 @@ private enum MacSourceTranscriptComposer {
         hasher.combine(timeLabel)
         hasher.combine(summary)
         hasher.combine(spans.count)
+        hasher.combine(playableSpanIDs.count)
         hasher.combine(spans.first?.id)
         hasher.combine(spans.last?.id)
         for sp in spans {
             hasher.combine(sp.speaker)
             hasher.combine(sp.isOwner)
             hasher.combine(sp.voiceProfileId)
+            hasher.combine(playableSpanIDs.contains(sp.id))
         }
         hasher.combine(fallbackText.utf8.count)
         hasher.combine(defaultTimeZone.identifier)
-        return "v5|\(documentID)|\(sourceRevision)|\(spans.count)|\(fallbackText.utf8.count)|\(hasher.finalize())"
+        return "v6|\(documentID)|\(sourceRevision)|\(spans.count)|\(playableSpanIDs.count)|\(fallbackText.utf8.count)|\(hasher.finalize())"
     }
 
     nonisolated static func cached(
@@ -1774,6 +1856,7 @@ private enum MacSourceTranscriptComposer {
         timeLabel: String?,
         summary: String?,
         spans: [SourceTextSpan],
+        playableSpanIDs: Set<String>,
         fallbackText: String,
         defaultTimeZone: TimeZone
     ) -> ComposedTranscript? {
@@ -1784,6 +1867,7 @@ private enum MacSourceTranscriptComposer {
             timeLabel: timeLabel,
             summary: summary,
             spans: spans,
+            playableSpanIDs: playableSpanIDs,
             fallbackText: fallbackText,
             defaultTimeZone: defaultTimeZone
         )
@@ -1797,6 +1881,7 @@ private enum MacSourceTranscriptComposer {
         timeLabel: String?,
         summary: String?,
         spans: [SourceTextSpan],
+        playableSpanIDs: Set<String>,
         fallbackText: String,
         defaultTimeZone: TimeZone
     ) -> ComposedTranscript {
@@ -1807,6 +1892,7 @@ private enum MacSourceTranscriptComposer {
             timeLabel: timeLabel,
             summary: summary,
             spans: spans,
+            playableSpanIDs: playableSpanIDs,
             fallbackText: fallbackText,
             defaultTimeZone: defaultTimeZone
         )
@@ -1823,8 +1909,10 @@ private enum MacSourceTranscriptComposer {
         var summaryQuotes: [NSRange] = []
         var spanRanges: [String: NSRange] = [:]
         var speakerPills: [SpeakerPill] = []
+        var audioPills: [AudioPlayPill] = []
         spanRanges.reserveCapacity(spans.count)
         speakerPills.reserveCapacity(spans.count)
+        audioPills.reserveCapacity(playableSpanIDs.count)
 
         if let dateLabel, !dateLabel.isEmpty {
             let dateStyle = NSMutableParagraphStyle()
@@ -1937,17 +2025,40 @@ private enum MacSourceTranscriptComposer {
                             ?? fixedDefaultOffset
                             ?? defaultTimeZone.secondsFromGMT(for: Date(timeIntervalSince1970: spanTime))
                         let clock = formatWallClock(timestamp: spanTime, offsetSeconds: offsetSec)
-                        result.append(NSAttributedString(
-                            string: clock,
-                            attributes: [
-                                .font: stampFont,
-                                .foregroundColor: muted,
-                                .paragraphStyle: headerStyle,
-                            ]
-                        ))
+                        if playableSpanIDs.contains(span.id) {
+                            let audioPillStart = result.length
+                            // Non-breaking spaces reserve fixed trailing room for the inline speaker/play/pause icon even at line end.
+                            result.append(NSAttributedString(
+                                string: " \(clock)\u{00A0}\u{00A0}\u{00A0}\u{00A0}\u{00A0}\u{00A0}",
+                                attributes: {
+                                    var attrs: [NSAttributedString.Key: Any] = [
+                                        .font: stampFont,
+                                        .foregroundColor: muted,
+                                        .paragraphStyle: headerStyle,
+                                        .momoAudioSpanID: span.id,
+                                    ]
+                                    return attrs
+                                }()
+                            ))
+                            audioPills.append(AudioPlayPill(
+                                range: NSRange(location: audioPillStart, length: result.length - audioPillStart),
+                                spanID: span.id,
+                                startWallClock: spanTime,
+                                endWallClock: span.endAt
+                            ))
+                        } else {
+                            result.append(NSAttributedString(
+                                string: clock,
+                                attributes: [
+                                    .font: stampFont,
+                                    .foregroundColor: muted,
+                                    .paragraphStyle: headerStyle,
+                                ]
+                            ))
+                        }
                         if hasSpeaker {
                             result.append(NSAttributedString(
-                                string: "   ",
+                                string: "  ",
                                 attributes: [
                                     .font: stampFont,
                                     .paragraphStyle: headerStyle,
@@ -2022,7 +2133,8 @@ private enum MacSourceTranscriptComposer {
             summaryCardRange: summaryCardRange,
             summaryQuoteRanges: summaryQuotes,
             spanCharRanges: spanRanges,
-            speakerPills: speakerPills
+            speakerPills: speakerPills,
+            audioPills: audioPills
         )
         cache.setObject(composed, forKey: nsKey)
         return composed
@@ -2042,13 +2154,24 @@ private final class MacSourceDocumentTextView: NSTextView {
         didSet { cachedSummaryCardRect = nil }
     }
     var summaryQuoteRanges: [NSRange] = []
+    var spanCharRanges: [String: NSRange] = [:]
     var speakerPills: [MacSourceTranscriptComposer.SpeakerPill] = []
+    var audioPills: [MacSourceTranscriptComposer.AudioPlayPill] = [] {
+        didSet {
+            audioPillsBySpanID = Dictionary(uniqueKeysWithValues: audioPills.map { ($0.spanID, $0) })
+        }
+    }
+    var activePlayingSpanID: String?
+    var isAudioPlaying: Bool = false
     var onSelectSpeakerPill: ((String, NSRect) -> Void)?
+    var onSelectAudioPill: ((MacSourceTranscriptComposer.AudioPlayPill) -> Void)?
 
+    private var audioPillsBySpanID: [String: MacSourceTranscriptComposer.AudioPlayPill] = [:]
     private var cachedSummaryCardRect: NSRect?
     private var cachedSummaryWidth: CGFloat = -1
     private var cachedSummaryOrigin: NSPoint = .zero
     private var hoveredSpeakerSpanID: String?
+    private var hoveredAudioSpanID: String?
     private var speakerTrackingArea: NSTrackingArea?
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -2071,6 +2194,29 @@ private final class MacSourceDocumentTextView: NSTextView {
         )
         addTrackingArea(area)
         speakerTrackingArea = area
+    }
+
+    private func audioPillHit(at viewPoint: NSPoint) -> MacSourceTranscriptComposer.AudioPlayPill? {
+        guard !audioPills.isEmpty,
+              let lm = layoutManager, let tc = textContainer, let ts = textStorage, ts.length > 0 else {
+            return nil
+        }
+        let origin = textContainerOrigin
+        let containerPt = NSPoint(x: viewPoint.x - origin.x, y: viewPoint.y - origin.y)
+        let probeRect = NSRect(x: containerPt.x - 6, y: containerPt.y - 6, width: 12, height: 12)
+        let glyphBand = lm.glyphRange(forBoundingRectWithoutAdditionalLayout: probeRect, in: tc)
+        guard glyphBand.length > 0 else { return nil }
+        let charBand = lm.characterRange(forGlyphRange: glyphBand, actualGlyphRange: nil)
+        let totalLen = ts.length
+        for pill in audioPills where pill.range.location >= 0 && NSMaxRange(pill.range) <= totalLen {
+            guard NSIntersectionRange(pill.range, charBand).length > 0 else { continue }
+            let gr = lm.glyphRange(forCharacterRange: pill.range, actualCharacterRange: nil)
+            let rect = lm.boundingRect(forGlyphRange: gr, in: tc).insetBy(dx: -4, dy: -3)
+            if rect.contains(containerPt) {
+                return pill
+            }
+        }
+        return nil
     }
 
     private func speakerPillHit(at viewPoint: NSPoint) -> (spanID: String, rectInView: NSRect)? {
@@ -2097,12 +2243,27 @@ private final class MacSourceDocumentTextView: NSTextView {
 
     override func mouseMoved(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
-        let hit = speakerPillHit(at: pt)?.spanID
-        if hit != hoveredSpeakerSpanID {
-            hoveredSpeakerSpanID = hit
+        let nextAudioHit = audioPillHit(at: pt)?.spanID
+        let nextSpeakerHit = (nextAudioHit == nil) ? speakerPillHit(at: pt)?.spanID : nil
+        var changed = false
+        if nextAudioHit != hoveredAudioSpanID {
+            hoveredAudioSpanID = nextAudioHit
+            changed = true
+        }
+        if nextSpeakerHit != hoveredSpeakerSpanID {
+            hoveredSpeakerSpanID = nextSpeakerHit
+            changed = true
+        }
+        if changed {
+            if let aid = nextAudioHit {
+                let isPlayingThis = (activePlayingSpanID == aid && isAudioPlaying)
+                toolTip = isPlayingThis ? String(localized: "暂停回听该句原音") : String(localized: "点击回听该句原音")
+            } else {
+                toolTip = nil
+            }
             needsDisplay = true
         }
-        if hit != nil {
+        if nextAudioHit != nil || nextSpeakerHit != nil {
             NSCursor.pointingHand.set()
         } else {
             super.mouseMoved(with: event)
@@ -2110,8 +2271,17 @@ private final class MacSourceDocumentTextView: NSTextView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        var changed = false
+        if hoveredAudioSpanID != nil {
+            hoveredAudioSpanID = nil
+            changed = true
+        }
         if hoveredSpeakerSpanID != nil {
             hoveredSpeakerSpanID = nil
+            changed = true
+        }
+        if changed {
+            toolTip = nil
             needsDisplay = true
         }
         super.mouseExited(with: event)
@@ -2119,11 +2289,30 @@ private final class MacSourceDocumentTextView: NSTextView {
 
     override func mouseDown(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
+        if let audioHit = audioPillHit(at: pt) {
+            onSelectAudioPill?(audioHit)
+            return
+        }
         if let hit = speakerPillHit(at: pt) {
             onSelectSpeakerPill?(hit.spanID, hit.rectInView)
             return
         }
         super.mouseDown(with: event)
+    }
+
+    private static func drawTintedSymbol(_ symbolName: String, color: NSColor, in rect: NSRect) {
+        let cfg = NSImage.SymbolConfiguration(pointSize: 9.5, weight: .semibold)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(cfg) else { return }
+        let size = image.size
+        let drawRect = NSRect(
+            x: rect.midX - size.width * 0.5,
+            y: rect.midY - size.height * 0.5,
+            width: size.width,
+            height: size.height
+        )
+        image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1.0, respectFlipped: true, hints: nil)
     }
 
     private func resolvedSummaryCardRect() -> NSRect? {
@@ -2164,9 +2353,7 @@ private final class MacSourceDocumentTextView: NSTextView {
             path.lineWidth = 0.5
             path.stroke()
         }
-        // Draw soft rounded capsule backgrounds behind inline clickable speaker pills
-        if !speakerPills.isEmpty,
-           let lm = layoutManager, let tc = textContainer, let ts = textStorage {
+        if let lm = layoutManager, let tc = textContainer, let ts = textStorage {
             let origin = textContainerOrigin
             let totalLen = ts.length
             let containerDirty = dirtyRect.offsetBy(dx: -origin.x, dy: -origin.y)
@@ -2174,55 +2361,152 @@ private final class MacSourceDocumentTextView: NSTextView {
             if visibleGlyphs.length > 0 {
                 let visibleChars = lm.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
                 let inkBase = NSColor(named: "PhoneInk") ?? .labelColor
-                let successBg = NSColor(named: "PhoneSuccess") ?? .systemGreen
-                for pill in speakerPills where pill.range.location >= 0 && NSMaxRange(pill.range) <= totalLen {
+
+                // Subtle left margin bar next to the currently active/playing sentence
+                if let activeID = activePlayingSpanID,
+                   let spanRange = spanCharRanges[activeID],
+                   spanRange.location >= 0, NSMaxRange(spanRange) <= totalLen,
+                   NSIntersectionRange(spanRange, visibleChars).length > 0 {
+                    let gr = lm.glyphRange(forCharacterRange: spanRange, actualCharacterRange: nil)
+                    let rect = lm.boundingRect(forGlyphRange: gr, in: tc)
+                    if rect.height > 4 {
+                        let barRect = NSRect(
+                            x: max(6, origin.x - 10),
+                            y: origin.y + rect.minY + 1,
+                            width: 2.5,
+                            height: max(8, rect.height - 14)
+                        )
+                        if barRect.intersects(dirtyRect) {
+                            inkBase.withAlphaComponent(isAudioPlaying ? 0.55 : 0.28).setFill()
+                            NSBezierPath(roundedRect: barRect, xRadius: 1.25, yRadius: 1.25).fill()
+                        }
+                    }
+                }
+
+                // Draw soft rounded capsule backgrounds behind inline clickable audio timestamp pills
+                for pill in audioPills where pill.range.location >= 0 && NSMaxRange(pill.range) <= totalLen {
                     guard NSIntersectionRange(pill.range, visibleChars).length > 0 else { continue }
                     let glyphRange = lm.glyphRange(forCharacterRange: pill.range, actualCharacterRange: nil)
                     let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
                     guard rect.width > 4, rect.height > 4 else { continue }
                     let pillRect = NSRect(
-                        x: origin.x + rect.minX - 2.5,
+                        x: origin.x + rect.minX - 2.0,
                         y: origin.y + rect.minY - 1.5,
-                        width: rect.width + 5.0,
+                        width: rect.width + 4.5,
                         height: rect.height + 3.0
                     )
                     guard pillRect.intersects(dirtyRect) else { continue }
-                    let isHovered = (hoveredSpeakerSpanID == pill.spanID)
-                    let fill: NSColor = if pill.isOwner {
-                        successBg.withAlphaComponent(isHovered ? 0.18 : 0.11)
-                    } else if pill.isBound {
-                        inkBase.withAlphaComponent(isHovered ? 0.11 : 0.06)
+                    let isHovered = (hoveredAudioSpanID == pill.spanID)
+                    let isActive = (activePlayingSpanID == pill.spanID)
+                    let fillAlpha: CGFloat = if isActive && isAudioPlaying {
+                        isHovered ? 0.14 : 0.11
+                    } else if isActive {
+                        isHovered ? 0.11 : 0.075
+                    } else if isHovered {
+                        0.09
                     } else {
-                        inkBase.withAlphaComponent(isHovered ? 0.095 : 0.045)
+                        0.04
                     }
-                    fill.setFill()
-                    NSBezierPath(roundedRect: pillRect, xRadius: pillRect.height * 0.5, yRadius: pillRect.height * 0.5).fill()
+                    let pillPath = NSBezierPath(roundedRect: pillRect, xRadius: pillRect.height * 0.5, yRadius: pillRect.height * 0.5)
+                    inkBase.withAlphaComponent(fillAlpha).setFill()
+                    pillPath.fill()
+                    if isActive {
+                        inkBase.withAlphaComponent(isAudioPlaying ? 0.22 : 0.14).setStroke()
+                        pillPath.lineWidth = 0.65
+                        pillPath.stroke()
+                    }
+                }
+
+                // Draw soft rounded capsule backgrounds behind inline clickable speaker pills
+                if !speakerPills.isEmpty {
+                    let successBg = NSColor(named: "PhoneSuccess") ?? .systemGreen
+                    for pill in speakerPills where pill.range.location >= 0 && NSMaxRange(pill.range) <= totalLen {
+                        guard NSIntersectionRange(pill.range, visibleChars).length > 0 else { continue }
+                        let glyphRange = lm.glyphRange(forCharacterRange: pill.range, actualCharacterRange: nil)
+                        let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+                        guard rect.width > 4, rect.height > 4 else { continue }
+                        let pillRect = NSRect(
+                            x: origin.x + rect.minX - 2.5,
+                            y: origin.y + rect.minY - 1.5,
+                            width: rect.width + 5.0,
+                            height: rect.height + 3.0
+                        )
+                        guard pillRect.intersects(dirtyRect) else { continue }
+                        let isHovered = (hoveredSpeakerSpanID == pill.spanID)
+                        let fill: NSColor = if pill.isOwner {
+                            successBg.withAlphaComponent(isHovered ? 0.18 : 0.11)
+                        } else if pill.isBound {
+                            inkBase.withAlphaComponent(isHovered ? 0.11 : 0.06)
+                        } else {
+                            inkBase.withAlphaComponent(isHovered ? 0.095 : 0.045)
+                        }
+                        fill.setFill()
+                        NSBezierPath(roundedRect: pillRect, xRadius: pillRect.height * 0.5, yRadius: pillRect.height * 0.5).fill()
+                    }
                 }
             }
         }
         super.draw(dirtyRect)
-        if !summaryQuoteRanges.isEmpty,
-           let lm = layoutManager, let tc = textContainer, let ts = textStorage {
+        if let lm = layoutManager, let tc = textContainer, let ts = textStorage {
             let origin = textContainerOrigin
             let totalLen = ts.length
             let containerDirty = dirtyRect.offsetBy(dx: -origin.x, dy: -origin.y)
             let visibleGlyphs = lm.glyphRange(forBoundingRectWithoutAdditionalLayout: containerDirty, in: tc)
-            guard visibleGlyphs.length > 0 else { return }
-            let visibleChars = lm.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
-            (NSColor(named: "PhoneLine") ?? .separatorColor).setFill()
-            for charRange in summaryQuoteRanges where charRange.location >= 0 && NSMaxRange(charRange) <= totalLen {
-                guard NSIntersectionRange(charRange, visibleChars).length > 0 else { continue }
-                let glyphRange = lm.glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
-                let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
-                guard rect.height > 1 else { continue }
-                let barRect = NSRect(
-                    x: origin.x + 22.5,
-                    y: origin.y + rect.minY + 1,
-                    width: 2.0,
-                    height: max(4, rect.height - 2)
-                )
-                if barRect.intersects(dirtyRect) {
-                    NSBezierPath(roundedRect: barRect, xRadius: 1.0, yRadius: 1.0).fill()
+            if visibleGlyphs.length > 0 {
+                let visibleChars = lm.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
+                let inkBase = NSColor(named: "PhoneInk") ?? .labelColor
+                let mutedBase = NSColor(named: "PhoneMuted") ?? .secondaryLabelColor
+
+                // Render crisp speaker / play / pause SF Symbols inside each visible audio timestamp pill
+                for pill in audioPills where pill.range.location >= 0 && NSMaxRange(pill.range) <= totalLen {
+                    guard NSIntersectionRange(pill.range, visibleChars).length > 0 else { continue }
+                    let glyphRange = lm.glyphRange(forCharacterRange: pill.range, actualCharacterRange: nil)
+                    let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+                    guard rect.width > 12, rect.height > 4 else { continue }
+                    let iconBox = NSRect(
+                        x: origin.x + rect.maxX - 15.0,
+                        y: origin.y + rect.minY,
+                        width: 14.0,
+                        height: rect.height
+                    )
+                    guard iconBox.intersects(dirtyRect) else { continue }
+                    let isHovered = (hoveredAudioSpanID == pill.spanID)
+                    let isActive = (activePlayingSpanID == pill.spanID)
+                    let symbol: String
+                    let tint: NSColor
+                    if isActive && isAudioPlaying {
+                        symbol = "pause.fill"
+                        tint = inkBase
+                    } else if isActive {
+                        symbol = "play.fill"
+                        tint = inkBase
+                    } else if isHovered {
+                        symbol = "play.fill"
+                        tint = inkBase
+                    } else {
+                        symbol = "speaker.wave.2"
+                        tint = mutedBase.withAlphaComponent(0.9)
+                    }
+                    Self.drawTintedSymbol(symbol, color: tint, in: iconBox)
+                }
+
+                if !summaryQuoteRanges.isEmpty {
+                    (NSColor(named: "PhoneLine") ?? .separatorColor).setFill()
+                    for charRange in summaryQuoteRanges where charRange.location >= 0 && NSMaxRange(charRange) <= totalLen {
+                        guard NSIntersectionRange(charRange, visibleChars).length > 0 else { continue }
+                        let glyphRange = lm.glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
+                        let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+                        guard rect.height > 1 else { continue }
+                        let barRect = NSRect(
+                            x: origin.x + 22.5,
+                            y: origin.y + rect.minY + 1,
+                            width: 2.0,
+                            height: max(4, rect.height - 2)
+                        )
+                        if barRect.intersects(dirtyRect) {
+                            NSBezierPath(roundedRect: barRect, xRadius: 1.0, yRadius: 1.0).fill()
+                        }
+                    }
                 }
             }
         }
@@ -2247,13 +2531,17 @@ private final class MacSourceDocumentScrollView: NSScrollView {
 
 private struct MacSourceTranscriptReader: NSViewRepresentable {
     let composed: MacSourceTranscriptComposer.ComposedTranscript?
+    var activePlayingSpanID: String? = nil
+    var isAudioPlaying: Bool = false
     let scrollSpanID: String?
     let onConsumedScrollSpan: () -> Void
+    var onToggleSpanPlayback: ((MacSourceTranscriptComposer.AudioPlayPill) -> Void)? = nil
     var makeSpeakerPopoverView: ((String, @escaping () -> Void) -> AnyView?)? = nil
 
     final class Coordinator: NSObject {
         weak var textView: MacSourceDocumentTextView?
         var activePopover: NSPopover?
+        var onToggleSpanPlayback: ((MacSourceTranscriptComposer.AudioPlayPill) -> Void)?
         var makeSpeakerPopoverView: ((String, @escaping () -> Void) -> AnyView?)?
 
         @MainActor
@@ -2316,7 +2604,13 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
 
         let coord = context.coordinator
         coord.textView = textView
+        coord.onToggleSpanPlayback = onToggleSpanPlayback
         coord.makeSpeakerPopoverView = makeSpeakerPopoverView
+        textView.onSelectAudioPill = { [weak coord] pill in
+            Task { @MainActor in
+                coord?.onToggleSpanPlayback?(pill)
+            }
+        }
         textView.onSelectSpeakerPill = { [weak coord] spanID, rect in
             Task { @MainActor in
                 coord?.showSpeakerPopover(spanID: spanID, relativeTo: rect)
@@ -2329,12 +2623,25 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
 
     func updateNSView(_ scrollView: MacSourceDocumentScrollView, context: Context) {
         guard let textView = context.coordinator.textView else { return }
+        context.coordinator.onToggleSpanPlayback = onToggleSpanPlayback
         context.coordinator.makeSpeakerPopoverView = makeSpeakerPopoverView
         apply(to: textView, in: scrollView)
     }
 
     private func apply(to textView: MacSourceDocumentTextView, in scrollView: MacSourceDocumentScrollView) {
-        guard let composed else { return }
+        var needsRedraw = false
+        if textView.activePlayingSpanID != activePlayingSpanID {
+            textView.activePlayingSpanID = activePlayingSpanID
+            needsRedraw = true
+        }
+        if textView.isAudioPlaying != isAudioPlaying {
+            textView.isAudioPlaying = isAudioPlaying
+            needsRedraw = true
+        }
+        guard let composed else {
+            if needsRedraw { textView.needsDisplay = true }
+            return
+        }
         let documentChanged = textView.currentDocumentID != composed.documentID
         if textView.currentComposedKey != composed.key {
             let previousOrigin = scrollView.contentView.bounds.origin
@@ -2342,7 +2649,9 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
             textView.currentDocumentID = composed.documentID
             textView.summaryCardRange = composed.summaryCardRange
             textView.summaryQuoteRanges = composed.summaryQuoteRanges
+            textView.spanCharRanges = composed.spanCharRanges
             textView.speakerPills = composed.speakerPills
+            textView.audioPills = composed.audioPills
             if documentChanged, textView.selectedRange().length > 0 {
                 textView.setSelectedRange(NSRange(location: 0, length: 0))
             }
@@ -2355,6 +2664,8 @@ private struct MacSourceTranscriptReader: NSViewRepresentable {
                 scrollView.contentView.scroll(to: previousOrigin)
                 scrollView.reflectScrolledClipView(scrollView.contentView)
             }
+        } else if needsRedraw {
+            textView.needsDisplay = true
         }
         if let targetID = scrollSpanID,
            let charRange = composed.spanCharRanges[targetID],
@@ -2425,7 +2736,7 @@ struct DesktopRecordingCitation: View {
                                     DesktopAudioPlaybackBar(player: citationPlayer)
                                     if let ts = resolved.span.recordedAt {
                                         Button {
-                                            citationPlayer.play(atWallClock: ts)
+                                            citationPlayer.play(atWallClock: ts, endWallClock: resolved.span.endAt)
                                         } label: {
                                             Label("从该句位置播放原音", systemImage: "play.circle")
                                                 .font(.system(size: 12.5, weight: .medium))

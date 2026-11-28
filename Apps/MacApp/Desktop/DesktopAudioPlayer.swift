@@ -4,73 +4,259 @@ import Observation
 import SwiftUI
 import MoMoAgentClient
 
-/// Native macOS audio player for Mac-stored original recording chunks (`context/audio/`).
-/// Supports continuous multi-chunk timeline playback, seeking to any transcript span wall-clock
-/// timestamp, and direct playback from `momoagent://source/...` citations.
-@MainActor @Observable
-final class DesktopRecordingAudioPlayer: NSObject, AVAudioPlayerDelegate {
-    private(set) var sourceID: String?
-    private(set) var chunks: [SourceAudioChunkItem] = []
-    private(set) var isPlaying = false
-    private(set) var currentTimeSec: Double = 0
-    private(set) var totalDurationSec: Double = 0
-    private(set) var activeChunkIndex: Int = 0
-    private(set) var error: String?
+/// Span timestamp interval used for per-sentence playback and live highlight tracking.
+struct DesktopAudioSpanInterval: Equatable, Sendable {
+    let id: String
+    let startWallClock: Double
+    let endWallClock: Double?
+}
 
-    @ObservationIgnored private var player: AVAudioPlayer?
-    @ObservationIgnored private var tickTimer: Task<Void, Never>?
-
-    var hasAudio: Bool { chunks.contains(where: \.exists) }
-
-    var timelineStartWallClock: Double? { chunks.first?.recordedAt }
-
-    var currentWallClock: Double? {
-        guard let start = timelineStartWallClock else { return nil }
-        return start + currentTimeSec
+/// Pure wall-clock <-> concatenated player offset mapper across Mac-stored recording chunks.
+struct DesktopAudioTimeline: Equatable, Sendable {
+    struct Segment: Equatable, Sendable {
+        let chunk: SourceAudioChunkItem
+        let playerStartOffset: Double
+        let playerEndOffset: Double
     }
 
-    func load(sourceID: String, chunks: [SourceAudioChunkItem]) {
-        if self.sourceID == sourceID && self.chunks == chunks { return }
-        stop()
-        self.sourceID = sourceID
-        self.chunks = chunks.filter(\.exists).sorted {
+    private static let coverageToleranceSec: Double = 0.5
+    private static let tailPadSec: Double = 0.15
+
+    let segments: [Segment]
+    let totalDurationSec: Double
+
+    init(chunks: [SourceAudioChunkItem], windowStart: Double? = nil, windowEnd: Double? = nil) {
+        let valid = chunks.filter { $0.exists && $0.durationSec > 0 }.sorted {
             if $0.recordedAt != $1.recordedAt { return $0.recordedAt < $1.recordedAt }
             if $0.chunkSeq != $1.chunkSeq { return $0.chunkSeq < $1.chunkSeq }
             return $0.chunkId < $1.chunkId
         }
-        self.totalDurationSec = self.chunks.reduce(0.0) { $0 + $1.durationSec }
+        let scoped: [SourceAudioChunkItem]
+        if let wStart = windowStart, let wEnd = windowEnd {
+            let lo = min(wStart, wEnd) - 1.0
+            let hi = max(wStart, wEnd) + 1.0
+            scoped = valid.filter { $0.endAt >= lo && $0.recordedAt <= hi }
+        } else {
+            scoped = valid
+        }
+        var built: [Segment] = []
+        built.reserveCapacity(scoped.count)
+        var acc = 0.0
+        for chunk in scoped {
+            let next = acc + chunk.durationSec
+            built.append(Segment(chunk: chunk, playerStartOffset: acc, playerEndOffset: next))
+            acc = next
+        }
+        self.segments = built
+        self.totalDurationSec = acc
+    }
+
+    var isEmpty: Bool { segments.isEmpty }
+
+    func canPlay(startWallClock: Double, endWallClock: Double? = nil) -> Bool {
+        spanOffsetRange(startWallClock: startWallClock, endWallClock: endWallClock) != nil
+    }
+
+    func spanOffsetRange(startWallClock: Double, endWallClock: Double? = nil) -> (startOffset: Double, endOffset: Double?)? {
+        guard !segments.isEmpty, startWallClock.isFinite else { return nil }
+        let effectiveEnd = max(startWallClock, endWallClock ?? startWallClock)
+        let startIdx = segments.firstIndex {
+            startWallClock >= $0.chunk.recordedAt - Self.coverageToleranceSec
+                && startWallClock < $0.chunk.endAt - 0.02
+        } ?? segments.firstIndex {
+            $0.chunk.endAt + Self.coverageToleranceSec >= startWallClock
+                && $0.chunk.recordedAt - Self.coverageToleranceSec <= effectiveEnd
+        }
+        guard let startIdx else { return nil }
+
+        let startSeg = segments[startIdx]
+        let withinStart = max(0.0, min(max(0.0, startSeg.chunk.durationSec - 0.05), startWallClock - startSeg.chunk.recordedAt))
+        let startOffset = startSeg.playerStartOffset + withinStart
+
+        guard let endWall = endWallClock, endWall.isFinite, endWall > startWallClock else {
+            return (startOffset, nil)
+        }
+
+        let paddedEndWall = endWall + Self.tailPadSec
+        var lastContiguousIdx = startIdx
+        for idx in startIdx..<segments.count {
+            if idx > startIdx {
+                let gap = segments[idx].chunk.recordedAt - segments[idx - 1].chunk.endAt
+                if gap > 1.5 { break }
+            }
+            lastContiguousIdx = idx
+            let seg = segments[idx]
+            if paddedEndWall <= seg.chunk.endAt {
+                let withinEnd = max(0.0, min(seg.chunk.durationSec, paddedEndWall - seg.chunk.recordedAt))
+                let rawEnd = min(seg.playerEndOffset, seg.playerStartOffset + withinEnd)
+                return (startOffset, max(min(totalDurationSec, startOffset + 0.25), rawEnd))
+            }
+        }
+        return (startOffset, segments[lastContiguousIdx].playerEndOffset)
+    }
+
+    func chunkPosition(forOffset offsetSec: Double) -> (index: Int, withinChunk: Double) {
+        guard !segments.isEmpty else { return (0, 0) }
+        let clamped = max(0.0, min(totalDurationSec, offsetSec))
+        for (idx, seg) in segments.enumerated() {
+            if clamped < seg.playerEndOffset || idx == segments.count - 1 {
+                let within = max(0.0, min(seg.chunk.durationSec, clamped - seg.playerStartOffset))
+                return (idx, within)
+            }
+        }
+        return (0, 0)
+    }
+
+    func wallClock(forOffset offsetSec: Double) -> Double? {
+        guard !segments.isEmpty else { return nil }
+        let (idx, within) = chunkPosition(forOffset: offsetSec)
+        return segments[idx].chunk.recordedAt + within
+    }
+
+    func activeSpanID(atWallClock wall: Double, spans: [DesktopAudioSpanInterval]) -> String? {
+        guard !spans.isEmpty else { return nil }
+        // Binary search the last span whose startWallClock <= wall + 0.12
+        var lo = 0
+        var hi = spans.count - 1
+        var candidate: Int?
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            if spans[mid].startWallClock <= wall + 0.12 {
+                candidate = mid
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
+        }
+        guard let idx = candidate else { return nil }
+        let sp = spans[idx]
+        let upperBound: Double
+        if let end = sp.endWallClock, end > sp.startWallClock {
+            upperBound = end + 0.25
+        } else if idx + 1 < spans.count {
+            upperBound = min(sp.startWallClock + 15.0, spans[idx + 1].startWallClock)
+        } else {
+            upperBound = sp.startWallClock + 15.0
+        }
+        return wall <= upperBound ? sp.id : nil
+    }
+}
+
+/// Native macOS audio player for Mac-stored original recording chunks (`context/audio/`).
+/// Supports continuous multi-chunk timeline playback, per-sentence clip playback (`toggleSpan`),
+/// seeking to any transcript span wall-clock timestamp, and direct playback from `momoagent://source/...` citations.
+@MainActor @Observable
+final class DesktopRecordingAudioPlayer: NSObject, AVAudioPlayerDelegate {
+    private(set) var sourceID: String?
+    private(set) var timeline = DesktopAudioTimeline(chunks: [])
+    private(set) var chunksRevision: UInt64 = 0
+    private(set) var isPlaying = false
+    private(set) var currentTimeSec: Double = 0
+    private(set) var activeChunkIndex: Int = 0
+    private(set) var activeSpanID: String?
+    private(set) var error: String?
+
+    @ObservationIgnored private var player: AVAudioPlayer?
+    @ObservationIgnored private var tickTimer: Task<Void, Never>?
+    @ObservationIgnored private var spanIntervals: [DesktopAudioSpanInterval] = []
+    @ObservationIgnored private var activeSpanRange: (id: String, startOffset: Double, endOffset: Double?)?
+    @ObservationIgnored private var stopAtOffsetSec: Double?
+
+    var chunks: [SourceAudioChunkItem] { timeline.segments.map(\.chunk) }
+
+    var totalDurationSec: Double { timeline.totalDurationSec }
+
+    var hasAudio: Bool { !timeline.isEmpty }
+
+    var timelineStartWallClock: Double? { timeline.segments.first?.chunk.recordedAt }
+
+    var currentWallClock: Double? {
+        timeline.wallClock(forOffset: currentTimeSec)
+    }
+
+    func load(
+        sourceID: String,
+        chunks: [SourceAudioChunkItem],
+        windowStart: Double? = nil,
+        windowEnd: Double? = nil,
+        spans: [DesktopAudioSpanInterval] = []
+    ) {
+        let nextTimeline = DesktopAudioTimeline(chunks: chunks, windowStart: windowStart, windowEnd: windowEnd)
+        self.spanIntervals = spans.sorted { $0.startWallClock < $1.startWallClock }
+        if self.sourceID == sourceID && self.timeline == nextTimeline { return }
+        stop()
+        self.sourceID = sourceID
+        self.timeline = nextTimeline
         self.currentTimeSec = 0
         self.activeChunkIndex = 0
+        self.activeSpanID = nil
+        self.activeSpanRange = nil
+        self.stopAtOffsetSec = nil
         self.error = nil
+        self.chunksRevision &+= 1
+    }
+
+    func updateSpanIntervals(_ spans: [DesktopAudioSpanInterval]) {
+        self.spanIntervals = spans.sorted { $0.startWallClock < $1.startWallClock }
+    }
+
+    func canPlaySpan(startWallClock: Double?, endWallClock: Double? = nil) -> Bool {
+        guard let startWallClock else { return false }
+        return timeline.canPlay(startWallClock: startWallClock, endWallClock: endWallClock)
     }
 
     func togglePlayPause() {
         if isPlaying {
             pause()
         } else {
-            play(fromOffset: currentTimeSec)
+            let resumeOffset = currentTimeSec >= max(0.0, totalDurationSec - 0.1) ? 0.0 : currentTimeSec
+            play(fromOffset: resumeOffset, clearSpanScope: true)
         }
     }
 
-    func play(atWallClock timestamp: Double) {
-        guard !chunks.isEmpty else { return }
-        var acc = 0.0
-        for (idx, chunk) in chunks.enumerated() {
-            if timestamp <= chunk.endAt || idx == chunks.count - 1 {
-                let within = max(0.0, min(chunk.durationSec, timestamp - chunk.recordedAt))
-                play(fromOffset: acc + within)
-                return
+    func toggleSpan(id: String, startWallClock: Double, endWallClock: Double? = nil) {
+        if let active = activeSpanRange, active.id == id {
+            if isPlaying {
+                pause()
+            } else {
+                stopAtOffsetSec = active.endOffset
+                let canResumeMidSpan: Bool = if let endOff = active.endOffset {
+                    currentTimeSec >= active.startOffset && currentTimeSec < endOff - 0.12
+                } else {
+                    currentTimeSec >= active.startOffset && currentTimeSec < totalDurationSec - 0.12
+                }
+                play(fromOffset: canResumeMidSpan ? currentTimeSec : active.startOffset, clearSpanScope: false)
             }
-            acc += chunk.durationSec
+            return
         }
-        play(fromOffset: 0)
+        guard let range = timeline.spanOffsetRange(startWallClock: startWallClock, endWallClock: endWallClock) else {
+            error = String(localized: "这段原音未同步或已清理")
+            return
+        }
+        activeSpanID = id
+        activeSpanRange = (id: id, startOffset: range.startOffset, endOffset: range.endOffset)
+        stopAtOffsetSec = range.endOffset
+        play(fromOffset: range.startOffset, clearSpanScope: false)
+    }
+
+    func play(atWallClock timestamp: Double, endWallClock: Double? = nil) {
+        guard let range = timeline.spanOffsetRange(startWallClock: timestamp, endWallClock: endWallClock) else {
+            error = String(localized: "这段原音未同步或已清理")
+            return
+        }
+        activeSpanRange = nil
+        stopAtOffsetSec = range.endOffset
+        play(fromOffset: range.startOffset, clearSpanScope: false)
     }
 
     func seek(toOffset offsetSec: Double) {
         let clamped = max(0.0, min(totalDurationSec, offsetSec))
+        stopAtOffsetSec = nil
+        activeSpanRange = nil
         currentTimeSec = clamped
+        syncActiveSpanForContinuousPlayback()
         guard isPlaying else { return }
-        let (chosenIdx, withinChunk) = chunkPosition(forOffset: clamped)
+        let (chosenIdx, withinChunk) = timeline.chunkPosition(forOffset: clamped)
         if chosenIdx == activeChunkIndex, let p = player {
             p.currentTime = min(max(0, withinChunk), max(0, p.duration - 0.05))
         } else {
@@ -78,30 +264,24 @@ final class DesktopRecordingAudioPlayer: NSObject, AVAudioPlayerDelegate {
         }
     }
 
-    func play(fromOffset offsetSec: Double) {
-        guard !chunks.isEmpty else { return }
+    func play(fromOffset offsetSec: Double, clearSpanScope: Bool = true) {
+        guard !timeline.isEmpty else { return }
+        if clearSpanScope {
+            stopAtOffsetSec = nil
+            activeSpanRange = nil
+        }
         let clamped = max(0.0, min(max(0.0, totalDurationSec - 0.05), offsetSec))
-        let (chosenIdx, withinChunk) = chunkPosition(forOffset: clamped)
+        let (chosenIdx, withinChunk) = timeline.chunkPosition(forOffset: clamped)
         if chosenIdx == activeChunkIndex, let p = player {
             p.currentTime = min(max(0, withinChunk), max(0, p.duration - 0.05))
             p.play()
             isPlaying = true
+            error = nil
             updateCurrentTime()
             startTimer()
             return
         }
         startChunk(index: chosenIdx, offsetInChunk: withinChunk)
-    }
-
-    private func chunkPosition(forOffset offsetSec: Double) -> (index: Int, withinChunk: Double) {
-        var acc = 0.0
-        for (idx, chunk) in chunks.enumerated() {
-            if offsetSec < acc + chunk.durationSec || idx == chunks.count - 1 {
-                return (idx, max(0.0, offsetSec - acc))
-            }
-            acc += chunk.durationSec
-        }
-        return (0, 0)
     }
 
     func pause() {
@@ -118,10 +298,14 @@ final class DesktopRecordingAudioPlayer: NSObject, AVAudioPlayerDelegate {
         player?.stop()
         player = nil
         isPlaying = false
+        activeSpanID = nil
+        activeSpanRange = nil
+        stopAtOffsetSec = nil
     }
 
     private func startChunk(index: Int, offsetInChunk: Double) {
-        guard chunks.indices.contains(index), let path = chunks[index].path else {
+        guard timeline.segments.indices.contains(index),
+              let path = timeline.segments[index].chunk.path else {
             stop()
             return
         }
@@ -150,17 +334,42 @@ final class DesktopRecordingAudioPlayer: NSObject, AVAudioPlayerDelegate {
         tickTimer?.cancel()
         tickTimer = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(120))
+                try? await Task.sleep(for: .milliseconds(60))
                 guard let self, self.isPlaying else { return }
                 self.updateCurrentTime()
             }
         }
     }
 
+    private func syncActiveSpanForContinuousPlayback() {
+        guard activeSpanRange == nil else { return }
+        let nextSpan = currentWallClock.flatMap { timeline.activeSpanID(atWallClock: $0, spans: spanIntervals) }
+        if activeSpanID != nextSpan {
+            activeSpanID = nextSpan
+        }
+    }
+
+    private func finishScopedSpanPlayback(at offsetSec: Double) {
+        pause()
+        currentTimeSec = min(totalDurationSec, offsetSec)
+        stopAtOffsetSec = nil
+        activeSpanRange = nil
+        if activeSpanID != nil {
+            activeSpanID = nil
+        }
+    }
+
     private func updateCurrentTime() {
-        let prefix = chunks.prefix(activeChunkIndex).reduce(0.0) { $0 + $1.durationSec }
+        guard timeline.segments.indices.contains(activeChunkIndex) else { return }
+        let prefix = timeline.segments[activeChunkIndex].playerStartOffset
         let local = player?.currentTime ?? 0
-        currentTimeSec = min(totalDurationSec, prefix + local)
+        let nextTime = min(totalDurationSec, prefix + local)
+        if let stopAt = stopAtOffsetSec, nextTime >= stopAt {
+            finishScopedSpanPlayback(at: stopAt)
+            return
+        }
+        currentTimeSec = nextTime
+        syncActiveSpanForContinuousPlayback()
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ finishedPlayer: AVAudioPlayer, successfully flag: Bool) {
@@ -168,7 +377,12 @@ final class DesktopRecordingAudioPlayer: NSObject, AVAudioPlayerDelegate {
         Task { @MainActor [weak self] in
             guard let self, let current = self.player, ObjectIdentifier(current) == finishedID else { return }
             let nextIdx = self.activeChunkIndex + 1
-            if flag && self.chunks.indices.contains(nextIdx) {
+            if let stopAt = self.stopAtOffsetSec,
+               !self.timeline.segments.indices.contains(nextIdx) || self.timeline.segments[nextIdx].playerStartOffset >= stopAt - 0.05 {
+                self.finishScopedSpanPlayback(at: stopAt)
+                return
+            }
+            if flag && self.timeline.segments.indices.contains(nextIdx) {
                 self.startChunk(index: nextIdx, offsetInChunk: 0)
             } else {
                 self.stop()
@@ -178,6 +392,7 @@ final class DesktopRecordingAudioPlayer: NSObject, AVAudioPlayerDelegate {
     }
 }
 
+#if !MOMO_STANDALONE_AUDIO_TESTS
 /// Compact native macOS audio playback bar pinned inside `DesktopTranscripts` and citation previews.
 struct DesktopAudioPlaybackBar: View {
     @Bindable var player: DesktopRecordingAudioPlayer
@@ -501,3 +716,4 @@ struct DesktopSpeakerLockSheet: View {
         }
     }
 }
+#endif

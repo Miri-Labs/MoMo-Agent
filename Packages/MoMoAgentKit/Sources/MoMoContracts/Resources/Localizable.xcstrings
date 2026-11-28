@@ -58065,6 +58065,118 @@
         }
       }
     },
+    "暂停回听该句原音": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause playback of this sentence"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この文の音声再生を一時停止"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 문장의 원본 오디오 재생 일시정지"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停回听该句原音"
+          }
+        }
+      }
+    },
+    "点击回听该句原音": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click to listen to original audio for this sentence"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリックしてこの文の元の音声を再生"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클릭하여 이 문장의 원본 오디오 듣기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击回听该句原音"
+          }
+        }
+      }
+    },
+    "该段录音原音未同步至此 Mac 或已按保留策略清理，仅展示转写文字": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original audio is not synced to this Mac or has been cleaned up by retention policy; showing transcript text only"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この録音の元の音声はこの Mac に未同期か保持ルールにより整理済みのため、文字起こしのみを表示しています"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 녹음의 원본 오디오가 이 Mac에 동기화되지 않았거나 보관 정책에 따라 정리되어 전사 텍스트만 표시합니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该段录音原音未同步至此 Mac 或已按保留策略清理，仅展示转写文字"
+          }
+        }
+      }
+    },
+    "这段原音未同步或已清理": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original audio for this passage is not synced or has been cleaned up"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この箇所の元の音声は未同期または整理済みです"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 구간의 원본 오디오가 동기화되지 않았거나 정리되었습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这段原音未同步或已清理"
+          }
+        }
+      }
+    },
     "鼠标状态已变化，请重新接管。": {
       "localizations": {
         "en": {

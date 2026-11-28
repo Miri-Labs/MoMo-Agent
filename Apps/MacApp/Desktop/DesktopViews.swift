@@ -1534,7 +1534,7 @@ private struct DesktopComposerHost: View {
 
     var body: some View {
         ClientComposer(
-            text: Binding(get: { store.draft }, set: store.setDraft),
+            text: Binding(get: { store.draft }, set: { store.setDraft($0) }),
             store: store,
             inputID: "desktop.message",
             sendID: "desktop.send",
