@@ -311,4 +311,42 @@ class ContextTests(unittest.TestCase):
                 span['timezone_offset'] = 0
                 self.assertEqual((dt.timezone.utc, 'recorded_offset'), source_clock(span))
 
+    def test_owner_speaker_binding_preserves_custom_owner_name(self):
+        from voiceprint_store import VoiceprintStore
+        span_id = str(uuid.uuid4())
+        payload = dict(
+            self.payload,
+            version=2,
+            spans=[dict(id=span_id, speaker='说话人 1', text='[说话人 1] 周一上午同步项目进度。', recorded_at=1005)],
+        )
+        payload['text_sha256'] = digest(payload['spans'][0]['text'])
+        receipt = self.store.sync_source(payload)
+        source_id = receipt['source_id']
+
+        vp = VoiceprintStore(self.store)
+        owner = vp.create_or_update_profile(name='陈明', is_owner=True)
+        self.assertEqual('陈明', owner['name'])
+        self.assertTrue(owner['is_owner'])
+
+        bound = vp.bind_transcript_speaker(
+            source_id=source_id,
+            span_ids=[span_id],
+            profile_id=owner['id'],
+            target_name=owner['name'],
+            is_owner=True,
+            enroll_voiceprint=False,
+            rematch_history=False,
+            scope='selection',
+        )
+        self.assertTrue(bound['success'])
+        self.assertEqual(1, bound['updated_span_count'])
+        read_back = self.store.read_source(source_id)
+        self.assertEqual('陈明', read_back['spans'][0]['speaker'])
+        self.assertTrue(read_back['spans'][0]['is_owner'])
+
+        # Empty target_speaker with is_owner=True still falls back to default '我'.
+        fallback = self.store._relabel_speakers(source_id, '', is_owner=True, span_ids=[span_id], scope='selection')
+        self.assertTrue(fallback['changed'])
+        self.assertEqual('我', self.store.read_source(source_id)['spans'][0]['speaker'])
+
 if __name__=='__main__': unittest.main()

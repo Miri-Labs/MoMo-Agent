@@ -14,14 +14,20 @@ struct VoiceprintOnboardingView: View {
     @State private var level: Float = 0
     @State private var uploading = false
     @State private var completedSamples = 0
+    @State private var ownerName = ""
     @State private var error: String?
     @State private var recorder: AVAudioRecorder?
     @State private var recordingURL: URL?
     @State private var meterTask: Task<Void, Never>?
+    @FocusState private var nameFocused: Bool
 
     private var isForOtherPerson: Bool {
         if let targetProfile, !targetProfile.isOwner { return true }
         return false
+    }
+
+    private var trimmedOwnerName: String {
+        ownerName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var headingText: String {
@@ -29,7 +35,7 @@ struct VoiceprintOnboardingView: View {
             if let targetProfile, !targetProfile.isOwner {
                 return "已记住「\(targetProfile.name)」的声音"
             }
-            return "已记住你的声音"
+            return trimmedOwnerName.isEmpty ? "已记住你的声音" : "已记住「\(trimmedOwnerName)」的声音"
         }
         if let targetProfile, !targetProfile.isOwner {
             return "让「\(targetProfile.name)」读出这句话"
@@ -40,6 +46,9 @@ struct VoiceprintOnboardingView: View {
     private var currentPrompt: String {
         if let targetProfile, !targetProfile.isOwner {
             return "你好，我是\(targetProfile.name)，今天我们来聊聊接下来的安排。"
+        }
+        if completedSamples == 0, !trimmedOwnerName.isEmpty {
+            return "你好，我是\(trimmedOwnerName)，今天来聊聊接下来的安排。"
         }
         return prompts[min(completedSamples, prompts.count - 1)]
     }
@@ -56,6 +65,27 @@ struct VoiceprintOnboardingView: View {
             VStack(spacing: 28) {
                 Text(headingText)
                     .phoneText(.heading)
+
+                if !isForOtherPerson {
+                    HStack(spacing: 10) {
+                        Image(systemName: "person.crop.circle")
+                            .foregroundStyle(MoMoPalette.muted)
+                            .accessibilityHidden(true)
+                        TextField("你的名字（可选，留空显示「我」）", text: $ownerName)
+                            .textContentType(.name)
+                            .focused($nameFocused)
+                            .submitLabel(.done)
+                            .disabled(recording || uploading)
+                            .accessibilityIdentifier("voiceprint.onboarding.name")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(MoMoPalette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(MoMoPalette.line, lineWidth: 0.75)
+                    }
+                }
 
                 Text("“\(currentPrompt)”")
                     .font(.title3.weight(.regular))
@@ -149,10 +179,23 @@ struct VoiceprintOnboardingView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .phonePageSurface()
+        .task {
+            guard !isForOtherPerson else { return }
+            if let explicit = targetProfile, explicit.isOwner, explicit.name != "我" {
+                ownerName = explicit.name
+                return
+            }
+            if let client = remoteAgent.speechDataClient,
+               let existingOwner = (try? await client.voiceprintProfiles())?.first(where: \.isOwner),
+               existingOwner.name != "我" {
+                ownerName = existingOwner.name
+            }
+        }
         .onDisappear { stopRecorderCleanup() }
     }
 
     private func startRecording() async {
+        nameFocused = false
         error = nil
         let granted = await AVAudioApplication.requestRecordPermission()
         guard granted else {
@@ -225,15 +268,41 @@ struct VoiceprintOnboardingView: View {
         uploading = true; error = nil
         defer { uploading = false }
         do {
+            let desiredOwnerName = trimmedOwnerName.isEmpty ? nil : String(trimmedOwnerName.prefix(80))
             let target: VoiceprintProfile
             if let explicit = targetProfile {
-                target = explicit
+                if explicit.isOwner, let desiredOwnerName, desiredOwnerName != explicit.name {
+                    target = try await client.updateVoiceprintProfile(
+                        id: explicit.id,
+                        name: desiredOwnerName,
+                        isOwner: true,
+                        aliases: explicit.aliases,
+                        memoryFile: explicit.memoryFile,
+                        notes: explicit.notes
+                    )
+                } else {
+                    target = explicit
+                }
             } else {
                 let existing = try await client.voiceprintProfiles()
                 if let found = existing.first(where: \.isOwner) {
-                    target = found
+                    if let desiredOwnerName, desiredOwnerName != found.name {
+                        target = try await client.updateVoiceprintProfile(
+                            id: found.id,
+                            name: desiredOwnerName,
+                            isOwner: true,
+                            aliases: found.aliases,
+                            memoryFile: found.memoryFile,
+                            notes: found.notes
+                        )
+                    } else {
+                        target = found
+                    }
                 } else {
-                    target = try await client.createVoiceprintProfile(name: "我", isOwner: true)
+                    target = try await client.createVoiceprintProfile(
+                        name: desiredOwnerName ?? "我",
+                        isOwner: true
+                    )
                 }
             }
             let res = try await client.enrollVoiceprintSample(

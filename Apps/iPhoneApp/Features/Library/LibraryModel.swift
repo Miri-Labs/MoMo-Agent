@@ -337,7 +337,7 @@ final class LibraryModel {
         case .owner:
             if !speakerProfiles.contains(where: \.isUser) {
                 let id = optimisticAttribution?.personID ?? UUID()
-                let ownerName = String(localized: "我")
+                let ownerName = optimisticSpeaker ?? String(localized: "我")
                 optimisticProfilesByID[id] = (name: ownerName, isUser: true)
                 createdTempID = id
                 speakerProfiles.insert(SpeakerProfile(id: id, name: ownerName, isUser: true), at: 0)
@@ -415,8 +415,8 @@ final class LibraryModel {
                 case .notPerson(let candidateID):
                     let profiles = (try? await archive.speakerProfiles()) ?? self.speakerProfiles
                     if !profiles.contains(where: { $0.id == candidateID }) {
-                        if knownTarget?.isUser == true || speakerNameHint == String(localized: "我"),
-                           let owner = profiles.first(where: \.isUser) {
+                        if let owner = profiles.first(where: \.isUser),
+                           (knownTarget?.isUser == true || speakerNameHint == String(localized: "我") || speakerNameHint == owner.name) {
                             effectiveFeedback = .notPerson(owner.id)
                         } else if let hint = knownTarget?.name ?? speakerNameHint,
                                   let matched = profiles.first(where: {

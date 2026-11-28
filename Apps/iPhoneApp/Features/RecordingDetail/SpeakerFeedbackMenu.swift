@@ -84,6 +84,25 @@ private struct SpeakerPicker: View {
     private var macClient: AgentClient? { remoteAgent?.speechDataClient }
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    private var ownerDisplayName: String {
+        if let macOwner = macProfiles.first(where: \.isOwner) {
+            return macOwner.name
+        }
+        return people.first(where: \.isUser)?.name ?? String(localized: "我")
+    }
+
+    private var matchesOwnerQuery: Bool {
+        guard !trimmedQuery.isEmpty else { return true }
+        if "我".localizedStandardContains(trimmedQuery) || ownerDisplayName.localizedStandardContains(trimmedQuery) {
+            return true
+        }
+        if let macOwner = macProfiles.first(where: \.isOwner),
+           macOwner.aliases.contains(where: { $0.localizedStandardContains(trimmedQuery) }) {
+            return true
+        }
+        return false
+    }
+
     private var filteredMacOthers: [VoiceprintProfile] {
         macProfiles.filter {
             !$0.isOwner && (trimmedQuery.isEmpty
@@ -99,7 +118,9 @@ private struct SpeakerPicker: View {
     }
 
     private var canCreateNewName: Bool {
-        guard !trimmedQuery.isEmpty, trimmedQuery != "我" else { return false }
+        guard !trimmedQuery.isEmpty,
+              trimmedQuery != "我",
+              trimmedQuery.caseInsensitiveCompare(ownerDisplayName) != .orderedSame else { return false }
         if macClient != nil {
             return !macProfiles.contains(where: { $0.name.caseInsensitiveCompare(trimmedQuery) == .orderedSame })
         }
@@ -152,9 +173,13 @@ private struct SpeakerPicker: View {
                             .accessibilityIdentifier("speaker.new.name")
                     }
 
-                    if trimmedQuery.isEmpty || "我".localizedStandardContains(trimmedQuery) {
+                    if matchesOwnerQuery {
                         Button { chooseOwner() } label: {
-                            profileRow(name: String(localized: "我"), isOwner: true, selected: attribution?.isUser == true || speaker == "我")
+                            profileRow(
+                                name: ownerDisplayName,
+                                isOwner: true,
+                                selected: attribution?.isUser == true || speaker == ownerDisplayName || speaker == "我"
+                            )
                         }
                         .accessibilityIdentifier("speaker.choose.owner")
                     }
@@ -399,7 +424,7 @@ private struct SpeakerPicker: View {
         switch feedback {
         case .owner:
             let ownerID = people.first(where: \.isUser)?.id ?? UUID()
-            return (.owner, String(localized: "我"), SpeakerAttribution(clusterID: clusterID, personID: ownerID, isUser: true, confirmed: true, canLearn: canLearn))
+            return (.owner, ownerDisplayName, SpeakerAttribution(clusterID: clusterID, personID: ownerID, isUser: true, confirmed: true, canLearn: canLearn))
         case .knownPerson(let id):
             guard let person = people.first(where: { $0.id == id }) else { throw VoiceprintError.missingPerson }
             return (.knownPerson(id), person.name, SpeakerAttribution(clusterID: clusterID, personID: id, isUser: person.isUser, confirmed: true, canLearn: canLearn))
